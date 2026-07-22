@@ -9,6 +9,7 @@ export default function FatturePassive() {
   const [espansa, setEspansa] = useState(null);
   const [cerca, setCerca] = useState("");
   const [filtroAnno, setFiltroAnno] = useState("tutti");
+  const [filtroData, setFiltroData] = useState("");
 
   useEffect(() => { carica(); }, []);
 
@@ -54,14 +55,15 @@ export default function FatturePassive() {
   const filtrate = useMemo(() => {
     return fatture.filter(f => {
       if (filtroAnno !== "tutti" && new Date(f.data).getFullYear() !== parseInt(filtroAnno)) return false;
+      if (filtroData && f.data !== filtroData) return false;
       if (cerca.trim()) {
         const q = cerca.trim().toLowerCase();
-        const testo = `${f.ci_fornitori?.nome || ""} ${f.numero}`.toLowerCase();
+        const testo = `${f.ci_fornitori?.nome || ""} ${f.numero} ${f.ci_fornitori?.partita_iva || ""}`.toLowerCase();
         if (!testo.includes(q)) return false;
       }
       return true;
     });
-  }, [fatture, filtroAnno, cerca]);
+  }, [fatture, filtroAnno, filtroData, cerca]);
 
   const totale = filtrate.reduce((s, f) => s + (f.totale_lordo || 0), 0);
 
@@ -74,11 +76,20 @@ export default function FatturePassive() {
 
       <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
         <input
-          placeholder="Cerca per fornitore o numero..."
+          placeholder="Cerca per fornitore, numero o P.IVA..."
           value={cerca}
           onChange={e => setCerca(e.target.value)}
           style={{ flex: 1, minWidth: 200, padding: "8px 12px", borderRadius: 8, border: `1.5px solid ${C.border}`, fontSize: 14 }}
         />
+        <input
+          type="date"
+          value={filtroData}
+          onChange={e => setFiltroData(e.target.value)}
+          style={{ padding: "8px 12px", borderRadius: 8, border: `1.5px solid ${C.border}`, fontSize: 14 }}
+        />
+        {filtroData && (
+          <button onClick={() => setFiltroData("")} style={{ background: "none", border: `1.5px solid ${C.border}`, borderRadius: 8, padding: "0 10px", cursor: "pointer", color: C.muted }}>✕</button>
+        )}
         <select value={filtroAnno} onChange={e => setFiltroAnno(e.target.value)}
           style={{ padding: "8px 12px", borderRadius: 8, border: `1.5px solid ${C.border}`, fontSize: 14 }}>
           <option value="tutti">Tutti gli anni</option>

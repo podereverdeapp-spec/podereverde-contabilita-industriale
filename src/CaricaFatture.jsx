@@ -297,7 +297,8 @@ export default function CaricaFatture() {
       if (riga.editArea === "ACQUISTO ANIMALI") {
         const { data, error } = await supabase.from("ci_report_acquisto_animali").insert([{
           fonte: "ACQUISTO_DIRETTO", fornitore_id: fornitoreId, data_fattura: riga.data, numero_fattura: riga.numero,
-          importo: riga.imponibile, specie: riga.specieAcquisto || null, razza: riga.razzaAcquisto || null,
+          importo: riga.imponibile, quantita: riga.quantita, unita_misura: riga.unita_misura, prezzo_unitario: riga.prezzo_unitario,
+          specie: riga.specieAcquisto || null, razza: riga.razzaAcquisto || null,
           destinazione_acquisto: riga.destAcquisto || null, bdn: riga.bdnAcquisto || null, nr_lotto: riga.lottoAcquisto || null,
         }]).select().single();
         if (error) throw new Error(error.message);
@@ -315,6 +316,7 @@ export default function CaricaFatture() {
         const { data: acq, error: eAcq } = await supabase.from("ci_report_acquisto_animali").insert([{
           articolo_fattura_id: art.id, fonte: "TRASPORTO_INGRESSO", fornitore_id: fornitoreId,
           data_fattura: riga.data, numero_fattura: riga.numero, importo: parseFloat(riga.importoIngresso) || 0,
+          quantita: riga.quantita, unita_misura: riga.unita_misura, prezzo_unitario: riga.prezzo_unitario,
           specie: riga.specieAcquisto || null, destinazione_acquisto: riga.destAcquisto || null,
           bdn: riga.bdnAcquisto || null, nr_lotto: riga.lottoAcquisto || null,
         }]).select().single();
@@ -523,6 +525,9 @@ function RigaFattura({ riga, aree, centriPerArea, onChange, onSalva, onAnnulla }
         <div>
           <strong>{r.fornitore}</strong> — {r.descrizione}
           <div style={{ fontSize: 12, color: C.muted }}>Fatt. {r.numero} del {r.data} · Imponibile {r.imponibile?.toFixed(2)}€</div>
+          <div style={{ fontSize: 12, color: C.muted }}>
+            {r.quantita} {r.unita_misura} × {r.prezzo_unitario?.toFixed(2)}€/{r.unita_misura}
+          </div>
         </div>
         <span style={{ background: bordoColore + "22", color: bordoColore, padding: "3px 10px", borderRadius: 8, fontSize: 12, fontWeight: 700, height: "fit-content" }}>
           {r.giaCaricata ? "GIÀ CARICATA" : r.salvata ? "✓ SALVATA" : r.stato}

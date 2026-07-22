@@ -101,6 +101,10 @@ Quando una riga MASCHERA viene classificata a mano e salvata, l'operatore può s
 - 248 regole FCV, 11 regole FCF (Alfa Omega ha solo FCF, non più FCV)
 - 68 combinazioni Area/Centro di Costo
 
+## 11. Fix importanti (dopo segnalazioni dirette)
+
+- `ci_report_acquisto_animali` ora salva anche `quantita`, `unita_misura`, `prezzo_unitario` (non solo il totale) — mancavano nella prima versione
+
 ## 10. Problemi noti / da monitorare
 
 - Pagamento Anthropic Console: bug noto per carte europee (Stripe SetupIntent 0€ + 3DS) — Filippo ancora non è riuscito a sbloccarlo, la lettura PDF non è ancora testata con successo

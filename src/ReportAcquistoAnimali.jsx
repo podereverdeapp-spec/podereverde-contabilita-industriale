@@ -94,6 +94,13 @@ export default function ReportAcquistoAnimali() {
                     {r.destinazione_acquisto && ` · ${r.destinazione_acquisto}`}
                     {r.bdn && ` · BDN ${r.bdn}`}{r.nr_lotto && ` · Lotto ${r.nr_lotto}`}
                   </div>
+                  {(r.quantita || r.prezzo_unitario) && (
+                    <div style={{ fontSize: 12, color: C.muted }}>
+                      {r.quantita && `${r.quantita} ${r.unita_misura || ""}`}
+                      {r.quantita && r.prezzo_unitario && " · "}
+                      {r.prezzo_unitario && `${r.prezzo_unitario.toFixed(2)}€/${r.unita_misura || "unità"}`}
+                    </div>
+                  )}
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <div style={{ fontSize: 18, fontWeight: 800, color: C.primary }}>{r.importo?.toFixed(2)}€</div>
