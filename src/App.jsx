@@ -1,17 +1,21 @@
 import { useState } from "react";
+import Dashboard from "./Dashboard";
 import Fornitori from "./Fornitori";
+import FatturePassive from "./FatturePassive";
 import CaricaFatture from "./CaricaFatture";
 import ReportAcquistoAnimali from "./ReportAcquistoAnimali";
 import { C, FONT } from "./style";
 
 const TAB = [
+  { id: "dashboard", label: "Dashboard", icon: "📊" },
   { id: "carica", label: "Carica Fatture", icon: "📥" },
+  { id: "passive", label: "Fatture Passive", icon: "📄" },
   { id: "fornitori", label: "Fornitori", icon: "🏢" },
   { id: "acquisto", label: "Report Acquisto Animali", icon: "🐄" },
 ];
 
 export default function App() {
-  const [tab, setTab] = useState("carica");
+  const [tab, setTab] = useState("dashboard");
 
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: FONT }}>
@@ -21,7 +25,7 @@ export default function App() {
             <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
             <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde</div>
           </div>
-          <nav style={{ display: "flex", gap: 6 }}>
+          <nav style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {TAB.map(t => (
               <button
                 key={t.id}
@@ -40,7 +44,9 @@ export default function App() {
       </header>
 
       <main>
+        {tab === "dashboard" && <Dashboard onNavigate={setTab} />}
         {tab === "carica" && <CaricaFatture />}
+        {tab === "passive" && <FatturePassive />}
         {tab === "fornitori" && <Fornitori />}
         {tab === "acquisto" && <ReportAcquistoAnimali />}
       </main>
