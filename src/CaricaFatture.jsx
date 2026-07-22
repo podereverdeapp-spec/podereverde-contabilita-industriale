@@ -165,6 +165,10 @@ export default function CaricaFatture() {
         specieAcquisto: "", razzaAcquisto: "", destAcquisto: "", bdnAcquisto: "", lottoAcquisto: "",
         // campi speciali Trasporto Animali (doppia casella)
         importoMacello: "", importoIngresso: "",
+        // campi speciali Ammortamenti
+        categoriaAmmortamento: "", imputazioneAmmortamento: "",
+        annoAcquistoAmmortamento: new Date(grezza.data || Date.now()).getFullYear() || "",
+        pctAmmortamento: "",
         giaCaricata: false, // aggiornato dal controllo duplicati sotto
       };
     });
@@ -231,6 +235,12 @@ export default function CaricaFatture() {
         const somma = (parseFloat(r.importoMacello) || 0) + (parseFloat(r.importoIngresso) || 0);
         if (Math.abs(somma - r.imponibile) > 0.01) {
           alert(`⚠️ Riga "${r.descrizione}" (${r.fornitore}): la somma di "Trasporto macello" + "Ingresso allevamento" (${somma.toFixed(2)}€) non torna con l'imponibile della riga (${r.imponibile.toFixed(2)}€). Correggi prima di salvare.`);
+          return;
+        }
+      }
+      if (r.editArea === "Ammortamenti") {
+        if (!r.categoriaAmmortamento || !r.imputazioneAmmortamento || !r.pctAmmortamento) {
+          alert(`⚠️ Riga "${r.descrizione}" (${r.fornitore}): per un Ammortamento servono Categoria, Imputazione e % Ammortamento. Completa prima di salvare.`);
           return;
         }
       }
@@ -302,15 +312,27 @@ export default function CaricaFatture() {
             }]);
             if (eAcq) throw new Error(`Errore salvando riga Trasporto (parte ingresso): ${eAcq.message}`);
           } else {
-            const { error } = await supabase.from("ci_articoli_fattura").insert([{
+            const { data: articoloSalvato, error } = await supabase.from("ci_articoli_fattura").insert([{
               fattura_id: fattura.id, descrizione: r.descrizione,
               quantita: r.quantita, unita_misura: r.unita_misura, prezzo_unitario: r.prezzo_unitario,
               totale_riga: r.imponibile,
               area: r.editArea, centro_costo: r.editCentro || null,
               destinazione: r.editDestinazione || null, tipo_costo: r.editTipo,
               stato_classificazione: r.stato,
-            }]);
+            }]).select().single();
             if (error) throw new Error(`Errore salvando riga "${r.descrizione}": ${error.message}`);
+
+            if (r.editArea === "Ammortamenti") {
+              const { error: eAmm } = await supabase.from("ci_articolo_dettaglio_ammortamento").insert([{
+                articolo_id: articoloSalvato.id,
+                categoria_ammortamento: r.categoriaAmmortamento || null,
+                imputazione: r.imputazioneAmmortamento || null,
+                anno_acquisto: r.annoAcquistoAmmortamento ? parseInt(r.annoAcquistoAmmortamento) : null,
+                pct_ammortamento: r.pctAmmortamento ? parseFloat(r.pctAmmortamento) / 100 : null,
+                importo_acquisto: r.imponibile,
+              }]);
+              if (eAmm) throw new Error(`Errore salvando il dettaglio ammortamento per "${r.descrizione}": ${eAmm.message}`);
+            }
           }
         }
       }
@@ -444,6 +466,7 @@ function RigaFattura({ riga, aree, centriPerArea, onChange }) {
   const bordoColore = r.giaCaricata ? C.accent : r.stato === "MASCHERA" ? C.red : r.stato === "FCF" ? C.blue : C.green;
   const isTrasportoAnimali = r.editArea === "TRASPORTO ANIMALI";
   const isAcquistoAnimali = r.editArea === "ACQUISTO ANIMALI";
+  const isAmmortamento = r.editArea === "Ammortamenti";
 
   return (
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderLeft: `4px solid ${bordoColore}`, borderRadius: 10, padding: 14, opacity: r.giaCaricata ? 0.6 : 1 }}>
@@ -501,6 +524,27 @@ function RigaFattura({ riga, aree, centriPerArea, onChange }) {
             onChange={v => onChange({ destAcquisto: v })} />
           <Testo label="BDN (se noto)" value={r.bdnAcquisto} onChange={v => onChange({ bdnAcquisto: v })} />
           <Testo label="Nr. Lotto (se noto)" value={r.lottoAcquisto} onChange={v => onChange({ lottoAcquisto: v })} />
+        </div>
+      )}
+
+      {isAmmortamento && (
+        <div style={{ marginTop: 10, padding: 10, background: "#EFEAE0", borderRadius: 8 }}>
+          <div style={{ fontSize: 12, color: C.accent, fontWeight: 700, marginBottom: 8 }}>
+            📐 Questo costo diventerà un Cespite — completa i dati per il piano di ammortamento:
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
+            <Testo label="Categoria Ammortamento" value={r.categoriaAmmortamento} onChange={v => onChange({ categoriaAmmortamento: v })} />
+            <Select label="Imputazione" value={r.imputazioneAmmortamento}
+              options={["Bovini", "Ovini", "Generali", "Nessuno"]}
+              onChange={v => onChange({ imputazioneAmmortamento: v })} />
+            <Testo label="Anno acquisto" tipo="number" value={r.annoAcquistoAmmortamento} onChange={v => onChange({ annoAcquistoAmmortamento: v })} />
+            <Testo label="% Ammortamento annuo" tipo="number" value={r.pctAmmortamento} onChange={v => onChange({ pctAmmortamento: v })} />
+          </div>
+          {r.pctAmmortamento > 0 && (
+            <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>
+              → durata stimata: {Math.round(100 / parseFloat(r.pctAmmortamento))} anni
+            </div>
+          )}
         </div>
       )}
 
