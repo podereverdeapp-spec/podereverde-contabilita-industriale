@@ -14,7 +14,11 @@ export default function CaricaFatture() {
   const [righe, setRighe] = useState([]); // righe caricate + classificate
   const [loadingDati, setLoadingDati] = useState(true);
   const [salvando, setSalvando] = useState(false);
+  const [modalita, setModalita] = useState("excel"); // "excel" | "pdf"
+  const [leggendoPdf, setLeggendoPdf] = useState(false);
+  const [progressoPdf, setProgressoPdf] = useState({ fatti: 0, totale: 0, erroriFile: [] });
   const fileInputRef = useRef(null);
+  const cartellaInputRef = useRef(null);
 
   useEffect(() => { caricaDatiRiferimento(); }, []);
 
@@ -50,16 +54,90 @@ export default function CaricaFatture() {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       const wb = XLSX.read(evt.target.result, { type: "binary", cellDates: true });
       const foglio = wb.Sheets[wb.SheetNames[0]];
       const dati = XLSX.utils.sheet_to_json(foglio, { defval: "" });
-      elaboraRigheGrezze(dati);
+      await elaboraRigheGrezze(dati);
     };
     reader.readAsBinaryString(file);
   }
 
-  function elaboraRigheGrezze(dati) {
+  async function leggiPdfComeBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        // readAsDataURL restituisce "data:application/pdf;base64,XXXX" — teniamo solo la parte dopo la virgola
+        const base64 = reader.result.split(",")[1];
+        resolve(base64);
+      };
+      reader.onerror = () => reject(new Error(`Impossibile leggere il file ${file.name}`));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function gestisciCartellaPdf(e) {
+    const tuttiFile = Array.from(e.target.files || []);
+    const pdfFile = tuttiFile.filter(f => f.name.toLowerCase().endsWith(".pdf"));
+    if (pdfFile.length === 0) {
+      alert("Nessun file PDF trovato in questa cartella.");
+      return;
+    }
+    if (!window.confirm(
+      `Trovati ${pdfFile.length} file PDF. Verranno letti uno per uno tramite Claude ` +
+      `(ogni lettura ha un piccolo costo — vedi nota sotto al pulsante). Procedere?`
+    )) return;
+
+    setLeggendoPdf(true);
+    setProgressoPdf({ fatti: 0, totale: pdfFile.length, erroriFile: [] });
+    const datiCombinati = [];
+    const erroriFile = [];
+
+    for (const file of pdfFile) {
+      try {
+        const base64 = await leggiPdfComeBase64(file);
+        const risposta = await fetch("/api/leggi-fattura-pdf", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pdfBase64: base64, filename: file.name }),
+        });
+        const risultato = await risposta.json();
+        if (!risposta.ok || risultato.error) {
+          erroriFile.push(`${file.name}: ${risultato.error || "errore sconosciuto"}`);
+        } else {
+          const est = risultato.estratto;
+          (est.righe || []).forEach(riga => {
+            datiCombinati.push({
+              "Fornitore": est.fornitore || "",
+              "P.IVA": est.piva || "",
+              "Numero": est.numero || "",
+              "Data": est.data || "",
+              "Descrizione": riga.descrizione || "",
+              "Quantità": riga.quantita ?? 1,
+              "U.M.": riga.unita_misura || "PEZZI",
+              "Prezzo unitario": riga.prezzo_unitario ?? 0,
+              "Imponibile": riga.imponibile ?? 0,
+            });
+          });
+        }
+      } catch (err) {
+        erroriFile.push(`${file.name}: ${err.message}`);
+      }
+      setProgressoPdf(p => ({ ...p, fatti: p.fatti + 1 }));
+    }
+
+    setLeggendoPdf(false);
+    setProgressoPdf(p => ({ ...p, erroriFile }));
+
+    if (erroriFile.length > 0) {
+      alert(`⚠️ ${erroriFile.length} file su ${pdfFile.length} non sono stati letti correttamente:\n\n${erroriFile.join("\n")}\n\nGli altri file letti correttamente sono comunque pronti sotto per la revisione.`);
+    }
+    if (datiCombinati.length > 0) {
+      await elaboraRigheGrezze(datiCombinati);
+    }
+  }
+
+  async function elaboraRigheGrezze(dati) {
     const risultati = dati.map((r, i) => {
       const grezza = {
         id: `riga-${i}`,
@@ -79,16 +157,41 @@ export default function CaricaFatture() {
         ...classificazioneResto,
         fornitore_obj: fornitoreObj, // evita di sovrascrivere grezza.fornitore (il nome testuale)
         // campi editabili per la maschera operatore
-        editArea: classificazione.area || "",
-        editCentro: classificazione.centro_costo || "",
-        editDestinazione: classificazione.destinazione || "",
-        editTipo: classificazione.tipo_costo || "",
+        editArea: classificazioneResto.area || "",
+        editCentro: classificazioneResto.centro_costo || "",
+        editDestinazione: classificazioneResto.destinazione || "",
+        editTipo: classificazioneResto.tipo_costo || "",
         // campi speciali Acquisto Animali
         specieAcquisto: "", razzaAcquisto: "", destAcquisto: "", bdnAcquisto: "", lottoAcquisto: "",
         // campi speciali Trasporto Animali (doppia casella)
         importoMacello: "", importoIngresso: "",
+        giaCaricata: false, // aggiornato dal controllo duplicati sotto
       };
     });
+
+    // Controllo duplicati: per ogni fornitore riconosciuto tra le righe caricate,
+    // recupero le fatture già esistenti (numero+data) e marco le righe corrispondenti.
+    const fornitoreIds = [...new Set(risultati.map(r => r.fornitore_obj?.id).filter(Boolean))];
+    if (fornitoreIds.length > 0) {
+      const { data: fattureEsistenti, error } = await supabase
+        .from("ci_fatture")
+        .select("fornitore_id, numero, data")
+        .in("fornitore_id", fornitoreIds);
+      if (error) {
+        alert(`⚠️ Non sono riuscito a controllare i duplicati (procedo comunque, ma verifica a mano):\n\n${error.message}`);
+      } else {
+        const chiaviEsistenti = new Set(
+          (fattureEsistenti || []).map(f => `${f.fornitore_id}|${f.numero}|${f.data}`)
+        );
+        risultati.forEach(r => {
+          if (r.fornitore_obj) {
+            const chiave = `${r.fornitore_obj.id}|${r.numero}|${r.data}`;
+            r.giaCaricata = chiaviEsistenti.has(chiave);
+          }
+        });
+      }
+    }
+
     setRighe(risultati);
   }
 
@@ -109,14 +212,21 @@ export default function CaricaFatture() {
 
   const stats = {
     totale: righe.length,
-    fcv: righe.filter(r => r.stato === "FCV").length,
-    fcf: righe.filter(r => r.stato === "FCF").length,
-    maschera: righe.filter(r => r.stato === "MASCHERA").length,
+    fcv: righe.filter(r => r.stato === "FCV" && !r.giaCaricata).length,
+    fcf: righe.filter(r => r.stato === "FCF" && !r.giaCaricata).length,
+    maschera: righe.filter(r => r.stato === "MASCHERA" && !r.giaCaricata).length,
+    giaCaricate: righe.filter(r => r.giaCaricata).length,
   };
 
   async function salvaTutto() {
+    const righeDaSalvare = righe.filter(r => !r.giaCaricata);
+    if (righeDaSalvare.length === 0) {
+      alert("Tutte le righe di questo file risultano già caricate in precedenza — nulla da salvare.");
+      return;
+    }
+
     // Validazione: righe Trasporto Animali devono avere le due caselle che sommano all'imponibile
-    for (const r of righe) {
+    for (const r of righeDaSalvare) {
       if (r.editArea === "TRASPORTO ANIMALI") {
         const somma = (parseFloat(r.importoMacello) || 0) + (parseFloat(r.importoIngresso) || 0);
         if (Math.abs(somma - r.imponibile) > 0.01) {
@@ -134,7 +244,7 @@ export default function CaricaFatture() {
     try {
       // Raggruppo le righe per fattura (fornitore+numero+data)
       const gruppiFattura = {};
-      righe.forEach(r => {
+      righeDaSalvare.forEach(r => {
         const chiave = `${r.fornitore}|${r.numero}|${r.data}`;
         if (!gruppiFattura[chiave]) gruppiFattura[chiave] = [];
         gruppiFattura[chiave].push(r);
@@ -205,7 +315,9 @@ export default function CaricaFatture() {
         }
       }
 
-      alert(`✓ Salvate ${righe.length} righe in ${Object.keys(gruppiFattura).length} fatture.`);
+      const saltate = righe.length - righeDaSalvare.length;
+      alert(`✓ Salvate ${righeDaSalvare.length} righe in ${Object.keys(gruppiFattura).length} fatture.` +
+        (saltate > 0 ? `\n(${saltate} righe già presenti sono state saltate automaticamente.)` : ""));
       setRighe([]);
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (err) {
@@ -224,10 +336,51 @@ export default function CaricaFatture() {
       </p>
 
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 20 }}>
-        <label style={{ fontSize: 13, fontWeight: 700, color: C.muted, display: "block", marginBottom: 8 }}>
-          File Excel (colonne: Fornitore, P.IVA, Numero, Data, Descrizione, Quantità, U.M., Prezzo unitario, Imponibile)
-        </label>
-        <input ref={fileInputRef} type="file" accept=".xlsx,.xls" onChange={gestisciFile} />
+        <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+          <button onClick={() => setModalita("excel")} style={toggleBtn(modalita === "excel")}>📊 File Excel</button>
+          <button onClick={() => setModalita("pdf")} style={toggleBtn(modalita === "pdf")}>📁 Cartella PDF</button>
+        </div>
+
+        {modalita === "excel" ? (
+          <>
+            <label style={{ fontSize: 13, fontWeight: 700, color: C.muted, display: "block", marginBottom: 8 }}>
+              File Excel (colonne: Fornitore, P.IVA, Numero, Data, Descrizione, Quantità, U.M., Prezzo unitario, Imponibile)
+            </label>
+            <input ref={fileInputRef} type="file" accept=".xlsx,.xls" onChange={gestisciFile} />
+          </>
+        ) : (
+          <>
+            <label style={{ fontSize: 13, fontWeight: 700, color: C.muted, display: "block", marginBottom: 8 }}>
+              Seleziona la cartella con i PDF delle fatture (es. quelli scaricati da Aruba) — vengono letti automaticamente uno per uno tramite Claude
+            </label>
+            <input
+              ref={cartellaInputRef}
+              type="file"
+              webkitdirectory=""
+              directory=""
+              multiple
+              onChange={gestisciCartellaPdf}
+              disabled={leggendoPdf}
+            />
+            <div style={{ fontSize: 12, color: C.muted, marginTop: 8 }}>
+              Nota: ogni PDF letto tramite Claude ha un piccolo costo (a consumo, sul tuo account API Anthropic — separato dall'abbonamento Claude). Per centinaia di fatture storiche, conviene fare un test su una decina prima di caricare una cartella intera.
+            </div>
+            {leggendoPdf && (
+              <div style={{ marginTop: 12, background: C.bg, borderRadius: 8, padding: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.primary }}>
+                  Lettura in corso: {progressoPdf.fatti} / {progressoPdf.totale}
+                </div>
+                <div style={{ height: 6, background: C.border, borderRadius: 4, marginTop: 6, overflow: "hidden" }}>
+                  <div style={{
+                    height: "100%", background: C.primary, borderRadius: 4,
+                    width: `${progressoPdf.totale > 0 ? (progressoPdf.fatti / progressoPdf.totale) * 100 : 0}%`,
+                    transition: "width 0.3s",
+                  }} />
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       {righe.length > 0 && (
@@ -237,6 +390,9 @@ export default function CaricaFatture() {
             <StatBox label="Classificate FCV" value={stats.fcv} color={C.green} />
             <StatBox label="Classificate FCF" value={stats.fcf} color={C.blue} />
             <StatBox label="Da classificare" value={stats.maschera} color={stats.maschera > 0 ? C.red : C.green} />
+            {stats.giaCaricate > 0 && (
+              <StatBox label="Già caricate (saltate)" value={stats.giaCaricate} color={C.accent} />
+            )}
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
@@ -265,6 +421,15 @@ export default function CaricaFatture() {
   );
 }
 
+function toggleBtn(attivo) {
+  return {
+    background: attivo ? C.primary : "transparent",
+    color: attivo ? "#fff" : C.muted,
+    border: `1.5px solid ${attivo ? C.primary : C.border}`,
+    borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer",
+  };
+}
+
 function StatBox({ label, value, color }) {
   return (
     <div style={{ background: color + "15", borderRadius: 10, padding: "10px 16px", minWidth: 120 }}>
@@ -276,12 +441,12 @@ function StatBox({ label, value, color }) {
 
 function RigaFattura({ riga, aree, centriPerArea, onChange }) {
   const r = riga;
-  const bordoColore = r.stato === "MASCHERA" ? C.red : r.stato === "FCF" ? C.blue : C.green;
+  const bordoColore = r.giaCaricata ? C.accent : r.stato === "MASCHERA" ? C.red : r.stato === "FCF" ? C.blue : C.green;
   const isTrasportoAnimali = r.editArea === "TRASPORTO ANIMALI";
   const isAcquistoAnimali = r.editArea === "ACQUISTO ANIMALI";
 
   return (
-    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderLeft: `4px solid ${bordoColore}`, borderRadius: 10, padding: 14 }}>
+    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderLeft: `4px solid ${bordoColore}`, borderRadius: 10, padding: 14, opacity: r.giaCaricata ? 0.6 : 1 }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
         <div>
           <strong>{r.fornitore}</strong> — {r.descrizione}
@@ -293,11 +458,17 @@ function RigaFattura({ riga, aree, centriPerArea, onChange }) {
           background: bordoColore + "22", color: bordoColore, padding: "3px 10px",
           borderRadius: 8, fontSize: 12, fontWeight: 700, height: "fit-content",
         }}>
-          {r.stato}
+          {r.giaCaricata ? "GIÀ CARICATA" : r.stato}
         </span>
       </div>
-      {r.nota && <div style={{ fontSize: 12, color: C.muted, fontStyle: "italic", marginBottom: 8 }}>{r.nota}</div>}
-
+      {r.giaCaricata && (
+        <div style={{ fontSize: 12, color: C.accent, fontStyle: "italic", marginBottom: 8 }}>
+          Questa fattura (stesso fornitore, numero e data) è già presente — verrà saltata automaticamente al salvataggio.
+        </div>
+      )}
+      {!r.giaCaricata && r.nota && <div style={{ fontSize: 12, color: C.muted, fontStyle: "italic", marginBottom: 8 }}>{r.nota}</div>}
+      {!r.giaCaricata && (
+      <>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
         <Select label="Area" value={r.editArea} options={aree}
           onChange={v => onChange({
@@ -351,6 +522,8 @@ function RigaFattura({ riga, aree, centriPerArea, onChange }) {
             <Testo label="BDN/Lotto (se noto)" value={r.bdnAcquisto} onChange={v => onChange({ bdnAcquisto: v })} />
           </div>
         </div>
+      )}
+      </>
       )}
     </div>
   );
