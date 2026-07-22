@@ -4,7 +4,26 @@ import { supabase } from "./supabase";
 import { C } from "./style";
 import { classificaRiga } from "./motoreClassificazione";
 
-const AREE_SENZA_CENTRO_ORDINARIO = ["Ammortamenti", "ACQUISTO ANIMALI", "TRASPORTO ANIMALI"];
+const CATEGORIE_AMMORTAMENTO = [
+  "3 - Attrezzatura specifica",
+  "3 - Costruzioni leggere",
+  "5 - Macchinari, apparecchi e attrezzature varie",
+  "5 b - Macchinari, apparecchi e attrezzature varie extra allevamento",
+  "6 - Spese atti notarili",
+  "7 - Animali non oggetto di allevamento",
+  "15 - Autovetture, motoveicoli e simili",
+  "30 – Avviamento",
+  "31 - Spese di costituzione e trasformazione",
+  "34 - Altri oneri pluriennali",
+];
+
+const SPECIE_ACQUISTO = ["Bovini", "Suini", "Ovini", "Piu' specie acquistate insieme"];
+const RAZZE_PER_SPECIE = {
+  "Bovini": ["Chianina", "Marchigiana", "Maremmana", "Limousine", "Charolais", "Frisona", "Pezzata Rossa", "Meticcia", "Altra"],
+  "Suini": ["Large White", "Landrace", "Duroc", "Cinta senese", "Mora romagnola", "Nero casertano", "Nero apucalabro", "Meticcia", "Altra"],
+  "Ovini": ["Sopravvissana", "Suffolk", "Meticcia", "Altra"],
+  "Piu' specie acquistate insieme": ["Da definire in podereverdeapp.it"],
+};
 
 export default function CaricaFatture() {
   const [fornitori, setFornitori] = useState([]);
@@ -13,14 +32,26 @@ export default function CaricaFatture() {
   const [pianoConti, setPianoConti] = useState([]);
   const [righe, setRighe] = useState([]); // righe caricate + classificate
   const [loadingDati, setLoadingDati] = useState(true);
-  const [salvando, setSalvando] = useState(false);
   const [modalita, setModalita] = useState("excel"); // "excel" | "pdf"
   const [leggendoPdf, setLeggendoPdf] = useState(false);
   const [progressoPdf, setProgressoPdf] = useState({ fatti: 0, totale: 0, erroriFile: [] });
+  const [bozzaTrovata, setBozzaTrovata] = useState(null);
   const fileInputRef = useRef(null);
   const cartellaInputRef = useRef(null);
+  const salvataggioBozzaTimeout = useRef(null);
 
   useEffect(() => { caricaDatiRiferimento(); }, []);
+
+  // Salvataggio automatico della bozza (con debounce) ogni volta che le righe cambiano
+  useEffect(() => {
+    if (righe.length === 0) return;
+    if (salvataggioBozzaTimeout.current) clearTimeout(salvataggioBozzaTimeout.current);
+    salvataggioBozzaTimeout.current = setTimeout(async () => {
+      await supabase.from("ci_bozze_import").delete().neq("id", 0);
+      await supabase.from("ci_bozze_import").insert([{ contenuto: righe }]);
+    }, 1500);
+    return () => clearTimeout(salvataggioBozzaTimeout.current);
+  }, [righe]);
 
   async function caricaDatiRiferimento() {
     setLoadingDati(true);
@@ -41,6 +72,24 @@ export default function CaricaFatture() {
       setPianoConti(pc || []);
     }
     setLoadingDati(false);
+
+    const { data: bozza } = await supabase
+      .from("ci_bozze_import")
+      .select("id, contenuto, updated_at")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (bozza) setBozzaTrovata(bozza);
+  }
+
+  function riprendiBozza() {
+    setRighe(bozzaTrovata.contenuto);
+    setBozzaTrovata(null);
+  }
+
+  async function scartaBozza() {
+    await supabase.from("ci_bozze_import").delete().neq("id", 0);
+    setBozzaTrovata(null);
   }
 
   function areeDisponibili() {
@@ -66,11 +115,7 @@ export default function CaricaFatture() {
   async function leggiPdfComeBase64(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = () => {
-        // readAsDataURL restituisce "data:application/pdf;base64,XXXX" — teniamo solo la parte dopo la virgola
-        const base64 = reader.result.split(",")[1];
-        resolve(base64);
-      };
+      reader.onload = () => resolve(reader.result.split(",")[1]);
       reader.onerror = () => reject(new Error(`Impossibile leggere il file ${file.name}`));
       reader.readAsDataURL(file);
     });
@@ -83,10 +128,7 @@ export default function CaricaFatture() {
       alert("Nessun file PDF trovato in questa cartella.");
       return;
     }
-    if (!window.confirm(
-      `Trovati ${pdfFile.length} file PDF. Verranno letti uno per uno tramite Claude ` +
-      `(ogni lettura ha un piccolo costo — vedi nota sotto al pulsante). Procedere?`
-    )) return;
+    if (!window.confirm(`Trovati ${pdfFile.length} file PDF. Verranno letti uno per uno tramite Claude (ogni lettura ha un piccolo costo). Procedere?`)) return;
 
     setLeggendoPdf(true);
     setProgressoPdf({ fatti: 0, totale: pdfFile.length, erroriFile: [] });
@@ -108,14 +150,10 @@ export default function CaricaFatture() {
           const est = risultato.estratto;
           (est.righe || []).forEach(riga => {
             datiCombinati.push({
-              "Fornitore": est.fornitore || "",
-              "P.IVA": est.piva || "",
-              "Numero": est.numero || "",
-              "Data": est.data || "",
-              "Descrizione": riga.descrizione || "",
-              "Quantità": riga.quantita ?? 1,
-              "U.M.": riga.unita_misura || "PEZZI",
-              "Prezzo unitario": riga.prezzo_unitario ?? 0,
+              "Fornitore": est.fornitore || "", "P.IVA": est.piva || "",
+              "Numero": est.numero || "", "Data": est.data || "",
+              "Descrizione": riga.descrizione || "", "Quantità": riga.quantita ?? 1,
+              "U.M.": riga.unita_misura || "PEZZI", "Prezzo unitario": riga.prezzo_unitario ?? 0,
               "Imponibile": riga.imponibile ?? 0,
             });
           });
@@ -128,19 +166,16 @@ export default function CaricaFatture() {
 
     setLeggendoPdf(false);
     setProgressoPdf(p => ({ ...p, erroriFile }));
-
     if (erroriFile.length > 0) {
-      alert(`⚠️ ${erroriFile.length} file su ${pdfFile.length} non sono stati letti correttamente:\n\n${erroriFile.join("\n")}\n\nGli altri file letti correttamente sono comunque pronti sotto per la revisione.`);
+      alert(`⚠️ ${erroriFile.length} file su ${pdfFile.length} non sono stati letti correttamente:\n\n${erroriFile.join("\n")}`);
     }
-    if (datiCombinati.length > 0) {
-      await elaboraRigheGrezze(datiCombinati);
-    }
+    if (datiCombinati.length > 0) await elaboraRigheGrezze(datiCombinati);
   }
 
   async function elaboraRigheGrezze(dati) {
     const risultati = dati.map((r, i) => {
       const grezza = {
-        id: `riga-${i}`,
+        id: `riga-${Date.now()}-${i}`,
         fornitore: String(r["Fornitore"] || r["fornitore"] || "").trim(),
         piva: String(r["P.IVA"] || r["Partita IVA"] || r["piva"] || "").trim(),
         numero: String(r["Numero"] || r["Numero Fattura"] || "").trim(),
@@ -155,48 +190,39 @@ export default function CaricaFatture() {
       return {
         ...grezza,
         ...classificazioneResto,
-        fornitore_obj: fornitoreObj, // evita di sovrascrivere grezza.fornitore (il nome testuale)
-        // campi editabili per la maschera operatore
+        fornitore_obj: fornitoreObj,
         editArea: classificazioneResto.area || "",
         editCentro: classificazioneResto.centro_costo || "",
         editDestinazione: classificazioneResto.destinazione || "",
         editTipo: classificazioneResto.tipo_costo || "",
-        // campi speciali Acquisto Animali
         specieAcquisto: "", razzaAcquisto: "", destAcquisto: "", bdnAcquisto: "", lottoAcquisto: "",
-        // campi speciali Trasporto Animali (doppia casella)
         importoMacello: "", importoIngresso: "",
-        // campi speciali Ammortamenti
         categoriaAmmortamento: "", imputazioneAmmortamento: "",
         annoAcquistoAmmortamento: new Date(grezza.data || Date.now()).getFullYear() || "",
         pctAmmortamento: "",
-        giaCaricata: false, // aggiornato dal controllo duplicati sotto
+        memorizzaRegola: "nessuna", parolaChiaveRegola: "",
+        giaCaricata: false,
+        salvata: false, salvataggioInCorso: false, idsSalvati: null, regolaCreata: null,
       };
     });
 
-    // Controllo duplicati: per ogni fornitore riconosciuto tra le righe caricate,
-    // recupero le fatture già esistenti (numero+data) e marco le righe corrispondenti.
     const fornitoreIds = [...new Set(risultati.map(r => r.fornitore_obj?.id).filter(Boolean))];
     if (fornitoreIds.length > 0) {
       const { data: fattureEsistenti, error } = await supabase
-        .from("ci_fatture")
-        .select("fornitore_id, numero, data")
-        .in("fornitore_id", fornitoreIds);
+        .from("ci_fatture").select("fornitore_id, numero, data").in("fornitore_id", fornitoreIds);
       if (error) {
         alert(`⚠️ Non sono riuscito a controllare i duplicati (procedo comunque, ma verifica a mano):\n\n${error.message}`);
       } else {
-        const chiaviEsistenti = new Set(
-          (fattureEsistenti || []).map(f => `${f.fornitore_id}|${f.numero}|${f.data}`)
-        );
+        const chiaviEsistenti = new Set((fattureEsistenti || []).map(f => `${f.fornitore_id}|${f.numero}|${f.data}`));
         risultati.forEach(r => {
           if (r.fornitore_obj) {
-            const chiave = `${r.fornitore_obj.id}|${r.numero}|${r.data}`;
-            r.giaCaricata = chiaviEsistenti.has(chiave);
+            r.giaCaricata = chiaviEsistenti.has(`${r.fornitore_obj.id}|${r.numero}|${r.data}`);
           }
         });
       }
     }
 
-    setRighe(risultati);
+    setRighe(prev => [...prev, ...risultati]);
   }
 
   function formattaData(v) {
@@ -214,139 +240,170 @@ export default function CaricaFatture() {
     setRighe(prev => prev.map(r => (r.id === id ? { ...r, ...campi } : r)));
   }
 
+  function validaRiga(r) {
+    if (r.editArea === "TRASPORTO ANIMALI") {
+      const somma = (parseFloat(r.importoMacello) || 0) + (parseFloat(r.importoIngresso) || 0);
+      if (Math.abs(somma - r.imponibile) > 0.01) {
+        return `La somma di "Trasporto macello" + "Ingresso allevamento" (${somma.toFixed(2)}€) non torna con l'imponibile della riga (${r.imponibile.toFixed(2)}€).`;
+      }
+    }
+    if (r.editArea === "Ammortamenti") {
+      if (!r.categoriaAmmortamento || !r.imputazioneAmmortamento || !r.pctAmmortamento) {
+        return `Per un Ammortamento servono Categoria, Imputazione e % Ammortamento.`;
+      }
+    }
+    if (!r.editArea) return `Manca l'Area.`;
+    if (r.memorizzaRegola === "parolaChiave" && !r.parolaChiaveRegola.trim()) {
+      return `Hai scelto di memorizzare una regola per parola chiave, ma non hai scritto la parola chiave.`;
+    }
+    return null;
+  }
+
+  async function trovaOCreaFattura(fornitoreId, numero, data) {
+    const { data: esistente } = await supabase
+      .from("ci_fatture").select("id").eq("fornitore_id", fornitoreId).eq("numero", numero).eq("data", data).maybeSingle();
+    if (esistente) return esistente.id;
+    const { data: nuova, error } = await supabase.from("ci_fatture").insert([{
+      numero, data, tipo: "PASSIVA", fornitore_id: fornitoreId, totale_netto: 0, totale_iva: 0, totale_lordo: 0,
+    }]).select().single();
+    if (error) throw new Error(`Errore creando fattura ${numero}: ${error.message}`);
+    return nuova.id;
+  }
+
+  async function ricalcolaTotaliFattura(fatturaId) {
+    const { data: righeArt } = await supabase.from("ci_articoli_fattura").select("totale_riga").eq("fattura_id", fatturaId);
+    const totale = (righeArt || []).reduce((s, r) => s + (r.totale_riga || 0), 0);
+    await supabase.from("ci_fatture").update({ totale_netto: totale, totale_lordo: totale }).eq("id", fatturaId);
+  }
+
+  async function salvaRiga(riga) {
+    if (riga.giaCaricata) { alert("Questa fattura risulta già caricata in precedenza."); return; }
+    const errore = validaRiga(riga);
+    if (errore) { alert(`⚠️ ${errore}`); return; }
+
+    aggiornaRiga(riga.id, { salvataggioInCorso: true });
+    try {
+      let fornitoreId = riga.fornitore_obj?.id;
+      if (!fornitoreId && riga.fornitore) {
+        const { data: nuovo, error } = await supabase.from("ci_fornitori")
+          .insert([{ nome: riga.fornitore, partita_iva: riga.piva || null, gruppo_classificazione: "FRO" }])
+          .select().single();
+        if (error) throw new Error(`Errore creando fornitore: ${error.message}`);
+        fornitoreId = nuovo.id;
+      }
+
+      const idsSalvati = {};
+
+      if (riga.editArea === "ACQUISTO ANIMALI") {
+        const { data, error } = await supabase.from("ci_report_acquisto_animali").insert([{
+          fonte: "ACQUISTO_DIRETTO", fornitore_id: fornitoreId, data_fattura: riga.data, numero_fattura: riga.numero,
+          importo: riga.imponibile, specie: riga.specieAcquisto || null, razza: riga.razzaAcquisto || null,
+          destinazione_acquisto: riga.destAcquisto || null, bdn: riga.bdnAcquisto || null, nr_lotto: riga.lottoAcquisto || null,
+        }]).select().single();
+        if (error) throw new Error(error.message);
+        idsSalvati.reportAcquistoId = data.id;
+      } else if (riga.editArea === "TRASPORTO ANIMALI") {
+        const fatturaId = await trovaOCreaFattura(fornitoreId, riga.numero, riga.data);
+        const { data: art, error: eArt } = await supabase.from("ci_articoli_fattura").insert([{
+          fattura_id: fatturaId, descrizione: riga.descrizione, quantita: riga.quantita, unita_misura: riga.unita_misura,
+          prezzo_unitario: riga.prezzo_unitario, totale_riga: parseFloat(riga.importoMacello) || 0,
+          area: "TRASPORTO ANIMALI", centro_costo: "Lavorazione prodotti allevamento per Rivendita",
+          destinazione: riga.editDestinazione || null, tipo_costo: riga.editTipo || null, stato_classificazione: "MANUALE",
+        }]).select().single();
+        if (eArt) throw new Error(eArt.message);
+        idsSalvati.articoloFatturaId = art.id; idsSalvati.fatturaId = fatturaId;
+        const { data: acq, error: eAcq } = await supabase.from("ci_report_acquisto_animali").insert([{
+          articolo_fattura_id: art.id, fonte: "TRASPORTO_INGRESSO", fornitore_id: fornitoreId,
+          data_fattura: riga.data, numero_fattura: riga.numero, importo: parseFloat(riga.importoIngresso) || 0,
+          specie: riga.specieAcquisto || null, destinazione_acquisto: riga.destAcquisto || null,
+          bdn: riga.bdnAcquisto || null, nr_lotto: riga.lottoAcquisto || null,
+        }]).select().single();
+        if (eAcq) throw new Error(eAcq.message);
+        idsSalvati.reportAcquistoId = acq.id;
+        await ricalcolaTotaliFattura(fatturaId);
+      } else {
+        const fatturaId = await trovaOCreaFattura(fornitoreId, riga.numero, riga.data);
+        const { data: art, error } = await supabase.from("ci_articoli_fattura").insert([{
+          fattura_id: fatturaId, descrizione: riga.descrizione, quantita: riga.quantita, unita_misura: riga.unita_misura,
+          prezzo_unitario: riga.prezzo_unitario, totale_riga: riga.imponibile,
+          area: riga.editArea, centro_costo: riga.editCentro || null, destinazione: riga.editDestinazione || null,
+          tipo_costo: riga.editTipo, stato_classificazione: riga.stato,
+        }]).select().single();
+        if (error) throw new Error(error.message);
+        idsSalvati.articoloFatturaId = art.id; idsSalvati.fatturaId = fatturaId;
+
+        if (riga.editArea === "Ammortamenti") {
+          const { data: amm, error: eAmm } = await supabase.from("ci_articolo_dettaglio_ammortamento").insert([{
+            articolo_id: art.id, categoria_ammortamento: riga.categoriaAmmortamento || null,
+            imputazione: riga.imputazioneAmmortamento || null,
+            anno_acquisto: riga.annoAcquistoAmmortamento ? parseInt(riga.annoAcquistoAmmortamento) : null,
+            pct_ammortamento: riga.pctAmmortamento ? parseFloat(riga.pctAmmortamento) / 100 : null,
+            importo_acquisto: riga.imponibile,
+          }]).select().single();
+          if (eAmm) throw new Error(eAmm.message);
+          idsSalvati.dettaglioAmmortamentoId = amm.id;
+        }
+        await ricalcolaTotaliFattura(fatturaId);
+      }
+
+      let regolaCreata = null;
+      if (riga.memorizzaRegola === "fissa" && fornitoreId) {
+        const { data: rf, error } = await supabase.from("ci_regole_fornitore_fissa").upsert([{
+          fornitore_id: fornitoreId, area: riga.editArea, centro_costo: riga.editCentro || null,
+          destinazione: riga.editDestinazione || null, tipo_costo: riga.editTipo,
+        }], { onConflict: "fornitore_id" }).select().single();
+        if (error) alert(`⚠️ Riga salvata, ma non sono riuscito a creare la regola fissa:\n\n${error.message}`);
+        else { regolaCreata = { tipo: "fissa", id: rf.id }; setRegoleFisse(prev => [...prev.filter(r => r.fornitore_id !== fornitoreId), rf]); }
+      } else if (riga.memorizzaRegola === "parolaChiave" && fornitoreId) {
+        const { data: rv, error } = await supabase.from("ci_regole_fornitore_variabile").insert([{
+          fornitore_id: fornitoreId, parola_chiave: riga.parolaChiaveRegola.trim(), area: riga.editArea,
+          centro_costo: riga.editCentro || null, destinazione: riga.editDestinazione || null, tipo_costo: riga.editTipo,
+        }]).select().single();
+        if (error) alert(`⚠️ Riga salvata, ma non sono riuscito a creare la regola per parola chiave:\n\n${error.message}`);
+        else { regolaCreata = { tipo: "parolaChiave", id: rv.id }; setRegoleVariabili(prev => [...prev, rv]); }
+      }
+
+      aggiornaRiga(riga.id, { salvata: true, salvataggioInCorso: false, idsSalvati, regolaCreata });
+    } catch (err) {
+      aggiornaRiga(riga.id, { salvataggioInCorso: false });
+      alert(`⚠️ Errore nel salvataggio della riga "${riga.descrizione}":\n\n${err.message}`);
+    }
+  }
+
+  async function annullaSalvataggioRiga(riga) {
+    if (!window.confirm("Annullare il salvataggio di questa riga? Verrà rimossa dal database e potrai modificarla di nuovo."))
+      return;
+    const ids = riga.idsSalvati || {};
+    try {
+      if (ids.dettaglioAmmortamentoId) await supabase.from("ci_articolo_dettaglio_ammortamento").delete().eq("id", ids.dettaglioAmmortamentoId);
+      if (ids.reportAcquistoId) await supabase.from("ci_report_acquisto_animali").delete().eq("id", ids.reportAcquistoId);
+      if (ids.articoloFatturaId) await supabase.from("ci_articoli_fattura").delete().eq("id", ids.articoloFatturaId);
+      if (riga.regolaCreata?.tipo === "fissa") await supabase.from("ci_regole_fornitore_fissa").delete().eq("id", riga.regolaCreata.id);
+      if (riga.regolaCreata?.tipo === "parolaChiave") await supabase.from("ci_regole_fornitore_variabile").delete().eq("id", riga.regolaCreata.id);
+      if (ids.fatturaId) await ricalcolaTotaliFattura(ids.fatturaId);
+      aggiornaRiga(riga.id, { salvata: false, idsSalvati: null, regolaCreata: null });
+    } catch (err) {
+      alert(`⚠️ Errore nell'annullamento:\n\n${err.message}`);
+    }
+  }
+
+  async function salvaTutteLeRimanenti() {
+    const daSalvare = righe.filter(r => !r.giaCaricata && !r.salvata);
+    if (daSalvare.length === 0) { alert("Non ci sono righe da salvare."); return; }
+    for (const r of daSalvare) {
+      // eslint-disable-next-line no-await-in-loop
+      await salvaRiga(r);
+    }
+  }
+
   const stats = {
     totale: righe.length,
     fcv: righe.filter(r => r.stato === "FCV" && !r.giaCaricata).length,
     fcf: righe.filter(r => r.stato === "FCF" && !r.giaCaricata).length,
     maschera: righe.filter(r => r.stato === "MASCHERA" && !r.giaCaricata).length,
     giaCaricate: righe.filter(r => r.giaCaricata).length,
+    salvate: righe.filter(r => r.salvata).length,
   };
-
-  async function salvaTutto() {
-    const righeDaSalvare = righe.filter(r => !r.giaCaricata);
-    if (righeDaSalvare.length === 0) {
-      alert("Tutte le righe di questo file risultano già caricate in precedenza — nulla da salvare.");
-      return;
-    }
-
-    // Validazione: righe Trasporto Animali devono avere le due caselle che sommano all'imponibile
-    for (const r of righeDaSalvare) {
-      if (r.editArea === "TRASPORTO ANIMALI") {
-        const somma = (parseFloat(r.importoMacello) || 0) + (parseFloat(r.importoIngresso) || 0);
-        if (Math.abs(somma - r.imponibile) > 0.01) {
-          alert(`⚠️ Riga "${r.descrizione}" (${r.fornitore}): la somma di "Trasporto macello" + "Ingresso allevamento" (${somma.toFixed(2)}€) non torna con l'imponibile della riga (${r.imponibile.toFixed(2)}€). Correggi prima di salvare.`);
-          return;
-        }
-      }
-      if (r.editArea === "Ammortamenti") {
-        if (!r.categoriaAmmortamento || !r.imputazioneAmmortamento || !r.pctAmmortamento) {
-          alert(`⚠️ Riga "${r.descrizione}" (${r.fornitore}): per un Ammortamento servono Categoria, Imputazione e % Ammortamento. Completa prima di salvare.`);
-          return;
-        }
-      }
-      if (!r.editArea) {
-        alert(`⚠️ Riga "${r.descrizione}" (${r.fornitore}): manca l'Area. Completa la classificazione di tutte le righe prima di salvare.`);
-        return;
-      }
-    }
-
-    setSalvando(true);
-    try {
-      // Raggruppo le righe per fattura (fornitore+numero+data)
-      const gruppiFattura = {};
-      righeDaSalvare.forEach(r => {
-        const chiave = `${r.fornitore}|${r.numero}|${r.data}`;
-        if (!gruppiFattura[chiave]) gruppiFattura[chiave] = [];
-        gruppiFattura[chiave].push(r);
-      });
-
-      for (const [chiave, righeFattura] of Object.entries(gruppiFattura)) {
-        const prima = righeFattura[0];
-        let fornitoreId = prima.fornitore_obj?.id;
-        if (!fornitoreId && prima.fornitore) {
-          // Fornitore non in anagrafica: lo creo al volo
-          const { data: nuovo, error: eNuovo } = await supabase
-            .from("ci_fornitori")
-            .insert([{ nome: prima.fornitore, partita_iva: prima.piva || null, gruppo_classificazione: "FRO" }])
-            .select().single();
-          if (eNuovo) throw new Error(`Errore creando fornitore "${prima.fornitore}": ${eNuovo.message}`);
-          fornitoreId = nuovo.id;
-        }
-
-        const totaleImponibile = righeFattura.reduce((s, r) => s + (r.imponibile || 0), 0);
-        const { data: fattura, error: eFatt } = await supabase
-          .from("ci_fatture")
-          .insert([{
-            numero: prima.numero, data: prima.data, tipo: "PASSIVA",
-            fornitore_id: fornitoreId, totale_netto: totaleImponibile,
-            totale_iva: 0, totale_lordo: totaleImponibile,
-          }])
-          .select().single();
-        if (eFatt) throw new Error(`Errore creando fattura ${prima.numero}: ${eFatt.message}`);
-
-        for (const r of righeFattura) {
-          if (r.editArea === "ACQUISTO ANIMALI") {
-            const { error } = await supabase.from("ci_report_acquisto_animali").insert([{
-              fonte: "ACQUISTO_DIRETTO", fornitore_id: fornitoreId, data_fattura: r.data,
-              numero_fattura: r.numero, importo: r.imponibile,
-              specie: r.specieAcquisto || null, razza: r.razzaAcquisto || null,
-              destinazione_acquisto: r.destAcquisto || null,
-              bdn: r.bdnAcquisto || null, nr_lotto: r.lottoAcquisto || null,
-            }]);
-            if (error) throw new Error(`Errore salvando riga Acquisto Animali: ${error.message}`);
-          } else if (r.editArea === "TRASPORTO ANIMALI") {
-            const { data: art, error: eArt } = await supabase.from("ci_articoli_fattura").insert([{
-              fattura_id: fattura.id, descrizione: r.descrizione,
-              quantita: r.quantita, unita_misura: r.unita_misura, prezzo_unitario: r.prezzo_unitario,
-              totale_riga: parseFloat(r.importoMacello) || 0,
-              area: "TRASPORTO ANIMALI", centro_costo: "Lavorazione prodotti allevamento per Rivendita",
-              destinazione: r.editDestinazione || null, tipo_costo: r.editTipo || null,
-              stato_classificazione: "MANUALE",
-            }]).select().single();
-            if (eArt) throw new Error(`Errore salvando riga Trasporto (parte macello): ${eArt.message}`);
-            const { error: eAcq } = await supabase.from("ci_report_acquisto_animali").insert([{
-              articolo_fattura_id: art.id, fonte: "TRASPORTO_INGRESSO", fornitore_id: fornitoreId,
-              data_fattura: r.data, numero_fattura: r.numero, importo: parseFloat(r.importoIngresso) || 0,
-              specie: r.specieAcquisto || null, destinazione_acquisto: r.destAcquisto || null,
-              bdn: r.bdnAcquisto || null, nr_lotto: r.lottoAcquisto || null,
-            }]);
-            if (eAcq) throw new Error(`Errore salvando riga Trasporto (parte ingresso): ${eAcq.message}`);
-          } else {
-            const { data: articoloSalvato, error } = await supabase.from("ci_articoli_fattura").insert([{
-              fattura_id: fattura.id, descrizione: r.descrizione,
-              quantita: r.quantita, unita_misura: r.unita_misura, prezzo_unitario: r.prezzo_unitario,
-              totale_riga: r.imponibile,
-              area: r.editArea, centro_costo: r.editCentro || null,
-              destinazione: r.editDestinazione || null, tipo_costo: r.editTipo,
-              stato_classificazione: r.stato,
-            }]).select().single();
-            if (error) throw new Error(`Errore salvando riga "${r.descrizione}": ${error.message}`);
-
-            if (r.editArea === "Ammortamenti") {
-              const { error: eAmm } = await supabase.from("ci_articolo_dettaglio_ammortamento").insert([{
-                articolo_id: articoloSalvato.id,
-                categoria_ammortamento: r.categoriaAmmortamento || null,
-                imputazione: r.imputazioneAmmortamento || null,
-                anno_acquisto: r.annoAcquistoAmmortamento ? parseInt(r.annoAcquistoAmmortamento) : null,
-                pct_ammortamento: r.pctAmmortamento ? parseFloat(r.pctAmmortamento) / 100 : null,
-                importo_acquisto: r.imponibile,
-              }]);
-              if (eAmm) throw new Error(`Errore salvando il dettaglio ammortamento per "${r.descrizione}": ${eAmm.message}`);
-            }
-          }
-        }
-      }
-
-      const saltate = righe.length - righeDaSalvare.length;
-      alert(`✓ Salvate ${righeDaSalvare.length} righe in ${Object.keys(gruppiFattura).length} fatture.` +
-        (saltate > 0 ? `\n(${saltate} righe già presenti sono state saltate automaticamente.)` : ""));
-      setRighe([]);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    } catch (err) {
-      alert(`⚠️ Errore durante il salvataggio:\n\n${err.message}\n\nNessuna modifica ulteriore è stata effettuata da questo punto in poi — controlla cosa è stato già salvato prima di riprovare.`);
-    }
-    setSalvando(false);
-  }
 
   if (loadingDati) return <div style={{ padding: 20, color: C.muted }}>Caricamento dati di riferimento...</div>;
 
@@ -354,8 +411,20 @@ export default function CaricaFatture() {
     <div style={{ padding: 20, maxWidth: 1300, margin: "0 auto" }}>
       <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Carica Fatture</h1>
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 20 }}>
-        Carica un file Excel con le righe fattura grezze — il motore le classifica automaticamente dove possibile.
+        Carica un file, classifica e salva riga per riga — non serve aspettare la fine.
       </p>
+
+      {bozzaTrovata && righe.length === 0 && (
+        <div style={{ background: C.yellow + "18", border: `1.5px solid ${C.yellow}`, borderRadius: 10, padding: 14, marginBottom: 20, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+          <div style={{ fontSize: 13 }}>
+            Hai un'importazione non salvata ({bozzaTrovata.contenuto.length} righe) dell'ultima sessione — vuoi riprenderla?
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={riprendiBozza} style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Riprendi</button>
+            <button onClick={scartaBozza} style={{ background: "transparent", color: C.muted, border: `1.5px solid ${C.border}`, borderRadius: 8, padding: "6px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Scarta</button>
+          </div>
+        </div>
+      )}
 
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 20 }}>
         <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
@@ -373,31 +442,17 @@ export default function CaricaFatture() {
         ) : (
           <>
             <label style={{ fontSize: 13, fontWeight: 700, color: C.muted, display: "block", marginBottom: 8 }}>
-              Seleziona la cartella con i PDF delle fatture (es. quelli scaricati da Aruba) — vengono letti automaticamente uno per uno tramite Claude
+              Seleziona la cartella con i PDF delle fatture — vengono letti automaticamente uno per uno tramite Claude
             </label>
-            <input
-              ref={cartellaInputRef}
-              type="file"
-              webkitdirectory=""
-              directory=""
-              multiple
-              onChange={gestisciCartellaPdf}
-              disabled={leggendoPdf}
-            />
+            <input ref={cartellaInputRef} type="file" webkitdirectory="" directory="" multiple onChange={gestisciCartellaPdf} disabled={leggendoPdf} />
             <div style={{ fontSize: 12, color: C.muted, marginTop: 8 }}>
-              Nota: ogni PDF letto tramite Claude ha un piccolo costo (a consumo, sul tuo account API Anthropic — separato dall'abbonamento Claude). Per centinaia di fatture storiche, conviene fare un test su una decina prima di caricare una cartella intera.
+              Nota: ogni PDF letto tramite Claude ha un piccolo costo a consumo (sul tuo account API Anthropic).
             </div>
             {leggendoPdf && (
               <div style={{ marginTop: 12, background: C.bg, borderRadius: 8, padding: 10 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: C.primary }}>
-                  Lettura in corso: {progressoPdf.fatti} / {progressoPdf.totale}
-                </div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.primary }}>Lettura in corso: {progressoPdf.fatti} / {progressoPdf.totale}</div>
                 <div style={{ height: 6, background: C.border, borderRadius: 4, marginTop: 6, overflow: "hidden" }}>
-                  <div style={{
-                    height: "100%", background: C.primary, borderRadius: 4,
-                    width: `${progressoPdf.totale > 0 ? (progressoPdf.fatti / progressoPdf.totale) * 100 : 0}%`,
-                    transition: "width 0.3s",
-                  }} />
+                  <div style={{ height: "100%", background: C.primary, borderRadius: 4, width: `${progressoPdf.totale > 0 ? (progressoPdf.fatti / progressoPdf.totale) * 100 : 0}%`, transition: "width 0.3s" }} />
                 </div>
               </div>
             )}
@@ -409,12 +464,9 @@ export default function CaricaFatture() {
         <>
           <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
             <StatBox label="Totale righe" value={stats.totale} color={C.primary} />
-            <StatBox label="Classificate FCV" value={stats.fcv} color={C.green} />
-            <StatBox label="Classificate FCF" value={stats.fcf} color={C.blue} />
+            <StatBox label="Salvate" value={stats.salvate} color={C.green} />
             <StatBox label="Da classificare" value={stats.maschera} color={stats.maschera > 0 ? C.red : C.green} />
-            {stats.giaCaricate > 0 && (
-              <StatBox label="Già caricate (saltate)" value={stats.giaCaricate} color={C.accent} />
-            )}
+            {stats.giaCaricate > 0 && <StatBox label="Già caricate (saltate)" value={stats.giaCaricate} color={C.accent} />}
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
@@ -423,20 +475,17 @@ export default function CaricaFatture() {
                 key={r.id} riga={r}
                 aree={areeDisponibili()} centriPerArea={centriPerArea}
                 onChange={campi => aggiornaRiga(r.id, campi)}
+                onSalva={() => salvaRiga(r)}
+                onAnnulla={() => annullaSalvataggioRiga(r)}
               />
             ))}
           </div>
 
-          <button
-            onClick={salvaTutto}
-            disabled={salvando}
-            style={{
-              background: C.primary, color: "#fff", border: "none", borderRadius: 10,
-              padding: "12px 24px", fontSize: 15, fontWeight: 700, cursor: "pointer",
-            }}
-          >
-            {salvando ? "Salvataggio..." : `Salva tutte le ${righe.length} righe`}
-          </button>
+          {stats.salvate < righe.filter(r => !r.giaCaricata).length && (
+            <button onClick={salvaTutteLeRimanenti} style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 10, padding: "12px 24px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
+              Salva tutte le rimanenti
+            </button>
+          )}
         </>
       )}
     </div>
@@ -445,10 +494,9 @@ export default function CaricaFatture() {
 
 function toggleBtn(attivo) {
   return {
-    background: attivo ? C.primary : "transparent",
-    color: attivo ? "#fff" : C.muted,
-    border: `1.5px solid ${attivo ? C.primary : C.border}`,
-    borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer",
+    background: attivo ? C.primary : "transparent", color: attivo ? "#fff" : C.muted,
+    border: `1.5px solid ${attivo ? C.primary : C.border}`, borderRadius: 8,
+    padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer",
   };
 }
 
@@ -461,113 +509,143 @@ function StatBox({ label, value, color }) {
   );
 }
 
-function RigaFattura({ riga, aree, centriPerArea, onChange }) {
+function RigaFattura({ riga, aree, centriPerArea, onChange, onSalva, onAnnulla }) {
   const r = riga;
-  const bordoColore = r.giaCaricata ? C.accent : r.stato === "MASCHERA" ? C.red : r.stato === "FCF" ? C.blue : C.green;
+  const bordoColore = r.giaCaricata ? C.accent : r.salvata ? C.green : r.stato === "MASCHERA" ? C.red : r.stato === "FCF" ? C.blue : C.green;
   const isTrasportoAnimali = r.editArea === "TRASPORTO ANIMALI";
   const isAcquistoAnimali = r.editArea === "ACQUISTO ANIMALI";
   const isAmmortamento = r.editArea === "Ammortamenti";
+  const eraMaschera = r.stato === "MASCHERA"; // solo per queste ha senso proporre di creare una regola
 
   return (
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderLeft: `4px solid ${bordoColore}`, borderRadius: 10, padding: 14, opacity: r.giaCaricata ? 0.6 : 1 }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
         <div>
           <strong>{r.fornitore}</strong> — {r.descrizione}
-          <div style={{ fontSize: 12, color: C.muted }}>
-            Fatt. {r.numero} del {r.data} · Imponibile {r.imponibile?.toFixed(2)}€
-          </div>
+          <div style={{ fontSize: 12, color: C.muted }}>Fatt. {r.numero} del {r.data} · Imponibile {r.imponibile?.toFixed(2)}€</div>
         </div>
-        <span style={{
-          background: bordoColore + "22", color: bordoColore, padding: "3px 10px",
-          borderRadius: 8, fontSize: 12, fontWeight: 700, height: "fit-content",
-        }}>
-          {r.giaCaricata ? "GIÀ CARICATA" : r.stato}
+        <span style={{ background: bordoColore + "22", color: bordoColore, padding: "3px 10px", borderRadius: 8, fontSize: 12, fontWeight: 700, height: "fit-content" }}>
+          {r.giaCaricata ? "GIÀ CARICATA" : r.salvata ? "✓ SALVATA" : r.stato}
         </span>
       </div>
+
       {r.giaCaricata && (
-        <div style={{ fontSize: 12, color: C.accent, fontStyle: "italic", marginBottom: 8 }}>
-          Questa fattura (stesso fornitore, numero e data) è già presente — verrà saltata automaticamente al salvataggio.
-        </div>
-      )}
-      {!r.giaCaricata && r.nota && <div style={{ fontSize: 12, color: C.muted, fontStyle: "italic", marginBottom: 8 }}>{r.nota}</div>}
-      {!r.giaCaricata && (
-      <>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
-        <Select label="Area" value={r.editArea} options={aree}
-          onChange={v => onChange({
-            editArea: v, editCentro: "",
-            editTipo: v === "Ammortamenti" ? "Ammortizzabile" : "",
-          })} />
-        {!isTrasportoAnimali && !isAcquistoAnimali && (
-          <Select label="Centro di Costo" value={r.editCentro} options={centriPerArea(r.editArea)}
-            onChange={v => onChange({ editCentro: v })} />
-        )}
-        {!isAcquistoAnimali && (
-          <Select label="Destinazione" value={r.editDestinazione}
-            options={["Bovini", "Suini", "Ovini", "Generali", "Pollame", "Cavalli"]}
-            onChange={v => onChange({ editDestinazione: v })} />
-        )}
-        {!isTrasportoAnimali && !isAcquistoAnimali && (
-          <Select label="Tipo di Costo" value={r.editTipo}
-            options={r.editArea === "Ammortamenti" ? ["Ammortizzabile"] : ["Fisso", "Variabile"]}
-            disabled={r.editArea === "Ammortamenti"}
-            onChange={v => onChange({ editTipo: v })} />
-        )}
-      </div>
-
-      {isAcquistoAnimali && (
-        <div style={{ marginTop: 10, padding: 10, background: C.bg, borderRadius: 8, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8 }}>
-          <Testo label="Specie" value={r.specieAcquisto} onChange={v => onChange({ specieAcquisto: v })} />
-          <Testo label="Razza" value={r.razzaAcquisto} onChange={v => onChange({ razzaAcquisto: v })} />
-          <Select label="Destinazione acquisto" value={r.destAcquisto}
-            options={["Riproduzione", "Ingrasso", "Mista", "Lotti"]}
-            onChange={v => onChange({ destAcquisto: v })} />
-          <Testo label="BDN (se noto)" value={r.bdnAcquisto} onChange={v => onChange({ bdnAcquisto: v })} />
-          <Testo label="Nr. Lotto (se noto)" value={r.lottoAcquisto} onChange={v => onChange({ lottoAcquisto: v })} />
+        <div style={{ fontSize: 12, color: C.accent, fontStyle: "italic" }}>
+          Questa fattura è già presente — non verrà salvata di nuovo.
         </div>
       )}
 
-      {isAmmortamento && (
-        <div style={{ marginTop: 10, padding: 10, background: "#EFEAE0", borderRadius: 8 }}>
-          <div style={{ fontSize: 12, color: C.accent, fontWeight: 700, marginBottom: 8 }}>
-            📐 Questo costo diventerà un Cespite — completa i dati per il piano di ammortamento:
+      {!r.giaCaricata && r.salvata && (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: C.green + "10", borderRadius: 8, padding: "8px 10px" }}>
+          <div style={{ fontSize: 12, color: C.muted }}>
+            {r.editArea} {r.editCentro && `· ${r.editCentro}`} {r.editDestinazione && `· ${r.editDestinazione}`}
+            {r.regolaCreata && <span style={{ color: C.green, fontWeight: 700 }}> · regola {r.regolaCreata.tipo === "fissa" ? "FCF" : "FCV"} creata</span>}
           </div>
+          <button onClick={onAnnulla} style={{ background: "none", border: `1.5px solid ${C.border}`, borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 700, color: C.muted, cursor: "pointer" }}>
+            ↩️ Annulla e ricarica
+          </button>
+        </div>
+      )}
+
+      {!r.giaCaricata && !r.salvata && (
+        <>
+          {r.nota && <div style={{ fontSize: 12, color: C.muted, fontStyle: "italic", marginBottom: 8 }}>{r.nota}</div>}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
-            <Testo label="Categoria Ammortamento" value={r.categoriaAmmortamento} onChange={v => onChange({ categoriaAmmortamento: v })} />
-            <Select label="Imputazione" value={r.imputazioneAmmortamento}
-              options={["Bovini", "Ovini", "Generali", "Nessuno"]}
-              onChange={v => onChange({ imputazioneAmmortamento: v })} />
-            <Testo label="Anno acquisto" tipo="number" value={r.annoAcquistoAmmortamento} onChange={v => onChange({ annoAcquistoAmmortamento: v })} />
-            <Testo label="% Ammortamento annuo" tipo="number" value={r.pctAmmortamento} onChange={v => onChange({ pctAmmortamento: v })} />
+            <Select label="Area" value={r.editArea} options={aree}
+              onChange={v => onChange({ editArea: v, editCentro: "", editTipo: v === "Ammortamenti" ? "Ammortizzabile" : "" })} />
+            {!isTrasportoAnimali && !isAcquistoAnimali && (
+              <Select label="Centro di Costo" value={r.editCentro} options={centriPerArea(r.editArea)} onChange={v => onChange({ editCentro: v })} />
+            )}
+            {!isAcquistoAnimali && (
+              <Select label="Destinazione" value={r.editDestinazione} options={["Bovini", "Suini", "Ovini", "Generali", "Pollame", "Cavalli"]} onChange={v => onChange({ editDestinazione: v })} />
+            )}
+            {!isTrasportoAnimali && !isAcquistoAnimali && (
+              <Select label="Tipo di Costo" value={r.editTipo}
+                options={r.editArea === "Ammortamenti" ? ["Ammortizzabile"] : ["Fisso", "Variabile"]}
+                disabled={r.editArea === "Ammortamenti"} onChange={v => onChange({ editTipo: v })} />
+            )}
           </div>
-          {r.pctAmmortamento > 0 && (
-            <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>
-              → durata stimata: {Math.round(100 / parseFloat(r.pctAmmortamento))} anni
+
+          {isAcquistoAnimali && (
+            <div style={{ marginTop: 10, padding: 10, background: C.bg, borderRadius: 8, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8 }}>
+              <Select label="Specie" value={r.specieAcquisto} options={SPECIE_ACQUISTO}
+                onChange={v => onChange({ specieAcquisto: v, razzaAcquisto: "" })} />
+              <Select label="Razza" value={r.razzaAcquisto} options={RAZZE_PER_SPECIE[r.specieAcquisto] || []}
+                onChange={v => onChange({ razzaAcquisto: v })} />
+              <Select label="Destinazione acquisto" value={r.destAcquisto} options={["Riproduzione", "Ingrasso", "Mista", "Lotti"]} onChange={v => onChange({ destAcquisto: v })} />
+              <Testo label="BDN (se noto)" value={r.bdnAcquisto} onChange={v => onChange({ bdnAcquisto: v })} />
+              <Testo label="Nr. Lotto (se noto)" value={r.lottoAcquisto} onChange={v => onChange({ lottoAcquisto: v })} />
             </div>
           )}
-        </div>
-      )}
 
-      {isTrasportoAnimali && (
-        <div style={{ marginTop: 10, padding: 10, background: "#FFF3E0", borderRadius: 8 }}>
-          <div style={{ fontSize: 12, color: C.accent, fontWeight: 700, marginBottom: 8 }}>
-            ⚠️ Trasporto Animali richiede sempre la ripartizione manuale — dividi l'imponibile ({r.imponibile?.toFixed(2)}€) tra le due destinazioni:
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            <Testo label="Trasporto verso il macello (€)" tipo="number" value={r.importoMacello} onChange={v => onChange({ importoMacello: v })} />
-            <Testo label="Ingresso in allevamento (€)" tipo="number" value={r.importoIngresso} onChange={v => onChange({ importoIngresso: v })} />
-          </div>
-          <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>
-            Somma inserita: {((parseFloat(r.importoMacello) || 0) + (parseFloat(r.importoIngresso) || 0)).toFixed(2)}€
-            {" "}— deve essere uguale a {r.imponibile?.toFixed(2)}€
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginTop: 8 }}>
-            <Testo label="Specie (per la parte ingresso)" value={r.specieAcquisto} onChange={v => onChange({ specieAcquisto: v })} />
-            <Testo label="BDN/Lotto (se noto)" value={r.bdnAcquisto} onChange={v => onChange({ bdnAcquisto: v })} />
-          </div>
-        </div>
-      )}
-      </>
+          {isAmmortamento && (
+            <div style={{ marginTop: 10, padding: 10, background: "#EFEAE0", borderRadius: 8 }}>
+              <div style={{ fontSize: 12, color: C.accent, fontWeight: 700, marginBottom: 8 }}>
+                📐 Questo costo diventerà un Cespite — completa i dati per il piano di ammortamento:
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
+                <Select label="Categoria Ammortamento" value={r.categoriaAmmortamento} options={CATEGORIE_AMMORTAMENTO} onChange={v => onChange({ categoriaAmmortamento: v })} />
+                <Select label="Imputazione" value={r.imputazioneAmmortamento} options={["Bovini", "Ovini", "Generali", "Nessuno"]} onChange={v => onChange({ imputazioneAmmortamento: v })} />
+                <Testo label="Anno acquisto" tipo="number" value={r.annoAcquistoAmmortamento} onChange={v => onChange({ annoAcquistoAmmortamento: v })} />
+                <Testo label="% Ammortamento annuo" tipo="number" value={r.pctAmmortamento} onChange={v => onChange({ pctAmmortamento: v })} />
+              </div>
+              {r.pctAmmortamento > 0 && (
+                <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>→ durata stimata: {Math.round(100 / parseFloat(r.pctAmmortamento))} anni</div>
+              )}
+            </div>
+          )}
+
+          {isTrasportoAnimali && (
+            <div style={{ marginTop: 10, padding: 10, background: "#FFF3E0", borderRadius: 8 }}>
+              <div style={{ fontSize: 12, color: C.accent, fontWeight: 700, marginBottom: 8 }}>
+                ⚠️ Trasporto Animali richiede sempre la ripartizione manuale — dividi l'imponibile ({r.imponibile?.toFixed(2)}€) tra le due destinazioni:
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <Testo label="Trasporto verso il macello (€)" tipo="number" value={r.importoMacello} onChange={v => onChange({ importoMacello: v })} />
+                <Testo label="Ingresso in allevamento (€)" tipo="number" value={r.importoIngresso} onChange={v => onChange({ importoIngresso: v })} />
+              </div>
+              <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>
+                Somma inserita: {((parseFloat(r.importoMacello) || 0) + (parseFloat(r.importoIngresso) || 0)).toFixed(2)}€ — deve essere uguale a {r.imponibile?.toFixed(2)}€
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginTop: 8 }}>
+                <Select label="Specie (per la parte ingresso)" value={r.specieAcquisto} options={SPECIE_ACQUISTO} onChange={v => onChange({ specieAcquisto: v })} />
+                <Testo label="BDN/Lotto (se noto)" value={r.bdnAcquisto} onChange={v => onChange({ bdnAcquisto: v })} />
+              </div>
+            </div>
+          )}
+
+          {eraMaschera && !isAcquistoAnimali && (
+            <div style={{ marginTop: 10, padding: 10, background: C.blue + "10", borderRadius: 8 }}>
+              <div style={{ fontSize: 12, color: C.blue, fontWeight: 700, marginBottom: 6 }}>
+                💡 Vuoi che le prossime fatture di questo fornitore si classifichino da sole?
+              </div>
+              <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 13 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <input type="radio" checked={r.memorizzaRegola === "nessuna"} onChange={() => onChange({ memorizzaRegola: "nessuna" })} />
+                  Solo questa volta
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <input type="radio" checked={r.memorizzaRegola === "fissa"} onChange={() => onChange({ memorizzaRegola: "fissa" })} />
+                  Sempre per questo fornitore (regola fissa)
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <input type="radio" checked={r.memorizzaRegola === "parolaChiave"} onChange={() => onChange({ memorizzaRegola: "parolaChiave" })} />
+                  Solo quando la descrizione contiene una parola chiave
+                </label>
+              </div>
+              {r.memorizzaRegola === "parolaChiave" && (
+                <div style={{ marginTop: 8, maxWidth: 300 }}>
+                  <Testo label="Parola chiave da riconoscere" value={r.parolaChiaveRegola} onChange={v => onChange({ parolaChiaveRegola: v })} />
+                </div>
+              )}
+            </div>
+          )}
+
+          <button onClick={onSalva} disabled={r.salvataggioInCorso}
+            style={{ marginTop: 12, background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+            {r.salvataggioInCorso ? "Salvataggio..." : "💾 Salva questa riga"}
+          </button>
+        </>
       )}
     </div>
   );
@@ -590,7 +668,7 @@ function Testo({ label, value, onChange, tipo = "text" }) {
     <div>
       <label style={{ fontSize: 11, color: C.muted, fontWeight: 700, display: "block", marginBottom: 3 }}>{label}</label>
       <input type={tipo} value={value || ""} onChange={e => onChange(e.target.value)}
-        style={{ width: "100%", padding: "7px 8px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 13 }}/>
+        style={{ width: "100%", padding: "7px 8px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 13 }} />
     </div>
   );
 }
