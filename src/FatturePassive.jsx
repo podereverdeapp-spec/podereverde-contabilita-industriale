@@ -125,30 +125,7 @@ export default function FatturePassive() {
                   ) : righePerFattura[f.id].length === 0 ? (
                     <p style={{ color: C.muted, fontSize: 13 }}>Nessuna riga trovata.</p>
                   ) : (
-                    <table style={{ width: "100%", fontSize: 13 }}>
-                      <thead>
-                        <tr style={{ color: C.muted, textAlign: "left" }}>
-                          <th style={{ padding: "4px 8px" }}>Descrizione</th>
-                          <th style={{ padding: "4px 8px" }}>Area</th>
-                          <th style={{ padding: "4px 8px" }}>Centro di Costo</th>
-                          <th style={{ padding: "4px 8px" }}>Destinazione</th>
-                          <th style={{ padding: "4px 8px" }}>Tipo</th>
-                          <th style={{ padding: "4px 8px", textAlign: "right" }}>Imponibile</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {righePerFattura[f.id].map(r => (
-                          <tr key={r.id} style={{ borderTop: `1px solid ${C.border}` }}>
-                            <td style={{ padding: "6px 8px" }}>{r.descrizione}</td>
-                            <td style={{ padding: "6px 8px" }}>{r.area || "—"}</td>
-                            <td style={{ padding: "6px 8px" }}>{r.centro_costo || "—"}</td>
-                            <td style={{ padding: "6px 8px" }}>{r.destinazione || "—"}</td>
-                            <td style={{ padding: "6px 8px" }}>{r.tipo_costo || "—"}</td>
-                            <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700 }}>{r.totale_riga?.toFixed(2)}€</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                    <RicomposizioneFattura fattura={f} righe={righePerFattura[f.id]} />
                   )}
                 </div>
               )}
@@ -157,6 +134,88 @@ export default function FatturePassive() {
           {filtrate.length === 0 && <p style={{ color: C.muted }}>Nessuna fattura trovata.</p>}
         </div>
       )}
+    </div>
+  );
+}
+
+function RicomposizioneFattura({ fattura, righe }) {
+  const f = fattura;
+  const mostraUM = righe.some(r => r.unita_misura);
+  const mostraQuantita = righe.some(r => r.quantita != null);
+  const mostraPrezzoUnit = righe.some(r => r.prezzo_unitario != null);
+
+  const imponibileTotale = righe.reduce((s, r) => s + (r.totale_riga || 0), 0);
+  const ivaTotale = righe.reduce((s, r) => s + (r.totale_iva || 0), 0);
+  const totaleComplessivo = imponibileTotale + ivaTotale;
+
+  // Raggruppo l'IVA per aliquota, per il riepilogo (una fattura può avere aliquote diverse su righe diverse)
+  const ivaPerAliquota = {};
+  righe.forEach(r => {
+    const aliq = r.aliquota_iva != null ? r.aliquota_iva : 0;
+    if (!ivaPerAliquota[aliq]) ivaPerAliquota[aliq] = { imponibile: 0, iva: 0 };
+    ivaPerAliquota[aliq].imponibile += r.totale_riga || 0;
+    ivaPerAliquota[aliq].iva += r.totale_iva || 0;
+  });
+
+  return (
+    <div style={{ background: "#FAF8F4", borderRadius: 10, padding: 16 }}>
+      {/* Intestazione */}
+      <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 16, paddingBottom: 12, borderBottom: `2px solid ${C.primary}` }}>
+        <div>
+          <div style={{ fontWeight: 800, fontSize: 15 }}>{f.ci_fornitori?.nome || "—"}</div>
+          {f.ci_fornitori?.partita_iva && <div style={{ fontSize: 12, color: C.muted }}>P.IVA {f.ci_fornitori.partita_iva}</div>}
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontWeight: 700, fontSize: 14 }}>Fattura n. {f.numero}</div>
+          <div style={{ fontSize: 12, color: C.muted }}>del {f.data}</div>
+        </div>
+      </div>
+
+      {/* Righe */}
+      <table style={{ width: "100%", fontSize: 13, marginBottom: 12 }}>
+        <thead>
+          <tr style={{ color: C.muted, textAlign: "left", borderBottom: `1px solid ${C.border}` }}>
+            <th style={{ padding: "4px 8px" }}>Descrizione</th>
+            {mostraUM && <th style={{ padding: "4px 8px", textAlign: "center" }}>U.M.</th>}
+            {mostraQuantita && <th style={{ padding: "4px 8px", textAlign: "right" }}>Quantità</th>}
+            {mostraPrezzoUnit && <th style={{ padding: "4px 8px", textAlign: "right" }}>Prezzo unitario</th>}
+            <th style={{ padding: "4px 8px", textAlign: "right" }}>Imponibile</th>
+          </tr>
+        </thead>
+        <tbody>
+          {righe.map(r => (
+            <tr key={r.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+              <td style={{ padding: "6px 8px" }}>{r.descrizione}</td>
+              {mostraUM && <td style={{ padding: "6px 8px", textAlign: "center" }}>{r.unita_misura || "—"}</td>}
+              {mostraQuantita && <td style={{ padding: "6px 8px", textAlign: "right" }}>{r.quantita != null ? r.quantita : "—"}</td>}
+              {mostraPrezzoUnit && <td style={{ padding: "6px 8px", textAlign: "right" }}>{r.prezzo_unitario != null ? `${r.prezzo_unitario.toFixed(2)}€` : "—"}</td>}
+              <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700 }}>{r.totale_riga?.toFixed(2)}€</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {/* Totali */}
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <div style={{ minWidth: 260 }}>
+          <RigaTotale label="Imponibile totale" valore={imponibileTotale} />
+          {Object.entries(ivaPerAliquota).map(([aliq, v]) => (
+            <RigaTotale key={aliq} label={`IVA ${aliq}%`} valore={v.iva} muted />
+          ))}
+          <div style={{ borderTop: `1.5px solid ${C.primary}`, marginTop: 6, paddingTop: 6 }}>
+            <RigaTotale label="Totale fattura" valore={totaleComplessivo} bold />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RigaTotale({ label, valore, bold, muted }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", padding: "3px 8px", fontSize: bold ? 15 : 13 }}>
+      <span style={{ color: muted ? C.muted : C.text, fontWeight: bold ? 800 : 600 }}>{label}</span>
+      <span style={{ color: bold ? C.primary : muted ? C.muted : C.text, fontWeight: bold ? 800 : 600 }}>{valore.toFixed(2)}€</span>
     </div>
   );
 }

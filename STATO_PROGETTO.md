@@ -105,6 +105,24 @@ Quando una riga MASCHERA viene classificata a mano e salvata, l'operatore può s
 
 - `ci_report_acquisto_animali` ora salva anche `quantita`, `unita_misura`, `prezzo_unitario` (non solo il totale) — mancavano nella prima versione
 
+## 12. Analisi del codice sorgente reale di Prima App (confronto diretto, non solo riassunto)
+
+**Confermato**: il sistema AREA/CENTRO DI COSTO/DESTINAZIONE/TIPO DI COSTO con regole FCV/FCF **non esiste nel codice reale di Prima App** — era un progetto di integrazione mai realizzato lì. Quello che abbiamo costruito noi va oltre Prima App su questo punto specifico.
+
+**Formula esatta costo/UBA-giorno con improduttivi usciti** (decisione presa: usare questa, più aggressiva di una semplice esclusione dal divisore):
+```
+costoPerUbaGiorno_base = totale / ubaGiorniOrdinari
+perdita = costoPerUbaGiorno_base × ubaGiorniImproduttivi
+costoPerUbaGiorno_RETTIFICATO = (totale + perdita) / ubaGiorniOrdinari
+```
+(non semplicemente `totale / ubaGiorniOrdinari` — quella base viene ulteriormente aumentata riaggiungendo la "perdita" allo stesso divisore ristretto). Da implementare così quando costruiremo il calcolo costo/UBA-giorno (Blocco 4, Report Animali).
+
+**"Riporto quota UBA"** (meccanismo non documentato prima, utile per Importa Report UBA — Blocco 3): se un animale presente nel report UBA dell'anno precedente **non compare** nel nuovo import, il sistema ne riporta automaticamente l'ultima quota nota (stessi giorni/UBA-medio/UBA-giorni), A MENO CHE l'anagrafica Podere Verde non mostri che è uscito per **macellazione o decesso** (altri motivi di uscita come vendita non fermano il riporto — l'azienda considera solo macellazione/decesso come "fine vita" nel perimetro UBA).
+
+**Dettagli minori da recepire**:
+- Il parser Excel di Prima App gestisce i numeri con virgola decimale all'italiana (es. "1.000,50" scritto come testo) — il nostro parser attuale non lo fa ancora, va aggiunto per robustezza
+- Il controllo duplicati di Prima App ha due livelli: "esatto" (fornitore+numero+data identici) e "possibile" (stesso numero fattura nello stesso mese, anche con fornitore/giorno diversi) mostrato come avviso non bloccante — il nostro oggi ha solo il livello "esatto"
+
 ## 10. Problemi noti / da monitorare
 
 - Pagamento Anthropic Console: bug noto per carte europee (Stripe SetupIntent 0€ + 3DS) — Filippo ancora non è riuscito a sbloccarlo, la lettura PDF non è ancora testata con successo

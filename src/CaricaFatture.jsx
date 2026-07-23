@@ -4,6 +4,52 @@ import { supabase } from "./supabase";
 import { C } from "./style";
 import { classificaRiga } from "./motoreClassificazione";
 
+function round2(n) {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+// Se la colonna Imponibile è compilata la uso; altrimenti la calcolo da Quantità × Prezzo unitario
+// Interpreta un numero che potrebbe arrivare come vero numero, o come testo con la virgola
+// decimale all'italiana (es. "1.000,50"), o con un punto come separatore delle migliaia.
+function numeroRobusto(v) {
+  if (v === undefined || v === null || v === "") return NaN;
+  if (typeof v === "number") return v;
+  let s = String(v).trim();
+  // "1.234,56" -> ha sia punto che virgola: il punto è separatore migliaia, la virgola è decimale
+  if (s.includes(",") && s.includes(".")) {
+    s = s.replace(/\./g, "").replace(",", ".");
+  } else if (s.includes(",")) {
+    // solo virgola: è il separatore decimale
+    s = s.replace(",", ".");
+  }
+  return parseFloat(s);
+}
+
+function calcolaImponibile(rigaGrezza) {
+  const diretto = rigaGrezza["Imponibile"];
+  if (diretto !== undefined && diretto !== null && diretto !== "") {
+    const v = numeroRobusto(diretto);
+    if (!Number.isNaN(v)) return v;
+  }
+  const qta = numeroRobusto(rigaGrezza["Quantità"] ?? rigaGrezza["Quantita"]);
+  const prezzo = numeroRobusto(rigaGrezza["Prezzo unitario"] ?? rigaGrezza["Prezzo Unitario"]);
+  if (!Number.isNaN(qta) && !Number.isNaN(prezzo)) return round2(qta * prezzo);
+  return 0;
+}
+
+// Cerca la colonna "aliquota iva" indipendentemente da maiuscole/minuscole/spazi,
+// e converte automaticamente il valore in percentuale: 0.22 -> 22, ma 22 resta 22
+// (se il valore è già <=1 lo interpreto come frazione, altrimenti come percentuale già scritta così)
+function leggiAliquotaIva(rigaGrezza) {
+  const chiave = Object.keys(rigaGrezza).find(k => k.trim().toLowerCase() === "aliquota iva");
+  if (!chiave) return null;
+  const raw = rigaGrezza[chiave];
+  if (raw === undefined || raw === null || raw === "") return null;
+  const v = numeroRobusto(raw);
+  if (Number.isNaN(v)) return null;
+  return v <= 1 ? round2(v * 100) : v;
+}
+
 const CATEGORIE_AMMORTAMENTO = [
   "3 - Attrezzatura specifica",
   "3 - Costruzioni leggere",
@@ -134,6 +180,7 @@ export default function CaricaFatture() {
     setProgressoPdf({ fatti: 0, totale: pdfFile.length, erroriFile: [] });
     const datiCombinati = [];
     const erroriFile = [];
+    const fattureNonQuadrano = [];
 
     for (const file of pdfFile) {
       try {
@@ -153,10 +200,14 @@ export default function CaricaFatture() {
               "Fornitore": est.fornitore || "", "P.IVA": est.piva || "",
               "Numero": est.numero || "", "Data": est.data || "",
               "Descrizione": riga.descrizione || "", "Quantità": riga.quantita ?? 1,
-              "U.M.": riga.unita_misura || "PEZZI", "Prezzo unitario": riga.prezzo_unitario ?? 0,
+              "U.M.": riga.unita_misura || "", "Prezzo unitario": riga.prezzo_unitario ?? 0,
               "Imponibile": riga.imponibile ?? 0,
+              "Aliquota IVA": riga.aliquota_iva ?? "",
             });
           });
+          if (est.verifica_totali && est.verifica_totali.corrisponde === false) {
+            fattureNonQuadrano.push(`${file.name} (${est.fornitore || "?"}, fatt. ${est.numero || "?"})`);
+          }
         }
       } catch (err) {
         erroriFile.push(`${file.name}: ${err.message}`);
@@ -166,6 +217,9 @@ export default function CaricaFatture() {
 
     setLeggendoPdf(false);
     setProgressoPdf(p => ({ ...p, erroriFile }));
+    if (fattureNonQuadrano.length > 0) {
+      alert(`⚠️ ${fattureNonQuadrano.length} fatture hanno una somma delle righe che NON coincide con i totali scritti sul PDF — controllale con attenzione prima di salvarle, potrebbe mancare una riga o essere stata letta male:\n\n${fattureNonQuadrano.join("\n")}`);
+    }
     if (erroriFile.length > 0) {
       alert(`⚠️ ${erroriFile.length} file su ${pdfFile.length} non sono stati letti correttamente:\n\n${erroriFile.join("\n")}`);
     }
@@ -181,10 +235,11 @@ export default function CaricaFatture() {
         numero: String(r["Numero"] || r["Numero Fattura"] || "").trim(),
         data: formattaData(r["Data"] || r["Data Fattura"]),
         descrizione: String(r["Descrizione"] || "").trim(),
-        quantita: parseFloat(r["Quantità"] || r["Quantita"] || 1),
-        unita_misura: String(r["U.M."] || r["Unità Misura"] || "PEZZI").trim().toUpperCase(),
-        prezzo_unitario: parseFloat(r["Prezzo unitario"] || r["Prezzo Unitario"] || 0),
-        imponibile: parseFloat(r["Imponibile"] || 0),
+        quantita: numeroRobusto(r["Quantità"] || r["Quantita"] || 1),
+        unita_misura: String(r["U.M."] || r["Unità Misura"] || "").trim(),
+        prezzo_unitario: numeroRobusto(r["Prezzo unitario"] || r["Prezzo Unitario"] || 0),
+        aliquota_iva: leggiAliquotaIva(r),
+        imponibile: calcolaImponibile(r),
       };
       const { fornitore: fornitoreObj, ...classificazioneResto } = classificaRiga(grezza, { fornitori, regoleFisse, regoleVariabili });
       return {
@@ -271,9 +326,10 @@ export default function CaricaFatture() {
   }
 
   async function ricalcolaTotaliFattura(fatturaId) {
-    const { data: righeArt } = await supabase.from("ci_articoli_fattura").select("totale_riga").eq("fattura_id", fatturaId);
-    const totale = (righeArt || []).reduce((s, r) => s + (r.totale_riga || 0), 0);
-    await supabase.from("ci_fatture").update({ totale_netto: totale, totale_lordo: totale }).eq("id", fatturaId);
+    const { data: righeArt } = await supabase.from("ci_articoli_fattura").select("totale_riga, totale_iva").eq("fattura_id", fatturaId);
+    const netto = (righeArt || []).reduce((s, r) => s + (r.totale_riga || 0), 0);
+    const iva = (righeArt || []).reduce((s, r) => s + (r.totale_iva || 0), 0);
+    await supabase.from("ci_fatture").update({ totale_netto: round2(netto), totale_iva: round2(iva), totale_lordo: round2(netto + iva) }).eq("id", fatturaId);
   }
 
   async function salvaRiga(riga) {
@@ -305,9 +361,11 @@ export default function CaricaFatture() {
         idsSalvati.reportAcquistoId = data.id;
       } else if (riga.editArea === "TRASPORTO ANIMALI") {
         const fatturaId = await trovaOCreaFattura(fornitoreId, riga.numero, riga.data);
+        const importoMacello = parseFloat(riga.importoMacello) || 0;
         const { data: art, error: eArt } = await supabase.from("ci_articoli_fattura").insert([{
           fattura_id: fatturaId, descrizione: riga.descrizione, quantita: riga.quantita, unita_misura: riga.unita_misura,
-          prezzo_unitario: riga.prezzo_unitario, totale_riga: parseFloat(riga.importoMacello) || 0,
+          prezzo_unitario: riga.prezzo_unitario, totale_riga: importoMacello,
+          aliquota_iva: riga.aliquota_iva, totale_iva: riga.aliquota_iva ? round2(importoMacello * riga.aliquota_iva / 100) : 0,
           area: "TRASPORTO ANIMALI", centro_costo: "Lavorazione prodotti allevamento per Rivendita",
           destinazione: riga.editDestinazione || null, tipo_costo: riga.editTipo || null, stato_classificazione: "MANUALE",
         }]).select().single();
@@ -328,6 +386,7 @@ export default function CaricaFatture() {
         const { data: art, error } = await supabase.from("ci_articoli_fattura").insert([{
           fattura_id: fatturaId, descrizione: riga.descrizione, quantita: riga.quantita, unita_misura: riga.unita_misura,
           prezzo_unitario: riga.prezzo_unitario, totale_riga: riga.imponibile,
+          aliquota_iva: riga.aliquota_iva, totale_iva: riga.aliquota_iva ? round2(riga.imponibile * riga.aliquota_iva / 100) : 0,
           area: riga.editArea, centro_costo: riga.editCentro || null, destinazione: riga.editDestinazione || null,
           tipo_costo: riga.editTipo, stato_classificazione: riga.stato,
         }]).select().single();
@@ -437,7 +496,7 @@ export default function CaricaFatture() {
         {modalita === "excel" ? (
           <>
             <label style={{ fontSize: 13, fontWeight: 700, color: C.muted, display: "block", marginBottom: 8 }}>
-              File Excel (colonne: Fornitore, P.IVA, Numero, Data, Descrizione, Quantità, U.M., Prezzo unitario, Imponibile)
+              File Excel (colonne: Fornitore, P.IVA, Numero, Data, Descrizione, Quantità, U.M., Prezzo unitario, Imponibile, Aliquota IVA)
             </label>
             <input ref={fileInputRef} type="file" accept=".xlsx,.xls" onChange={gestisciFile} />
           </>
@@ -527,6 +586,7 @@ function RigaFattura({ riga, aree, centriPerArea, onChange, onSalva, onAnnulla }
           <div style={{ fontSize: 12, color: C.muted }}>Fatt. {r.numero} del {r.data} · Imponibile {r.imponibile?.toFixed(2)}€</div>
           <div style={{ fontSize: 12, color: C.muted }}>
             {r.quantita} {r.unita_misura} × {r.prezzo_unitario?.toFixed(2)}€/{r.unita_misura}
+            {r.aliquota_iva != null && ` · IVA ${r.aliquota_iva}%`}
           </div>
         </div>
         <span style={{ background: bordoColore + "22", color: bordoColore, padding: "3px 10px", borderRadius: 8, fontSize: 12, fontWeight: 700, height: "fit-content" }}>
@@ -569,6 +629,8 @@ function RigaFattura({ riga, aree, centriPerArea, onChange, onSalva, onAnnulla }
                 options={r.editArea === "Ammortamenti" ? ["Ammortizzabile"] : ["Fisso", "Variabile"]}
                 disabled={r.editArea === "Ammortamenti"} onChange={v => onChange({ editTipo: v })} />
             )}
+            <Select label="Aliquota IVA" value={r.aliquota_iva != null ? String(r.aliquota_iva) : ""} options={["0", "4", "5", "10", "22"]}
+              onChange={v => onChange({ aliquota_iva: v === "" ? null : parseFloat(v) })} />
           </div>
 
           {isAcquistoAnimali && (
