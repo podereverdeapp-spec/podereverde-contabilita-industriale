@@ -330,7 +330,7 @@ export default function CaricaFatture() {
       if (riga.editArea === "ACQUISTO ANIMALI") {
         const { data, error } = await supabase.from("ci_report_acquisto_animali").insert([{
           fonte: "ACQUISTO_DIRETTO", fornitore_id: fornitoreId, data_fattura: riga.data, numero_fattura: riga.numero,
-          importo: riga.imponibile, quantita: riga.quantita, unita_misura: riga.unita_misura, prezzo_unitario: riga.prezzo_unitario,
+          importo: riga.imponibile, quantita: riga.quantita, unita_misura: riga.unita_misura || null, prezzo_unitario: riga.prezzo_unitario,
           specie: riga.specieAcquisto || null, razza: riga.razzaAcquisto || null,
           destinazione_acquisto: riga.destAcquisto || null, bdn: riga.bdnAcquisto || null, nr_lotto: riga.lottoAcquisto || null,
         }]).select().single();
@@ -340,7 +340,7 @@ export default function CaricaFatture() {
         const fatturaId = await trovaOCreaFattura(fornitoreId, riga.numero, riga.data);
         const importoMacello = parseFloat(riga.importoMacello) || 0;
         const { data: art, error: eArt } = await supabase.from("ci_articoli_fattura").insert([{
-          fattura_id: fatturaId, descrizione: riga.descrizione, quantita: riga.quantita, unita_misura: riga.unita_misura,
+          fattura_id: fatturaId, descrizione: riga.descrizione, quantita: riga.quantita, unita_misura: riga.unita_misura || null,
           prezzo_unitario: riga.prezzo_unitario, totale_riga: importoMacello,
           aliquota_iva: riga.aliquota_iva, totale_iva: riga.aliquota_iva ? round2(importoMacello * riga.aliquota_iva / 100) : 0,
           area: "TRASPORTO ANIMALI", centro_costo: "Lavorazione prodotti allevamento per Rivendita",
@@ -351,7 +351,7 @@ export default function CaricaFatture() {
         const { data: acq, error: eAcq } = await supabase.from("ci_report_acquisto_animali").insert([{
           articolo_fattura_id: art.id, fonte: "TRASPORTO_INGRESSO", fornitore_id: fornitoreId,
           data_fattura: riga.data, numero_fattura: riga.numero, importo: parseFloat(riga.importoIngresso) || 0,
-          quantita: riga.quantita, unita_misura: riga.unita_misura, prezzo_unitario: riga.prezzo_unitario,
+          quantita: riga.quantita, unita_misura: riga.unita_misura || null, prezzo_unitario: riga.prezzo_unitario,
           specie: riga.specieAcquisto || null, destinazione_acquisto: riga.destAcquisto || null,
           bdn: riga.bdnAcquisto || null, nr_lotto: riga.lottoAcquisto || null,
         }]).select().single();
@@ -361,7 +361,7 @@ export default function CaricaFatture() {
       } else {
         const fatturaId = await trovaOCreaFattura(fornitoreId, riga.numero, riga.data);
         const { data: art, error } = await supabase.from("ci_articoli_fattura").insert([{
-          fattura_id: fatturaId, descrizione: riga.descrizione, quantita: riga.quantita, unita_misura: riga.unita_misura,
+          fattura_id: fatturaId, descrizione: riga.descrizione, quantita: riga.quantita, unita_misura: riga.unita_misura || null,
           prezzo_unitario: riga.prezzo_unitario, totale_riga: riga.imponibile,
           aliquota_iva: riga.aliquota_iva, totale_iva: riga.aliquota_iva ? round2(riga.imponibile * riga.aliquota_iva / 100) : 0,
           area: riga.editArea, centro_costo: riga.editCentro || null, destinazione: riga.editDestinazione || null,
@@ -638,7 +638,7 @@ function RigaFattura({ riga, aree, centriPerArea, onChange, onSalva, onAnnulla }
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
                 <Select label="Categoria Ammortamento" value={r.categoriaAmmortamento} options={CATEGORIE_AMMORTAMENTO} onChange={v => onChange({ categoriaAmmortamento: v })} />
-                <Select label="Imputazione" value={r.imputazioneAmmortamento} options={["Bovini", "Ovini", "Generali", "Nessuno"]} onChange={v => onChange({ imputazioneAmmortamento: v })} />
+                <Select label="Imputazione" value={r.imputazioneAmmortamento} options={["Bovini", "Suini", "Ovini", "Generali", "Nessuno"]} onChange={v => onChange({ imputazioneAmmortamento: v })} />
                 <Testo label="Anno acquisto" tipo="number" value={r.annoAcquistoAmmortamento} onChange={v => onChange({ annoAcquistoAmmortamento: v })} />
                 <Testo label="% Ammortamento annuo" tipo="number" value={r.pctAmmortamento} onChange={v => onChange({ pctAmmortamento: v })} />
               </div>

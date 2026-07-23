@@ -118,11 +118,11 @@ export default function NuovaFatturaAttiva({ onSalvata }) {
                 <input type="number" value={r.quantita} onChange={e => aggiornaRiga(r.id, { quantita: e.target.value })} style={input} />
               </div>
               <div>
-                <label style={lbl}>U.M.</label>
-                <select value={r.unita_misura} onChange={e => aggiornaRiga(r.id, { unita_misura: e.target.value })} style={input}>
-                  <option value="">—</option>
-                  {["Unità", "Tons", "Quintali", "Kilogrammi", "Litri", "Balloni", "Rotoballe", "Rotoli"].map(u => <option key={u} value={u}>{u}</option>)}
-                </select>
+                <label style={lbl}>U.M. <span style={{ fontWeight: 400, color: C.muted }}>(testo libero)</span></label>
+                <input list="unita-misura-suggerite" value={r.unita_misura} onChange={e => aggiornaRiga(r.id, { unita_misura: e.target.value })} style={input} placeholder="Es. Kilogrammi, Millilitri, Sacchi..." />
+                <datalist id="unita-misura-suggerite">
+                  {["Unità", "Tons", "Quintali", "Kilogrammi", "Litri", "Millilitri", "Centilitri", "Balloni", "Rotoballe", "Rotoli", "Sacchi", "Confezioni"].map(u => <option key={u} value={u} />)}
+                </datalist>
               </div>
               <div>
                 <label style={lbl}>Prezzo unitario</label>

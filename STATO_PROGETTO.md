@@ -105,6 +105,12 @@ Quando una riga MASCHERA viene classificata a mano e salvata, l'operatore può s
 
 - `ci_report_acquisto_animali` ora salva anche `quantita`, `unita_misura`, `prezzo_unitario` (non solo il totale) — mancavano nella prima versione
 
+## 13. Unità di misura — cambio di approccio (decisione presa)
+
+Il campo `unita_misura` di `ci_articoli_fattura` **non è più vincolato** a un elenco fisso (il vincolo alle 8 unità è stato rimosso) — accetta qualunque testo presente nella fattura originale (millilitri, centilitri, sacchi, confezioni, ecc.), per non perdere il dato reale né bloccare il caricamento massivo. Il campo U.M. nel modulo manuale (Nuova Fattura Attiva) è ora un testo libero con suggerimenti (datalist), non più una tendina chiusa.
+
+**Requisito per i report futuri (Blocco 4/5)**: dato che le unità non sono più uniformi, i report che aggregano quantità (es. "totale kg di mangime acquistato") dovranno prevedere una **conversione tra unità diverse** (es. Millilitri→Litri, Sacchi→Kg se si conosce il peso standard di un sacco) — funzione ancora da progettare, non dimenticarla in fase di report.
+
 ## 12. Analisi del codice sorgente reale di Prima App (confronto diretto, non solo riassunto)
 
 **Confermato**: il sistema AREA/CENTRO DI COSTO/DESTINAZIONE/TIPO DI COSTO con regole FCV/FCF **non esiste nel codice reale di Prima App** — era un progetto di integrazione mai realizzato lì. Quello che abbiamo costruito noi va oltre Prima App su questo punto specifico.
