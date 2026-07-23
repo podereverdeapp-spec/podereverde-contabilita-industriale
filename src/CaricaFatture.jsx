@@ -106,9 +106,15 @@ export default function CaricaFatture() {
     const reader = new FileReader();
     reader.onload = async (evt) => {
       const wb = XLSX.read(evt.target.result, { type: "binary", cellDates: true });
-      const foglio = wb.Sheets[wb.SheetNames[0]];
-      const dati = XLSX.utils.sheet_to_json(foglio, { defval: "" });
-      await elaboraRigheGrezze(dati);
+      const foglioFatture = wb.Sheets[wb.SheetNames.find(n => n.trim().toLowerCase() === "fatture") || wb.SheetNames[0]];
+      const dati = XLSX.utils.sheet_to_json(foglioFatture, { defval: "" });
+
+      const nomeFoglioVerifica = wb.SheetNames.find(n => n.trim().toLowerCase() === "verifica fatture");
+      const verifica = nomeFoglioVerifica
+        ? XLSX.utils.sheet_to_json(wb.Sheets[nomeFoglioVerifica], { defval: "" })
+        : [];
+
+      await elaboraRigheGrezze(dati, verifica);
     };
     reader.readAsBinaryString(file);
   }
@@ -181,7 +187,7 @@ export default function CaricaFatture() {
     if (datiCombinati.length > 0) await elaboraRigheGrezze(datiCombinati);
   }
 
-  async function elaboraRigheGrezze(dati) {
+  async function elaboraRigheGrezze(dati, verifica = []) {
     const risultati = dati.map((r, i) => {
       const grezza = {
         id: `riga-${Date.now()}-${i}`,
@@ -212,9 +218,35 @@ export default function CaricaFatture() {
         pctAmmortamento: "",
         memorizzaRegola: "nessuna", parolaChiaveRegola: "",
         giaCaricata: false,
+        nonQuadra: false, dettaglioQuadratura: null,
         salvata: false, salvataggioInCorso: false, idsSalvati: null, regolaCreata: null,
       };
     });
+
+    // Incrocio con il foglio "Verifica Fatture" (se presente): segnalo le fatture per cui
+    // la somma delle righe non coincide con i totali dichiarati sul PDF originale.
+    if (verifica.length > 0) {
+      const mappaVerifica = new Map();
+      verifica.forEach(v => {
+        const fornitore = String(v["Fornitore"] || "").trim().toLowerCase();
+        const numero = String(v["Numero"] || "").trim();
+        const dataVerifica = formattaData(v["Data"]);
+        const corrisponde = String(v["Corrisponde?"] || "").trim().toUpperCase();
+        mappaVerifica.set(`${fornitore}|${numero}|${dataVerifica}`, {
+          corrisponde: corrisponde === "SI",
+          totaleCalcolato: v["Totale calcolato"],
+          totalePdf: v["Totale da PDF"],
+        });
+      });
+      risultati.forEach(r => {
+        const chiave = `${r.fornitore.trim().toLowerCase()}|${r.numero}|${r.data}`;
+        const match = mappaVerifica.get(chiave);
+        if (match && !match.corrisponde) {
+          r.nonQuadra = true;
+          r.dettaglioQuadratura = match;
+        }
+      });
+    }
 
     const fornitoreIds = [...new Set(risultati.map(r => r.fornitore_obj?.id).filter(Boolean))];
     if (fornitoreIds.length > 0) {
@@ -408,6 +440,7 @@ export default function CaricaFatture() {
     fcf: righe.filter(r => r.stato === "FCF" && !r.giaCaricata).length,
     maschera: righe.filter(r => r.stato === "MASCHERA" && !r.giaCaricata).length,
     giaCaricate: righe.filter(r => r.giaCaricata).length,
+    nonQuadrano: righe.filter(r => r.nonQuadra && !r.giaCaricata).length,
     salvate: righe.filter(r => r.salvata).length,
   };
 
@@ -473,6 +506,7 @@ export default function CaricaFatture() {
             <StatBox label="Salvate" value={stats.salvate} color={C.green} />
             <StatBox label="Da classificare" value={stats.maschera} color={stats.maschera > 0 ? C.red : C.green} />
             {stats.giaCaricate > 0 && <StatBox label="Già caricate (saltate)" value={stats.giaCaricate} color={C.accent} />}
+            {stats.nonQuadrano > 0 && <StatBox label="Non quadrano (da verificare)" value={stats.nonQuadrano} color="#B8860B" />}
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
@@ -517,7 +551,7 @@ function StatBox({ label, value, color }) {
 
 function RigaFattura({ riga, aree, centriPerArea, onChange, onSalva, onAnnulla }) {
   const r = riga;
-  const bordoColore = r.giaCaricata ? C.accent : r.salvata ? C.green : r.stato === "MASCHERA" ? C.red : r.stato === "FCF" ? C.blue : C.green;
+  const bordoColore = r.giaCaricata ? C.accent : r.salvata ? C.green : r.nonQuadra ? "#B8860B" : r.stato === "MASCHERA" ? C.red : r.stato === "FCF" ? C.blue : C.green;
   const isTrasportoAnimali = r.editArea === "TRASPORTO ANIMALI";
   const isAcquistoAnimali = r.editArea === "ACQUISTO ANIMALI";
   const isAmmortamento = r.editArea === "Ammortamenti";
@@ -535,9 +569,16 @@ function RigaFattura({ riga, aree, centriPerArea, onChange, onSalva, onAnnulla }
           </div>
         </div>
         <span style={{ background: bordoColore + "22", color: bordoColore, padding: "3px 10px", borderRadius: 8, fontSize: 12, fontWeight: 700, height: "fit-content" }}>
-          {r.giaCaricata ? "GIÀ CARICATA" : r.salvata ? "✓ SALVATA" : r.stato}
+          {r.giaCaricata ? "GIÀ CARICATA" : r.salvata ? "✓ SALVATA" : r.nonQuadra ? "⚠️ NON QUADRA" : r.stato}
         </span>
       </div>
+
+      {r.nonQuadra && !r.giaCaricata && (
+        <div style={{ fontSize: 12, color: "#B8860B", background: "#B8860B15", borderRadius: 8, padding: "8px 10px", marginBottom: 10, fontWeight: 600 }}>
+          ⚠️ La somma delle righe di questa fattura ({typeof r.dettaglioQuadratura?.totaleCalcolato === "number" ? r.dettaglioQuadratura.totaleCalcolato.toFixed(2) : r.dettaglioQuadratura?.totaleCalcolato}€)
+          non coincide con il totale indicato sul PDF originale ({typeof r.dettaglioQuadratura?.totalePdf === "number" ? r.dettaglioQuadratura.totalePdf.toFixed(2) : r.dettaglioQuadratura?.totalePdf}€) — verificala con attenzione prima di salvare, potrebbe mancare una riga.
+        </div>
+      )}
 
       {r.giaCaricata && (
         <div style={{ fontSize: 12, color: C.accent, fontStyle: "italic" }}>
