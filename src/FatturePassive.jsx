@@ -138,8 +138,9 @@ export default function FatturePassive() {
   );
 }
 
-function RicomposizioneFattura({ fattura, righe }) {
+export function RicomposizioneFattura({ fattura, righe }) {
   const f = fattura;
+  const controparte = f.ci_fornitori || f.ci_clienti;
   const mostraUM = righe.some(r => r.unita_misura);
   const mostraQuantita = righe.some(r => r.quantita != null);
   const mostraPrezzoUnit = righe.some(r => r.prezzo_unitario != null);
@@ -162,8 +163,8 @@ function RicomposizioneFattura({ fattura, righe }) {
       {/* Intestazione */}
       <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 16, paddingBottom: 12, borderBottom: `2px solid ${C.primary}` }}>
         <div>
-          <div style={{ fontWeight: 800, fontSize: 15 }}>{f.ci_fornitori?.nome || "—"}</div>
-          {f.ci_fornitori?.partita_iva && <div style={{ fontSize: 12, color: C.muted }}>P.IVA {f.ci_fornitori.partita_iva}</div>}
+          <div style={{ fontWeight: 800, fontSize: 15 }}>{controparte?.nome || "—"}</div>
+          {controparte?.partita_iva && <div style={{ fontSize: 12, color: C.muted }}>P.IVA {controparte.partita_iva}</div>}
         </div>
         <div style={{ textAlign: "right" }}>
           <div style={{ fontWeight: 700, fontSize: 14 }}>Fattura n. {f.numero}</div>

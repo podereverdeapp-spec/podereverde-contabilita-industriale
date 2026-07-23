@@ -1,8 +1,12 @@
 import { useState } from "react";
 import Dashboard from "./Dashboard";
 import Fornitori from "./Fornitori";
+import Clienti from "./Clienti";
 import FatturePassive from "./FatturePassive";
+import FattureAttive from "./FattureAttive";
+import NuovaFatturaAttiva from "./NuovaFatturaAttiva";
 import CaricaFatture from "./CaricaFatture";
+import CaricaFattureAttive from "./CaricaFattureAttive";
 import ReportAcquistoAnimali from "./ReportAcquistoAnimali";
 import { C, FONT } from "./style";
 
@@ -10,12 +14,15 @@ const TAB = [
   { id: "dashboard", label: "Dashboard", icon: "📊" },
   { id: "carica", label: "Carica Fatture", icon: "📥" },
   { id: "passive", label: "Fatture Passive", icon: "📄" },
+  { id: "attive", label: "Fatture Attive", icon: "💰" },
   { id: "fornitori", label: "Fornitori", icon: "🏢" },
+  { id: "clienti", label: "Clienti", icon: "🤝" },
   { id: "acquisto", label: "Report Acquisto Animali", icon: "🐄" },
 ];
 
 export default function App() {
   const [tab, setTab] = useState("dashboard");
+  const [vistaAttive, setVistaAttive] = useState("elenco"); // "elenco" | "nuova"
 
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: FONT }}>
@@ -29,7 +36,7 @@ export default function App() {
             {TAB.map(t => (
               <button
                 key={t.id}
-                onClick={() => setTab(t.id)}
+                onClick={() => { setTab(t.id); if (t.id === "attive") setVistaAttive("elenco"); }}
                 style={{
                   background: tab === t.id ? "rgba(255,255,255,0.2)" : "transparent",
                   color: "#fff", border: "none", borderRadius: 8,
@@ -47,7 +54,29 @@ export default function App() {
         {tab === "dashboard" && <Dashboard onNavigate={setTab} />}
         {tab === "carica" && <CaricaFatture />}
         {tab === "passive" && <FatturePassive />}
+        {tab === "attive" && (
+          <>
+            <div style={{ maxWidth: 1200, margin: "16px auto 0", padding: "0 20px", display: "flex", gap: 8 }}>
+              <button onClick={() => setVistaAttive("elenco")}
+                style={{ background: vistaAttive === "elenco" ? C.primary : "transparent", color: vistaAttive === "elenco" ? "#fff" : C.muted, border: `1.5px solid ${vistaAttive === "elenco" ? C.primary : C.border}`, borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                📋 Elenco
+              </button>
+              <button onClick={() => setVistaAttive("nuova")}
+                style={{ background: vistaAttive === "nuova" ? C.primary : "transparent", color: vistaAttive === "nuova" ? "#fff" : C.muted, border: `1.5px solid ${vistaAttive === "nuova" ? C.primary : C.border}`, borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                + Nuova Fattura
+              </button>
+              <button onClick={() => setVistaAttive("carica")}
+                style={{ background: vistaAttive === "carica" ? C.primary : "transparent", color: vistaAttive === "carica" ? "#fff" : C.muted, border: `1.5px solid ${vistaAttive === "carica" ? C.primary : C.border}`, borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                📥 Carica Massivo
+              </button>
+            </div>
+            {vistaAttive === "elenco" && <FattureAttive />}
+            {vistaAttive === "nuova" && <NuovaFatturaAttiva onSalvata={() => setVistaAttive("elenco")} />}
+            {vistaAttive === "carica" && <CaricaFattureAttive />}
+          </>
+        )}
         {tab === "fornitori" && <Fornitori />}
+        {tab === "clienti" && <Clienti />}
         {tab === "acquisto" && <ReportAcquistoAnimali />}
       </main>
     </div>
