@@ -117,11 +117,18 @@ costoPerUbaGiorno_RETTIFICATO = (totale + perdita) / ubaGiorniOrdinari
 ```
 (non semplicemente `totale / ubaGiorniOrdinari` — quella base viene ulteriormente aumentata riaggiungendo la "perdita" allo stesso divisore ristretto). Da implementare così quando costruiremo il calcolo costo/UBA-giorno (Blocco 4, Report Animali).
 
+**Classificazione PRODUTTIVO/IMPRODUTTIVO_USCITO — decisione presa**: NON allinearsi alla terminologia esatta di Prima App (che richiede un confronto testuale preciso su "morte malattia", "morte al parto", "sottrazione", ecc. — parole diverse dalle nostre). **Comanda podereverdeapp.it**: quando costruiremo l'import Report UBA (Blocco 3), la classificazione userà i motivi di uscita reali della nostra app:
+- PRODUTTIVO: Macellato, Venduto vivo, (nessuna uscita / ancora attivo)
+- IMPRODUTTIVO_USCITO (perdita, esclusa dal divisore): Morto (malattia), Morto (causa naturale), Predato, Smarrito
+- "Altro": trattato come IMPRODUTTIVO_USCITO per prudenza (stesso principio conservativo di Prima App — un motivo non specificato è meglio trattarlo come perdita da verificare, non come produttivo per default), segnalato come ambiguo da controllare a mano
+
 **"Riporto quota UBA"** (meccanismo non documentato prima, utile per Importa Report UBA — Blocco 3): se un animale presente nel report UBA dell'anno precedente **non compare** nel nuovo import, il sistema ne riporta automaticamente l'ultima quota nota (stessi giorni/UBA-medio/UBA-giorni), A MENO CHE l'anagrafica Podere Verde non mostri che è uscito per **macellazione o decesso** (altri motivi di uscita come vendita non fermano il riporto — l'azienda considera solo macellazione/decesso come "fine vita" nel perimetro UBA).
 
 **Dettagli minori da recepire**:
 - Il parser Excel di Prima App gestisce i numeri con virgola decimale all'italiana (es. "1.000,50" scritto come testo) — il nostro parser attuale non lo fa ancora, va aggiunto per robustezza
 - Il controllo duplicati di Prima App ha due livelli: "esatto" (fornitore+numero+data identici) e "possibile" (stesso numero fattura nello stesso mese, anche con fornitore/giorno diversi) mostrato come avviso non bloccante — il nostro oggi ha solo il livello "esatto"
+
+**Confermato senza correzioni**: il formato "Matrice categoria × specie" del nostro Libro Cespiti Excel (foglio REPORT AMMORTAMENTI) è esattamente quello che Prima App si aspetta per l'import ammortamenti — nessuna modifica necessaria lì. Anche la formula di ammortamento a quote costanti (costo/anni) e il meccanismo "genera quote" (upsert per cespite+anno, richiamabile più volte senza duplicare) coincidono con quanto già costruito per i 94 cespiti migrati.
 
 ## 10. Problemi noti / da monitorare
 
