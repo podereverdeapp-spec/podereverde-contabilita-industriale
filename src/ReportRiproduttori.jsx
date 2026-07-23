@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { numerizzaCampi, round2 } from "./parsingUtils";
-import { calcolaResiduoIniziale, calcolaPianoScarico, calcolaValoreRealizzoStimato } from "./motoreRiproduttori";
+import { calcolaResiduoIniziale, calcolaPianoScarico, calcolaValoreRealizzoStimato, calcolaValoreRealizzoReale, calcolaConguaglio } from "./motoreRiproduttori";
 
 export default function ReportRiproduttori() {
   const [anno, setAnno] = useState(new Date().getFullYear());
@@ -14,7 +14,7 @@ export default function ReportRiproduttori() {
 
   async function caricaElenco() {
     const { data } = await supabase.from("ci_residuo_riproduttore").select("*, animali(bdn, nome, specie, stato)").order("updated_at", { ascending: false });
-    setRiproduttori(numerizzaCampi(data || [], ["costo_acquisto", "costi_crescita_preriproduttiva", "valore_realizzo_stimato", "residuo_totale", "residuo_rimanente", "conto_sospeso"]));
+    setRiproduttori(numerizzaCampi(data || [], ["costo_acquisto", "costi_crescita_preriproduttiva", "valore_realizzo_stimato", "valore_realizzo_reale", "residuo_totale", "residuo_rimanente", "conto_sospeso"]));
   }
 
   async function caricaParametri() {
@@ -147,6 +147,73 @@ export default function ReportRiproduttori() {
     setElaborando(false);
   }
 
+  async function applicaConguagli() {
+    setElaborando(true);
+    try {
+      const { data: residuiDaConguagliare, error: eR } = await supabase
+        .from("ci_residuo_riproduttore").select("*, animali(id,bdn,specie,razza,razza_calcolata,stato,data_uscita,motivo_uscita,peso_vivo_uscita,peso_carcassa,padre_id,madre_id)")
+        .eq("conguaglio_applicato", false);
+      if (eR) throw new Error(eR.message);
+
+      const daConguagliare = (residuiDaConguagliare || []).filter(r => r.animali && r.animali.stato !== "attivo" && r.animali.data_uscita);
+      if (daConguagliare.length === 0) {
+        alert("Nessun riproduttore uscito ancora da conguagliare.");
+        setElaborando(false);
+        return;
+      }
+
+      const { data: prezziRiforma } = await supabase.from("prezzi_riforma").select("*");
+      const { data: tuttiAnimali } = await supabase.from("animali").select("id,padre_id,madre_id,nascita");
+
+      let conguagliati = 0;
+      for (const res of daConguagliare) {
+        const a = res.animali;
+        const razza = a.razza_calcolata || a.razza;
+        let prezzo = (prezziRiforma || []).find(p => p.specie === a.specie && p.razza === razza);
+        if (!prezzo) prezzo = (prezziRiforma || []).find(p => p.specie === a.specie);
+
+        const valoreReale = calcolaValoreRealizzoReale({
+          motivoUscita: a.motivo_uscita, pesoVivoUscita: a.peso_vivo_uscita, pesoCarcassa: a.peso_carcassa,
+          prezzoKgVivo: prezzo?.prezzo_kg_vivo, prezzoKgCarcassa: prezzo?.prezzo_kg_carcassa,
+        });
+
+        const annoUscita = new Date(a.data_uscita).getFullYear();
+        const figliAnnoUscita = (tuttiAnimali || []).filter(f =>
+          (f.padre_id === a.id || f.madre_id === a.id) && f.nascita && new Date(f.nascita).getFullYear() === annoUscita
+        );
+
+        const conguaglio = calcolaConguaglio({
+          valoreRealizzoReale: valoreReale, valoreRealizzoStimato: parseFloat(res.valore_realizzo_stimato) || 0,
+          numeroFigliAnnoUscita: figliAnnoUscita.length,
+        });
+
+        if (conguaglio.applicatoAiFigli) {
+          for (const figlio of figliAnnoUscita) {
+            const { data: costoEsistente } = await supabase.from("ci_costo_animale_annuale").select("id, costo_nascita_ereditato, costo_mantenimento")
+              .eq("animale_id", figlio.id).eq("anno", annoUscita).maybeSingle();
+            if (costoEsistente) {
+              const nuovoNascita = round2((parseFloat(costoEsistente.costo_nascita_ereditato) || 0) + conguaglio.conguaglioPerFiglio);
+              const nuovoTotale = round2((parseFloat(costoEsistente.costo_mantenimento) || 0) + nuovoNascita);
+              await supabase.from("ci_costo_animale_annuale").update({ costo_nascita_ereditato: nuovoNascita, costo_totale_anno: nuovoTotale }).eq("id", costoEsistente.id);
+            }
+          }
+        }
+
+        await supabase.from("ci_residuo_riproduttore").update({
+          valore_realizzo_reale: valoreReale, anno_uscita: annoUscita, conguaglio_applicato: true, updated_at: new Date().toISOString(),
+        }).eq("id", res.id);
+
+        conguagliati++;
+      }
+
+      alert(`✓ Conguaglio applicato per ${conguagliati} riproduttori usciti.`);
+      caricaElenco();
+    } catch (err) {
+      alert(`⚠️ Errore nel conguaglio:\n\n${err.message}`);
+    }
+    setElaborando(false);
+  }
+
   return (
     <div style={{ padding: 20, maxWidth: 1100, margin: "0 auto" }}>
       <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Report Riproduttori</h1>
@@ -172,6 +239,17 @@ export default function ReportRiproduttori() {
         </div>
       </div>
 
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 20 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: C.muted, marginBottom: 8 }}>CONGUAGLIO FINALE (riproduttori usciti davvero)</div>
+        <p style={{ fontSize: 12, color: C.muted, marginTop: 0, marginBottom: 10 }}>
+          Confronta il valore reale (peso effettivo alla sua uscita × prezzi di mercato) con la stima usata negli anni, e applica la differenza sui figli dell'anno di uscita.
+        </p>
+        <button onClick={applicaConguagli} disabled={elaborando}
+          style={{ background: C.accent, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+          {elaborando ? "Elaborazione..." : "⚖️ Applica conguagli"}
+        </button>
+      </div>
+
       {riproduttori && riproduttori.length > 0 && (
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
           <table style={{ width: "100%", fontSize: 13 }}>
@@ -179,7 +257,7 @@ export default function ReportRiproduttori() {
               <tr>
                 <th style={th}>Riproduttore</th><th style={th}>Specie</th>
                 <th style={th}>Residuo totale</th><th style={th}>Residuo rimanente</th>
-                <th style={th}>Conto sospeso</th><th style={th}>Vita attesa (anni)</th><th style={th}>Valore realizzo stimato</th>
+                <th style={th}>Conto sospeso</th><th style={th}>Vita attesa (anni)</th><th style={th}>Valore realizzo stimato</th><th style={th}>Stato</th>
               </tr>
             </thead>
             <tbody>
@@ -192,6 +270,11 @@ export default function ReportRiproduttori() {
                   <td style={{ ...td, textAlign: "right", color: r.conto_sospeso > 0 ? C.accent : C.muted }}>{r.conto_sospeso.toFixed(2)}€</td>
                   <td style={{ ...td, textAlign: "right" }}>{r.vita_produttiva_attesa_anni}</td>
                   <td style={{ ...td, textAlign: "right" }}>{r.valore_realizzo_stimato?.toFixed(2)}€</td>
+                  <td style={td}>
+                    {r.animali?.stato && r.animali.stato !== "attivo"
+                      ? (r.conguaglio_applicato ? <span style={{ color: C.green, fontWeight: 700 }}>✓ Conguagliato ({r.valore_realizzo_reale?.toFixed?.(2) ?? "—"}€ reale)</span> : <span style={{ color: C.accent, fontWeight: 700 }}>Uscito — da conguagliare</span>)
+                      : <span style={{ color: C.muted }}>Attivo</span>}
+                  </td>
                 </tr>
               ))}
             </tbody>

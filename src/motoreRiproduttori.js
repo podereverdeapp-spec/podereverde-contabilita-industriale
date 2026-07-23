@@ -1,6 +1,28 @@
 import { round2 } from "./parsingUtils";
 
-// Calcola le due valutazioni di realizzo stimato per un riproduttore (vivo e carcassa),
+// Calcola il valore REALE di realizzo di un riproduttore appena uscito, usando il SUO peso
+// effettivo (non più una media storica) — vivo o carcassa a seconda di come è uscito.
+export function calcolaValoreRealizzoReale({ motivoUscita, pesoVivoUscita, pesoCarcassa, prezzoKgVivo, prezzoKgCarcassa }) {
+  const motivo = (motivoUscita || "").toLowerCase();
+  const isMacellato = motivo.includes("macell");
+  if (isMacellato && pesoCarcassa) return round2(pesoCarcassa * (prezzoKgCarcassa || 0));
+  if (pesoVivoUscita) return round2(pesoVivoUscita * (prezzoKgVivo || 0));
+  return 0;
+}
+
+// Calcola il conguaglio (positivo o negativo) tra il valore reale e la stima usata negli anni,
+// e lo ripartisce sui figli dell'ANNO DI USCITA (non retroattivamente sugli anni precedenti).
+export function calcolaConguaglio({ valoreRealizzoReale, valoreRealizzoStimato, numeroFigliAnnoUscita }) {
+  const conguaglioTotale = round2((valoreRealizzoReale || 0) - (valoreRealizzoStimato || 0));
+  if (numeroFigliAnnoUscita === 0) {
+    // Nessun figlio quell'anno: il conguaglio non ha su chi ricadere — resta un dato
+    // aziendale (utile/perdita), non si scarica su nessuno specifico.
+    return { conguaglioTotale, conguaglioPerFiglio: 0, applicatoAiFigli: false };
+  }
+  return { conguaglioTotale, conguaglioPerFiglio: round2(conguaglioTotale / numeroFigliAnnoUscita), applicatoAiFigli: true };
+}
+
+
 // usando il peso medio storico di animali della stessa specie/razza usciti con più di
 // "etaMinimaAnni" anni di vita, moltiplicato per i due prezzi di mercato separati
 // (prezzo_kg_vivo e prezzo_kg_carcassa da prezzi_riforma — due campi indipendenti,
