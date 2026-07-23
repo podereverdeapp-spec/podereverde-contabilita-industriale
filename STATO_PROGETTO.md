@@ -85,13 +85,16 @@ Quando una riga MASCHERA viene classificata a mano e salvata, l'operatore può s
 | Carica Fatture (Excel + PDF) | ✅ |
 | Fornitori | ✅ |
 | Report Acquisto Animali | ✅ |
-| Clienti | ❌ (Blocco 2) |
-| Fatture Attive | ❌ (Blocco 2) |
-| Cespiti (interfaccia) | ❌ (Blocco 3 — tabelle già pronte) |
-| Importa Report UBA (interfaccia) | ❌ (Blocco 3 — tabelle già pronte) |
-| Articoli & Prezzi | ❌ (Blocco 4) |
-| Report Animali | ❌ (Blocco 4) |
-| Report Cespiti | ❌ (Blocco 4) |
+| Clienti | ✅ (Blocco 2) |
+| Fatture Attive | ✅ (Blocco 2) |
+| Cespiti (interfaccia) | ✅ (Blocco 3) |
+| Report UBA (calcolo diretto, no import) | ✅ (Blocco 3) |
+| Report Costi (tasso aggressivo, per specie) | ✅ (Blocco 4) |
+| Scheda Animale (ricerca + storico costo) | ✅ (Blocco 4) |
+| Report Riproduttori (residuo, conto sospeso) | ✅ (Blocco 4) |
+| Parametri | ✅ (Blocco 4) |
+| Articoli & Prezzi | ❌ (Blocco 4 — in corso) |
+| Report Cespiti | ❌ (Blocco 4 — in corso) |
 | Ricerca | ❌ (Blocco 5) |
 | Report generali | ❌ (Blocco 5) |
 

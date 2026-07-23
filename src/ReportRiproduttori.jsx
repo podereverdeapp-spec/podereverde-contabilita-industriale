@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { numerizzaCampi, round2 } from "./parsingUtils";
-import { calcolaResiduoIniziale, calcolaPianoScarico } from "./motoreRiproduttori";
+import { calcolaResiduoIniziale, calcolaPianoScarico, calcolaValoreRealizzoStimato } from "./motoreRiproduttori";
 
 export default function ReportRiproduttori() {
   const [anno, setAnno] = useState(new Date().getFullYear());
@@ -31,8 +31,11 @@ export default function ReportRiproduttori() {
       setParametri(parametriMap);
 
       const { data: tuttiAnimali, error: eA } = await supabase
-        .from("animali").select("id,bdn,nome,specie,riproduttore,costo_iniziale,padre_id,madre_id,nascita");
+        .from("animali").select("id,bdn,nome,specie,razza,razza_calcolata,riproduttore,costo_iniziale,padre_id,madre_id,nascita,stato,data_uscita,peso_vivo_uscita,peso_carcassa");
       if (eA) throw new Error(eA.message);
+
+      const { data: prezziRiforma } = await supabase.from("prezzi_riforma").select("*");
+      const etaMinimaAnni = parametriMap.eta_minima_calcolo_peso_storico || 3;
 
       const riproduttoriAttivi = (tuttiAnimali || []).filter(a => a.riproduttore);
       if (riproduttoriAttivi.length === 0) {
@@ -63,17 +66,30 @@ export default function ReportRiproduttori() {
         let residuoRecord = esistente ? numerizzaCampi([esistente], ["costo_acquisto", "costi_crescita_preriproduttiva", "valore_realizzo_stimato", "residuo_totale", "residuo_rimanente", "conto_sospeso"])[0] : null;
 
         if (!residuoRecord) {
+          const razzaRip = rip.razza_calcolata || rip.razza;
+          const realizzo = calcolaValoreRealizzoStimato({
+            specie: rip.specie, razza: razzaRip, animaliUsciti: tuttiAnimali || [],
+            prezziRiforma: prezziRiforma || [], etaMinimaAnni,
+          });
+          // Uso la valutazione "vivo" come stima prudenziale di default (di norma la più bassa
+          // delle due) — quando il riproduttore uscirà davvero, si userà il valore reale.
+          const valoreRealizzoStimato = Math.min(
+            realizzo.valutazioneVivo || Infinity,
+            realizzo.valutazioneCarcassa || Infinity
+          );
+          const valoreRealizzoFinale = Number.isFinite(valoreRealizzoStimato) ? valoreRealizzoStimato : 0;
+
           const residuoTotale = calcolaResiduoIniziale({
             costoAcquisto: rip.costo_iniziale || 0,
             costiCrescitaPreRiproduttiva: costiCrescita,
-            valoreRealizzoStimato: 0, // semplificazione dichiarata, come in Report Costi
+            valoreRealizzoStimato: valoreRealizzoFinale,
           });
           const chiaveVita = `vita_produttiva_attesa_${rip.specie === "bovino" ? "bovini" : rip.specie === "suino" ? "suini" : "ovini"}`;
           const vitaAttesa = parametriMap[chiaveVita] || 5;
 
           const { data: nuovo, error: eIns } = await supabase.from("ci_residuo_riproduttore").insert([{
             animale_id: rip.id, specie: rip.specie, costo_acquisto: rip.costo_iniziale || 0,
-            costi_crescita_preriproduttiva: costiCrescita, valore_realizzo_stimato: 0,
+            costi_crescita_preriproduttiva: costiCrescita, valore_realizzo_stimato: valoreRealizzoFinale,
             residuo_totale: residuoTotale, residuo_rimanente: residuoTotale,
             vita_produttiva_attesa_anni: vitaAttesa, anno_inizio_riproduzione: primoAnnoRiproduzione, conto_sospeso: 0,
           }]).select().single();
@@ -139,7 +155,7 @@ export default function ReportRiproduttori() {
       </p>
 
       <div style={{ background: "#FFF9E6", border: `1.5px solid ${C.accent}`, borderRadius: 10, padding: 12, marginBottom: 20, fontSize: 12, color: C.text }}>
-        ⚠️ Esegui prima "Report Costi" per l'anno scelto (e salvalo) — questo passaggio aggiorna il costo di nascita dei figli che hanno già una riga di costo per quell'anno. Il valore di realizzo dei riproduttori è ancora impostato a 0 (semplificazione, da raffinare).
+        ⚠️ Esegui prima "Report Costi" per l'anno scelto (e salvalo) — questo passaggio aggiorna il costo di nascita dei figli che hanno già una riga di costo per quell'anno. Il valore di realizzo stimato ora usa il peso medio storico (animali della stessa specie/razza usciti con più di {parametri?.eta_minima_calcolo_peso_storico || 3} anni) × i prezzi di mercato da "prezzi_riforma" — per la stima iniziale si usa prudenzialmente la valutazione più bassa tra vivo e carcassa; il valore reale sostituirà questa stima quando il riproduttore uscirà davvero (conguaglio, non ancora costruito). Il valore di realizzo si calcola una sola volta, alla prima elaborazione di ogni riproduttore.
       </div>
 
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 20 }}>
@@ -163,7 +179,7 @@ export default function ReportRiproduttori() {
               <tr>
                 <th style={th}>Riproduttore</th><th style={th}>Specie</th>
                 <th style={th}>Residuo totale</th><th style={th}>Residuo rimanente</th>
-                <th style={th}>Conto sospeso</th><th style={th}>Vita attesa (anni)</th>
+                <th style={th}>Conto sospeso</th><th style={th}>Vita attesa (anni)</th><th style={th}>Valore realizzo stimato</th>
               </tr>
             </thead>
             <tbody>
@@ -175,6 +191,7 @@ export default function ReportRiproduttori() {
                   <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{r.residuo_rimanente.toFixed(2)}€</td>
                   <td style={{ ...td, textAlign: "right", color: r.conto_sospeso > 0 ? C.accent : C.muted }}>{r.conto_sospeso.toFixed(2)}€</td>
                   <td style={{ ...td, textAlign: "right" }}>{r.vita_produttiva_attesa_anni}</td>
+                  <td style={{ ...td, textAlign: "right" }}>{r.valore_realizzo_stimato?.toFixed(2)}€</td>
                 </tr>
               ))}
             </tbody>
