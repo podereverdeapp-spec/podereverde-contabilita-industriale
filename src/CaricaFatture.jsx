@@ -219,6 +219,7 @@ export default function CaricaFatture() {
         memorizzaRegola: "nessuna", parolaChiaveRegola: "",
         giaCaricata: false,
         nonQuadra: false, dettaglioQuadratura: null,
+        scartata: false, giaScartataInPrecedenza: false,
         salvata: false, salvataggioInCorso: false, idsSalvati: null, regolaCreata: null,
       };
     });
@@ -262,6 +263,16 @@ export default function CaricaFatture() {
           }
         });
       }
+
+      const { data: scartatePrecedenti } = await supabase
+        .from("ci_righe_scartate").select("fornitore_id, descrizione").in("fornitore_id", fornitoreIds);
+      const chiaviScartate = new Set((scartatePrecedenti || []).map(s => `${s.fornitore_id}|${s.descrizione.trim().toLowerCase()}`));
+      risultati.forEach(r => {
+        if (r.fornitore_obj && chiaviScartate.has(`${r.fornitore_obj.id}|${r.descrizione.trim().toLowerCase()}`)) {
+          r.scartata = true;
+          r.giaScartataInPrecedenza = true;
+        }
+      });
     }
 
     setRighe(prev => [...prev, ...risultati]);
@@ -311,6 +322,7 @@ export default function CaricaFatture() {
 
   async function salvaRiga(riga) {
     if (riga.giaCaricata) { alert("Questa fattura risulta già caricata in precedenza."); return; }
+    if (riga.scartata) { alert("Questa riga è stata scartata — non verrà salvata."); return; }
     const errore = validaRiga(riga);
     if (errore) { alert(`⚠️ ${errore}`); return; }
 
@@ -408,6 +420,29 @@ export default function CaricaFatture() {
     }
   }
 
+  async function scartaRiga(riga) {
+    if (!window.confirm(`Scartare questa riga ("${riga.descrizione}") e ricordarla per il futuro? Le prossime fatture di ${riga.fornitore} con questa stessa descrizione verranno scartate automaticamente.`))
+      return;
+    let fornitoreId = riga.fornitore_obj?.id;
+    try {
+      if (!fornitoreId && riga.fornitore) {
+        const { data: nuovo, error } = await supabase.from("ci_fornitori")
+          .insert([{ nome: riga.fornitore, partita_iva: riga.piva || null, gruppo_classificazione: "FRO" }])
+          .select().single();
+        if (error) throw new Error(`Errore creando fornitore: ${error.message}`);
+        fornitoreId = nuovo.id;
+      }
+      if (fornitoreId) {
+        const { error } = await supabase.from("ci_righe_scartate")
+          .upsert([{ fornitore_id: fornitoreId, descrizione: riga.descrizione.trim() }], { onConflict: "fornitore_id,descrizione" });
+        if (error) throw new Error(error.message);
+      }
+      aggiornaRiga(riga.id, { scartata: true });
+    } catch (err) {
+      alert(`⚠️ Errore nello scarto della riga:\n\n${err.message}`);
+    }
+  }
+
   async function annullaSalvataggioRiga(riga) {
     if (!window.confirm("Annullare il salvataggio di questa riga? Verrà rimossa dal database e potrai modificarla di nuovo."))
       return;
@@ -426,7 +461,7 @@ export default function CaricaFatture() {
   }
 
   async function salvaTutteLeRimanenti() {
-    const daSalvare = righe.filter(r => !r.giaCaricata && !r.salvata);
+    const daSalvare = righe.filter(r => !r.giaCaricata && !r.salvata && !r.scartata);
     if (daSalvare.length === 0) { alert("Non ci sono righe da salvare."); return; }
     for (const r of daSalvare) {
       // eslint-disable-next-line no-await-in-loop
@@ -441,6 +476,7 @@ export default function CaricaFatture() {
     maschera: righe.filter(r => r.stato === "MASCHERA" && !r.giaCaricata).length,
     giaCaricate: righe.filter(r => r.giaCaricata).length,
     nonQuadrano: righe.filter(r => r.nonQuadra && !r.giaCaricata).length,
+    scartate: righe.filter(r => r.scartata).length,
     salvate: righe.filter(r => r.salvata).length,
   };
 
@@ -507,6 +543,7 @@ export default function CaricaFatture() {
             <StatBox label="Da classificare" value={stats.maschera} color={stats.maschera > 0 ? C.red : C.green} />
             {stats.giaCaricate > 0 && <StatBox label="Già caricate (saltate)" value={stats.giaCaricate} color={C.accent} />}
             {stats.nonQuadrano > 0 && <StatBox label="Non quadrano (da verificare)" value={stats.nonQuadrano} color="#B8860B" />}
+            {stats.scartate > 0 && <StatBox label="Scartate" value={stats.scartate} color={C.muted} />}
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
@@ -516,12 +553,13 @@ export default function CaricaFatture() {
                 aree={areeDisponibili()} centriPerArea={centriPerArea}
                 onChange={campi => aggiornaRiga(r.id, campi)}
                 onSalva={() => salvaRiga(r)}
+                onScarta={() => scartaRiga(r)}
                 onAnnulla={() => annullaSalvataggioRiga(r)}
               />
             ))}
           </div>
 
-          {stats.salvate < righe.filter(r => !r.giaCaricata).length && (
+          {stats.salvate < righe.filter(r => !r.giaCaricata && !r.scartata).length && (
             <button onClick={salvaTutteLeRimanenti} style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 10, padding: "12px 24px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
               Salva tutte le rimanenti
             </button>
@@ -549,31 +587,41 @@ function StatBox({ label, value, color }) {
   );
 }
 
-function RigaFattura({ riga, aree, centriPerArea, onChange, onSalva, onAnnulla }) {
+function RigaFattura({ riga, aree, centriPerArea, onChange, onSalva, onAnnulla, onScarta }) {
   const r = riga;
-  const bordoColore = r.giaCaricata ? C.accent : r.salvata ? C.green : r.nonQuadra ? "#B8860B" : r.stato === "MASCHERA" ? C.red : r.stato === "FCF" ? C.blue : C.green;
+  const bordoColore = r.giaCaricata ? C.accent : r.scartata ? C.muted : r.salvata ? C.green : r.nonQuadra ? "#B8860B" : r.stato === "MASCHERA" ? C.red : r.stato === "FCF" ? C.blue : C.green;
   const isTrasportoAnimali = r.editArea === "TRASPORTO ANIMALI";
   const isAcquistoAnimali = r.editArea === "ACQUISTO ANIMALI";
   const isAmmortamento = r.editArea === "Ammortamenti";
   const eraMaschera = r.stato === "MASCHERA"; // solo per queste ha senso proporre di creare una regola
 
   return (
-    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderLeft: `4px solid ${bordoColore}`, borderRadius: 10, padding: 14, opacity: r.giaCaricata ? 0.6 : 1 }}>
+    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderLeft: `4px solid ${bordoColore}`, borderRadius: 10, padding: 14, opacity: (r.giaCaricata || r.scartata) ? 0.55 : 1 }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
         <div>
-          <strong>{r.fornitore}</strong> — {r.descrizione}
-          <div style={{ fontSize: 12, color: C.muted }}>Fatt. {r.numero} del {r.data} · Imponibile {r.imponibile?.toFixed(2)}€</div>
+          <div style={{ fontSize: 12, color: C.muted, marginBottom: 2 }}>{r.fornitore}</div>
+          <div style={{ fontSize: 16, fontWeight: 700 }}>{r.descrizione}</div>
+          <div style={{ fontSize: 15, fontWeight: 800, color: bordoColore, marginTop: 2 }}>Imponibile: {r.imponibile?.toFixed(2)}€</div>
+          <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>Fatt. {r.numero} del {r.data}</div>
           <div style={{ fontSize: 12, color: C.muted }}>
             {r.quantita} {r.unita_misura} × {r.prezzo_unitario?.toFixed(2)}€/{r.unita_misura}
             {r.aliquota_iva != null && ` · IVA ${r.aliquota_iva}%`}
           </div>
         </div>
         <span style={{ background: bordoColore + "22", color: bordoColore, padding: "3px 10px", borderRadius: 8, fontSize: 12, fontWeight: 700, height: "fit-content" }}>
-          {r.giaCaricata ? "GIÀ CARICATA" : r.salvata ? "✓ SALVATA" : r.nonQuadra ? "⚠️ NON QUADRA" : r.stato}
+          {r.giaCaricata ? "GIÀ CARICATA" : r.scartata ? "🗑️ SCARTATA" : r.salvata ? "✓ SALVATA" : r.nonQuadra ? "⚠️ NON QUADRA" : r.stato}
         </span>
       </div>
 
-      {r.nonQuadra && !r.giaCaricata && (
+      {r.scartata && (
+        <div style={{ fontSize: 12, color: C.muted, fontStyle: "italic" }}>
+          {r.giaScartataInPrecedenza
+            ? "Scartata automaticamente: avevi già deciso di ignorare questa descrizione per questo fornitore."
+            : "Scartata — non verrà salvata. Le prossime fatture di questo fornitore con questa stessa descrizione verranno scartate automaticamente."}
+        </div>
+      )}
+
+      {r.nonQuadra && !r.giaCaricata && !r.scartata && (
         <div style={{ fontSize: 12, color: "#B8860B", background: "#B8860B15", borderRadius: 8, padding: "8px 10px", marginBottom: 10, fontWeight: 600 }}>
           ⚠️ La somma delle righe di questa fattura ({typeof r.dettaglioQuadratura?.totaleCalcolato === "number" ? r.dettaglioQuadratura.totaleCalcolato.toFixed(2) : r.dettaglioQuadratura?.totaleCalcolato}€)
           non coincide con il totale indicato sul PDF originale ({typeof r.dettaglioQuadratura?.totalePdf === "number" ? r.dettaglioQuadratura.totalePdf.toFixed(2) : r.dettaglioQuadratura?.totalePdf}€) — verificala con attenzione prima di salvare, potrebbe mancare una riga.
@@ -598,7 +646,7 @@ function RigaFattura({ riga, aree, centriPerArea, onChange, onSalva, onAnnulla }
         </div>
       )}
 
-      {!r.giaCaricata && !r.salvata && (
+      {!r.giaCaricata && !r.salvata && !r.scartata && (
         <>
           {r.nota && <div style={{ fontSize: 12, color: C.muted, fontStyle: "italic", marginBottom: 8 }}>{r.nota}</div>}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
@@ -694,10 +742,16 @@ function RigaFattura({ riga, aree, centriPerArea, onChange, onSalva, onAnnulla }
             </div>
           )}
 
-          <button onClick={onSalva} disabled={r.salvataggioInCorso}
-            style={{ marginTop: 12, background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-            {r.salvataggioInCorso ? "Salvataggio..." : "💾 Salva questa riga"}
-          </button>
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <button onClick={onSalva} disabled={r.salvataggioInCorso}
+              style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+              {r.salvataggioInCorso ? "Salvataggio..." : "💾 Salva questa riga"}
+            </button>
+            <button onClick={onScarta}
+              style={{ background: "none", border: `1.5px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+              🗑️ Scarta e ricorda
+            </button>
+          </div>
         </>
       )}
     </div>
