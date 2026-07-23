@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
+import { numerizzaCampi } from "./parsingUtils";
 
 const MESI = ["Gen","Feb","Mar","Apr","Mag","Giu","Lug","Ago","Set","Ott","Nov","Dic"];
 
@@ -24,9 +25,9 @@ export default function Dashboard({ onNavigate }) {
     if (errore) {
       alert(`⚠️ Errore nel caricamento della dashboard:\n\n${errore.message}`);
     } else {
-      setFatture(f || []);
+      setFatture(numerizzaCampi(f || [], ["totale_netto", "totale_iva", "totale_lordo"]));
       setFornitori(fo || []);
-      setReportAcquisto(ra || []);
+      setReportAcquisto(numerizzaCampi(ra || [], ["importo", "quantita", "prezzo_unitario"]));
     }
     setLoading(false);
   }

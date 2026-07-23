@@ -96,8 +96,8 @@ export default function CaricaFattureAttive() {
 
   async function ricalcolaTotali(fatturaId) {
     const { data: righeArt } = await supabase.from("ci_articoli_fattura").select("totale_riga, totale_iva").eq("fattura_id", fatturaId);
-    const netto = (righeArt || []).reduce((s, r) => s + (r.totale_riga || 0), 0);
-    const iva = (righeArt || []).reduce((s, r) => s + (r.totale_iva || 0), 0);
+    const netto = (righeArt || []).reduce((s, r) => s + (parseFloat(r.totale_riga) || 0), 0);
+    const iva = (righeArt || []).reduce((s, r) => s + (parseFloat(r.totale_iva) || 0), 0);
     await supabase.from("ci_fatture").update({ totale_netto: round2(netto), totale_iva: round2(iva), totale_lordo: round2(netto + iva) }).eq("id", fatturaId);
   }
 

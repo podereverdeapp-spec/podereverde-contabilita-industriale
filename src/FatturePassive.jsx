@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
+import { numerizzaCampi } from "./parsingUtils";
 
 export default function FatturePassive() {
   const [fatture, setFatture] = useState([]);
@@ -23,7 +24,7 @@ export default function FatturePassive() {
     if (error) {
       alert(`⚠️ Errore nel caricamento delle fatture:\n\n${error.message}`);
     } else {
-      setFatture(data || []);
+      setFatture(numerizzaCampi(data || [], ["totale_netto", "totale_iva", "totale_lordo"]));
     }
     setLoading(false);
   }
@@ -44,7 +45,7 @@ export default function FatturePassive() {
         alert(`⚠️ Errore nel caricamento delle righe:\n\n${error.message}`);
         return;
       }
-      setRighePerFattura(prev => ({ ...prev, [fatturaId]: data || [] }));
+      setRighePerFattura(prev => ({ ...prev, [fatturaId]: numerizzaCampi(data || [], ["quantita", "prezzo_unitario", "totale_riga", "aliquota_iva", "totale_iva"]) }));
     }
   }
 

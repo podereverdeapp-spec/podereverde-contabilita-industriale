@@ -1,5 +1,23 @@
 // Funzioni di parsing condivise tra Carica Fatture (passive) e Carica Fatture Attive
 
+// Supabase (PostgREST) restituisce spesso le colonne numeric/decimal come TESTO
+// (per non perdere precisione) invece che come numeri JavaScript veri. Questa funzione
+// converte i campi indicati in numeri reali subito dopo la lettura, così il resto del
+// codice (somme, .toFixed(), ecc.) funziona sempre correttamente.
+export function numerizzaCampi(righe, campi) {
+  if (!righe) return righe;
+  return righe.map(r => {
+    const copia = { ...r };
+    campi.forEach(c => {
+      if (copia[c] !== null && copia[c] !== undefined) {
+        const n = parseFloat(copia[c]);
+        copia[c] = Number.isNaN(n) ? copia[c] : n;
+      }
+    });
+    return copia;
+  });
+}
+
 export function round2(n) {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }

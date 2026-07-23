@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { RicomposizioneFattura } from "./FatturePassive";
+import { numerizzaCampi } from "./parsingUtils";
 
 export default function FattureAttive() {
   const [fatture, setFatture] = useState([]);
@@ -21,7 +22,7 @@ export default function FattureAttive() {
       .eq("tipo", "ATTIVA")
       .order("data", { ascending: false });
     if (error) alert(`⚠️ Errore nel caricamento delle fatture:\n\n${error.message}`);
-    else setFatture(data || []);
+    else setFatture(numerizzaCampi(data || [], ["totale_netto", "totale_iva", "totale_lordo"]));
     setLoading(false);
   }
 
@@ -31,7 +32,7 @@ export default function FattureAttive() {
     if (!righePerFattura[fatturaId]) {
       const { data, error } = await supabase.from("ci_articoli_fattura").select("*").eq("fattura_id", fatturaId).order("id");
       if (error) { alert(`⚠️ Errore nel caricamento delle righe:\n\n${error.message}`); return; }
-      setRighePerFattura(prev => ({ ...prev, [fatturaId]: data || [] }));
+      setRighePerFattura(prev => ({ ...prev, [fatturaId]: numerizzaCampi(data || [], ["quantita", "prezzo_unitario", "totale_riga", "aliquota_iva", "totale_iva"]) }));
     }
   }
 

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
+import { numerizzaCampi } from "./parsingUtils";
 
 export default function ReportAcquistoAnimali() {
   const [righe, setRighe] = useState([]);
@@ -18,7 +19,7 @@ export default function ReportAcquistoAnimali() {
     if (error) {
       alert(`⚠️ Errore nel caricamento:\n\n${error.message}`);
     } else {
-      setRighe(data || []);
+      setRighe(numerizzaCampi(data || [], ["importo", "quantita", "prezzo_unitario"]));
     }
     setLoading(false);
   }

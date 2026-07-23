@@ -7,6 +7,8 @@ import FattureAttive from "./FattureAttive";
 import NuovaFatturaAttiva from "./NuovaFatturaAttiva";
 import CaricaFatture from "./CaricaFatture";
 import CaricaFattureAttive from "./CaricaFattureAttive";
+import Cespiti from "./Cespiti";
+import ImportaReportUba from "./ImportaReportUba";
 import ReportAcquistoAnimali from "./ReportAcquistoAnimali";
 import { C, FONT } from "./style";
 
@@ -18,6 +20,8 @@ const TAB = [
   { id: "fornitori", label: "Fornitori", icon: "🏢" },
   { id: "clienti", label: "Clienti", icon: "🤝" },
   { id: "acquisto", label: "Report Acquisto Animali", icon: "🐄" },
+  { id: "cespiti", label: "Cespiti", icon: "🏗️" },
+  { id: "uba", label: "Importa Report UBA", icon: "🐮" },
 ];
 
 export default function App() {
@@ -78,6 +82,8 @@ export default function App() {
         {tab === "fornitori" && <Fornitori />}
         {tab === "clienti" && <Clienti />}
         {tab === "acquisto" && <ReportAcquistoAnimali />}
+        {tab === "cespiti" && <Cespiti />}
+        {tab === "uba" && <ImportaReportUba />}
       </main>
     </div>
   );
