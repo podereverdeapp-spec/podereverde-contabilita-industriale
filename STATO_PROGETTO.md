@@ -115,20 +115,31 @@ Il campo `unita_misura` di `ci_articoli_fattura` **non è più vincolato** a un 
 
 **Confermato**: il sistema AREA/CENTRO DI COSTO/DESTINAZIONE/TIPO DI COSTO con regole FCV/FCF **non esiste nel codice reale di Prima App** — era un progetto di integrazione mai realizzato lì. Quello che abbiamo costruito noi va oltre Prima App su questo punto specifico.
 
-**Formula esatta costo/UBA-giorno con improduttivi usciti** (decisione presa: usare questa, più aggressiva di una semplice esclusione dal divisore):
+**Formula costo/UBA-giorno — CORREZIONE (la formula di Prima App era stata scelta per errore, sostituita da quella reale)**: il vero motore di podereverdeapp.it (ExportManager.jsx, funzione `fogli_uba`) usa una formula più semplice, già scritta e testata:
 ```
-costoPerUbaGiorno_base = totale / ubaGiorniOrdinari
-perdita = costoPerUbaGiorno_base × ubaGiorniImproduttivi
-costoPerUbaGiorno_RETTIFICATO = (totale + perdita) / ubaGiorniOrdinari
+rateUbaGiorno = (C(t) - V(t)) / F(t)
 ```
-(non semplicemente `totale / ubaGiorniOrdinari` — quella base viene ulteriormente aumentata riaggiungendo la "perdita" allo stesso divisore ristretto). Da implementare così quando costruiremo il calcolo costo/UBA-giorno (Blocco 4, Report Animali).
+dove **F(t) = somma degli UBA-giorni di TUTTI gli animali**, inclusi gli improduttivi usciti (nessuna esclusione dal divisore, a differenza di quanto avevamo preso da Prima App). "Podereverdeapp.it governa" — questa è la formula definitiva da usare.
 
-**Classificazione PRODUTTIVO/IMPRODUTTIVO_USCITO — decisione presa**: NON allinearsi alla terminologia esatta di Prima App (che richiede un confronto testuale preciso su "morte malattia", "morte al parto", "sottrazione", ecc. — parole diverse dalle nostre). **Comanda podereverdeapp.it**: quando costruiremo l'import Report UBA (Blocco 3), la classificazione userà i motivi di uscita reali della nostra app:
-- PRODUTTIVO: Macellato, Venduto vivo, (nessuna uscita / ancora attivo)
-- IMPRODUTTIVO_USCITO (perdita, esclusa dal divisore): Morto (malattia), Morto (causa naturale), Predato, Smarrito
-- "Altro": trattato come IMPRODUTTIVO_USCITO per prudenza (stesso principio conservativo di Prima App — un motivo non specificato è meglio trattarlo come perdita da verificare, non come produttivo per default), segnalato come ambiguo da controllare a mano
+**Classificazione PRODUTTIVO/IMPRODUTTIVO_USCITO — CORREZIONE (trovata la funzione reale in ExportManager.jsx, `categoriaContabileExp`)**:
+```js
+function categoriaContabileExp(animale) {
+  if (animale.stato === "attivo") return animale.riproduttore ? "riproduttore" : "produttivo";
+  const motivo = (animale.motivo_uscita||"").toLowerCase();
+  const isProduttivo = MOTIVI_PRODUTTIVI_EXP.some(k => motivo.includes(k));
+  if (isProduttivo) return animale.riproduttore ? "riproduttore" : "produttivo";
+  return "improduttivo_uscito";
+}
+```
+con `MOTIVI_PRODUTTIVI_EXP = ["macellazione","macellato","venduto","riformato","riforma","vendita"]` cercate come sottostringa (non uguaglianza esatta). Qualunque motivo di uscita che NON contiene una di queste parole (quindi anche "Altro", "Morto", "Predato", "Smarrito", ecc.) risulta IMPRODUTTIVO_USCITO. Questa è la funzione reale e testata, sostituisce la lista scritta a mano in precedenza.
 
-**"Riporto quota UBA"** (meccanismo non documentato prima, utile per Importa Report UBA — Blocco 3): se un animale presente nel report UBA dell'anno precedente **non compare** nel nuovo import, il sistema ne riporta automaticamente l'ultima quota nota (stessi giorni/UBA-medio/UBA-giorni), A MENO CHE l'anagrafica Podere Verde non mostri che è uscito per **macellazione o decesso** (altri motivi di uscita come vendita non fermano il riporto — l'azienda considera solo macellazione/decesso come "fine vita" nel perimetro UBA).
+**Motore UBA completo, trovato in `/home/claude/allevamento/src/ExportManager.jsx`** (da riusare identico, non reinventare):
+- `UBA_FASCE_EXP`: coefficienti per specie/fascia d'età (bovino: 0.40/0.70/1.00 a 210/730/∞ giorni; suino: 0.027/0.30/0.50 a 90/365/∞ giorni; ovino: 0.027/0.10/0.15 a 120/365/∞ giorni)
+- `periodoNellAnnoExp(nascita, dataUscita, stato, anno)`: calcola il periodo di presenza effettiva nell'anno
+- `calcolaUBAMedioExp(specie, giorni, etaAllInizio)`: UBA medio ponderato tra fasce d'età attraversate nel periodo
+- `fogli_uba(...)`: orchestratore che calcola tutto, incluso il costo di nascita per lotto tramite `rateUbaGiorno`
+
+**"Riporto quota UBA"** (meccanismo non documentato prima, utile per Importa Report UBA — Blocco 3): se un animale presente nel report UBA dell'anno precedente **non compare** nel nuovo import, il sistema ne riporta automaticamente l'ultima quota nota (stessi giorni/UBA-medio/UBA-giorni), A MENO CHE l'anagrafica Podere Verde non mostri che è uscito per **macellazione o decesso** (altri motivi di uscita come vendita non fermano il riporto — l'azienda considera solo macellazione/decesso come "fine vita" nel perimetro UBA). Nota: questo meccanismo era descritto in Prima App — da verificare se serve ancora, dato che ora calcoliamo l'UBA direttamente dagli animali reali ogni volta, non da un import storico.
 
 **Dettagli minori da recepire**:
 - Il parser Excel di Prima App gestisce i numeri con virgola decimale all'italiana (es. "1.000,50" scritto come testo) — il nostro parser attuale non lo fa ancora, va aggiunto per robustezza
