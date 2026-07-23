@@ -153,7 +153,7 @@ export default function ReportCosti() {
             <Riga label="Quote di ammortamento" valore={`${risultato.costoAmmortamenti.toFixed(2)}€`} />
             <Riga label="Costi totali (C(t))" valore={`${risultato.costiTotali.toFixed(2)}€`} bold />
             <Riga label="UBA-giorni produttivi/riproduttori" valore={risultato.tasso.ubaGiorniProduttivi.toFixed(1)} />
-            <Riga label="UBA-giorni improduttivi (esclusi dal divisore)" valore={risultato.tasso.ubaGiorniImproduttivo.toFixed(1)} color={C.red} />
+            <Riga label="UBA-giorni improduttivi (esclusi dal divisore)" valore={risultato.tasso.ubaGiorniImproduttivi.toFixed(1)} color={C.red} />
             <Riga label="Tasso semplice (se si dividesse su tutti)" valore={`${risultato.tasso.tassoSemplice.toFixed(4)}€/UBA-gg`} color={C.muted} />
             <Riga label="Perdita spalmata sui produttivi" valore={`${risultato.tasso.perditaSpalmata.toFixed(2)}€`} color={C.red} />
             <Riga label="Tasso RETTIFICATO (quello usato)" valore={`${risultato.tasso.tassoRettificato.toFixed(4)}€/UBA-gg`} bold color={C.primary} />
