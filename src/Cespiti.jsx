@@ -26,15 +26,64 @@ export default function Cespiti() {
   const [salvando, setSalvando] = useState(false);
   const [generandoQuote, setGenerandoQuote] = useState(false);
   const [annoGenerazione, setAnnoGenerazione] = useState(new Date().getFullYear());
+  const [fornitori, setFornitori] = useState([]);
+  const [modificaId, setModificaId] = useState(null);
+  const [formModifica, setFormModifica] = useState(null);
+  const [salvandoModifica, setSalvandoModifica] = useState(false);
 
-  useEffect(() => { carica(); }, []);
+  useEffect(() => { carica(); caricaFornitori(); }, []);
+  async function caricaFornitori() {
+    const { data } = await supabase.from("ci_fornitori").select("id, nome").order("nome");
+    setFornitori(data || []);
+  }
 
   async function carica() {
     setLoading(true);
-    const { data, error } = await supabase.from("ci_cespiti").select("*, ci_fornitori(nome)").order("data_acquisto", { ascending: false });
+    const { data, error } = await supabase.from("ci_cespiti").select("*, ci_fornitori(nome), ci_fatture(numero, data)").order("data_acquisto", { ascending: false });
     if (error) alert(`⚠️ Errore nel caricamento cespiti:\n\n${error.message}`);
     else setCespiti(numerizzaCampi(data || [], ["costo_acquisto", "anni_ammortamento"]));
     setLoading(false);
+  }
+
+  function iniziaModifica(c) {
+    setModificaId(c.id);
+    setFormModifica({
+      categoria: c.categoria || "",
+      specieSelezionata: c.specie?.[0] || "",
+      coefficientePct: c.anni_ammortamento ? round2(100 / c.anni_ammortamento) : "",
+      data_acquisto: c.data_acquisto || "",
+      fornitore_id: c.fornitore_id || "",
+    });
+  }
+
+  function annullaModifica() {
+    setModificaId(null);
+    setFormModifica(null);
+  }
+
+  async function salvaModifica(cespiteId) {
+    if (!window.confirm("Confermi le modifiche a questo cespite? L'aggiornamento della categoria/imputazione/coefficiente non ricalcola automaticamente le quote già generate per gli anni passati — se necessario, rilancia \"Genera Quote\" dopo.")) return;
+    setSalvandoModifica(true);
+    try {
+      const coeff = parseFloat(formModifica.coefficientePct);
+      const nuoviAnni = coeff > 0 ? Math.round(100 / coeff) : null;
+      const mappaSpecie = { "Bovini": ["Bovini"], "Suini": ["Suini"], "Ovini": ["Ovini"], "Generali": ["Generale"], "Nessuno": [] };
+      const { error } = await supabase.from("ci_cespiti").update({
+        categoria: formModifica.categoria || null,
+        specie: mappaSpecie[formModifica.specieSelezionata] ?? [],
+        anni_ammortamento: nuoviAnni || 5,
+        data_acquisto: formModifica.data_acquisto || null,
+        fornitore_id: formModifica.fornitore_id || null,
+        updated_at: new Date().toISOString(),
+      }).eq("id", cespiteId);
+      if (error) throw new Error(error.message);
+      setModificaId(null);
+      setFormModifica(null);
+      carica();
+    } catch (err) {
+      alert(`⚠️ Errore nel salvataggio:\n\n${err.message}`);
+    }
+    setSalvandoModifica(false);
   }
 
   async function espandi(cespiteId) {
@@ -204,6 +253,74 @@ export default function Cespiti() {
               </div>
               {espanso === c.id && (
                 <div style={{ borderTop: `1px solid ${C.border}`, padding: 14 }}>
+                  {modificaId === c.id ? (
+                    <div style={{ background: "#F5F0E8", border: `1.5px solid ${C.primary}`, borderRadius: 10, padding: 12, marginBottom: 14 }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 10 }}>
+                        <div>
+                          <label style={{ fontSize: 11, color: C.muted, fontWeight: 700, display: "block", marginBottom: 3 }}>Categoria</label>
+                          <select value={formModifica.categoria} onChange={e => setFormModifica({ ...formModifica, categoria: e.target.value })}
+                            style={{ width: "100%", boxSizing: "border-box", padding: "7px 8px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 13 }}>
+                            <option value="">— nessuna —</option>
+                            {CATEGORIE_AMMORTAMENTO.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 11, color: C.muted, fontWeight: 700, display: "block", marginBottom: 3 }}>Imputazione</label>
+                          <select value={formModifica.specieSelezionata} onChange={e => setFormModifica({ ...formModifica, specieSelezionata: e.target.value })}
+                            style={{ width: "100%", boxSizing: "border-box", padding: "7px 8px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 13 }}>
+                            <option value="">Generali</option>
+                            {["Bovini", "Suini", "Ovini", "Nessuno"].map(s => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 11, color: C.muted, fontWeight: 700, display: "block", marginBottom: 3 }}>Coefficiente ammortamento (%/anno)</label>
+                          <input type="number" value={formModifica.coefficientePct} onChange={e => setFormModifica({ ...formModifica, coefficientePct: e.target.value })}
+                            style={{ width: "100%", boxSizing: "border-box", padding: "7px 8px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 13 }} />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 11, color: C.muted, fontWeight: 700, display: "block", marginBottom: 3 }}>Data acquisto</label>
+                          <input type="date" value={formModifica.data_acquisto} onChange={e => setFormModifica({ ...formModifica, data_acquisto: e.target.value })}
+                            style={{ width: "100%", boxSizing: "border-box", padding: "7px 8px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 13 }} />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 11, color: C.muted, fontWeight: 700, display: "block", marginBottom: 3 }}>Fornitore</label>
+                          <select value={formModifica.fornitore_id} onChange={e => setFormModifica({ ...formModifica, fornitore_id: e.target.value })}
+                            style={{ width: "100%", boxSizing: "border-box", padding: "7px 8px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 13 }}>
+                            <option value="">— nessuno —</option>
+                            {fornitori.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button onClick={() => salvaModifica(c.id)} disabled={salvandoModifica}
+                          style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                          {salvandoModifica ? "Salvataggio..." : "✓ Salva modifiche"}
+                        </button>
+                        <button onClick={annullaModifica}
+                          style={{ background: "none", border: `1.5px solid ${C.border}`, borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 700, color: C.muted, cursor: "pointer" }}>
+                          Annulla
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ background: "#FAFAF8", border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, marginBottom: 14 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 8 }}>
+                        <div style={{ fontSize: 13, lineHeight: 1.8 }}>
+                          <div><strong>Fattura di provenienza:</strong> {c.ci_fatture ? `n. ${c.ci_fatture.numero} del ${c.ci_fatture.data}` : "— (cespite storico migrato, nessuna fattura collegata)"}</div>
+                          <div><strong>Fornitore:</strong> {c.ci_fornitori?.nome || "—"}</div>
+                          <div><strong>Data acquisto:</strong> {c.data_acquisto}</div>
+                          <div><strong>Categoria:</strong> {c.categoria || "—"}</div>
+                          <div><strong>Imputazione:</strong> {c.specie?.length > 0 ? c.specie.join(", ") : "Generali (o Nessuno se escluso)"}</div>
+                          <div><strong>Coefficiente ammortamento:</strong> {c.anni_ammortamento ? `${round2(100 / c.anni_ammortamento)}%/anno (${c.anni_ammortamento} anni)` : "—"}</div>
+                        </div>
+                        <button onClick={() => iniziaModifica(c)}
+                          style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                          ✏️ Modifica
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   {!ammortamentiPerCespite[c.id] ? (
                     <p style={{ color: C.muted, fontSize: 13 }}>Caricamento...</p>
                   ) : ammortamentiPerCespite[c.id].length === 0 ? (

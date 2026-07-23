@@ -392,6 +392,22 @@ export default function CaricaFatture() {
           }]).select().single();
           if (eAmm) throw new Error(eAmm.message);
           idsSalvati.dettaglioAmmortamentoId = amm.id;
+
+          // Crea davvero il Cespite corrispondente (mancava: prima si salvava solo il
+          // dettaglio di classificazione, mai la riga in ci_cespiti)
+          const mappaSpecie = { "Bovini": ["Bovini"], "Suini": ["Suini"], "Ovini": ["Ovini"], "Generali": ["Generale"], "Nessuno": [] };
+          const specieCespite = mappaSpecie[riga.imputazioneAmmortamento] ?? [];
+          const pct = riga.pctAmmortamento ? parseFloat(riga.pctAmmortamento) : null;
+          const anniAmmortamento = pct ? Math.round(100 / pct) : 5;
+
+          const { data: cespite, error: eCesp } = await supabase.from("ci_cespiti").insert([{
+            descrizione: riga.descrizione, categoria: riga.categoriaAmmortamento || null,
+            fornitore_id: fornitoreId, fattura_id: fatturaId,
+            data_acquisto: riga.data, costo_acquisto: riga.imponibile,
+            anni_ammortamento: anniAmmortamento, specie: specieCespite,
+          }]).select().single();
+          if (eCesp) throw new Error(`Riga salvata ma errore nella creazione del Cespite: ${eCesp.message}`);
+          idsSalvati.cespiteId = cespite.id;
         }
         await ricalcolaTotaliFattura(fatturaId);
       }
@@ -449,6 +465,7 @@ export default function CaricaFatture() {
     const ids = riga.idsSalvati || {};
     try {
       if (ids.dettaglioAmmortamentoId) await supabase.from("ci_articolo_dettaglio_ammortamento").delete().eq("id", ids.dettaglioAmmortamentoId);
+      if (ids.cespiteId) await supabase.from("ci_cespiti").delete().eq("id", ids.cespiteId);
       if (ids.reportAcquistoId) await supabase.from("ci_report_acquisto_animali").delete().eq("id", ids.reportAcquistoId);
       if (ids.articoloFatturaId) await supabase.from("ci_articoli_fattura").delete().eq("id", ids.articoloFatturaId);
       if (riga.regolaCreata?.tipo === "fissa") await supabase.from("ci_regole_fornitore_fissa").delete().eq("id", riga.regolaCreata.id);
