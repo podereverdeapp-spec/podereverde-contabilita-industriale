@@ -10,6 +10,7 @@ import CaricaFattureAttive from "./CaricaFattureAttive";
 import Cespiti from "./Cespiti";
 import ReportUba from "./ReportUba";
 import ReportCosti from "./ReportCosti";
+import SchedaAnimale from "./SchedaAnimale";
 import Parametri from "./Parametri";
 import ReportAcquistoAnimali from "./ReportAcquistoAnimali";
 import { C, FONT } from "./style";
@@ -25,12 +26,19 @@ const TAB = [
   { id: "cespiti", label: "Cespiti", icon: "🏗️" },
   { id: "uba", label: "Report UBA", icon: "🐮" },
   { id: "costi", label: "Report Costi", icon: "📊" },
+  { id: "scheda", label: "Scheda Animale", icon: "🔍" },
   { id: "parametri", label: "Parametri", icon: "⚙️" },
 ];
 
 export default function App() {
   const [tab, setTab] = useState("dashboard");
   const [vistaAttive, setVistaAttive] = useState("elenco"); // "elenco" | "nuova"
+  const [ricercaSchedaAnimale, setRicercaSchedaAnimale] = useState(null);
+
+  function vaiAllaSchedaAnimale(termine) {
+    setRicercaSchedaAnimale(termine);
+    setTab("scheda");
+  }
 
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: FONT }}>
@@ -87,8 +95,9 @@ export default function App() {
         {tab === "clienti" && <Clienti />}
         {tab === "acquisto" && <ReportAcquistoAnimali />}
         {tab === "cespiti" && <Cespiti />}
-        {tab === "uba" && <ReportUba />}
+        {tab === "uba" && <ReportUba onVediScheda={vaiAllaSchedaAnimale} />}
         {tab === "costi" && <ReportCosti />}
+        {tab === "scheda" && <SchedaAnimale ricercaIniziale={ricercaSchedaAnimale} onRicercaConsumata={() => setRicercaSchedaAnimale(null)} />}
         {tab === "parametri" && <Parametri />}
       </main>
     </div>

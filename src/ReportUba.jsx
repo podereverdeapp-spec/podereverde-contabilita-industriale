@@ -5,7 +5,7 @@ import { calcolaReportUba } from "./motoreUba";
 
 // ─── COMPONENTE ───
 
-export default function ReportUba() {
+export default function ReportUba({ onVediScheda }) {
   const [anno, setAnno] = useState(new Date().getFullYear());
   const [righe, setRighe] = useState(null);
   const [calcolando, setCalcolando] = useState(false);
@@ -194,6 +194,7 @@ export default function ReportUba() {
             </div>
           )}
 
+          <p style={{ fontSize: 12, color: C.muted, marginTop: 0, marginBottom: 8 }}>Clicca su una riga per aprire la Scheda Animale con lo storico costo completo.</p>
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", marginBottom: 16, maxHeight: 400, overflowY: "auto" }}>
             <table style={{ width: "100%", fontSize: 12 }}>
               <thead style={{ position: "sticky", top: 0, background: C.primary, color: "#fff" }}>
@@ -204,7 +205,8 @@ export default function ReportUba() {
               </thead>
               <tbody>
                 {righe.slice(0, 150).map((r, i) => (
-                  <tr key={i} style={{ borderTop: `1px solid ${C.border}` }}>
+                  <tr key={i} onClick={() => onVediScheda && r.bdn && onVediScheda(r.bdn)}
+                    style={{ borderTop: `1px solid ${C.border}`, cursor: onVediScheda ? "pointer" : "default" }}>
                     <td style={td}>{r.bdn || "—"}</td>
                     <td style={td}>{r.specie}</td>
                     <td style={td}>{r.categoria}</td>
