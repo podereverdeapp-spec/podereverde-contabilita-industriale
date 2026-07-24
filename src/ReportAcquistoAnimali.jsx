@@ -8,8 +8,17 @@ export default function ReportAcquistoAnimali() {
   const [righe, setRighe] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filtroStato, setFiltroStato] = useState("DA_ELABORARE");
+  const [animaliSenzaCosto, setAnimaliSenzaCosto] = useState([]);
 
-  useEffect(() => { carica(); }, []);
+  useEffect(() => { carica(); caricaAnimaliSenzaCosto(); }, []);
+
+  async function caricaAnimaliSenzaCosto() {
+    const { data, error } = await supabase
+      .from("animali").select("id,bdn,nome,specie,razza,nascita,data_ingresso,prezzo_acquisto")
+      .eq("provenienza", "Acquistato");
+    if (error) { console.error("Errore caricamento animali senza costo:", error.message); return; }
+    setAnimaliSenzaCosto((data || []).filter(a => !a.prezzo_acquisto));
+  }
 
   async function carica() {
     setLoading(true);
@@ -76,6 +85,25 @@ export default function ReportAcquistoAnimali() {
         Righe fattura classificate come acquisto animali (o come trasporto in ingresso allevamento) — da tradurre
         manualmente in un animale o lotto su podereverdeapp.it.
       </p>
+
+      {animaliSenzaCosto.length > 0 && (
+        <div style={{ background: "#FDECEC", border: `1.5px solid ${C.red}`, borderRadius: 12, padding: 16, marginBottom: 20 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.red, marginBottom: 8 }}>
+            ⚠️ {animaliSenzaCosto.length} animali "Acquistato" senza costo di acquisto inserito
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {animaliSenzaCosto.map(a => (
+              <div key={a.id} style={{ fontSize: 13, color: C.text, padding: "4px 0", borderTop: `1px solid ${C.red}33` }}>
+                <strong>{a.bdn || a.nome || `ID ${a.id}`}</strong> — {a.specie}{a.razza && ` (${a.razza})`}
+                {a.data_ingresso && ` · ingresso ${a.data_ingresso}`}
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize: 11, color: C.text, marginTop: 8 }}>
+            Inserire il costo di acquisto (con gli estremi della fattura) da podereverdeapp.it o da qui — l'avviso sparirà su entrambi una volta inserito. La finestra di inserimento diretto da questa pagina è ancora da costruire.
+          </div>
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
         <div style={{ background: C.red + "15", borderRadius: 10, padding: "10px 16px" }}>
