@@ -194,7 +194,8 @@ export default function Cespiti() {
   const gruppiPerCategoria = useMemo(() => {
     const categorie = [...new Set(filtrati.map(c => c.categoria || "Senza categoria"))];
     return categorie.map((cat, i) => {
-      const cespitiCat = filtrati.filter(c => (c.categoria || "Senza categoria") === cat);
+      const cespitiCat = filtrati.filter(c => (c.categoria || "Senza categoria") === cat)
+        .slice().sort((a, b) => a.descrizione.localeCompare(b.descrizione, "it"));
       const idCat = new Set(cespitiCat.map(c => c.id));
       const quoteCat = quoteTutte.filter(q => idCat.has(q.cespite_id));
       return {
