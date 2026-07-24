@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
-import { numerizzaCampi, formattaEuro } from "./parsingUtils";
+import { numerizzaCampi, formattaEuro, fetchAllPages } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
 
 export default function ReportAcquistoAnimali() {
@@ -13,9 +13,9 @@ export default function ReportAcquistoAnimali() {
   useEffect(() => { carica(); caricaAnimaliSenzaCosto(); }, []);
 
   async function caricaAnimaliSenzaCosto() {
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllPages((da, a) => supabase
       .from("animali").select("id,bdn,nome,specie,razza,nascita,data_ingresso,prezzo_acquisto")
-      .eq("provenienza", "Acquistato");
+      .eq("provenienza", "Acquistato").range(da, a));
     if (error) { console.error("Errore caricamento animali senza costo:", error.message); return; }
     setAnimaliSenzaCosto((data || []).filter(a => !a.prezzo_acquisto));
   }

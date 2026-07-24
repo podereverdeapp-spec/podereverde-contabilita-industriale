@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
-import { numerizzaCampi, round2, formattaEuro } from "./parsingUtils";
+import { numerizzaCampi, round2, formattaEuro, fetchAllPages } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
 import { calcolaResiduoIniziale, calcolaPianoScarico, calcolaValoreRealizzoStimato, calcolaValoreRealizzoReale, calcolaConguaglio } from "./motoreRiproduttori";
 
@@ -31,15 +31,15 @@ export default function ReportRiproduttori() {
       const parametriMap = await caricaParametri();
       setParametri(parametriMap);
 
-      const { data: tuttiAnimali, error: eA } = await supabase
-        .from("animali").select("id,bdn,nome,specie,razza,razza_calcolata,riproduttore,costo_iniziale,padre_id,madre_id,nascita,stato,data_uscita,peso_vivo_uscita,peso_carcassa,provenienza");
+      const { data: tuttiAnimali, error: eA } = await fetchAllPages((da, a) => supabase
+        .from("animali").select("id,bdn,nome,specie,razza,razza_calcolata,riproduttore,costo_iniziale,padre_id,madre_id,nascita,stato,data_uscita,peso_vivo_uscita,peso_carcassa,provenienza").range(da, a));
       if (eA) throw new Error(eA.message);
 
-      const { data: tuttiLotti, error: eL } = await supabase
-        .from("lotti_suini").select("id,padre_id,madre_id,data_parto,codice_lotto,codice,tipo_provenienza");
+      const { data: tuttiLotti, error: eL } = await fetchAllPages((da, a) => supabase
+        .from("lotti_suini").select("id,padre_id,madre_id,data_parto,codice_lotto,codice,tipo_provenienza").range(da, a));
       if (eL) throw new Error(eL.message);
-      const { data: tutteUnita, error: eU } = await supabase
-        .from("suini_lotto").select("id,lotto_id,nr");
+      const { data: tutteUnita, error: eU } = await fetchAllPages((da, a) => supabase
+        .from("suini_lotto").select("id,lotto_id,nr").range(da, a));
       if (eU) throw new Error(eU.message);
       const mappaLottiPerId = new Map((tuttiLotti || []).map(l => [l.id, l]));
 
@@ -196,9 +196,9 @@ export default function ReportRiproduttori() {
       }
 
       const { data: prezziRiforma } = await supabase.from("prezzi_riforma").select("*");
-      const { data: tuttiAnimali } = await supabase.from("animali").select("id,padre_id,madre_id,nascita,provenienza");
-      const { data: tuttiLotti } = await supabase.from("lotti_suini").select("id,padre_id,madre_id,data_parto,tipo_provenienza");
-      const { data: tutteUnita } = await supabase.from("suini_lotto").select("id,lotto_id,nr");
+      const { data: tuttiAnimali } = await fetchAllPages((da, a) => supabase.from("animali").select("id,padre_id,madre_id,nascita,provenienza").range(da, a));
+      const { data: tuttiLotti } = await fetchAllPages((da, a) => supabase.from("lotti_suini").select("id,padre_id,madre_id,data_parto,tipo_provenienza").range(da, a));
+      const { data: tutteUnita } = await fetchAllPages((da, a) => supabase.from("suini_lotto").select("id,lotto_id,nr").range(da, a));
       const mappaLottiPerId = new Map((tuttiLotti || []).map(l => [l.id, l]));
 
       let conguagliati = 0;

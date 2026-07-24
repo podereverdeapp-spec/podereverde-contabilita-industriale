@@ -88,7 +88,7 @@ export function calcolaReportUba(animali, lotti, suiniLotto, anno) {
       if (u.stato === "registrato_individuale") continue;
       const finto = {
         nascita: l.data_parto, data_uscita: u.data_uscita,
-        stato: u.stato === "attivo" ? "attivo" : "uscito",
+        stato: u.stato === "attivo" ? "attivo" : (u.stato || "uscito"),
         motivo_uscita: u.motivo_uscita, riproduttore: false,
       };
       const periodo = periodoNellAnnoExp(finto.nascita, finto.data_uscita, finto.stato, anno);

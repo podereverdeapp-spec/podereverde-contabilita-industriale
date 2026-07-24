@@ -29,6 +29,24 @@ export function formattaEuro(n, decimali = 2) {
   return `${formattaNumero(n, decimali)}€`;
 }
 
+// Supabase/PostgREST limita di default ogni query a 1000 righe — se una tabella supera
+// quella soglia, una query normale tronca silenziosamente il risultato (nessun errore),
+// perdendo proprio i dati più recenti se l'ordinamento è per data/id crescente.
+// Questa funzione pagina automaticamente finché non esaurisce tutte le righe.
+export async function fetchAllPages(queryBuilderFn) {
+  let tutti = [];
+  let da = 0;
+  const PAGINA = 1000;
+  while (true) {
+    const { data, error } = await queryBuilderFn(da, da + PAGINA - 1);
+    if (error) return { data: null, error };
+    tutti = tutti.concat(data || []);
+    if (!data || data.length < PAGINA) break;
+    da += PAGINA;
+  }
+  return { data: tutti, error: null };
+}
+
 export function round2(n) {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }

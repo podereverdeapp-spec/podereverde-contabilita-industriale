@@ -1,6 +1,6 @@
 import { supabase } from "./supabase";
 import { calcolaReportUba, calcolaRigaAggregata } from "./motoreUba";
-import { numerizzaCampi, round2 } from "./parsingUtils";
+import { numerizzaCampi, round2, fetchAllPages } from "./parsingUtils";
 
 export const AREE_ORDINARIE = [
   "Allevamento", "Coltivazione", "Lavoro", "Energia Elettrica", "Acqua", "Consulenze",
@@ -18,9 +18,9 @@ function classificaDestinazione(dest) {
 // una sola interrogazione condivisa, per non ripeterla due volte se servono entrambi i report
 async function caricaDatiGrezziAnno(anno) {
   const [{ data: animali, error: eA }, { data: lotti, error: eL }, { data: suiniLotto, error: eS }] = await Promise.all([
-    supabase.from("animali").select("id,bdn,nome,specie,sesso,nascita,stato,data_uscita,motivo_uscita,data_ingresso,razza,riproduttore"),
-    supabase.from("lotti_suini").select("*"),
-    supabase.from("suini_lotto").select("*"),
+    fetchAllPages((da, a) => supabase.from("animali").select("id,bdn,nome,specie,sesso,nascita,stato,data_uscita,motivo_uscita,data_ingresso,razza,riproduttore").range(da, a)),
+    fetchAllPages((da, a) => supabase.from("lotti_suini").select("*").range(da, a)),
+    fetchAllPages((da, a) => supabase.from("suini_lotto").select("*").range(da, a)),
   ]);
   if (eA || eL || eS) throw new Error((eA || eL || eS).message);
 

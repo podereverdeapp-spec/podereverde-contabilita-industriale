@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { calcolaReportUba } from "./motoreUba";
-import { formattaNumero } from "./parsingUtils";
+import { formattaNumero, fetchAllPages } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
 
 // ─── COMPONENTE ───
@@ -25,9 +25,9 @@ export default function ReportUba({ onVediScheda }) {
     setRighe(null);
     try {
       const [{ data: animali, error: eA }, { data: lotti, error: eL }, { data: suiniLotto, error: eS }] = await Promise.all([
-        supabase.from("animali").select("id,bdn,nome,specie,sesso,nascita,stato,data_uscita,motivo_uscita,data_ingresso,razza,riproduttore"),
-        supabase.from("lotti_suini").select("*"),
-        supabase.from("suini_lotto").select("*"),
+        fetchAllPages((da, a) => supabase.from("animali").select("id,bdn,nome,specie,sesso,nascita,stato,data_uscita,motivo_uscita,data_ingresso,razza,riproduttore").range(da, a)),
+        fetchAllPages((da, a) => supabase.from("lotti_suini").select("*").range(da, a)),
+        fetchAllPages((da, a) => supabase.from("suini_lotto").select("*").range(da, a)),
       ]);
       const errore = eA || eL || eS;
       if (errore) throw new Error(errore.message);
@@ -224,7 +224,7 @@ export default function ReportUba({ onVediScheda }) {
               <thead style={{ position: "sticky", top: 0, background: C.primary, color: "#fff" }}>
                 <tr>
                   <th style={th}>BDN/Codice</th><th style={th}>Specie</th><th style={th}>Categoria età</th>
-                  <th style={th}>Giorni</th><th style={th}>UBA-giorni</th><th style={th}>Categoria contabile</th>
+                  <th style={th}>Giorni</th><th style={th}>UBA-giorni</th><th style={th}>Stato</th>
                 </tr>
               </thead>
               <tbody>
@@ -237,7 +237,8 @@ export default function ReportUba({ onVediScheda }) {
                     <td style={{ ...td, textAlign: "right" }}>{r.giorni_presenza}</td>
                     <td style={{ ...td, textAlign: "right" }}>{formattaNumero(r.uba_giorni)}</td>
                     <td style={{ ...td, fontWeight: 700, color: r.categoria_contabile === "IMPRODUTTIVO_USCITO" ? C.red : r.categoria_contabile === "RIPRODUTTORE" ? C.blue : C.green }}>
-                      {r.categoria_contabile}
+                      {r.stato ? r.stato.charAt(0).toUpperCase() + r.stato.slice(1) : "—"}
+                      {r.categoria_contabile === "RIPRODUTTORE" && " · Riproduttore"}
                     </td>
                   </tr>
                 ))}

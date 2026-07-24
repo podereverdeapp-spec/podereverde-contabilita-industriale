@@ -2,7 +2,7 @@ import { useState } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { calcolaReportUba } from "./motoreUba";
-import { numerizzaCampi, round2, formattaEuro, formattaNumero } from "./parsingUtils";
+import { numerizzaCampi, round2, formattaEuro, formattaNumero, fetchAllPages } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
 
 // Mappa tra il nome specie usato nel motore UBA (minuscolo) e quello usato come
@@ -29,9 +29,9 @@ export default function ReportCosti({ anno }) {
     setRisultato(null);
     try {
       const [{ data: animali, error: eA }, { data: lotti, error: eL }, { data: suiniLotto, error: eS }] = await Promise.all([
-        supabase.from("animali").select("id,bdn,nome,specie,sesso,nascita,stato,data_uscita,motivo_uscita,data_ingresso,razza,riproduttore"),
-        supabase.from("lotti_suini").select("*"),
-        supabase.from("suini_lotto").select("*"),
+        fetchAllPages((da, a) => supabase.from("animali").select("id,bdn,nome,specie,sesso,nascita,stato,data_uscita,motivo_uscita,data_ingresso,razza,riproduttore").range(da, a)),
+        fetchAllPages((da, a) => supabase.from("lotti_suini").select("*").range(da, a)),
+        fetchAllPages((da, a) => supabase.from("suini_lotto").select("*").range(da, a)),
       ]);
       if (eA || eL || eS) throw new Error((eA || eL || eS).message);
 

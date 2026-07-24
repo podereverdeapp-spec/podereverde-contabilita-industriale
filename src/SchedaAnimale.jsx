@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
-import { numerizzaCampi, formattaEuro, formattaNumero, round2 } from "./parsingUtils";
+import { numerizzaCampi, formattaEuro, formattaNumero, round2, fetchAllPages } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
 
 export default function SchedaAnimale({ ricercaIniziale, onRicercaConsumata }) {
@@ -93,8 +93,8 @@ export default function SchedaAnimale({ ricercaIniziale, onRicercaConsumata }) {
     if (!window.confirm("Cerca tutti i suinetti passati da lotto ad animale individuale (BDN assegnato) e trasferisce i loro costi già calcolati (mantenimento, nascita ereditata) dal lotto al nuovo animale. Procedere?")) return;
     setTraghettando(true);
     try {
-      const { data: unitaTrasferite, error: eU } = await supabase
-        .from("suini_lotto").select("id,lotto_id,nr,bdn").eq("stato", "registrato_individuale").not("bdn", "is", null);
+      const { data: unitaTrasferite, error: eU } = await fetchAllPages((da, a) => supabase
+        .from("suini_lotto").select("id,lotto_id,nr,bdn").eq("stato", "registrato_individuale").not("bdn", "is", null).range(da, a));
       if (eU) throw new Error(eU.message);
       if (!unitaTrasferite || unitaTrasferite.length === 0) {
         alert("Nessuna unità di lotto risulta ancora trasferita a BDN individuale.");
