@@ -13,6 +13,7 @@ import SezioneReportCosti from "./SezioneReportCosti";
 import SchedaAnimale from "./SchedaAnimale";
 import ReportRiproduttori from "./ReportRiproduttori";
 import ArticoliPrezzi from "./ArticoliPrezzi";
+import Ricerca from "./Ricerca";
 import Parametri from "./Parametri";
 import ReportAcquistoAnimali from "./ReportAcquistoAnimali";
 import { C, FONT } from "./style";
@@ -31,6 +32,7 @@ const TAB = [
   { id: "scheda", label: "Scheda Animale", icon: "🔍" },
   { id: "riproduttori", label: "Report Riproduttori", icon: "🐄" },
   { id: "articoliprezzi", label: "Articoli & Prezzi", icon: "🏷️" },
+  { id: "ricerca", label: "Ricerca", icon: "🔎" },
   { id: "parametri", label: "Parametri", icon: "⚙️" },
 ];
 
@@ -102,6 +104,7 @@ export default function App() {
         {tab === "scheda" && <SchedaAnimale ricercaIniziale={ricercaSchedaAnimale} onRicercaConsumata={() => setRicercaSchedaAnimale(null)} />}
         {tab === "riproduttori" && <ReportRiproduttori />}
         {tab === "articoliprezzi" && <ArticoliPrezzi />}
+        {tab === "ricerca" && <Ricerca />}
         {tab === "parametri" && <Parametri />}
       </main>
     </div>

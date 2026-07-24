@@ -20,6 +20,13 @@ const CATEGORIE_AMMORTAMENTO = [
 // Una tinta diversa per ogni categoria, ciclica se le categorie superano i colori disponibili
 const PALETTE_CATEGORIE = ["#2C6E9B", "#4A7C59", "#8B6F47", "#B5657A", "#6B8E4E", "#D4A017", "#7A5C8E", "#3A5A40"];
 
+// Imputazioni che NON rientrano mai tra le specie d'allevamento (Bovini/Suini/Ovini) — né
+// direttamente né tramite Generali: vanno sempre evidenziate a parte
+const IMPUTAZIONI_NON_ALLEVAMENTO = ["Cavalli", "Pollame", "Orto"];
+function nonImputabileInAllevamento(specie) {
+  return !specie || specie.length === 0 || specie.some(s => IMPUTAZIONI_NON_ALLEVAMENTO.includes(s));
+}
+
 export default function Cespiti() {
   const [cespiti, setCespiti] = useState([]);
   const [ammortamentiPerCespite, setAmmortamentiPerCespite] = useState({});
@@ -96,7 +103,7 @@ export default function Cespiti() {
     try {
       const coeff = parseFloat(formModifica.coefficientePct);
       const nuoviAnni = coeff > 0 ? Math.round(100 / coeff) : null;
-      const mappaSpecie = { "Bovini": ["Bovini"], "Suini": ["Suini"], "Ovini": ["Ovini"], "Generali": ["Generale"], "Nessuno": [] };
+      const mappaSpecie = { "Bovini": ["Bovini"], "Suini": ["Suini"], "Ovini": ["Ovini"], "Generali": ["Generale"], "Nessuno": [], "Cavalli": ["Cavalli"], "Pollame": ["Pollame"], "Orto": ["Orto"] };
       const { error } = await supabase.from("ci_cespiti").update({
         categoria: formModifica.categoria || null,
         specie: mappaSpecie[formModifica.specieSelezionata] ?? [],
@@ -274,7 +281,7 @@ export default function Cespiti() {
               <select value={nuovo.specie} onChange={e => setNuovo({ ...nuovo, specie: e.target.value })}
                 style={{ width: "100%", boxSizing: "border-box", padding: "7px 8px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 13 }}>
                 <option value="">GENERALE</option>
-                {["Bovini", "Suini", "Ovini", "Nessuno"].map(s => <option key={s} value={s}>{s}</option>)}
+                {["Bovini", "Suini", "Ovini", "Cavalli", "Pollame", "Orto", "Nessuno"].map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
           </div>
@@ -316,7 +323,10 @@ export default function Cespiti() {
                   <strong>{c.descrizione}</strong>
                   <div style={{ fontSize: 12, color: C.muted }}>
                     {c.categoria || "Categoria non specificata"} · Acquisto {c.data_acquisto} · {c.anni_ammortamento} anni
-                    {c.specie?.length > 0 && ` · ${c.specie.join(", ")}`}
+                    {c.specie?.length > 0 && !nonImputabileInAllevamento(c.specie) && ` · ${c.specie.join(", ")}`}
+                    {nonImputabileInAllevamento(c.specie) && (
+                      <span style={{ color: C.red, fontWeight: 700 }}> · {c.specie?.length > 0 ? c.specie.join(", ") : "Nessuno"} (non imputabile in allevamento)</span>
+                    )}
                   </div>
                 </div>
                 <div style={{ textAlign: "right", display: "flex", alignItems: "center", gap: 10 }}>
@@ -348,7 +358,7 @@ export default function Cespiti() {
                           <select value={formModifica.specieSelezionata} onChange={e => setFormModifica({ ...formModifica, specieSelezionata: e.target.value })}
                             style={{ width: "100%", boxSizing: "border-box", padding: "7px 8px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 13 }}>
                             <option value="">Generali</option>
-                            {["Bovini", "Suini", "Ovini", "Nessuno"].map(s => <option key={s} value={s}>{s}</option>)}
+                            {["Bovini", "Suini", "Ovini", "Cavalli", "Pollame", "Orto", "Nessuno"].map(s => <option key={s} value={s}>{s}</option>)}
                           </select>
                         </div>
                         <div>
@@ -389,7 +399,14 @@ export default function Cespiti() {
                           <div><strong>Fornitore:</strong> {c.ci_fornitori?.nome || "—"}</div>
                           <div><strong>Data acquisto:</strong> {c.data_acquisto}</div>
                           <div><strong>Categoria:</strong> {c.categoria || "—"}</div>
-                          <div><strong>Imputazione:</strong> {c.specie?.length > 0 ? c.specie.join(", ") : "Generali (o Nessuno se escluso)"}</div>
+                          <div>
+                            <strong>Imputazione:</strong>{" "}
+                            {nonImputabileInAllevamento(c.specie) ? (
+                              <span style={{ color: C.red, fontWeight: 700 }}>{c.specie?.length > 0 ? c.specie.join(", ") : "Nessuno"} — non imputabile in allevamento</span>
+                            ) : (
+                              c.specie?.length > 0 ? c.specie.join(", ") : "Generali"
+                            )}
+                          </div>
                           <div><strong>Coefficiente ammortamento:</strong> {c.anni_ammortamento ? `${round2(100 / c.anni_ammortamento)}%/anno (${c.anni_ammortamento} anni)` : "—"}</div>
                         </div>
                         <button onClick={() => iniziaModifica(c)}

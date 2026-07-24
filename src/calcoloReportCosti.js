@@ -91,10 +91,12 @@ export async function calcolaDatiPerArea(anno) {
   let quoteNessunoTotale = 0;
   quoteAnno.forEach(r => {
     const specieCespite = mappaCespiteSpecie.get(r.cespite_id) || [];
-    if (specieCespite.length === 0) { quoteNessunoTotale += (r.quota || 0); return; }
     const specieMatch = Object.entries(MAPPA_SPECIE).find(([, v]) => specieCespite.includes(v));
-    if (specieMatch) costiDirettiAmmortamenti[specieMatch[0]] += (r.quota || 0);
-    else costiDirettiAmmortamenti.generale += (r.quota || 0);
+    if (specieMatch) { costiDirettiAmmortamenti[specieMatch[0]] += (r.quota || 0); return; }
+    if (specieCespite.includes("Generale")) { costiDirettiAmmortamenti.generale += (r.quota || 0); return; }
+    // Nessuno, Cavalli, Pollame, Orto (o qualunque altra imputazione non di allevamento):
+    // MAI ripartiti su nessuna specie, né direttamente né via Generali — restano esclusi
+    quoteNessunoTotale += (r.quota || 0);
   });
   const totaleAmmortamentiConSpecie = costiDirettiAmmortamenti.bovino + costiDirettiAmmortamenti.suino + costiDirettiAmmortamenti.ovino + costiDirettiAmmortamenti.generale;
   if (totaleAmmortamentiConSpecie > 0) {
@@ -131,7 +133,9 @@ export async function calcolaDatiPerAreaCentro(anno) {
   let quoteNessunoTotale = 0;
   quoteAnno.forEach(r => {
     const specieCespite = mappaCespiteSpecie.get(r.cespite_id) || [];
-    if (specieCespite.length === 0) { quoteNessunoTotale += (r.quota || 0); return; }
+    const haSpecieAllevamento = Object.values(MAPPA_SPECIE).some(v => specieCespite.includes(v));
+    const haGenerale = specieCespite.includes("Generale");
+    if (!haSpecieAllevamento && !haGenerale) { quoteNessunoTotale += (r.quota || 0); return; }
     righeAmmortamentoConSpecie.push({ ...r, specieCespite, categoria: mappaCespiteCategoria.get(r.cespite_id) });
   });
 

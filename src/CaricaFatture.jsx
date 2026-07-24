@@ -395,7 +395,7 @@ export default function CaricaFatture() {
 
           // Crea davvero il Cespite corrispondente (mancava: prima si salvava solo il
           // dettaglio di classificazione, mai la riga in ci_cespiti)
-          const mappaSpecie = { "Bovini": ["Bovini"], "Suini": ["Suini"], "Ovini": ["Ovini"], "Generali": ["Generale"], "Nessuno": [] };
+          const mappaSpecie = { "Bovini": ["Bovini"], "Suini": ["Suini"], "Ovini": ["Ovini"], "Generali": ["Generale"], "Nessuno": [], "Cavalli": ["Cavalli"], "Pollame": ["Pollame"], "Orto": ["Orto"] };
           const specieCespite = mappaSpecie[riga.imputazioneAmmortamento] ?? [];
           const pct = riga.pctAmmortamento ? parseFloat(riga.pctAmmortamento) : null;
           const anniAmmortamento = pct ? Math.round(100 / pct) : 5;
@@ -703,7 +703,7 @@ function RigaFattura({ riga, aree, centriPerArea, onChange, onSalva, onAnnulla, 
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
                 <Select label="Categoria Ammortamento" value={r.categoriaAmmortamento} options={CATEGORIE_AMMORTAMENTO} onChange={v => onChange({ categoriaAmmortamento: v })} />
-                <Select label="Imputazione" value={r.imputazioneAmmortamento} options={["Bovini", "Suini", "Ovini", "Generali", "Nessuno"]} onChange={v => onChange({ imputazioneAmmortamento: v })} />
+                <Select label="Imputazione" value={r.imputazioneAmmortamento} options={["Bovini", "Suini", "Ovini", "Generali", "Cavalli", "Pollame", "Orto", "Nessuno"]} onChange={v => onChange({ imputazioneAmmortamento: v })} />
                 <Testo label="Anno acquisto" tipo="number" value={r.annoAcquistoAmmortamento} onChange={v => onChange({ annoAcquistoAmmortamento: v })} />
                 <Testo label="% Ammortamento annuo" tipo="number" value={r.pctAmmortamento} onChange={v => onChange({ pctAmmortamento: v })} />
               </div>

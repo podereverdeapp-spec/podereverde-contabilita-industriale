@@ -49,7 +49,7 @@ export default function ReportCespiti() {
       }).sort((a, b) => b.costoTotale - a.costoTotale);
 
       // Riepilogo per imputazione (specie)
-      const specieChiavi = ["Bovini", "Suini", "Ovini", "Generale", "Nessuno"];
+      const specieChiavi = ["Bovini", "Suini", "Ovini", "Generale", "Cavalli", "Pollame", "Orto", "Nessuno"];
       const perImputazione = specieChiavi.map(sp => {
         const gruppo = cespitiConResiduo.filter(c => sp === "Nessuno" ? (!c.specie || c.specie.length === 0) : (c.specie || []).includes(sp));
         if (gruppo.length === 0) return null;
@@ -173,6 +173,8 @@ function Sezione({ titolo, children }) {
   );
 }
 
+const IMPUTAZIONI_NON_ALLEVAMENTO = ["Nessuno", "Cavalli", "Pollame", "Orto"];
+
 function TabellaSemplice({ righe, etichetta }) {
   if (righe.length === 0) return <p style={{ color: C.muted, fontSize: 13 }}>Nessun dato.</p>;
   return (
@@ -186,15 +188,21 @@ function TabellaSemplice({ righe, etichetta }) {
           </tr>
         </thead>
         <tbody>
-          {righe.map(r => (
-            <tr key={r[etichetta]} style={{ borderTop: `1px solid ${C.border}` }}>
-              <td style={{ ...td, fontWeight: 700 }}>{r[etichetta]}</td>
-              <td style={{ ...td, textAlign: "right" }}>{r.nCespiti}</td>
-              <td style={{ ...td, textAlign: "right" }}>{formattaEuro(r.costoTotale)}</td>
-              <td style={{ ...td, textAlign: "right" }}>{formattaEuro(r.quoteGenerate)}</td>
-              <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{formattaEuro(r.residuo)}</td>
-            </tr>
-          ))}
+          {righe.map(r => {
+            const nonImputabile = etichetta === "imputazione" && IMPUTAZIONI_NON_ALLEVAMENTO.includes(r[etichetta]);
+            const colore = nonImputabile ? C.red : C.text;
+            return (
+              <tr key={r[etichetta]} style={{ borderTop: `1px solid ${C.border}`, background: nonImputabile ? "#FDECEC" : "transparent" }}>
+                <td style={{ ...td, fontWeight: 700, color: colore }}>
+                  {r[etichetta]}{nonImputabile && <span style={{ fontSize: 11, fontWeight: 400, marginLeft: 6 }}>(non imputabile in allevamento)</span>}
+                </td>
+                <td style={{ ...td, textAlign: "right", color: colore }}>{r.nCespiti}</td>
+                <td style={{ ...td, textAlign: "right", color: colore }}>{formattaEuro(r.costoTotale)}</td>
+                <td style={{ ...td, textAlign: "right", color: colore }}>{formattaEuro(r.quoteGenerate)}</td>
+                <td style={{ ...td, textAlign: "right", fontWeight: 700, color: colore }}>{formattaEuro(r.residuo)}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

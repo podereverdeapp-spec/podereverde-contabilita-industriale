@@ -150,6 +150,16 @@ Il residuo si tratta come un ammortamento su un numero di anni pari alla vita ri
 
 **Conguaglio finale — DECISIONE PRESA E COSTRUITA (`motoreRiproduttori.js`, pulsante "⚖️ Applica conguagli" in Report Riproduttori)**: quando il riproduttore esce davvero (macellato o venduto vivo), si conosce il **valore reale** (peso effettivo alla sua uscita, non più una media storica) — il ricavo vero della vendita/cessione. La differenza tra questo valore reale e la stima usata negli anni precedenti si scarica come **conguaglio sui figli dell'ultimo anno** (quello in cui il riproduttore esce), positivo o negativo: se il valore reale è più alto della stima, il conguaglio riduce quanto quei figli devono assorbire; se è più basso, lo aumenta. Il conguaglio non si applica retroattivamente sui figli degli anni precedenti (già chiusi), solo su quelli dell'anno di uscita. Se non ci sono figli quell'anno, il conguaglio resta un dato aziendale generico (non spalmato su nessuno). Testato con casi realistici (macellazione con valore superiore alla stima, vendita viva con valore inferiore, nessun figlio nell'anno).
 
+## 17. Ammortamenti — distinzione Generali vs "non imputabile in allevamento" (chiarita con Filippo)
+
+**Regola definitiva**: tra le Imputazioni possibili per un cespite (Bovini/Suini/Ovini/Generali/Nessuno/Cavalli/Pollame/Orto):
+- **Generali** → SI ripartisce pro-quota su Bovini/Suini/Ovini in base agli UBA-giorni (stessa logica dei costi Generali ordinari)
+- **Nessuno, Cavalli, Pollame, Orto** → MAI ripartiti su nessuna specie d'allevamento, né direttamente né via Generali — sempre esclusi ed evidenziati **in rosso** con l'etichetta "non imputabile in allevamento"
+
+**Verificato**: la logica di calcolo condivisa (`calcoloReportCosti.js`, usata da Report Costi/Per Area/Per Area e Centro) gestiva già correttamente questa distinzione. Mancavano: le opzioni Cavalli/Pollame/Orto nelle tendine Imputazione (Cespiti e Ammortamenti in Carica Fatture — corrette), e Report Cespiti aveva un buco reale (quei cespiti sparivano senza traccia dal report "per Imputazione" — corretto, ora appaiono evidenziati in rosso con l'etichetta).
+
+
+
 ## 16. Parametri configurabili — requisito trasversale (non hardcodare le regole di business)
 
 Tutte le soglie/regole decise nella sezione 15 devono essere **leggibili e modificabili da una pagina dell'app** (non hardcoded nel codice):
