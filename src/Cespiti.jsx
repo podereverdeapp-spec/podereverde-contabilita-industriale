@@ -17,9 +17,13 @@ const CATEGORIE_AMMORTAMENTO = [
   "34 - Altri oneri pluriennali",
 ];
 
+// Una tinta diversa per ogni categoria, ciclica se le categorie superano i colori disponibili
+const PALETTE_CATEGORIE = ["#2C6E9B", "#4A7C59", "#8B6F47", "#B5657A", "#6B8E4E", "#D4A017", "#7A5C8E", "#3A5A40"];
+
 export default function Cespiti() {
   const [cespiti, setCespiti] = useState([]);
   const [ammortamentiPerCespite, setAmmortamentiPerCespite] = useState({});
+  const [quoteTutte, setQuoteTutte] = useState([]);
   const [loading, setLoading] = useState(true);
   const [espanso, setEspanso] = useState(null);
   const [cerca, setCerca] = useState("");
@@ -31,6 +35,7 @@ export default function Cespiti() {
   const [modificaId, setModificaId] = useState(null);
   const [formModifica, setFormModifica] = useState(null);
   const [salvandoModifica, setSalvandoModifica] = useState(false);
+  const [eliminando, setEliminando] = useState(null);
 
   useEffect(() => { carica(); caricaFornitori(); }, []);
   async function caricaFornitori() {
@@ -41,9 +46,32 @@ export default function Cespiti() {
   async function carica() {
     setLoading(true);
     const { data, error } = await supabase.from("ci_cespiti").select("*, ci_fornitori(nome), ci_fatture(numero, data)").order("data_acquisto", { ascending: false });
-    if (error) alert(`⚠️ Errore nel caricamento cespiti:\n\n${error.message}`);
-    else setCespiti(numerizzaCampi(data || [], ["costo_acquisto", "anni_ammortamento"]));
+    if (error) { alert(`⚠️ Errore nel caricamento cespiti:\n\n${error.message}`); setLoading(false); return; }
+    const cespitiNum = numerizzaCampi(data || [], ["costo_acquisto", "anni_ammortamento"]);
+    setCespiti(cespitiNum);
+
+    const idCespiti = cespitiNum.map(c => c.id);
+    if (idCespiti.length > 0) {
+      const { data: quote, error: eQ } = await supabase.from("ci_cespiti_ammortamento").select("cespite_id, anno, quota").in("cespite_id", idCespiti);
+      if (eQ) alert(`⚠️ Errore nel caricamento delle quote:\n\n${eQ.message}`);
+      else setQuoteTutte(numerizzaCampi(quote || [], ["quota"]));
+    } else {
+      setQuoteTutte([]);
+    }
     setLoading(false);
+  }
+
+  async function eliminaCespite(c) {
+    if (!window.confirm(`Eliminare definitivamente il cespite "${c.descrizione}"? Verranno eliminate anche tutte le sue quote di ammortamento generate. Questa azione non si può annullare.`)) return;
+    setEliminando(c.id);
+    try {
+      const { error } = await supabase.from("ci_cespiti").delete().eq("id", c.id);
+      if (error) throw new Error(error.message);
+      carica();
+    } catch (err) {
+      alert(`⚠️ Errore nell'eliminazione:\n\n${err.message}`);
+    }
+    setEliminando(null);
   }
 
   function iniziaModifica(c) {
@@ -161,6 +189,23 @@ export default function Cespiti() {
     return cespiti.filter(c => `${c.descrizione} ${c.categoria || ""}`.toLowerCase().includes(q));
   }, [cespiti, cerca]);
 
+  const annoCorrente = new Date().getFullYear();
+
+  const gruppiPerCategoria = useMemo(() => {
+    const categorie = [...new Set(filtrati.map(c => c.categoria || "Senza categoria"))];
+    return categorie.map((cat, i) => {
+      const cespitiCat = filtrati.filter(c => (c.categoria || "Senza categoria") === cat);
+      const idCat = new Set(cespitiCat.map(c => c.id));
+      const quoteCat = quoteTutte.filter(q => idCat.has(q.cespite_id));
+      return {
+        categoria: cat, colore: PALETTE_CATEGORIE[i % PALETTE_CATEGORIE.length], cespiti: cespitiCat,
+        valoreStorico: round2(cespitiCat.reduce((s, c) => s + (c.costo_acquisto || 0), 0)),
+        quotaAnnoCorrente: round2(quoteCat.filter(q => q.anno === annoCorrente).reduce((s, q) => s + (q.quota || 0), 0)),
+        fondoAmmortamento: round2(quoteCat.reduce((s, q) => s + (q.quota || 0), 0)),
+      };
+    }).sort((a, b) => b.valoreStorico - a.valoreStorico);
+  }, [filtrati, quoteTutte, annoCorrente]);
+
   const totaleCosto = filtrati.reduce((s, c) => s + (c.costo_acquisto || 0), 0);
 
   function esporta() {
@@ -251,8 +296,19 @@ export default function Cespiti() {
       {loading ? (
         <p style={{ color: C.muted }}>Caricamento...</p>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {filtrati.map(c => (
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          {gruppiPerCategoria.map(gruppo => (
+            <div key={gruppo.categoria}>
+              <div style={{ background: gruppo.colore, borderRadius: "10px 10px 0 0", padding: "10px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+                <strong style={{ color: "#fff", fontSize: 15 }}>{gruppo.categoria}</strong>
+                <div style={{ display: "flex", gap: 20, color: "#fff", fontSize: 12 }}>
+                  <span>Valore storico: <strong>{formattaEuro(gruppo.valoreStorico)}</strong></span>
+                  <span>Quota {annoCorrente}: <strong>{formattaEuro(gruppo.quotaAnnoCorrente)}</strong></span>
+                  <span>Fondo ammortamento: <strong>{formattaEuro(gruppo.fondoAmmortamento)}</strong></span>
+                </div>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "8px 0 0 0", borderLeft: `3px solid ${gruppo.colore}`, paddingLeft: 10 }}>
+          {gruppo.cespiti.map(c => (
             <div key={c.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10 }}>
               <div onClick={() => espandi(c.id)} style={{ display: "flex", justifyContent: "space-between", padding: 14, cursor: "pointer", flexWrap: "wrap", gap: 8 }}>
                 <div>
@@ -262,9 +318,15 @@ export default function Cespiti() {
                     {c.specie?.length > 0 && ` · ${c.specie.join(", ")}`}
                   </div>
                 </div>
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontWeight: 800, fontSize: 16, color: C.primary }}>{formattaEuro(c.costo_acquisto)}</div>
-                  <div style={{ fontSize: 11, color: C.muted }}>{espanso === c.id ? "▲ nascondi piano" : "▼ vedi piano ammortamento"}</div>
+                <div style={{ textAlign: "right", display: "flex", alignItems: "center", gap: 10 }}>
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: 16, color: C.primary }}>{formattaEuro(c.costo_acquisto)}</div>
+                    <div style={{ fontSize: 11, color: C.muted }}>{espanso === c.id ? "▲ nascondi piano" : "▼ vedi piano ammortamento"}</div>
+                  </div>
+                  <button onClick={e => { e.stopPropagation(); eliminaCespite(c); }} disabled={eliminando === c.id}
+                    style={{ background: "none", border: `1.5px solid ${C.red}`, color: C.red, borderRadius: 8, padding: "6px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                    {eliminando === c.id ? "..." : "🗑️"}
+                  </button>
                 </div>
               </div>
               {espanso === c.id && (
@@ -363,6 +425,9 @@ export default function Cespiti() {
                   )}
                 </div>
               )}
+            </div>
+          ))}
+              </div>
             </div>
           ))}
           {filtrati.length === 0 && <p style={{ color: C.muted }}>Nessun cespite trovato.</p>}
