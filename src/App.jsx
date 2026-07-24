@@ -7,13 +7,12 @@ import FattureAttive from "./FattureAttive";
 import NuovaFatturaAttiva from "./NuovaFatturaAttiva";
 import CaricaFatture from "./CaricaFatture";
 import CaricaFattureAttive from "./CaricaFattureAttive";
-import Cespiti from "./Cespiti";
+import SezioneCespiti from "./SezioneCespiti";
 import ReportUba from "./ReportUba";
 import SezioneReportCosti from "./SezioneReportCosti";
 import SchedaAnimale from "./SchedaAnimale";
 import ReportRiproduttori from "./ReportRiproduttori";
 import ArticoliPrezzi from "./ArticoliPrezzi";
-import ReportCespiti from "./ReportCespiti";
 import Parametri from "./Parametri";
 import ReportAcquistoAnimali from "./ReportAcquistoAnimali";
 import { C, FONT } from "./style";
@@ -27,7 +26,6 @@ const TAB = [
   { id: "clienti", label: "Clienti", icon: "🤝" },
   { id: "acquisto", label: "Report Acquisto Animali", icon: "🐄" },
   { id: "cespiti", label: "Cespiti", icon: "🏗️" },
-  { id: "reportcespiti", label: "Report Cespiti", icon: "📐" },
   { id: "uba", label: "Report UBA", icon: "🐮" },
   { id: "costi", label: "Report Costi", icon: "📊" },
   { id: "scheda", label: "Scheda Animale", icon: "🔍" },
@@ -98,8 +96,7 @@ export default function App() {
         {tab === "fornitori" && <Fornitori />}
         {tab === "clienti" && <Clienti />}
         {tab === "acquisto" && <ReportAcquistoAnimali />}
-        {tab === "cespiti" && <Cespiti />}
-        {tab === "reportcespiti" && <ReportCespiti />}
+        {tab === "cespiti" && <SezioneCespiti />}
         {tab === "uba" && <ReportUba onVediScheda={vaiAllaSchedaAnimale} />}
         {tab === "costi" && <SezioneReportCosti />}
         {tab === "scheda" && <SchedaAnimale ricercaIniziale={ricercaSchedaAnimale} onRicercaConsumata={() => setRicercaSchedaAnimale(null)} />}

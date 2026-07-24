@@ -175,8 +175,7 @@ export default function Cespiti() {
 
   return (
     <div style={{ padding: 20, maxWidth: 1100, margin: "0 auto" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4, flexWrap: "wrap", gap: 10 }}>
-        <h1 style={{ color: C.primary, fontSize: 24, margin: 0 }}>Cespiti</h1>
+      <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginBottom: 4, flexWrap: "wrap", gap: 10 }}>
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={esporta}
             style={{ background: C.green, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
