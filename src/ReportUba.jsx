@@ -228,7 +228,7 @@ export default function ReportUba({ onVediScheda }) {
                 </tr>
               </thead>
               <tbody>
-                {righe.slice(0, 150).map((r, i) => (
+                {righe.map((r, i) => (
                   <tr key={i} onClick={() => onVediScheda && r.bdn && onVediScheda(r.bdn)}
                     style={{ borderTop: `1px solid ${C.border}`, cursor: onVediScheda ? "pointer" : "default" }}>
                     <td style={td}>{r.bdn || "—"}</td>
@@ -244,7 +244,7 @@ export default function ReportUba({ onVediScheda }) {
                 ))}
               </tbody>
             </table>
-            {righe.length > 150 && <div style={{ padding: 10, textAlign: "center", color: C.muted, fontSize: 12 }}>... e altre {righe.length - 150} righe</div>}
+
           </div>
 
           <button onClick={salvaReport} disabled={salvando}
