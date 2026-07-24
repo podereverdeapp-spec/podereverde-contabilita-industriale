@@ -145,3 +145,38 @@ export function calcolaTassoAggressivo(righeUba, costiTotali, valoreRiformaTotal
     ubaGiorniImproduttivi: round2(ubaGiorniImproduttivi),
   };
 }
+
+// Calcola la riga "aggregata" per un qualunque sottoinsieme di costi (un'intera Area, un
+// singolo Centro di Costo, o una Categoria Ammortamento) — stesso algoritmo di Report Costi,
+// riusabile a qualunque livello di granularità. costiDiretti è {bovino, suino, ovino, generale}.
+export function calcolaRigaAggregata(costiDiretti, ubaGiorniProduttiviPerSpecie, ubaGiorniProduttiviAziendali) {
+  const round2 = n => Math.round((n + Number.EPSILON) * 100) / 100;
+
+  const imponibileComplessivo = round2(
+    (costiDiretti.bovino || 0) + (costiDiretti.suino || 0) + (costiDiretti.ovino || 0) + (costiDiretti.generale || 0)
+  );
+  const tassoArea = ubaGiorniProduttiviAziendali > 0 ? imponibileComplessivo / ubaGiorniProduttiviAziendali : 0;
+
+  const tassoGenerali = ubaGiorniProduttiviAziendali > 0 ? (costiDiretti.generale || 0) / ubaGiorniProduttiviAziendali : 0;
+
+  const perSpecie = {};
+  for (const sp of ["bovino", "suino", "ovino"]) {
+    const ubaGiorniSp = ubaGiorniProduttiviPerSpecie[sp] || 0;
+    const quotaGenerali = round2(tassoGenerali * ubaGiorniSp);
+    const costoAllocato = round2((costiDiretti[sp] || 0) + quotaGenerali);
+    const incidenza = ubaGiorniSp > 0 ? costoAllocato / ubaGiorniSp : 0;
+    perSpecie[sp] = {
+      costoDiretto: round2(costiDiretti[sp] || 0),
+      quotaGenerali,
+      costoAllocato,
+      incidenza: Math.round(incidenza * 1000000) / 1000000,
+    };
+  }
+
+  return {
+    imponibileComplessivo,
+    tassoArea: Math.round(tassoArea * 1000000) / 1000000,
+    perSpecie,
+  };
+}
+
