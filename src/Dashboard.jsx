@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { numerizzaCampi, formattaEuro } from "./parsingUtils";
+import { esportaExcel, numeroExcel } from "./esportaExcel";
 
 const MESI = ["Gen","Feb","Mar","Apr","Mag","Giu","Lug","Ago","Set","Ott","Nov","Dic"];
 
@@ -17,7 +18,7 @@ export default function Dashboard({ onNavigate }) {
   async function carica() {
     setLoading(true);
     const [{ data: f, error: eF }, { data: fo, error: eFo }, { data: ra, error: eRA }] = await Promise.all([
-      supabase.from("ci_fatture").select("*, ci_fornitori(nome)").order("data", { ascending: false }),
+      supabase.from("ci_fatture").select("*, ci_fornitori(nome), ci_clienti(nome)").order("data", { ascending: false }),
       supabase.from("ci_fornitori").select("*"),
       supabase.from("ci_report_acquisto_animali").select("*").eq("stato", "DA_ELABORARE"),
     ]);
@@ -48,6 +49,21 @@ export default function Dashboard({ onNavigate }) {
   const totaleSpeseAnno = fatturePassiveAnno.reduce((s, f) => s + (f.totale_lordo || 0), 0);
   const totaleRicaviAnno = fattureAttiveAnno.reduce((s, f) => s + (f.totale_lordo || 0), 0);
 
+  function esporta() {
+    const righeSpese = fatturePassiveAnno.map(f => ({
+      "Fornitore": f.ci_fornitori?.nome, "Numero": f.numero, "Data": f.data,
+      "Totale netto": numeroExcel(f.totale_netto), "Totale IVA": numeroExcel(f.totale_iva), "Totale lordo": numeroExcel(f.totale_lordo),
+    }));
+    const righeRicavi = fattureAttiveAnno.map(f => ({
+      "Cliente": f.ci_clienti?.nome, "Numero": f.numero, "Data": f.data,
+      "Totale netto": numeroExcel(f.totale_netto), "Totale IVA": numeroExcel(f.totale_iva), "Totale lordo": numeroExcel(f.totale_lordo),
+    }));
+    esportaExcel(`Dashboard_${anno}`, [
+      { nome: "Spese (Passive)", righe: righeSpese },
+      { nome: "Ricavi (Attive)", righe: righeRicavi },
+    ]);
+  }
+
   const perMese = useMemo(() => {
     const mesi = Array.from({ length: 12 }, () => 0);
     fatturePassiveAnno.forEach(f => {
@@ -77,10 +93,16 @@ export default function Dashboard({ onNavigate }) {
     <div style={{ padding: 20, maxWidth: 1200, margin: "0 auto" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
         <h1 style={{ color: C.primary, fontSize: 24, margin: 0 }}>Dashboard</h1>
-        <select value={anno} onChange={e => setAnno(parseInt(e.target.value))}
-          style={{ padding: "8px 12px", borderRadius: 8, border: `1.5px solid ${C.border}`, fontSize: 14 }}>
-          {anniDisponibili.map(a => <option key={a} value={a}>{a}</option>)}
-        </select>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <select value={anno} onChange={e => setAnno(parseInt(e.target.value))}
+            style={{ padding: "8px 12px", borderRadius: 8, border: `1.5px solid ${C.border}`, fontSize: 14 }}>
+            {anniDisponibili.map(a => <option key={a} value={a}>{a}</option>)}
+          </select>
+          <button onClick={esporta}
+            style={{ background: C.green, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+            📥 Esporta Excel
+          </button>
+        </div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12, marginBottom: 20 }}>

@@ -3,6 +3,7 @@ import { supabase } from "./supabase";
 import { C } from "./style";
 import { RicomposizioneFattura } from "./FatturePassive";
 import { numerizzaCampi, formattaEuro } from "./parsingUtils";
+import { esportaExcel, numeroExcel } from "./esportaExcel";
 
 export default function FattureAttive() {
   const [fatture, setFatture] = useState([]);
@@ -52,9 +53,23 @@ export default function FattureAttive() {
 
   const totale = filtrate.reduce((s, f) => s + (f.totale_lordo || 0), 0);
 
+  function esporta() {
+    const righeExcel = filtrate.map(f => ({
+      "Cliente": f.ci_clienti?.nome, "P.IVA": f.ci_clienti?.partita_iva, "Numero": f.numero, "Data": f.data,
+      "Totale netto": numeroExcel(f.totale_netto), "Totale IVA": numeroExcel(f.totale_iva), "Totale lordo": numeroExcel(f.totale_lordo),
+    }));
+    esportaExcel("FattureAttive", [{ nome: "Fatture Attive", righe: righeExcel }]);
+  }
+
   return (
     <div style={{ padding: 20, maxWidth: 1200, margin: "0 auto" }}>
-      <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Fatture Attive</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+        <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Fatture Attive</h1>
+        <button onClick={esporta}
+          style={{ background: C.green, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+          📥 Esporta Excel
+        </button>
+      </div>
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 20 }}>{filtrate.length} fatture — totale {formattaEuro(totale)}</p>
 
       <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>

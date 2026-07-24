@@ -3,6 +3,7 @@ import { supabase } from "./supabase";
 import { C } from "./style";
 import { calcolaReportUba } from "./motoreUba";
 import { formattaNumero } from "./parsingUtils";
+import { esportaExcel, numeroExcel } from "./esportaExcel";
 
 // ─── COMPONENTE ───
 
@@ -64,6 +65,24 @@ export default function ReportUba({ onVediScheda }) {
       };
     }).filter(Boolean);
   })() : null;
+
+  function esporta() {
+    const righeDettaglio = righe.map(r => ({
+      "BDN/Codice": r.bdn, "Nome": r.nome, "Specie": r.specie, "Categoria età": r.categoria,
+      "Nascita": r.nascita, "Inizio calcolo": r.inizio_calcolo, "Data riferimento": r.data_riferimento,
+      "Giorni presenza": r.giorni_presenza, "UBA medio": numeroExcel(r.uba_medio), "UBA-giorni": numeroExcel(r.uba_giorni),
+      "Stato": r.stato, "Qualifica riproduzione": r.qualifica_riproduzione, "Data uscita": r.data_uscita,
+      "Motivo uscita": r.motivo_uscita, "Lotto": r.lotto, "Categoria contabile": r.categoria_contabile,
+    }));
+    const righeRiepilogo = riepilogoPerSpecie.map(r => ({
+      "Specie": r.specie, "N° Capi": r.nCapi, "UBA-giorni": numeroExcel(r.ubaGiorni), "% sul totale": numeroExcel(r.percentualeSulTotale),
+      "N° Capi improduttivi": r.nCapiImproduttivi, "UBA-giorni persi": numeroExcel(r.ubaGiorniPersi), "% persa sulla specie": numeroExcel(r.percentualePersaSullaSpecie),
+    }));
+    esportaExcel(`ReportUBA_${anno}`, [
+      { nome: "Riepilogo per Specie", righe: righeRiepilogo },
+      { nome: "Dettaglio", righe: righeDettaglio },
+    ]);
+  }
 
   async function salvaReport() {
     if (!righe || righe.length === 0) return;
@@ -136,6 +155,10 @@ export default function ReportUba({ onVediScheda }) {
 
       {righe && (
         <>
+          <button onClick={esporta}
+            style={{ background: C.green, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", marginBottom: 16 }}>
+            📥 Esporta Excel
+          </button>
           <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
             <StatBox label="Produttivo" value={riepilogo.produttivo} sub={`${formattaNumero(riepilogo.ubaGiorniProduttivo, 1)} UBA-gg`} color={C.green} />
             <StatBox label="Riproduttore" value={riepilogo.riproduttore} sub={`${formattaNumero(riepilogo.ubaGiorniRiproduttore, 1)} UBA-gg`} color={C.blue} />

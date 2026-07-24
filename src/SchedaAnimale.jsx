@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { numerizzaCampi, formattaEuro, formattaNumero } from "./parsingUtils";
+import { esportaExcel, numeroExcel } from "./esportaExcel";
 
 export default function SchedaAnimale({ ricercaIniziale, onRicercaConsumata }) {
   const [ricerca, setRicerca] = useState(ricercaIniziale || "");
@@ -73,6 +74,16 @@ export default function SchedaAnimale({ ricercaIniziale, onRicercaConsumata }) {
 
   const totaleCumulato = storicoCosto ? storicoCosto.reduce((s, r) => s + (r.costo_totale_anno || 0), 0) : 0;
 
+  function esporta() {
+    const righeExcel = storicoCosto.map(r => ({
+      "Anno": r.anno, "UBA-giorni": numeroExcel(r.uba_giorni), "Categoria": r.categoria_contabile,
+      "Costo mantenimento": numeroExcel(r.costo_mantenimento), "Costo nascita ereditato": numeroExcel(r.costo_nascita_ereditato),
+      "Scaricato sui figli": numeroExcel(r.quota_scaricata_su_figli), "Totale anno": numeroExcel(r.costo_totale_anno),
+    }));
+    const nome = selezionato.tipo === "animale" ? (selezionato.bdn || selezionato.nome) : (selezionato.codice_completo || selezionato.matricola);
+    esportaExcel(`SchedaAnimale_${nome}`, [{ nome: "Storico Costo", righe: righeExcel }]);
+  }
+
   return (
     <div style={{ padding: 20, maxWidth: 900, margin: "0 auto" }}>
       <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Scheda Animale</h1>
@@ -134,6 +145,10 @@ export default function SchedaAnimale({ ricercaIniziale, onRicercaConsumata }) {
             </div>
           ) : (
             <>
+              <button onClick={esporta}
+                style={{ background: C.green, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", marginBottom: 16 }}>
+                📥 Esporta Excel
+              </button>
               <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", marginBottom: 16 }}>
                 <table style={{ width: "100%", fontSize: 13 }}>
                   <thead style={{ background: C.primary, color: "#fff" }}>

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { C } from "./style";
 import { calcolaDatiPerArea } from "./calcoloReportCosti";
 import { formattaEuro } from "./parsingUtils";
+import { esportaExcel, numeroExcel } from "./esportaExcel";
 
 export default function ReportPerArea({ anno }) {
   const [calcolando, setCalcolando] = useState(false);
@@ -25,6 +26,20 @@ export default function ReportPerArea({ anno }) {
     setCalcolando(false);
   }
 
+  function esporta() {
+    const righeExcel = righe.map(r => ({
+      "Area": r.area, "Imponibile complessivo": numeroExcel(r.imponibileComplessivo), "€/UBA-gg (tutte le specie)": numeroExcel(r.tassoArea),
+      "Bovini - Costo allocato": numeroExcel(r.perSpecie.bovino.costoAllocato), "Bovini - €/UBA-gg": numeroExcel(r.perSpecie.bovino.incidenza),
+      "Suini - Costo allocato": numeroExcel(r.perSpecie.suino.costoAllocato), "Suini - €/UBA-gg": numeroExcel(r.perSpecie.suino.incidenza),
+      "Ovini - Costo allocato": numeroExcel(r.perSpecie.ovino.costoAllocato), "Ovini - €/UBA-gg": numeroExcel(r.perSpecie.ovino.incidenza),
+    }));
+    const righeRossaExcel = rigaRossa.map(r => ({ "Voce": r.label, "Imponibile complessivo": numeroExcel(r.valore), "€/UBA-gg (tutte le specie)": numeroExcel(r.tasso) }));
+    esportaExcel(`ReportPerArea_${anno}`, [
+      { nome: "Per Area", righe: righeExcel },
+      { nome: "Orto e Non Allevamento", righe: righeRossaExcel },
+    ]);
+  }
+
   return (
     <div style={{ padding: 20, maxWidth: 1300, margin: "0 auto" }}>
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 20 }}>
@@ -39,6 +54,12 @@ export default function ReportPerArea({ anno }) {
       </div>
 
       {righe && (
+        <>
+          <button onClick={esporta}
+            style={{ background: C.green, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", marginBottom: 16 }}>
+            📥 Esporta Excel
+          </button>
+
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "auto", marginBottom: 16 }}>
           <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
             <thead style={{ background: C.primary, color: "#fff" }}>
@@ -76,6 +97,7 @@ export default function ReportPerArea({ anno }) {
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       {rigaRossa && rigaRossa.length > 0 && (

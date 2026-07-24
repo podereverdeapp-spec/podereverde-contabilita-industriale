@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { numerizzaCampi, round2, formattaEuro } from "./parsingUtils";
+import { esportaExcel, numeroExcel } from "./esportaExcel";
 import { calcolaResiduoIniziale, calcolaPianoScarico, calcolaValoreRealizzoStimato, calcolaValoreRealizzoReale, calcolaConguaglio } from "./motoreRiproduttori";
 
 export default function ReportRiproduttori() {
@@ -214,6 +215,18 @@ export default function ReportRiproduttori() {
     setElaborando(false);
   }
 
+  function esporta() {
+    const righeExcel = riproduttori.map(r => ({
+      "BDN/Nome": r.animali?.bdn || r.animali?.nome, "Specie": r.specie, "Stato": r.animali?.stato,
+      "Costo acquisto": numeroExcel(r.costo_acquisto), "Costi crescita pre-riproduttiva": numeroExcel(r.costi_crescita_preriproduttiva),
+      "Valore realizzo stimato": numeroExcel(r.valore_realizzo_stimato), "Residuo totale": numeroExcel(r.residuo_totale),
+      "Residuo rimanente": numeroExcel(r.residuo_rimanente), "Conto sospeso": numeroExcel(r.conto_sospeso),
+      "Vita produttiva attesa (anni)": r.vita_produttiva_attesa_anni, "Anno inizio riproduzione": r.anno_inizio_riproduzione,
+      "Conguaglio applicato": r.conguaglio_applicato ? "Sì" : "No", "Valore realizzo reale": numeroExcel(r.valore_realizzo_reale), "Anno uscita": r.anno_uscita,
+    }));
+    esportaExcel("ReportRiproduttori", [{ nome: "Riproduttori", righe: righeExcel }]);
+  }
+
   return (
     <div style={{ padding: 20, maxWidth: 1100, margin: "0 auto" }}>
       <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Report Riproduttori</h1>
@@ -249,6 +262,13 @@ export default function ReportRiproduttori() {
           {elaborando ? "Elaborazione..." : "⚖️ Applica conguagli"}
         </button>
       </div>
+
+      {riproduttori && riproduttori.length > 0 && (
+        <button onClick={esporta}
+          style={{ background: C.green, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", marginBottom: 16, display: "block" }}>
+          📥 Esporta Excel
+        </button>
+      )}
 
       {riproduttori && riproduttori.length > 0 && (
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>

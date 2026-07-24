@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
+import { esportaExcel } from "./esportaExcel";
 
 export default function Fornitori() {
   const [fornitori, setFornitori] = useState([]);
@@ -32,6 +33,13 @@ export default function Fornitori() {
     });
   }, [fornitori, filtroGruppo, cerca]);
 
+  function esporta() {
+    const righeExcel = filtrati.map(f => ({
+      "Nome": f.nome, "P.IVA": f.partita_iva, "Gruppo": f.gruppo_classificazione, "Fatture storiche": f.n_fatture_storiche || 0,
+    }));
+    esportaExcel("Fornitori", [{ nome: "Fornitori", righe: righeExcel }]);
+  }
+
   const conteggi = useMemo(() => {
     const c = { FCV: 0, FCF: 0, FRO: 0, senza: 0 };
     fornitori.forEach(f => {
@@ -43,7 +51,13 @@ export default function Fornitori() {
 
   return (
     <div style={{ padding: 20, maxWidth: 1100, margin: "0 auto" }}>
-      <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Fornitori</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+        <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Fornitori</h1>
+        <button onClick={esporta}
+          style={{ background: C.green, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+          📥 Esporta Excel
+        </button>
+      </div>
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 20 }}>
         {fornitori.length} fornitori — {conteggi.FCV} classificazione automatica per parola chiave (FCV),{" "}
         {conteggi.FCF} classificazione fissa (FCF), {conteggi.FRO} sempre manuale (FRO)

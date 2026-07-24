@@ -2,6 +2,7 @@ import { useState, Fragment } from "react";
 import { C } from "./style";
 import { calcolaDatiPerAreaCentro } from "./calcoloReportCosti";
 import { formattaEuro } from "./parsingUtils";
+import { esportaExcel, numeroExcel } from "./esportaExcel";
 
 export default function ReportPerAreaCentro({ anno }) {
   const [calcolando, setCalcolando] = useState(false);
@@ -30,6 +31,28 @@ export default function ReportPerAreaCentro({ anno }) {
     setEspansi(prev => ({ ...prev, [area]: !prev[area] }));
   }
 
+  function esporta() {
+    const righeExcel = gruppi.flatMap(g => [
+      {
+        "Area / Centro": g.area, "Imponibile complessivo": numeroExcel(g.riga.imponibileComplessivo), "€/UBA-gg (tutte le specie)": numeroExcel(g.riga.tassoArea),
+        "Bovini - Costo allocato": numeroExcel(g.riga.perSpecie.bovino.costoAllocato), "Bovini - €/UBA-gg": numeroExcel(g.riga.perSpecie.bovino.incidenza),
+        "Suini - Costo allocato": numeroExcel(g.riga.perSpecie.suino.costoAllocato), "Suini - €/UBA-gg": numeroExcel(g.riga.perSpecie.suino.incidenza),
+        "Ovini - Costo allocato": numeroExcel(g.riga.perSpecie.ovino.costoAllocato), "Ovini - €/UBA-gg": numeroExcel(g.riga.perSpecie.ovino.incidenza),
+      },
+      ...g.sottoRighe.map(sr => ({
+        "Area / Centro": `  ↳ ${sr.etichetta}`, "Imponibile complessivo": numeroExcel(sr.imponibileComplessivo), "€/UBA-gg (tutte le specie)": numeroExcel(sr.tassoArea),
+        "Bovini - Costo allocato": numeroExcel(sr.perSpecie.bovino.costoAllocato), "Bovini - €/UBA-gg": numeroExcel(sr.perSpecie.bovino.incidenza),
+        "Suini - Costo allocato": numeroExcel(sr.perSpecie.suino.costoAllocato), "Suini - €/UBA-gg": numeroExcel(sr.perSpecie.suino.incidenza),
+        "Ovini - Costo allocato": numeroExcel(sr.perSpecie.ovino.costoAllocato), "Ovini - €/UBA-gg": numeroExcel(sr.perSpecie.ovino.incidenza),
+      })),
+    ]);
+    const righeRossaExcel = rigaRossa.map(r => ({ "Voce": r.label, "Imponibile complessivo": numeroExcel(r.valore), "€/UBA-gg (tutte le specie)": numeroExcel(r.tasso) }));
+    esportaExcel(`ReportPerAreaCentro_${anno}`, [
+      { nome: "Per Area e Centro", righe: righeExcel },
+      { nome: "Orto e Non Allevamento", righe: righeRossaExcel },
+    ]);
+  }
+
   return (
     <div style={{ padding: 20, maxWidth: 1300, margin: "0 auto" }}>
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 20 }}>
@@ -44,6 +67,11 @@ export default function ReportPerAreaCentro({ anno }) {
       </div>
 
       {gruppi && (
+        <>
+          <button onClick={esporta}
+            style={{ background: C.green, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", marginBottom: 16 }}>
+            📥 Esporta Excel
+          </button>
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "auto", marginBottom: 16 }}>
           <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
             <thead style={{ background: C.primary, color: "#fff" }}>
@@ -97,6 +125,7 @@ export default function ReportPerAreaCentro({ anno }) {
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       {rigaRossa && rigaRossa.length > 0 && (

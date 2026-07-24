@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { numerizzaCampi, formattaEuro } from "./parsingUtils";
+import { esportaExcel, numeroExcel } from "./esportaExcel";
 
 export default function ReportAcquistoAnimali() {
   const [righe, setRighe] = useState([]);
@@ -49,12 +50,28 @@ export default function ReportAcquistoAnimali() {
   }
 
   const filtrate = righe.filter(r => filtroStato === "tutti" || r.stato === filtroStato);
+
+  function esporta() {
+    const righeExcel = filtrate.map(r => ({
+      "Fornitore": r.ci_fornitori?.nome, "Numero fattura": r.numero_fattura, "Data fattura": r.data_fattura,
+      "Specie": r.specie, "Razza": r.razza, "Destinazione": r.destinazione_acquisto, "BDN": r.bdn, "Lotto": r.nr_lotto,
+      "Quantità": numeroExcel(r.quantita), "U.M.": r.unita_misura, "Prezzo unitario": numeroExcel(r.prezzo_unitario),
+      "Importo": numeroExcel(r.importo), "Stato": r.stato,
+    }));
+    esportaExcel("ReportAcquistoAnimali", [{ nome: "Acquisto Animali", righe: righeExcel }]);
+  }
   const daElaborare = righe.filter(r => r.stato === "DA_ELABORARE");
   const totaleDaElaborare = daElaborare.reduce((s, r) => s + (r.importo || 0), 0);
 
   return (
     <div style={{ padding: 20, maxWidth: 1100, margin: "0 auto" }}>
-      <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Report Acquisto Animali</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+        <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Report Acquisto Animali</h1>
+        <button onClick={esporta}
+          style={{ background: C.green, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+          📥 Esporta Excel
+        </button>
+      </div>
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 20 }}>
         Righe fattura classificate come acquisto animali (o come trasporto in ingresso allevamento) — da tradurre
         manualmente in un animale o lotto su podereverdeapp.it.

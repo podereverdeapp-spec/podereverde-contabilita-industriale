@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
+import { esportaExcel } from "./esportaExcel";
 
 export default function Clienti() {
   const [clienti, setClienti] = useState([]);
@@ -38,16 +39,27 @@ export default function Clienti() {
     return clienti.filter(c => `${c.nome} ${c.partita_iva || ""}`.toLowerCase().includes(q));
   }, [clienti, cerca]);
 
+  function esporta() {
+    const righeExcel = filtrati.map(c => ({ "Nome": c.nome, "P.IVA": c.partita_iva }));
+    esportaExcel("Clienti", [{ nome: "Clienti", righe: righeExcel }]);
+  }
+
   return (
     <div style={{ padding: 20, maxWidth: 1000, margin: "0 auto" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4, flexWrap: "wrap", gap: 10 }}>
         <h1 style={{ color: C.primary, fontSize: 24, margin: 0 }}>Clienti</h1>
-        {!nuovo && (
-          <button onClick={() => setNuovo({ nome: "", partita_iva: "", citta: "", telefono: "", email: "" })}
-            style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-            + Nuovo Cliente
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={esporta}
+            style={{ background: C.green, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+            📥 Esporta Excel
           </button>
-        )}
+          {!nuovo && (
+            <button onClick={() => setNuovo({ nome: "", partita_iva: "", citta: "", telefono: "", email: "" })}
+              style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+              + Nuovo Cliente
+            </button>
+          )}
+        </div>
       </div>
       <p style={{ color: C.muted, marginTop: 4, marginBottom: 20 }}>{clienti.length} clienti</p>
 

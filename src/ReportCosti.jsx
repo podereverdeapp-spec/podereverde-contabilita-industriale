@@ -3,6 +3,7 @@ import { supabase } from "./supabase";
 import { C } from "./style";
 import { calcolaReportUba } from "./motoreUba";
 import { numerizzaCampi, round2, formattaEuro, formattaNumero } from "./parsingUtils";
+import { esportaExcel, numeroExcel } from "./esportaExcel";
 
 // Mappa tra il nome specie usato nel motore UBA (minuscolo) e quello usato come
 // Destinazione sulle fatture / Imputazione sui cespiti (maiuscolo, italiano)
@@ -163,6 +164,33 @@ export default function ReportCosti({ anno }) {
     setCalcolando(false);
   }
 
+  function esporta() {
+    const rigaRiepilogo = [{
+      "Anno": anno,
+      "Costi ordinari": numeroExcel(risultato.costiOrdinari),
+      "Quote ammortamento": numeroExcel(risultato.costoAmmortamenti),
+      "Costi totali": numeroExcel(risultato.costiTotali),
+      "UBA-giorni produttivi": numeroExcel(risultato.tasso.ubaGiorniProduttivi),
+      "UBA-giorni improduttivi": numeroExcel(risultato.tasso.ubaGiorniImproduttivi),
+      "Tasso semplice €/UBA-gg": numeroExcel(risultato.tasso.tassoSemplice),
+      "Perdita spalmata": numeroExcel(risultato.tasso.perditaSpalmata),
+      "Tasso rettificato €/UBA-gg": numeroExcel(risultato.tasso.tassoRettificato),
+    }];
+    const righePerSpecie = risultato.perSpecie.map(r => ({
+      "Specie": r.specie, "% sul totale UBA-giorni": numeroExcel(r.percentualeSulTotale),
+      "Costo allocato": numeroExcel(r.costoAllocatoTotale), "€/UBA-gg": numeroExcel(r.incidenzaUbaGiorno),
+    }));
+    const righeAltreSpecie = Object.entries(risultato.costiAltreSpecie)
+      .filter(([, v]) => v > 0)
+      .map(([nome, v]) => ({ "Voce": nome, "Costo diretto": numeroExcel(v), "€/UBA-gg (su animali allevamento)": numeroExcel(risultato.tasso.ubaGiorniProduttivi > 0 ? v / risultato.tasso.ubaGiorniProduttivi : 0) }));
+
+    esportaExcel(`ReportCosti_Aggregato_${anno}`, [
+      { nome: "Riepilogo", righe: rigaRiepilogo },
+      { nome: "Per Specie", righe: righePerSpecie },
+      { nome: "Altre Specie e Orto", righe: righeAltreSpecie },
+    ]);
+  }
+
   async function salvaRisultato() {
     if (!risultato) return;
     if (!window.confirm(`Salvare il costo calcolato per ${risultato.costoPerAnimale.length} animali/unità per l'anno ${anno}? Sostituirà eventuali dati già salvati per questo anno.`)) return;
@@ -284,10 +312,16 @@ export default function ReportCosti({ anno }) {
             </div>
           )}
 
-          <button onClick={salvaRisultato} disabled={salvando}
-            style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 10, padding: "12px 24px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
-            {salvando ? "Salvataggio..." : `💾 Salva questo calcolo per l'anno ${anno}`}
-          </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={salvaRisultato} disabled={salvando}
+              style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 10, padding: "12px 24px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
+              {salvando ? "Salvataggio..." : `💾 Salva questo calcolo per l'anno ${anno}`}
+            </button>
+            <button onClick={esporta}
+              style={{ background: C.green, color: "#fff", border: "none", borderRadius: 10, padding: "12px 24px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
+              📥 Esporta Excel
+            </button>
+          </div>
         </>
       )}
     </div>

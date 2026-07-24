@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { numerizzaCampi, round2, formattaEuro } from "./parsingUtils";
+import { esportaExcel, numeroExcel } from "./esportaExcel";
 
 const CATEGORIE_AMMORTAMENTO = [
   "3 - Attrezzatura specifica",
@@ -162,16 +163,32 @@ export default function Cespiti() {
 
   const totaleCosto = filtrati.reduce((s, c) => s + (c.costo_acquisto || 0), 0);
 
+  function esporta() {
+    const righeExcel = filtrati.map(c => ({
+      "Descrizione": c.descrizione, "Categoria": c.categoria, "Imputazione": c.specie?.join(", ") || "Generali",
+      "Fornitore": c.ci_fornitori?.nome, "Fattura n.": c.ci_fatture?.numero, "Data fattura": c.ci_fatture?.data,
+      "Data acquisto": c.data_acquisto, "Costo acquisto": numeroExcel(c.costo_acquisto), "Anni ammortamento": c.anni_ammortamento,
+      "Coefficiente %/anno": c.anni_ammortamento ? numeroExcel(100 / c.anni_ammortamento) : null,
+    }));
+    esportaExcel("Cespiti", [{ nome: "Cespiti", righe: righeExcel }]);
+  }
+
   return (
     <div style={{ padding: 20, maxWidth: 1100, margin: "0 auto" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4, flexWrap: "wrap", gap: 10 }}>
         <h1 style={{ color: C.primary, fontSize: 24, margin: 0 }}>Cespiti</h1>
-        {!nuovo && (
-          <button onClick={() => setNuovo({ descrizione: "", categoria: "", data_acquisto: new Date().toISOString().slice(0, 10), costo_acquisto: "", anni_ammortamento: "5", specie: "", note: "" })}
-            style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-            + Nuovo Cespite
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={esporta}
+            style={{ background: C.green, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+            📥 Esporta Excel
           </button>
-        )}
+          {!nuovo && (
+            <button onClick={() => setNuovo({ descrizione: "", categoria: "", data_acquisto: new Date().toISOString().slice(0, 10), costo_acquisto: "", anni_ammortamento: "5", specie: "", note: "" })}
+              style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+              + Nuovo Cespite
+            </button>
+          )}
+        </div>
       </div>
       <p style={{ color: C.muted, marginTop: 4, marginBottom: 20 }}>{cespiti.length} cespiti — costo totale {formattaEuro(totaleCosto)}</p>
 

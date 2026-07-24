@@ -2,6 +2,7 @@ import { useState, Fragment } from "react";
 import { C } from "./style";
 import { calcolaDatiPerArea, calcolaDatiPerAreaCentro } from "./calcoloReportCosti";
 import { formattaEuro } from "./parsingUtils";
+import { esportaExcel, numeroExcel } from "./esportaExcel";
 
 const round2 = n => Math.round((n + Number.EPSILON) * 100) / 100;
 
@@ -77,6 +78,26 @@ export default function ReportStorico({ specieFiltro, titolo }) {
   const labelCampo1 = specieFiltro ? "Costo allocato" : "Imponibile";
   const labelCampo2 = "€/UBA-gg";
 
+  function esporta() {
+    function righeExcelDa(righe, etichettaFn, c1 = campo1, c2 = campo2, l1 = labelCampo1, l2 = labelCampo2) {
+      return righe.map(r => {
+        const riga = { "Voce": etichettaFn(r) };
+        anni.forEach((a, i) => {
+          riga[`${l1} ${a}`] = numeroExcel(r.valoriPerAnno[i][c1]);
+          riga[`${l2} ${a}`] = numeroExcel(r.valoriPerAnno[i][c2]);
+        });
+        riga[`${l1} Media`] = numeroExcel(r.media[c1]);
+        riga[`${l2} Media`] = numeroExcel(r.media[c2]);
+        return riga;
+      });
+    }
+    esportaExcel(`ReportStorico_${specieFiltro || "Generale"}_${annoBase}`, [
+      { nome: "Per Area", righe: righeExcelDa(risultato.righeArea, r => r.chiave) },
+      { nome: "Orto e Non Allevamento", righe: righeExcelDa(risultato.rigaRossa, r => r.chiave, "valore", "tasso", "Imponibile", "€/UBA-gg") },
+      { nome: "Per Centro di Costo", righe: righeExcelDa(risultato.righeCentro, r => `${r.area} - ${r.etichetta}`) },
+    ]);
+  }
+
   return (
     <div style={{ padding: 20, maxWidth: 1400, margin: "0 auto" }}>
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 16 }}>
@@ -100,6 +121,10 @@ export default function ReportStorico({ specieFiltro, titolo }) {
 
       {risultato && (
         <>
+          <button onClick={esporta}
+            style={{ background: C.green, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", marginBottom: 16 }}>
+            📥 Esporta Excel
+          </button>
           <div style={{ fontSize: 13, fontWeight: 700, color: C.muted, marginBottom: 8 }}>PER AREA</div>
           <TabellaConfronto righe={risultato.righeArea} anni={anni} campo1={campo1} campo2={campo2} labelCampo1={labelCampo1} labelCampo2={labelCampo2} etichettaRiga={r => r.chiave} />
 
