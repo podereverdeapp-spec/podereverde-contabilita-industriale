@@ -32,8 +32,16 @@ export default function ReportRiproduttori() {
       setParametri(parametriMap);
 
       const { data: tuttiAnimali, error: eA } = await supabase
-        .from("animali").select("id,bdn,nome,specie,razza,razza_calcolata,riproduttore,costo_iniziale,padre_id,madre_id,nascita,stato,data_uscita,peso_vivo_uscita,peso_carcassa");
+        .from("animali").select("id,bdn,nome,specie,razza,razza_calcolata,riproduttore,costo_iniziale,padre_id,madre_id,nascita,stato,data_uscita,peso_vivo_uscita,peso_carcassa,provenienza");
       if (eA) throw new Error(eA.message);
+
+      const { data: tuttiLotti, error: eL } = await supabase
+        .from("lotti_suini").select("id,padre_id,madre_id,data_parto,codice_lotto,codice,tipo_provenienza");
+      if (eL) throw new Error(eL.message);
+      const { data: tutteUnita, error: eU } = await supabase
+        .from("suini_lotto").select("id,lotto_id,nr");
+      if (eU) throw new Error(eU.message);
+      const mappaLottiPerId = new Map((tuttiLotti || []).map(l => [l.id, l]));
 
       const { data: prezziRiforma } = await supabase.from("prezzi_riforma").select("*");
       const etaMinimaAnni = parametriMap.eta_minima_calcolo_peso_storico || 3;
@@ -48,12 +56,25 @@ export default function ReportRiproduttori() {
       let elaborati = 0, figliAggiornati = 0;
 
       for (const rip of riproduttoriAttivi) {
-        // Figli di questo riproduttore (come padre o madre), con anno di nascita
-        const figli = (tuttiAnimali || []).filter(a => a.padre_id === rip.id || a.madre_id === rip.id);
+        // Figli di questo riproduttore: sia animali individuali (padre_id/madre_id su animali)
+        // sia unità di lotto suini (padre_id/madre_id sono sul LOTTO, non sulla singola unità) —
+        // prima di questa correzione i secondi venivano ignorati, perdendo il costo di nascita
+        // per ogni suinetto ancora privo di BDN individuale.
+        const figli = (tuttiAnimali || []).filter(a => (a.padre_id === rip.id || a.madre_id === rip.id) && a.provenienza === "Nato in azienda");
+        const unitaFiglie = (tutteUnita || []).filter(u => {
+          const lotto = mappaLottiPerId.get(u.lotto_id);
+          return lotto && lotto.tipo_provenienza !== "acquistato" && (lotto.padre_id === rip.id || lotto.madre_id === rip.id);
+        }).map(u => ({ ...u, nascita: mappaLottiPerId.get(u.lotto_id)?.data_parto, tipo: "lotto" }));
+
         const figliDellAnno = figli.filter(f => f.nascita && new Date(f.nascita).getFullYear() === anno);
-        const primoAnnoRiproduzione = figli.length > 0
-          ? Math.min(...figli.filter(f => f.nascita).map(f => new Date(f.nascita).getFullYear()))
-          : anno;
+        const unitaFiglieDellAnno = unitaFiglie.filter(u => u.nascita && new Date(u.nascita).getFullYear() === anno);
+        const numeroFigliTotaleAnno = figliDellAnno.length + unitaFiglieDellAnno.length;
+
+        const anniNascitaTutti = [
+          ...figli.filter(f => f.nascita).map(f => new Date(f.nascita).getFullYear()),
+          ...unitaFiglie.filter(u => u.nascita).map(u => new Date(u.nascita).getFullYear()),
+        ];
+        const primoAnnoRiproduzione = anniNascitaTutti.length > 0 ? Math.min(...anniNascitaTutti) : anno;
 
         // Costi di crescita pre-riproduttiva: somma costo_mantenimento negli anni prima del primo figlio
         const { data: costiPreRiprod } = await supabase
@@ -104,7 +125,7 @@ export default function ReportRiproduttori() {
           residuoTotaleIniziale: residuoRecord.residuo_totale,
           vitaProduttivaAttesaAnni: residuoRecord.vita_produttiva_attesa_anni,
           contoSospesoPrecedente: residuoRecord.conto_sospeso,
-          numeroFigliAnno: figliDellAnno.length,
+          numeroFigliAnno: numeroFigliTotaleAnno,
           residuoRimanentePrimaDellAnno: residuoRecord.residuo_rimanente,
         });
 
@@ -112,7 +133,7 @@ export default function ReportRiproduttori() {
         await supabase.from("ci_scarico_riproduttore_annuale").insert([{
           residuo_riproduttore_id: residuoRecord.id, anno,
           quota_annuale_dovuta: piano.quotaAnnualeDovuta, conto_sospeso_utilizzato: residuoRecord.conto_sospeso,
-          totale_scaricato_anno: piano.totaleScaricatoAnno, n_figli_anno: figliDellAnno.length, quota_per_figlio: piano.quotaPerFiglio,
+          totale_scaricato_anno: piano.totaleScaricatoAnno, n_figli_anno: numeroFigliTotaleAnno, quota_per_figlio: piano.quotaPerFiglio,
         }]);
 
         await supabase.from("ci_residuo_riproduttore").update({
@@ -123,6 +144,17 @@ export default function ReportRiproduttori() {
         for (const figlio of figliDellAnno) {
           const { data: costoEsistente } = await supabase.from("ci_costo_animale_annuale").select("id, costo_nascita_ereditato, costo_mantenimento, costo_totale_anno")
             .eq("animale_id", figlio.id).eq("anno", anno).maybeSingle();
+          if (costoEsistente) {
+            const nuovoNascita = round2((parseFloat(costoEsistente.costo_nascita_ereditato) || 0) + piano.quotaPerFiglio);
+            const nuovoTotale = round2((parseFloat(costoEsistente.costo_mantenimento) || 0) + nuovoNascita);
+            await supabase.from("ci_costo_animale_annuale").update({ costo_nascita_ereditato: nuovoNascita, costo_totale_anno: nuovoTotale }).eq("id", costoEsistente.id);
+            figliAggiornati++;
+          }
+        }
+        // Stesso aggiornamento per le unità di lotto figlie (chiave lotto_id+unita_nr, non animale_id)
+        for (const unita of unitaFiglieDellAnno) {
+          const { data: costoEsistente } = await supabase.from("ci_costo_animale_annuale").select("id, costo_nascita_ereditato, costo_mantenimento, costo_totale_anno")
+            .eq("lotto_id", unita.lotto_id).eq("unita_nr", unita.nr).eq("anno", anno).maybeSingle();
           if (costoEsistente) {
             const nuovoNascita = round2((parseFloat(costoEsistente.costo_nascita_ereditato) || 0) + piano.quotaPerFiglio);
             const nuovoTotale = round2((parseFloat(costoEsistente.costo_mantenimento) || 0) + nuovoNascita);
@@ -164,7 +196,10 @@ export default function ReportRiproduttori() {
       }
 
       const { data: prezziRiforma } = await supabase.from("prezzi_riforma").select("*");
-      const { data: tuttiAnimali } = await supabase.from("animali").select("id,padre_id,madre_id,nascita");
+      const { data: tuttiAnimali } = await supabase.from("animali").select("id,padre_id,madre_id,nascita,provenienza");
+      const { data: tuttiLotti } = await supabase.from("lotti_suini").select("id,padre_id,madre_id,data_parto,tipo_provenienza");
+      const { data: tutteUnita } = await supabase.from("suini_lotto").select("id,lotto_id,nr");
+      const mappaLottiPerId = new Map((tuttiLotti || []).map(l => [l.id, l]));
 
       let conguagliati = 0;
       for (const res of daConguagliare) {
@@ -180,18 +215,34 @@ export default function ReportRiproduttori() {
 
         const annoUscita = new Date(a.data_uscita).getFullYear();
         const figliAnnoUscita = (tuttiAnimali || []).filter(f =>
-          (f.padre_id === a.id || f.madre_id === a.id) && f.nascita && new Date(f.nascita).getFullYear() === annoUscita
+          (f.padre_id === a.id || f.madre_id === a.id) && f.provenienza === "Nato in azienda" &&
+          f.nascita && new Date(f.nascita).getFullYear() === annoUscita
         );
+        const unitaFiglieAnnoUscita = (tutteUnita || []).filter(u => {
+          const lotto = mappaLottiPerId.get(u.lotto_id);
+          return lotto && lotto.tipo_provenienza !== "acquistato" && (lotto.padre_id === a.id || lotto.madre_id === a.id) &&
+            lotto.data_parto && new Date(lotto.data_parto).getFullYear() === annoUscita;
+        });
+        const numeroFigliTotaleUscita = figliAnnoUscita.length + unitaFiglieAnnoUscita.length;
 
         const conguaglio = calcolaConguaglio({
           valoreRealizzoReale: valoreReale, valoreRealizzoStimato: parseFloat(res.valore_realizzo_stimato) || 0,
-          numeroFigliAnnoUscita: figliAnnoUscita.length,
+          numeroFigliAnnoUscita: numeroFigliTotaleUscita,
         });
 
         if (conguaglio.applicatoAiFigli) {
           for (const figlio of figliAnnoUscita) {
             const { data: costoEsistente } = await supabase.from("ci_costo_animale_annuale").select("id, costo_nascita_ereditato, costo_mantenimento")
               .eq("animale_id", figlio.id).eq("anno", annoUscita).maybeSingle();
+            if (costoEsistente) {
+              const nuovoNascita = round2((parseFloat(costoEsistente.costo_nascita_ereditato) || 0) + conguaglio.conguaglioPerFiglio);
+              const nuovoTotale = round2((parseFloat(costoEsistente.costo_mantenimento) || 0) + nuovoNascita);
+              await supabase.from("ci_costo_animale_annuale").update({ costo_nascita_ereditato: nuovoNascita, costo_totale_anno: nuovoTotale }).eq("id", costoEsistente.id);
+            }
+          }
+          for (const unita of unitaFiglieAnnoUscita) {
+            const { data: costoEsistente } = await supabase.from("ci_costo_animale_annuale").select("id, costo_nascita_ereditato, costo_mantenimento")
+              .eq("lotto_id", unita.lotto_id).eq("unita_nr", unita.nr).eq("anno", annoUscita).maybeSingle();
             if (costoEsistente) {
               const nuovoNascita = round2((parseFloat(costoEsistente.costo_nascita_ereditato) || 0) + conguaglio.conguaglioPerFiglio);
               const nuovoTotale = round2((parseFloat(costoEsistente.costo_mantenimento) || 0) + nuovoNascita);

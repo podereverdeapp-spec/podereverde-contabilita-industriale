@@ -106,9 +106,13 @@ La logica di calcolo condivisa (`calcoloReportCosti.js`) gestiva già correttame
 
 ## 8. Costo per animale — `ci_costo_animale_annuale`
 
+**VALORE COMPLESSIVO (costruito, Scheda Animale)**: costo iniziale (acquisto o quota pro-capite del lotto se acquistato — `prezzo_acquisto lotto / nati_totali`, stessa formula già usata in podereverdeapp.it `ExportManager.jsx`) + somma di `costo_totale_anno` per tutti gli anni. Se nato in azienda, il costo iniziale è 0 (il costo di nascita è già dentro la somma degli anni, come `costo_nascita_ereditato`) — per non contarlo due volte.
+
+**Traghettamento costi all'assegnazione BDN — COSTRUITO** (pulsante "🔄 Traghetta costi lotto→BDN" in Scheda Animale): cerca tutte le unità di lotto con `stato="registrato_individuale"`, trova l'animale corrispondente per BDN, e sposta le righe di `ci_costo_animale_annuale` da `lotto_id`+`unita_nr` a `animale_id`. Se esiste già una riga per lo stesso anno sull'animale (es. Report Costi rilanciato dopo il passaggio a BDN), le **fonde** sommando i valori invece di sovrascrivere — testato che la somma torni esatta.
+
 Ogni animale, in proporzione ai suoi UBA-giorni, si prende in carico sia i costi ordinari (Fisso/Variabile) sia la quota di ammortamento dell'anno — stesso meccanismo di ripartizione per entrambi. Copre sia l'animale individuale (`animale_id`) sia l'unità di lotto non individualizzata (`lotto_id`+`unita_nr`) — stesso meccanismo, non un secondo sistema a parte.
 
-**Traghettamento costi all'assegnazione BDN**: quando un suinetto passa da unità di lotto anonima ad animale individuale con BDN (pulsante "🏷️ Assegna BDN" in podereverdeapp.it), tutti i costi già maturati mentre era nel lotto devono traghettare sul nuovo `animale_id` — non ripartire da zero. **Non ancora costruito** (requisito registrato, da implementare).
+**Traghettamento costi all'assegnazione BDN**: vedi sopra — costruito.
 
 **Flusso di calcolo (ordine d'uso corretto in Report Costi)**: 1) Report UBA per l'anno → 2) Report Costi per l'anno (calcola e salva `ci_costo_animale_annuale` + `ci_tasso_uba_annuale`) → 3) Report Riproduttori per lo stesso anno (calcola e scarica sui figli, aggiorna la riga di costo già salvata al punto 2).
 
@@ -121,6 +125,8 @@ Tutte le soglie di business sono leggibili/modificabili da UI, non hardcoded:
 - Età minima (default: >3 anni) per includere un animale nel calcolo del peso medio storico per la stima del valore di realizzo riproduttori
 
 ## 10. Riproduttori — meccanismo completo (`motoreRiproduttori.js`, pagina Report Riproduttori)
+
+**Correzione importante (bug reale trovato ragionando con Filippo)**: il riconoscimento dei "figli" di un riproduttore, per lo scarico del residuo e il conguaglio, controllava SOLO `animali.padre_id`/`madre_id` — ignorando completamente i suinetti ancora dentro un lotto (`suini_lotto`), che hanno padre/madre registrati sul LOTTO (`lotti_suini.padre_id`/`madre_id`), non sulla singola unità. Risultato: un suinetto in un lotto, anche se figlio di un riproduttore riconosciuto, non riceveva mai il costo di nascita ereditato. Corretto: ora si combinano figli individuali + unità di lotto in un unico conteggio, con lo stesso costo per figlio diviso su entrambi i gruppi insieme. **Discriminante esplicito aggiunto**: un figlio riceve il costo di nascita solo se `provenienza==="Nato in azienda"` (per gli individuali) o `lotto.tipo_provenienza!=="acquistato"` (per i lotti) — non basta più la sola presenza di padre_id/madre_id, che potrebbe essere valorizzata per errore anche su un animale acquistato. Testato con un caso misto (animale individuale + 3 suinetti di lotto, con un caso di ciascun tipo correttamente escluso).
 
 **Perché**: la ripartizione costi ordinaria (UBA-giorni) resta uguale per tutti. In più, il costo di UN riproduttore si scarica sui SUOI figli, non resta a carico generico dell'azienda.
 
@@ -188,6 +194,15 @@ Formato italiano ovunque: punto per le migliaia, virgola per i decimali (`format
 Menu laterale verticale a sinistra (non più orizzontale in alto) — più comodo con 14 voci. Sezioni con più viste interne (Report Costi, Cespiti) usano pulsanti di navigazione secondaria con sfondi colorati distinti per orientarsi.
 
 ## 18. Collegamento con podereverdeapp.it (in corso, sessione condivisa)
+
+### 18.0 Quadro completo dei flussi dati (e perché vanno in quella direzione)
+
+**Perché podereverdeapp.it è la fonte di verità sui dati grezzi**: è lì che gli operatori dentro l'allevamento registrano quello che succede realmente — nascite, ingressi, uscite, vaccinazioni, nati morti, ecc. La Contabilità Industriale (gestita dai contabili) non ha nessun altro modo di sapere cosa succede in azienda se non attraverso quello che gli operatori hanno già registrato lì. Da qui discendono tutti i flussi seguenti:
+
+1. **podereverdeapp.it → Contabilità Industriale** (lettura): dati grezzi per il calcolo UBA-gg — nascita, data/motivo di uscita, stato, sia per animali individuali sia per lotti/unità di lotto. La Contabilità Industriale calcola da sola, con la stessa formula impostata in podereverdeapp.it (`ExportManager.jsx`) — non esiste una tabella con l'UBA-gg già calcolato da leggere, il risultato è comunque identico perché formula e dati sorgente sono gli stessi (sezione 6.1).
+2. **Contabilità Industriale → podereverdeapp.it** (scrittura, senso unico): il costo calcolato (`ci_costo_animale_annuale`) — l'unica tabella che la Contabilità Industriale scrive e podereverdeapp.it legge soltanto (tab "💰 Costi").
+3. **Bidirezionale**: il costo di acquisto (`animali.prezzo_acquisto`, o quota pro-capite di `lotti_suini.prezzo_acquisto`) — stesso campo condiviso, scrivibile da entrambi i programmi (dettagli più sotto in questa sezione).
+4. **podereverdeapp.it → Contabilità Industriale** (eccezione consapevole): il traghettamento costi lotto→BDN, costruito dentro `FormAssegnaBDN` — sposta righe di costo già calcolate dalla Contabilità Industriale, non ne calcola di nuove (sezione 8).
 
 **Costo di acquisto — campo condiviso, scrivibile da entrambi i programmi (decisione presa)**: a differenza di `ci_costo_animale_annuale` (a senso unico), il costo di acquisto (`animali.prezzo_acquisto`, con estremi fattura) resta **un solo campo condiviso** sulla stessa riga della stessa tabella — puoi inserirlo sia da podereverdeapp.it sia dalla Contabilità Industriale, non sono due dati da sincronizzare. **Fatto**: alert rosso "⚠️ Manca costo acquisto" quando `provenienza==="Acquistato"` e `prezzo_acquisto` mancante — badge nella card lista animali, banner prominente nella scheda dettaglio (podereverdeapp.it v96), e riquadro con l'elenco completo in Report Acquisto Animali (Contabilità Industriale). **Da fare**: la finestra di inserimento diretto del costo da Report Acquisto Animali (Filippo l'ha esplicitamente rimandata a un secondo momento, "che poi struttureremo").
 

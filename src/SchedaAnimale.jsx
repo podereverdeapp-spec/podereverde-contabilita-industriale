@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
-import { numerizzaCampi, formattaEuro, formattaNumero } from "./parsingUtils";
+import { numerizzaCampi, formattaEuro, formattaNumero, round2 } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
 
 export default function SchedaAnimale({ ricercaIniziale, onRicercaConsumata }) {
@@ -11,6 +11,7 @@ export default function SchedaAnimale({ ricercaIniziale, onRicercaConsumata }) {
   const [selezionato, setSelezionato] = useState(null); // { tipo:"animale"|"lotto", ...dati }
   const [storicoCosto, setStoricoCosto] = useState(null);
   const [caricandoStorico, setCaricandoStorico] = useState(false);
+  const [traghettando, setTraghettando] = useState(false);
 
   useEffect(() => {
     if (ricercaIniziale) {
@@ -28,7 +29,7 @@ export default function SchedaAnimale({ ricercaIniziale, onRicercaConsumata }) {
     setSelezionato(null);
     try {
       const { data: animaliTrovati, error: eA } = await supabase
-        .from("animali").select("id,bdn,nome,specie,razza,sesso,stato,nascita,data_uscita,riproduttore")
+        .from("animali").select("id,bdn,nome,specie,razza,sesso,stato,nascita,data_uscita,riproduttore,prezzo_acquisto,provenienza")
         .or(`bdn.ilike.%${q}%,nome.ilike.%${q}%`).limit(20);
       if (eA) throw new Error(eA.message);
 
@@ -40,7 +41,7 @@ export default function SchedaAnimale({ ricercaIniziale, onRicercaConsumata }) {
       let unitaConLotto = [];
       if (unitaTrovate && unitaTrovate.length > 0) {
         const idLotti = [...new Set(unitaTrovate.map(u => u.lotto_id))];
-        const { data: lottiRel } = await supabase.from("lotti_suini").select("id, codice_lotto, codice").in("id", idLotti);
+        const { data: lottiRel } = await supabase.from("lotti_suini").select("id, codice_lotto, codice, prezzo_acquisto, tipo_provenienza, nati_totali").in("id", idLotti);
         const mappaLotti = new Map((lottiRel || []).map(l => [l.id, l]));
         unitaConLotto = unitaTrovate.map(u => ({ ...u, lotto: mappaLotti.get(u.lotto_id) }));
       }
@@ -72,21 +73,96 @@ export default function SchedaAnimale({ ricercaIniziale, onRicercaConsumata }) {
     setCaricandoStorico(false);
   }
 
-  const totaleCumulato = storicoCosto ? storicoCosto.reduce((s, r) => s + (r.costo_totale_anno || 0), 0) : 0;
+  // Costo iniziale: prezzo di acquisto (se l'animale/lotto è stato acquistato) — se nato in
+  // azienda, il suo costo di nascita è già dentro lo storico sopra (costo_nascita_ereditato),
+  // quindi qui non si aggiunge nulla per non contare due volte lo stesso costo.
+  const costoIniziale = (() => {
+    if (!selezionato) return 0;
+    if (selezionato.tipo === "animale") return selezionato.prezzo_acquisto || 0;
+    const lotto = selezionato.lotto;
+    if (lotto?.tipo_provenienza === "acquistato" && lotto.prezzo_acquisto) {
+      const nTotale = lotto.nati_totali || 1;
+      return round2(lotto.prezzo_acquisto / nTotale);
+    }
+    return 0;
+  })();
+
+  const totaleCumulato = (storicoCosto ? storicoCosto.reduce((s, r) => s + (r.costo_totale_anno || 0), 0) : 0) + costoIniziale;
+
+  async function traghettaCostiLottoBDN() {
+    if (!window.confirm("Cerca tutti i suinetti passati da lotto ad animale individuale (BDN assegnato) e trasferisce i loro costi già calcolati (mantenimento, nascita ereditata) dal lotto al nuovo animale. Procedere?")) return;
+    setTraghettando(true);
+    try {
+      const { data: unitaTrasferite, error: eU } = await supabase
+        .from("suini_lotto").select("id,lotto_id,nr,bdn").eq("stato", "registrato_individuale").not("bdn", "is", null);
+      if (eU) throw new Error(eU.message);
+      if (!unitaTrasferite || unitaTrasferite.length === 0) {
+        alert("Nessuna unità di lotto risulta ancora trasferita a BDN individuale.");
+        setTraghettando(false);
+        return;
+      }
+
+      let righeTraghettate = 0, fuse = 0, animaliNonTrovati = 0;
+      for (const unita of unitaTrasferite) {
+        const { data: animale } = await supabase.from("animali").select("id").eq("bdn", unita.bdn).maybeSingle();
+        if (!animale) { animaliNonTrovati++; continue; }
+
+        const { data: righeLotto } = await supabase.from("ci_costo_animale_annuale").select("*")
+          .eq("lotto_id", unita.lotto_id).eq("unita_nr", unita.nr);
+        if (!righeLotto || righeLotto.length === 0) continue;
+
+        for (const riga of righeLotto) {
+          const { data: rigaEsistente } = await supabase.from("ci_costo_animale_annuale").select("*")
+            .eq("animale_id", animale.id).eq("anno", riga.anno).maybeSingle();
+
+          if (rigaEsistente) {
+            await supabase.from("ci_costo_animale_annuale").update({
+              uba_giorni: round2((parseFloat(rigaEsistente.uba_giorni) || 0) + (parseFloat(riga.uba_giorni) || 0)),
+              costo_mantenimento: round2((parseFloat(rigaEsistente.costo_mantenimento) || 0) + (parseFloat(riga.costo_mantenimento) || 0)),
+              costo_nascita_ereditato: round2((parseFloat(rigaEsistente.costo_nascita_ereditato) || 0) + (parseFloat(riga.costo_nascita_ereditato) || 0)),
+              quota_scaricata_su_figli: round2((parseFloat(rigaEsistente.quota_scaricata_su_figli) || 0) + (parseFloat(riga.quota_scaricata_su_figli) || 0)),
+              costo_totale_anno: round2((parseFloat(rigaEsistente.costo_totale_anno) || 0) + (parseFloat(riga.costo_totale_anno) || 0)),
+            }).eq("id", rigaEsistente.id);
+            await supabase.from("ci_costo_animale_annuale").delete().eq("id", riga.id);
+            fuse++;
+          } else {
+            await supabase.from("ci_costo_animale_annuale").update({
+              animale_id: animale.id, lotto_id: null, unita_nr: null,
+            }).eq("id", riga.id);
+          }
+          righeTraghettate++;
+        }
+      }
+
+      alert(`✓ Traghettate ${righeTraghettate} righe di costo (${fuse} fuse con costi già esistenti sull'animale).${animaliNonTrovati > 0 ? ` ${animaliNonTrovati} unità con BDN non trovato in anagrafica, saltate.` : ""}`);
+    } catch (err) {
+      alert(`⚠️ Errore nel traghettamento:\n\n${err.message}`);
+    }
+    setTraghettando(false);
+  }
 
   function esporta() {
-    const righeExcel = storicoCosto.map(r => ({
+    const righeExcel = (storicoCosto || []).map(r => ({
       "Anno": r.anno, "UBA-giorni": numeroExcel(r.uba_giorni), "Categoria": r.categoria_contabile,
       "Costo mantenimento": numeroExcel(r.costo_mantenimento), "Costo nascita ereditato": numeroExcel(r.costo_nascita_ereditato),
       "Scaricato sui figli": numeroExcel(r.quota_scaricata_su_figli), "Totale anno": numeroExcel(r.costo_totale_anno),
     }));
     const nome = selezionato.tipo === "animale" ? (selezionato.bdn || selezionato.nome) : (selezionato.codice_completo || selezionato.matricola);
-    esportaExcel(`SchedaAnimale_${nome}`, [{ nome: "Storico Costo", righe: righeExcel }]);
+    esportaExcel(`SchedaAnimale_${nome}`, [
+      { nome: "Riepilogo", righe: [{ "Costo iniziale (acquisto)": numeroExcel(costoIniziale), "Valore Complessivo": numeroExcel(totaleCumulato) }] },
+      { nome: "Storico Costo", righe: righeExcel },
+    ]);
   }
 
   return (
     <div style={{ padding: 20, maxWidth: 900, margin: "0 auto" }}>
-      <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Scheda Animale</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+        <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Scheda Animale</h1>
+        <button onClick={traghettaCostiLottoBDN} disabled={traghettando}
+          style={{ background: C.accent, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+          {traghettando ? "Traghettamento..." : "🔄 Traghetta costi lotto→BDN"}
+        </button>
+      </div>
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 20 }}>
         Cerca per BDN o nome (anche unità di lotto suini) per vedere lo storico costo anno per anno e il totale cumulato.
       </p>
@@ -139,42 +215,54 @@ export default function SchedaAnimale({ ricercaIniziale, onRicercaConsumata }) {
 
           {caricandoStorico ? (
             <p style={{ color: C.muted }}>Caricamento storico costo...</p>
-          ) : !storicoCosto || storicoCosto.length === 0 ? (
+          ) : (!storicoCosto || storicoCosto.length === 0) && costoIniziale === 0 ? (
             <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16 }}>
               <p style={{ color: C.muted, margin: 0 }}>Nessun costo ancora calcolato per questo animale — usa "Report Costi" per l'anno di interesse, poi salva il calcolo.</p>
             </div>
           ) : (
             <>
-              <button onClick={esporta}
-                style={{ background: C.green, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", marginBottom: 16 }}>
-                📥 Esporta Excel
-              </button>
-              <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", marginBottom: 16 }}>
-                <table style={{ width: "100%", fontSize: 13 }}>
-                  <thead style={{ background: C.primary, color: "#fff" }}>
-                    <tr>
-                      <th style={th}>Anno</th><th style={th}>UBA-giorni</th><th style={th}>Categoria</th>
-                      <th style={th}>Costo mantenimento</th><th style={th}>Costo nascita ereditato</th>
-                      <th style={th}>Scaricato sui figli</th><th style={th}>Totale anno</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {storicoCosto.map(r => (
-                      <tr key={r.id} style={{ borderTop: `1px solid ${C.border}` }}>
-                        <td style={td}>{r.anno}</td>
-                        <td style={{ ...td, textAlign: "right" }}>{formattaNumero(r.uba_giorni, 1)}</td>
-                        <td style={td}>{r.categoria_contabile}</td>
-                        <td style={{ ...td, textAlign: "right" }}>{formattaEuro(r.costo_mantenimento)}</td>
-                        <td style={{ ...td, textAlign: "right" }}>{formattaEuro(r.costo_nascita_ereditato)}</td>
-                        <td style={{ ...td, textAlign: "right" }}>{formattaEuro(r.quota_scaricata_su_figli)}</td>
-                        <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{formattaEuro(r.costo_totale_anno)}</td>
+              {storicoCosto && storicoCosto.length > 0 && (
+                <button onClick={esporta}
+                  style={{ background: C.green, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", marginBottom: 16 }}>
+                  📥 Esporta Excel
+                </button>
+              )}
+              {costoIniziale > 0 && (
+                <div style={{ background: "#F5F0E8", borderRadius: 10, padding: "10px 16px", marginBottom: 12, display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ fontWeight: 700, color: C.text }}>
+                    {selezionato.tipo === "animale" ? "Costo di acquisto" : "Costo di acquisto (quota pro-capite del lotto)"}
+                  </span>
+                  <span style={{ fontWeight: 700 }}>{formattaEuro(costoIniziale)}</span>
+                </div>
+              )}
+              {storicoCosto && storicoCosto.length > 0 && (
+                <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", marginBottom: 16 }}>
+                  <table style={{ width: "100%", fontSize: 13 }}>
+                    <thead style={{ background: C.primary, color: "#fff" }}>
+                      <tr>
+                        <th style={th}>Anno</th><th style={th}>UBA-giorni</th><th style={th}>Categoria</th>
+                        <th style={th}>Costo mantenimento</th><th style={th}>Costo nascita ereditato</th>
+                        <th style={th}>Scaricato sui figli</th><th style={th}>Totale anno</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {storicoCosto.map(r => (
+                        <tr key={r.id} style={{ borderTop: `1px solid ${C.border}` }}>
+                          <td style={td}>{r.anno}</td>
+                          <td style={{ ...td, textAlign: "right" }}>{formattaNumero(r.uba_giorni, 1)}</td>
+                          <td style={td}>{r.categoria_contabile}</td>
+                          <td style={{ ...td, textAlign: "right" }}>{formattaEuro(r.costo_mantenimento)}</td>
+                          <td style={{ ...td, textAlign: "right" }}>{formattaEuro(r.costo_nascita_ereditato)}</td>
+                          <td style={{ ...td, textAlign: "right" }}>{formattaEuro(r.quota_scaricata_su_figli)}</td>
+                          <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{formattaEuro(r.costo_totale_anno)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
               <div style={{ background: C.primary + "15", borderRadius: 10, padding: "12px 16px", display: "flex", justifyContent: "space-between" }}>
-                <span style={{ fontWeight: 700, color: C.primary }}>Totale cumulato (tutti gli anni)</span>
+                <span style={{ fontWeight: 700, color: C.primary }}>VALORE COMPLESSIVO (costo iniziale + tutti gli anni)</span>
                 <span style={{ fontWeight: 800, fontSize: 18, color: C.primary }}>{formattaEuro(totaleCumulato)}</span>
               </div>
             </>
