@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
-import { numerizzaCampi } from "./parsingUtils";
+import { numerizzaCampi, formattaEuro } from "./parsingUtils";
 
 const MESI = ["Gen","Feb","Mar","Apr","Mag","Giu","Lug","Ago","Set","Ott","Nov","Dic"];
 
@@ -84,12 +84,12 @@ export default function Dashboard({ onNavigate }) {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12, marginBottom: 20 }}>
-        <Kpi label={`Spese ${anno}`} value={`${totaleSpeseAnno.toFixed(2)}€`} color={C.red} sub={`${fatturePassiveAnno.length} fatture passive`} />
-        <Kpi label={`Ricavi ${anno}`} value={`${totaleRicaviAnno.toFixed(2)}€`} color={C.green} sub={`${fattureAttiveAnno.length} fatture attive`} />
+        <Kpi label={`Spese ${anno}`} value={`${formattaEuro(totaleSpeseAnno)}`} color={C.red} sub={`${fatturePassiveAnno.length} fatture passive`} />
+        <Kpi label={`Ricavi ${anno}`} value={`${formattaEuro(totaleRicaviAnno)}`} color={C.green} sub={`${fattureAttiveAnno.length} fatture attive`} />
         <Kpi label="Fornitori attivi" value={fornitoriAttivi} color={C.blue} sub={`su ${fornitori.length} totali`} />
         <Kpi
           label="Acquisto animali da elaborare" value={reportAcquisto.length} color={C.accent}
-          sub={`${reportAcquisto.reduce((s, r) => s + (r.importo || 0), 0).toFixed(2)}€`}
+          sub={formattaEuro(reportAcquisto.reduce((s, r) => s + (r.importo || 0), 0))}
           onClick={() => onNavigate?.("acquisto")}
         />
       </div>
@@ -103,7 +103,7 @@ export default function Dashboard({ onNavigate }) {
                 width: "100%", background: val > 0 ? C.primary : C.border, borderRadius: "4px 4px 0 0",
                 height: `${Math.max((val / maxMese) * 100, 2)}px`,
                 transition: "height 0.3s",
-              }} title={`${MESI[i]}: ${val.toFixed(2)}€`} />
+              }} title={`${MESI[i]}: ${formattaEuro(val)}`} />
               <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>{MESI[i]}</div>
             </div>
           ))}
@@ -129,7 +129,7 @@ export default function Dashboard({ onNavigate }) {
             <div key={f.id} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px solid ${C.border}`, fontSize: 13 }}>
               <span>{f.ci_fornitori?.nome || "—"} · {f.numero}</span>
               <span style={{ fontWeight: 700, color: f.tipo === "ATTIVA" ? C.green : C.red }}>
-                {f.totale_lordo?.toFixed(2)}€
+                {formattaEuro(f.totale_lordo)}
               </span>
             </div>
           ))}

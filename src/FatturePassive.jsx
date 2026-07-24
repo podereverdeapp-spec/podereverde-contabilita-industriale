@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
-import { numerizzaCampi } from "./parsingUtils";
+import { numerizzaCampi, formattaEuro } from "./parsingUtils";
 
 export default function FatturePassive() {
   const [fatture, setFatture] = useState([]);
@@ -72,7 +72,7 @@ export default function FatturePassive() {
     <div style={{ padding: 20, maxWidth: 1200, margin: "0 auto" }}>
       <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Fatture Passive</h1>
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 20 }}>
-        {filtrate.length} fatture — totale {totale.toFixed(2)}€
+        {filtrate.length} fatture — totale {formattaEuro(totale)}
       </p>
 
       <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
@@ -115,7 +115,7 @@ export default function FatturePassive() {
                   </div>
                 </div>
                 <div style={{ textAlign: "right" }}>
-                  <div style={{ fontWeight: 800, fontSize: 16, color: C.primary }}>{f.totale_lordo?.toFixed(2)}€</div>
+                  <div style={{ fontWeight: 800, fontSize: 16, color: C.primary }}>{formattaEuro(f.totale_lordo)}</div>
                   <div style={{ fontSize: 11, color: C.muted }}>{espansa === f.id ? "▲ nascondi righe" : "▼ vedi righe"}</div>
                 </div>
               </div>
@@ -190,8 +190,8 @@ export function RicomposizioneFattura({ fattura, righe }) {
               <td style={{ padding: "6px 8px" }}>{r.descrizione}</td>
               {mostraUM && <td style={{ padding: "6px 8px", textAlign: "center" }}>{r.unita_misura || "—"}</td>}
               {mostraQuantita && <td style={{ padding: "6px 8px", textAlign: "right" }}>{r.quantita != null ? r.quantita : "—"}</td>}
-              {mostraPrezzoUnit && <td style={{ padding: "6px 8px", textAlign: "right" }}>{r.prezzo_unitario != null ? `${r.prezzo_unitario.toFixed(2)}€` : "—"}</td>}
-              <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700 }}>{r.totale_riga?.toFixed(2)}€</td>
+              {mostraPrezzoUnit && <td style={{ padding: "6px 8px", textAlign: "right" }}>{r.prezzo_unitario != null ? `${formattaEuro(r.prezzo_unitario)}` : "—"}</td>}
+              <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700 }}>{formattaEuro(r.totale_riga)}</td>
             </tr>
           ))}
         </tbody>
@@ -217,7 +217,7 @@ function RigaTotale({ label, valore, bold, muted }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", padding: "3px 8px", fontSize: bold ? 15 : 13 }}>
       <span style={{ color: muted ? C.muted : C.text, fontWeight: bold ? 800 : 600 }}>{label}</span>
-      <span style={{ color: bold ? C.primary : muted ? C.muted : C.text, fontWeight: bold ? 800 : 600 }}>{valore.toFixed(2)}€</span>
+      <span style={{ color: bold ? C.primary : muted ? C.muted : C.text, fontWeight: bold ? 800 : 600 }}>{formattaEuro(valore)}</span>
     </div>
   );
 }

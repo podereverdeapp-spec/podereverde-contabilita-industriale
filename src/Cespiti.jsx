@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
-import { numerizzaCampi, round2 } from "./parsingUtils";
+import { numerizzaCampi, round2, formattaEuro } from "./parsingUtils";
 
 const CATEGORIE_AMMORTAMENTO = [
   "3 - Attrezzatura specifica",
@@ -173,7 +173,7 @@ export default function Cespiti() {
           </button>
         )}
       </div>
-      <p style={{ color: C.muted, marginTop: 4, marginBottom: 20 }}>{cespiti.length} cespiti — costo totale {totaleCosto.toFixed(2)}€</p>
+      <p style={{ color: C.muted, marginTop: 4, marginBottom: 20 }}>{cespiti.length} cespiti — costo totale {formattaEuro(totaleCosto)}</p>
 
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 20 }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: C.muted, marginBottom: 8 }}>GENERA QUOTE DI AMMORTAMENTO</div>
@@ -247,7 +247,7 @@ export default function Cespiti() {
                   </div>
                 </div>
                 <div style={{ textAlign: "right" }}>
-                  <div style={{ fontWeight: 800, fontSize: 16, color: C.primary }}>{c.costo_acquisto?.toFixed(2)}€</div>
+                  <div style={{ fontWeight: 800, fontSize: 16, color: C.primary }}>{formattaEuro(c.costo_acquisto)}</div>
                   <div style={{ fontSize: 11, color: C.muted }}>{espanso === c.id ? "▲ nascondi piano" : "▼ vedi piano ammortamento"}</div>
                 </div>
               </div>
@@ -338,8 +338,8 @@ export default function Cespiti() {
                         {ammortamentiPerCespite[c.id].map(a => (
                           <tr key={a.id} style={{ borderTop: `1px solid ${C.border}` }}>
                             <td style={{ padding: "6px 8px" }}>{a.anno}</td>
-                            <td style={{ padding: "6px 8px", textAlign: "right" }}>{a.quota?.toFixed(2)}€</td>
-                            <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700 }}>{a.fondo_ammortamento_fine?.toFixed(2)}€</td>
+                            <td style={{ padding: "6px 8px", textAlign: "right" }}>{formattaEuro(a.quota)}</td>
+                            <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700 }}>{formattaEuro(a.fondo_ammortamento_fine)}</td>
                           </tr>
                         ))}
                       </tbody>

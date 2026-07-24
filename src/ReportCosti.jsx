@@ -2,7 +2,7 @@ import { useState } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { calcolaReportUba } from "./motoreUba";
-import { numerizzaCampi, round2 } from "./parsingUtils";
+import { numerizzaCampi, round2, formattaEuro, formattaNumero } from "./parsingUtils";
 
 // Mappa tra il nome specie usato nel motore UBA (minuscolo) e quello usato come
 // Destinazione sulle fatture / Imputazione sui cespiti (maiuscolo, italiano)
@@ -205,14 +205,14 @@ export default function ReportCosti() {
         <>
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 16 }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: C.muted, marginBottom: 10 }}>RIEPILOGO AZIENDALE — ANNO {anno}</div>
-            <Riga label="Costi ordinari (Fisso + Variabile)" valore={`${risultato.costiOrdinari.toFixed(2)}€`} />
-            <Riga label="Quote di ammortamento" valore={`${risultato.costoAmmortamenti.toFixed(2)}€`} />
-            <Riga label="Costi totali (C(t))" valore={`${risultato.costiTotali.toFixed(2)}€`} bold />
-            <Riga label="UBA-giorni produttivi/riproduttori" valore={risultato.tasso.ubaGiorniProduttivi.toFixed(1)} />
-            <Riga label="UBA-giorni improduttivi (esclusi dal divisore)" valore={risultato.tasso.ubaGiorniImproduttivi.toFixed(1)} color={C.red} />
-            <Riga label="Tasso semplice (se si dividesse su tutti)" valore={`${risultato.tasso.tassoSemplice.toFixed(4)}€/UBA-gg`} color={C.muted} />
-            <Riga label="Perdita spalmata sui produttivi" valore={`${risultato.tasso.perditaSpalmata.toFixed(2)}€`} color={C.red} />
-            <Riga label="Tasso RETTIFICATO (quello usato)" valore={`${risultato.tasso.tassoRettificato.toFixed(4)}€/UBA-gg`} bold color={C.primary} />
+            <Riga label="Costi ordinari (Fisso + Variabile)" valore={`${formattaEuro(risultato.costiOrdinari)}`} />
+            <Riga label="Quote di ammortamento" valore={`${formattaEuro(risultato.costoAmmortamenti)}`} />
+            <Riga label="Costi totali (C(t))" valore={`${formattaEuro(risultato.costiTotali)}`} bold />
+            <Riga label="UBA-giorni produttivi/riproduttori" valore={formattaNumero(risultato.tasso.ubaGiorniProduttivi, 1)} />
+            <Riga label="UBA-giorni improduttivi (esclusi dal divisore)" valore={formattaNumero(risultato.tasso.ubaGiorniImproduttivi, 1)} color={C.red} />
+            <Riga label="Tasso semplice (se si dividesse su tutti)" valore={`${formattaEuro(risultato.tasso.tassoSemplice, 4)}/UBA-gg`} color={C.muted} />
+            <Riga label="Perdita spalmata sui produttivi" valore={`${formattaEuro(risultato.tasso.perditaSpalmata)}`} color={C.red} />
+            <Riga label="Tasso RETTIFICATO (quello usato)" valore={`${formattaEuro(risultato.tasso.tassoRettificato, 4)}/UBA-gg`} bold color={C.primary} />
           </div>
 
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 16 }}>
@@ -235,11 +235,11 @@ export default function ReportCosti() {
                 {risultato.perSpecie.map(r => (
                   <tr key={r.specie} style={{ borderTop: `1px solid ${C.border}` }}>
                     <td style={{ padding: "6px 8px", textTransform: "capitalize" }}>{r.specie}</td>
-                    <td style={{ padding: "6px 8px", textAlign: "right" }}>{r.percentualeSulTotale.toFixed(1)}%</td>
-                    <td style={{ padding: "6px 8px", textAlign: "right" }}>{r.costoDirettoSpecie.toFixed(2)}€</td>
-                    <td style={{ padding: "6px 8px", textAlign: "right" }}>{r.quotaGeneraliSpecie.toFixed(2)}€</td>
-                    <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700 }}>{r.costoAllocatoTotale.toFixed(2)}€</td>
-                    <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700, color: C.primary }}>{r.incidenzaUbaGiorno.toFixed(4)}€</td>
+                    <td style={{ padding: "6px 8px", textAlign: "right" }}>{formattaNumero(r.percentualeSulTotale, 1)}%</td>
+                    <td style={{ padding: "6px 8px", textAlign: "right" }}>{formattaEuro(r.costoDirettoSpecie)}</td>
+                    <td style={{ padding: "6px 8px", textAlign: "right" }}>{formattaEuro(r.quotaGeneraliSpecie)}</td>
+                    <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700 }}>{formattaEuro(r.costoAllocatoTotale)}</td>
+                    <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700, color: C.primary }}>{formattaEuro(r.incidenzaUbaGiorno, 4)}</td>
                   </tr>
                 ))}
               </tbody>

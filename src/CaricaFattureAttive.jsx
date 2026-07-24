@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import * as XLSX from "xlsx";
 import { supabase } from "./supabase";
 import { C } from "./style";
-import { round2, numeroRobusto, calcolaImponibile, leggiAliquotaIva, formattaData } from "./parsingUtils";
+import { round2, numeroRobusto, calcolaImponibile, leggiAliquotaIva, formattaData, formattaEuro } from "./parsingUtils";
 
 export default function CaricaFattureAttive() {
   const [clienti, setClienti] = useState([]);
@@ -209,7 +209,7 @@ function RigaAttiva({ riga, onChange, onSalva, onAnnulla }) {
         <div>
           <strong>{r.cliente}</strong> — {r.descrizione}
           <div style={{ fontSize: 12, color: C.muted }}>
-            Fatt. {r.numero} del {r.data} · {r.quantita} {r.unita_misura} × {r.prezzo_unitario?.toFixed(2)}€ · Imponibile {r.imponibile?.toFixed(2)}€
+            Fatt. {r.numero} del {r.data} · {r.quantita} {r.unita_misura} × {formattaEuro(r.prezzo_unitario)} · Imponibile {formattaEuro(r.imponibile)}
             {r.aliquota_iva != null && ` · IVA ${r.aliquota_iva}%`}
           </div>
         </div>

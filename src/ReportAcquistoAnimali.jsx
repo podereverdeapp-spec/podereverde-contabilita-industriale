@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
-import { numerizzaCampi } from "./parsingUtils";
+import { numerizzaCampi, formattaEuro } from "./parsingUtils";
 
 export default function ReportAcquistoAnimali() {
   const [righe, setRighe] = useState([]);
@@ -64,7 +64,7 @@ export default function ReportAcquistoAnimali() {
         <div style={{ background: C.red + "15", borderRadius: 10, padding: "10px 16px" }}>
           <div style={{ fontSize: 12, color: C.red, fontWeight: 700 }}>Da elaborare</div>
           <div style={{ fontSize: 22, fontWeight: 800, color: C.red }}>
-            {daElaborare.length} righe — {totaleDaElaborare.toFixed(2)}€
+            {daElaborare.length} righe — {formattaEuro(totaleDaElaborare)}
           </div>
         </div>
       </div>
@@ -99,12 +99,12 @@ export default function ReportAcquistoAnimali() {
                     <div style={{ fontSize: 12, color: C.muted }}>
                       {r.quantita && `${r.quantita} ${r.unita_misura || ""}`}
                       {r.quantita && r.prezzo_unitario && " · "}
-                      {r.prezzo_unitario && `${r.prezzo_unitario.toFixed(2)}€/${r.unita_misura || "unità"}`}
+                      {r.prezzo_unitario && `${formattaEuro(r.prezzo_unitario)}/${r.unita_misura || "unità"}`}
                     </div>
                   )}
                 </div>
                 <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: 18, fontWeight: 800, color: C.primary }}>{r.importo?.toFixed(2)}€</div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: C.primary }}>{formattaEuro(r.importo)}</div>
                   {r.stato === "DA_ELABORARE" ? (
                     <button onClick={() => segnaInserito(r.id)} style={btn(C.green)}>
                       ✓ Segna inserito

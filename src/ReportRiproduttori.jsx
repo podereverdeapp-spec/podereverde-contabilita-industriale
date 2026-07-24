@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
-import { numerizzaCampi, round2 } from "./parsingUtils";
+import { numerizzaCampi, round2, formattaEuro } from "./parsingUtils";
 import { calcolaResiduoIniziale, calcolaPianoScarico, calcolaValoreRealizzoStimato, calcolaValoreRealizzoReale, calcolaConguaglio } from "./motoreRiproduttori";
 
 export default function ReportRiproduttori() {
@@ -265,14 +265,14 @@ export default function ReportRiproduttori() {
                 <tr key={r.id} style={{ borderTop: `1px solid ${C.border}` }}>
                   <td style={td}>{r.animali?.bdn || r.animali?.nome || "—"}</td>
                   <td style={td}>{r.specie}</td>
-                  <td style={{ ...td, textAlign: "right" }}>{r.residuo_totale.toFixed(2)}€</td>
-                  <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{r.residuo_rimanente.toFixed(2)}€</td>
-                  <td style={{ ...td, textAlign: "right", color: r.conto_sospeso > 0 ? C.accent : C.muted }}>{r.conto_sospeso.toFixed(2)}€</td>
+                  <td style={{ ...td, textAlign: "right" }}>{formattaEuro(r.residuo_totale)}</td>
+                  <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{formattaEuro(r.residuo_rimanente)}</td>
+                  <td style={{ ...td, textAlign: "right", color: r.conto_sospeso > 0 ? C.accent : C.muted }}>{formattaEuro(r.conto_sospeso)}</td>
                   <td style={{ ...td, textAlign: "right" }}>{r.vita_produttiva_attesa_anni}</td>
-                  <td style={{ ...td, textAlign: "right" }}>{r.valore_realizzo_stimato?.toFixed(2)}€</td>
+                  <td style={{ ...td, textAlign: "right" }}>{formattaEuro(r.valore_realizzo_stimato)}</td>
                   <td style={td}>
                     {r.animali?.stato && r.animali.stato !== "attivo"
-                      ? (r.conguaglio_applicato ? <span style={{ color: C.green, fontWeight: 700 }}>✓ Conguagliato ({r.valore_realizzo_reale?.toFixed?.(2) ?? "—"}€ reale)</span> : <span style={{ color: C.accent, fontWeight: 700 }}>Uscito — da conguagliare</span>)
+                      ? (r.conguaglio_applicato ? <span style={{ color: C.green, fontWeight: 700 }}>✓ Conguagliato ({r.valore_realizzo_reale != null ? formattaEuro(r.valore_realizzo_reale) : "—"} reale)</span> : <span style={{ color: C.accent, fontWeight: 700 }}>Uscito — da conguagliare</span>)
                       : <span style={{ color: C.muted }}>Attivo</span>}
                   </td>
                 </tr>

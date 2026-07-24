@@ -3,7 +3,7 @@ import * as XLSX from "xlsx";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { classificaRiga } from "./motoreClassificazione";
-import { round2, numeroRobusto, calcolaImponibile, leggiAliquotaIva, formattaData } from "./parsingUtils";
+import { round2, numeroRobusto, calcolaImponibile, leggiAliquotaIva, formattaData, formattaEuro, formattaNumero } from "./parsingUtils";
 
 const CATEGORIE_AMMORTAMENTO = [
   "3 - Attrezzatura specifica",
@@ -287,7 +287,7 @@ export default function CaricaFatture() {
     if (r.editArea === "TRASPORTO ANIMALI") {
       const somma = (parseFloat(r.importoMacello) || 0) + (parseFloat(r.importoIngresso) || 0);
       if (Math.abs(somma - r.imponibile) > 0.01) {
-        return `La somma di "Trasporto macello" + "Ingresso allevamento" (${somma.toFixed(2)}€) non torna con l'imponibile della riga (${r.imponibile.toFixed(2)}€).`;
+        return `La somma di "Trasporto macello" + "Ingresso allevamento" (${formattaEuro(somma)}) non torna con l'imponibile della riga (${formattaEuro(r.imponibile)}).`;
       }
     }
     if (r.editArea === "Ammortamenti") {
@@ -618,10 +618,10 @@ function RigaFattura({ riga, aree, centriPerArea, onChange, onSalva, onAnnulla, 
         <div>
           <div style={{ fontSize: 12, color: C.muted, marginBottom: 2 }}>{r.fornitore}</div>
           <div style={{ fontSize: 16, fontWeight: 700 }}>{r.descrizione}</div>
-          <div style={{ fontSize: 15, fontWeight: 800, color: bordoColore, marginTop: 2 }}>Imponibile: {r.imponibile?.toFixed(2)}€</div>
+          <div style={{ fontSize: 15, fontWeight: 800, color: bordoColore, marginTop: 2 }}>Imponibile: {formattaEuro(r.imponibile)}</div>
           <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>Fatt. {r.numero} del {r.data}</div>
           <div style={{ fontSize: 12, color: C.muted }}>
-            {r.quantita} {r.unita_misura} × {r.prezzo_unitario?.toFixed(2)}€/{r.unita_misura}
+            {r.quantita} {r.unita_misura} × {formattaEuro(r.prezzo_unitario)}/{r.unita_misura}
             {r.aliquota_iva != null && ` · IVA ${r.aliquota_iva}%`}
           </div>
         </div>
@@ -640,8 +640,8 @@ function RigaFattura({ riga, aree, centriPerArea, onChange, onSalva, onAnnulla, 
 
       {r.nonQuadra && !r.giaCaricata && !r.scartata && (
         <div style={{ fontSize: 12, color: "#B8860B", background: "#B8860B15", borderRadius: 8, padding: "8px 10px", marginBottom: 10, fontWeight: 600 }}>
-          ⚠️ La somma delle righe di questa fattura ({typeof r.dettaglioQuadratura?.totaleCalcolato === "number" ? r.dettaglioQuadratura.totaleCalcolato.toFixed(2) : r.dettaglioQuadratura?.totaleCalcolato}€)
-          non coincide con il totale indicato sul PDF originale ({typeof r.dettaglioQuadratura?.totalePdf === "number" ? r.dettaglioQuadratura.totalePdf.toFixed(2) : r.dettaglioQuadratura?.totalePdf}€) — verificala con attenzione prima di salvare, potrebbe mancare una riga.
+          ⚠️ La somma delle righe di questa fattura ({typeof r.dettaglioQuadratura?.totaleCalcolato === "number" ? formattaNumero(r.dettaglioQuadratura.totaleCalcolato) : r.dettaglioQuadratura?.totaleCalcolato}€)
+          non coincide con il totale indicato sul PDF originale ({typeof r.dettaglioQuadratura?.totalePdf === "number" ? formattaNumero(r.dettaglioQuadratura.totalePdf) : r.dettaglioQuadratura?.totalePdf}€) — verificala con attenzione prima di salvare, potrebbe mancare una riga.
         </div>
       )}
 
@@ -716,14 +716,14 @@ function RigaFattura({ riga, aree, centriPerArea, onChange, onSalva, onAnnulla, 
           {isTrasportoAnimali && (
             <div style={{ marginTop: 10, padding: 10, background: "#FFF3E0", borderRadius: 8 }}>
               <div style={{ fontSize: 12, color: C.accent, fontWeight: 700, marginBottom: 8 }}>
-                ⚠️ Trasporto Animali richiede sempre la ripartizione manuale — dividi l'imponibile ({r.imponibile?.toFixed(2)}€) tra le due destinazioni:
+                ⚠️ Trasporto Animali richiede sempre la ripartizione manuale — dividi l'imponibile ({formattaEuro(r.imponibile)}) tra le due destinazioni:
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                 <Testo label="Trasporto verso il macello (€)" tipo="number" value={r.importoMacello} onChange={v => onChange({ importoMacello: v })} />
                 <Testo label="Ingresso in allevamento (€)" tipo="number" value={r.importoIngresso} onChange={v => onChange({ importoIngresso: v })} />
               </div>
               <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>
-                Somma inserita: {((parseFloat(r.importoMacello) || 0) + (parseFloat(r.importoIngresso) || 0)).toFixed(2)}€ — deve essere uguale a {r.imponibile?.toFixed(2)}€
+                Somma inserita: {formattaEuro((parseFloat(r.importoMacello) || 0) + (parseFloat(r.importoIngresso) || 0))} — deve essere uguale a {formattaEuro(r.imponibile)}
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginTop: 8 }}>
                 <Select label="Specie (per la parte ingresso)" value={r.specieAcquisto} options={SPECIE_ACQUISTO} onChange={v => onChange({ specieAcquisto: v })} />

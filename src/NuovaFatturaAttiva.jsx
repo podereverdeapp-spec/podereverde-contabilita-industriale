@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
+import { formattaEuro } from "./parsingUtils";
 
 function nuovaRigaVuota() {
   return { id: `r-${Date.now()}-${Math.random()}`, descrizione: "", quantita: "", unita_misura: "", prezzo_unitario: "", aliquota_iva: "22", destinazione: "" };
@@ -143,7 +144,7 @@ export default function NuovaFatturaAttiva({ onSalvata }) {
               </div>
             </div>
             <div style={{ textAlign: "right", fontSize: 13, fontWeight: 700, marginTop: 6, color: C.primary }}>
-              Imponibile riga: {imponibileRiga(r).toFixed(2)}€
+              Imponibile riga: {formattaEuro(imponibileRiga(r))}
             </div>
           </div>
         ))}
@@ -155,13 +156,13 @@ export default function NuovaFatturaAttiva({ onSalvata }) {
 
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 20 }}>
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, marginBottom: 4 }}>
-          <span>Imponibile totale</span><span style={{ fontWeight: 700 }}>{imponibileTotale.toFixed(2)}€</span>
+          <span>Imponibile totale</span><span style={{ fontWeight: 700 }}>{formattaEuro(imponibileTotale)}</span>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, marginBottom: 4, color: C.muted }}>
-          <span>IVA</span><span>{ivaTotale.toFixed(2)}€</span>
+          <span>IVA</span><span>{formattaEuro(ivaTotale)}</span>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 17, fontWeight: 800, color: C.green, borderTop: `1.5px solid ${C.primary}`, paddingTop: 6, marginTop: 6 }}>
-          <span>Totale fattura</span><span>{(imponibileTotale + ivaTotale).toFixed(2)}€</span>
+          <span>Totale fattura</span><span>{formattaEuro(imponibileTotale + ivaTotale)}</span>
         </div>
       </div>
 

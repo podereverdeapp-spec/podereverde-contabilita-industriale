@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { RicomposizioneFattura } from "./FatturePassive";
-import { numerizzaCampi } from "./parsingUtils";
+import { numerizzaCampi, formattaEuro } from "./parsingUtils";
 
 export default function FattureAttive() {
   const [fatture, setFatture] = useState([]);
@@ -55,7 +55,7 @@ export default function FattureAttive() {
   return (
     <div style={{ padding: 20, maxWidth: 1200, margin: "0 auto" }}>
       <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Fatture Attive</h1>
-      <p style={{ color: C.muted, marginTop: 0, marginBottom: 20 }}>{filtrate.length} fatture — totale {totale.toFixed(2)}€</p>
+      <p style={{ color: C.muted, marginTop: 0, marginBottom: 20 }}>{filtrate.length} fatture — totale {formattaEuro(totale)}</p>
 
       <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
         <input
@@ -85,7 +85,7 @@ export default function FattureAttive() {
                   </div>
                 </div>
                 <div style={{ textAlign: "right" }}>
-                  <div style={{ fontWeight: 800, fontSize: 16, color: C.green }}>{f.totale_lordo?.toFixed(2)}€</div>
+                  <div style={{ fontWeight: 800, fontSize: 16, color: C.green }}>{formattaEuro(f.totale_lordo)}</div>
                   <div style={{ fontSize: 11, color: C.muted }}>{espansa === f.id ? "▲ nascondi righe" : "▼ vedi righe"}</div>
                 </div>
               </div>

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { calcolaReportUba } from "./motoreUba";
+import { formattaNumero } from "./parsingUtils";
 
 // ─── COMPONENTE ───
 
@@ -136,9 +137,9 @@ export default function ReportUba({ onVediScheda }) {
       {righe && (
         <>
           <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
-            <StatBox label="Produttivo" value={riepilogo.produttivo} sub={`${riepilogo.ubaGiorniProduttivo.toFixed(1)} UBA-gg`} color={C.green} />
-            <StatBox label="Riproduttore" value={riepilogo.riproduttore} sub={`${riepilogo.ubaGiorniRiproduttore.toFixed(1)} UBA-gg`} color={C.blue} />
-            <StatBox label="Improduttivo (perdita)" value={riepilogo.improduttivo} sub={`${riepilogo.ubaGiorniImproduttivo.toFixed(1)} UBA-gg`} color={C.red} />
+            <StatBox label="Produttivo" value={riepilogo.produttivo} sub={`${formattaNumero(riepilogo.ubaGiorniProduttivo, 1)} UBA-gg`} color={C.green} />
+            <StatBox label="Riproduttore" value={riepilogo.riproduttore} sub={`${formattaNumero(riepilogo.ubaGiorniRiproduttore, 1)} UBA-gg`} color={C.blue} />
+            <StatBox label="Improduttivo (perdita)" value={riepilogo.improduttivo} sub={`${formattaNumero(riepilogo.ubaGiorniImproduttivo, 1)} UBA-gg`} color={C.red} />
           </div>
 
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 16 }}>
@@ -157,8 +158,8 @@ export default function ReportUba({ onVediScheda }) {
                   <tr key={r.specie} style={{ borderTop: `1px solid ${C.border}` }}>
                     <td style={{ padding: "6px 8px", textTransform: "capitalize" }}>{r.specie}</td>
                     <td style={{ padding: "6px 8px", textAlign: "right" }}>{r.nCapi}</td>
-                    <td style={{ padding: "6px 8px", textAlign: "right" }}>{r.ubaGiorni.toFixed(1)}</td>
-                    <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700 }}>{r.percentualeSulTotale.toFixed(1)}%</td>
+                    <td style={{ padding: "6px 8px", textAlign: "right" }}>{formattaNumero(r.ubaGiorni, 1)}</td>
+                    <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700 }}>{formattaNumero(r.percentualeSulTotale, 1)}%</td>
                   </tr>
                 ))}
               </tbody>
@@ -182,8 +183,8 @@ export default function ReportUba({ onVediScheda }) {
                     <tr key={r.specie} style={{ borderTop: `1px solid ${C.border}` }}>
                       <td style={{ padding: "6px 8px", textTransform: "capitalize" }}>{r.specie}</td>
                       <td style={{ padding: "6px 8px", textAlign: "right" }}>{r.nCapiImproduttivi}</td>
-                      <td style={{ padding: "6px 8px", textAlign: "right" }}>{r.ubaGiorniPersi.toFixed(1)}</td>
-                      <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700, color: C.red }}>{r.percentualePersaSullaSpecie.toFixed(1)}%</td>
+                      <td style={{ padding: "6px 8px", textAlign: "right" }}>{formattaNumero(r.ubaGiorniPersi, 1)}</td>
+                      <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700, color: C.red }}>{formattaNumero(r.percentualePersaSullaSpecie, 1)}%</td>
                     </tr>
                   ))}
                 </tbody>
@@ -211,7 +212,7 @@ export default function ReportUba({ onVediScheda }) {
                     <td style={td}>{r.specie}</td>
                     <td style={td}>{r.categoria}</td>
                     <td style={{ ...td, textAlign: "right" }}>{r.giorni_presenza}</td>
-                    <td style={{ ...td, textAlign: "right" }}>{r.uba_giorni.toFixed(2)}</td>
+                    <td style={{ ...td, textAlign: "right" }}>{formattaNumero(r.uba_giorni)}</td>
                     <td style={{ ...td, fontWeight: 700, color: r.categoria_contabile === "IMPRODUTTIVO_USCITO" ? C.red : r.categoria_contabile === "RIPRODUTTORE" ? C.blue : C.green }}>
                       {r.categoria_contabile}
                     </td>

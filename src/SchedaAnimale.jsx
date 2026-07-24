@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
-import { numerizzaCampi } from "./parsingUtils";
+import { numerizzaCampi, formattaEuro, formattaNumero } from "./parsingUtils";
 
 export default function SchedaAnimale({ ricercaIniziale, onRicercaConsumata }) {
   const [ricerca, setRicerca] = useState(ricercaIniziale || "");
@@ -147,12 +147,12 @@ export default function SchedaAnimale({ ricercaIniziale, onRicercaConsumata }) {
                     {storicoCosto.map(r => (
                       <tr key={r.id} style={{ borderTop: `1px solid ${C.border}` }}>
                         <td style={td}>{r.anno}</td>
-                        <td style={{ ...td, textAlign: "right" }}>{r.uba_giorni?.toFixed(1)}</td>
+                        <td style={{ ...td, textAlign: "right" }}>{formattaNumero(r.uba_giorni, 1)}</td>
                         <td style={td}>{r.categoria_contabile}</td>
-                        <td style={{ ...td, textAlign: "right" }}>{r.costo_mantenimento?.toFixed(2)}€</td>
-                        <td style={{ ...td, textAlign: "right" }}>{r.costo_nascita_ereditato?.toFixed(2)}€</td>
-                        <td style={{ ...td, textAlign: "right" }}>{r.quota_scaricata_su_figli?.toFixed(2)}€</td>
-                        <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{r.costo_totale_anno?.toFixed(2)}€</td>
+                        <td style={{ ...td, textAlign: "right" }}>{formattaEuro(r.costo_mantenimento)}</td>
+                        <td style={{ ...td, textAlign: "right" }}>{formattaEuro(r.costo_nascita_ereditato)}</td>
+                        <td style={{ ...td, textAlign: "right" }}>{formattaEuro(r.quota_scaricata_su_figli)}</td>
+                        <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{formattaEuro(r.costo_totale_anno)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -160,7 +160,7 @@ export default function SchedaAnimale({ ricercaIniziale, onRicercaConsumata }) {
               </div>
               <div style={{ background: C.primary + "15", borderRadius: 10, padding: "12px 16px", display: "flex", justifyContent: "space-between" }}>
                 <span style={{ fontWeight: 700, color: C.primary }}>Totale cumulato (tutti gli anni)</span>
-                <span style={{ fontWeight: 800, fontSize: 18, color: C.primary }}>{totaleCumulato.toFixed(2)}€</span>
+                <span style={{ fontWeight: 800, fontSize: 18, color: C.primary }}>{formattaEuro(totaleCumulato)}</span>
               </div>
             </>
           )}

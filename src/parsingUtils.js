@@ -18,6 +18,17 @@ export function numerizzaCampi(righe, campi) {
   });
 }
 
+// Formatta un numero in stile italiano: punto per le migliaia, virgola per i decimali
+// (es. 1234.5 -> "1.234,50"). Usata ovunque un numero va mostrato a schermo.
+export function formattaNumero(n, decimali = 2) {
+  if (n === null || n === undefined || Number.isNaN(n)) return "—";
+  return Number(n).toLocaleString("it-IT", { minimumFractionDigits: decimali, maximumFractionDigits: decimali, useGrouping: true });
+}
+
+export function formattaEuro(n, decimali = 2) {
+  return `${formattaNumero(n, decimali)}€`;
+}
+
 export function round2(n) {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
