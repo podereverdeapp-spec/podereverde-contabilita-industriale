@@ -51,10 +51,15 @@ export default function ArticoliPrezzi() {
     return [...mappa.values()].map(righeGruppo => {
       const ordinate = righeGruppo.slice().sort((a, b) => new Date(b.data) - new Date(a.data));
       const prezzi = ordinate.map(r => r.prezzo_unitario);
+      const prezziPrecedenti = ordinate.slice(1).map(r => r.prezzo_unitario); // tutti tranne il più recente
+      const prezzoMassimoPrecedente = prezziPrecedenti.length > 0 ? Math.max(...prezziPrecedenti) : null;
+      const prezzoRecente = ordinate[0].prezzo_unitario;
       return {
         fornitore: ordinate[0].fornitore, descrizione: ordinate[0].descrizione, unitaMisura: ordinate[0].unita_misura,
         nAcquisti: ordinate.length, prezzoMinimo: Math.min(...prezzi), prezzoMassimo: Math.max(...prezzi),
-        prezzoRecente: ordinate[0].prezzo_unitario, dataRecente: ordinate[0].data, storico: ordinate,
+        prezzoRecente, dataRecente: ordinate[0].data, storico: ordinate,
+        // Vero se il prezzo più recente uguaglia o supera il massimo di tutti gli acquisti precedenti
+        prezzoRecenteERecord: prezzoMassimoPrecedente !== null && prezzoRecente >= prezzoMassimoPrecedente,
       };
     }).sort((a, b) => new Date(b.dataRecente) - new Date(a.dataRecente));
   }, [righe]);
@@ -70,6 +75,7 @@ export default function ArticoliPrezzi() {
       "Fornitore": g.fornitore, "Descrizione": g.descrizione, "U.M.": g.unitaMisura, "N° Acquisti": g.nAcquisti,
       "Prezzo minimo": numeroExcel(g.prezzoMinimo), "Prezzo massimo": numeroExcel(g.prezzoMassimo),
       "Prezzo più recente": numeroExcel(g.prezzoRecente), "Data più recente": g.dataRecente,
+      "Nuovo massimo storico": g.prezzoRecenteERecord ? "Sì" : "No",
     }));
     const righeStorico = filtrati.flatMap(g => g.storico.map(s => ({
       "Fornitore": g.fornitore, "Descrizione": g.descrizione, "Data": s.data, "Fattura n.": s.numero,
@@ -126,8 +132,8 @@ export default function ArticoliPrezzi() {
                       <td style={{ ...td, textAlign: "right" }}>{g.nAcquisti}</td>
                       <td style={{ ...td, textAlign: "right" }}>{formattaEuro(g.prezzoMinimo, 4)}</td>
                       <td style={{ ...td, textAlign: "right" }}>{formattaEuro(g.prezzoMassimo, 4)}</td>
-                      <td style={{ ...td, textAlign: "right", fontWeight: 700, color: g.prezzoMassimo > g.prezzoMinimo ? (g.prezzoRecente === g.prezzoMassimo ? C.red : g.prezzoRecente === g.prezzoMinimo ? C.green : C.text) : C.text }}>
-                        {formattaEuro(g.prezzoRecente, 4)}
+                      <td style={{ ...td, textAlign: "right", fontWeight: 700, color: g.prezzoRecenteERecord ? C.red : C.text }}>
+                        {formattaEuro(g.prezzoRecente, 4)}{g.prezzoRecenteERecord && " ⚠️"}
                       </td>
                       <td style={td}>{g.dataRecente}</td>
                     </tr>
