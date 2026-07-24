@@ -100,7 +100,7 @@ export default function ReportCespiti() {
       { nome: "Per Imputazione", righe: dati.perImputazione.map(r => ({
         "Imputazione": r.imputazione, "N° Cespiti": r.nCespiti, "Costo totale": numeroExcel(r.costoTotale),
         "Quote generate": numeroExcel(r.quoteGenerate), "Residuo": numeroExcel(r.residuo),
-      })) },
+      })), coloriRiga: r => IMPUTAZIONI_NON_ALLEVAMENTO.includes(r["Imputazione"]) },
       { nome: "Piano Futuro", righe: dati.pianoFuturo.map(r => ({ "Anno": r.anno, "Quota attesa": numeroExcel(r.quotaAttesa), "N° Cespiti coinvolti": r.nCespiti })) },
       { nome: "Dettaglio Cespiti", righe: dati.cespitiConResiduo.map(c => ({
         "Descrizione": c.descrizione, "Categoria": c.categoria, "Imputazione": c.specie?.join(", ") || "Generali",

@@ -183,9 +183,11 @@ Allineato alla struttura reale di Prima App (verificata nel codice sorgente, sez
 
 Ricerca testuale trasversale su numero fattura, fornitore/cliente, descrizione articoli, note — filtri combinabili per Tipo (acquisto/vendita), Area, Specie/Destinazione, Anno, periodo date, range importo. Click su un risultato apre la stessa ricomposizione fattura usata in Fatture Passive/Attive.
 
-## 15. Esportazione Excel (tutte le pagine)
+## 15. Esportazione Excel (tutte le pagine) — con formattazione (v63)
 
-Utilità condivisa `esportaExcel.js` (usa la libreria `xlsx`, già presente per l'import) — pulsante "📥 Esporta Excel" presente su tutte le 14+ pagine dell'app. Ogni file scaricato porta la data del giorno nel nome. `numeroExcel()` normalizza i numeri prima di scriverli (arrotondamento, niente stringhe).
+`esportaExcel.js` ora usa `xlsx-js-style` (non più `xlsx` semplice, sostituito ovunque incluso l'import fatture — evita di portarsi dietro due librerie quasi identiche) — stessa libreria già usata con successo in podereverdeapp.it, stesse tecniche (verificate lì prima di riusarle): intestazione con sfondo colorato (verde, la palette di questa app — non il marrone di podereverdeapp.it) e testo bianco in grassetto, bordi sottili su ogni cella, zebratura leggera, formato numerico automatico sui valori numerici, filtro automatico e riga di intestazione bloccata scorrendo, font Century Gothic.
+
+**Righe rosse**: nuovo parametro opzionale `coloriRiga: (riga) => boolean` per ogni foglio — se restituisce true, quella riga esce rossa anche in Excel (sfondo rosso chiaro, testo rosso in grassetto), stessa logica già usata a schermo. **Applicato finora** a Report Cespiti → foglio "Per Imputazione" (Nessuno/Cavalli/Pollame/Orto). Da estendere agli altri report con rosso a schermo (Report Costi zona rossa, Gestione Cespiti) quando si affina report per report — deciso con Filippo di partire da una base solida uguale ovunque, poi migliorare singolarmente.
 
 ## 16. Formattazione numeri (tutta l'app)
 
