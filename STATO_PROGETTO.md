@@ -162,6 +162,8 @@ Da costruire come tabella dedicata (es. `ci_parametri`) + una schermata semplice
 
 ## 14. Costo per animale — flusso concordato passo-passo con Filippo (Blocco 4, guida la costruzione)
 
+**Correzione importante in Report Costi (bug di fondo, non solo di interfaccia)**: la prima versione trattava TUTTI i costi (diretti a una specie + Generali + ammortamenti) come un unico calderone aziendale, diviso per gli UBA-giorni totali — quindi anche i costi diretti a una specie (es. mangime bovini) venivano "spalmati" su tutte le specie proporzionalmente, invece di restare dentro quella specie. Corretto: ora si separano **costi diretti per specie** (Destinazione/Imputazione = quella specie, restano dentro) da **costi Generali** (ripartiti proporzionalmente agli UBA-giorni produttivi di ciascuna specie). Ogni specie mostra anche la sua **incidenza €/UBA-giorno specifica** (non più un tasso aziendale unico) — così emergono differenze reali tra specie (es. bovini con più costi diretti hanno un'incidenza più alta dei suini). Il costo salvato per singolo animale in `ci_costo_animale_annuale` usa ora il tasso della SUA specie, coerente con la tabella di allocazione.
+
 **Struttura pagine Report concordata (Blocco 4)**:
 1. **Report UBA** (già costruito) — da arricchire con riepilogo per anno/specie (con % specie sul totale) e tabella perdite per specie (capi improduttivi, UBA-giorni persi, costo economico)
 2. **Report Costi** (nuovo) — livello specie/anno: costi totali, valore riforma, UBA-giorni, tasso €/UBA-giorno (formula aggressiva), sia aziendale sia per singola specie, con andamento anno su anno

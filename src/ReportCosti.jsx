@@ -1,8 +1,12 @@
 import { useState } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
-import { calcolaReportUba, calcolaTassoAggressivo } from "./motoreUba";
+import { calcolaReportUba } from "./motoreUba";
 import { numerizzaCampi, round2 } from "./parsingUtils";
+
+// Mappa tra il nome specie usato nel motore UBA (minuscolo) e quello usato come
+// Destinazione sulle fatture / Imputazione sui cespiti (maiuscolo, italiano)
+const MAPPA_SPECIE = { bovino: "Bovini", suino: "Suini", ovino: "Ovini" };
 
 export default function ReportCosti() {
   const [anno, setAnno] = useState(new Date().getFullYear());
@@ -28,61 +32,113 @@ export default function ReportCosti() {
         return;
       }
 
-      // Costi ordinari dell'anno (Fisso + Variabile) dalle fatture classificate
+      // Costi ordinari dell'anno (Fisso + Variabile), CON la destinazione (per separare diretti/generali)
       const { data: fattureAnno, error: eF } = await supabase
         .from("ci_fatture").select("id, data").eq("tipo", "PASSIVA")
         .gte("data", `${anno}-01-01`).lte("data", `${anno}-12-31`);
       if (eF) throw new Error(eF.message);
       const idFattureAnno = (fattureAnno || []).map(f => f.id);
 
-      let costiOrdinari = 0;
+      let articoliAnno = [];
       if (idFattureAnno.length > 0) {
         const { data: articoli, error: eArt } = await supabase
-          .from("ci_articoli_fattura").select("totale_riga, tipo_costo")
+          .from("ci_articoli_fattura").select("totale_riga, tipo_costo, destinazione")
           .in("fattura_id", idFattureAnno).in("tipo_costo", ["Fisso", "Variabile"]);
         if (eArt) throw new Error(eArt.message);
-        costiOrdinari = (numerizzaCampi(articoli || [], ["totale_riga"])).reduce((s, r) => s + (r.totale_riga || 0), 0);
+        articoliAnno = numerizzaCampi(articoli || [], ["totale_riga"]);
       }
+      const costiOrdinari = articoliAnno.reduce((s, r) => s + (r.totale_riga || 0), 0);
 
-      // Quote di ammortamento dell'anno (esclusi i cespiti con Imputazione=Nessuno, cioè specie=[])
+      // Quote di ammortamento dell'anno, CON la specie di imputazione del cespite
       const { data: cespiti, error: eC } = await supabase.from("ci_cespiti").select("id, specie");
       if (eC) throw new Error(eC.message);
+      const mappaCespiteSpecie = new Map((cespiti || []).map(c => [c.id, c.specie || []]));
       const idCespitiValidi = (cespiti || []).filter(c => c.specie && c.specie.length > 0).map(c => c.id);
-      let costoAmmortamenti = 0;
+
+      let quoteAnno = [];
       if (idCespitiValidi.length > 0) {
         const { data: quote, error: eQ } = await supabase
           .from("ci_cespiti_ammortamento").select("quota, cespite_id").eq("anno", anno).in("cespite_id", idCespitiValidi);
         if (eQ) throw new Error(eQ.message);
-        costoAmmortamenti = (numerizzaCampi(quote || [], ["quota"])).reduce((s, r) => s + (r.quota || 0), 0);
+        quoteAnno = numerizzaCampi(quote || [], ["quota"]);
       }
+      const costoAmmortamenti = quoteAnno.reduce((s, r) => s + (r.quota || 0), 0);
 
       const costiTotali = round2(costiOrdinari + costoAmmortamenti);
-      // NOTA: valore di riforma reale non ancora tracciato in Contabilità Industriale
-      // (serve il meccanismo "valore di realizzo" per i riproduttori, sezione 15 del documento).
-      // Per ora V(t)=0 — semplificazione esplicita, da raffinare quando costruiamo quel pezzo.
+      // NOTA: valore di riforma reale non ancora tracciato per gli animali ordinari (solo per
+      // i riproduttori, in Report Riproduttori). Per ora V(t)=0 qui — semplificazione dichiarata.
       const valoreRiformaTotale = 0;
 
-      const tasso = calcolaTassoAggressivo(righeUba, costiTotali, valoreRiformaTotale);
+      // --- Separazione costi DIRETTI per specie vs GENERALI ---
+      const ubaGiorniTotaliAzienda = righeUba.reduce((s, r) => s + r.uba_giorni, 0);
+      const ubaGiorniProduttiviAzienda = righeUba.filter(r => r.categoria_contabile !== "IMPRODUTTIVO_USCITO").reduce((s, r) => s + r.uba_giorni, 0);
 
-      // Allocazione per specie: quota UBA-giorni della specie sul totale, come dato leggibile
-      const ubaGiorniTotali = righeUba.reduce((s, r) => s + r.uba_giorni, 0);
+      let costiGenerali = 0;
+      const costiDirettiPerSpecie = { bovino: 0, suino: 0, ovino: 0 };
+
+      articoliAnno.forEach(r => {
+        const dest = (r.destinazione || "").trim();
+        const specieMatch = Object.entries(MAPPA_SPECIE).find(([, v]) => v === dest);
+        if (specieMatch) costiDirettiPerSpecie[specieMatch[0]] += (r.totale_riga || 0);
+        else costiGenerali += (r.totale_riga || 0); // Generali, vuoto, o non riconosciuto -> generale
+      });
+      quoteAnno.forEach(r => {
+        const specieCespite = mappaCespiteSpecie.get(r.cespite_id) || [];
+        const specieMatch = Object.entries(MAPPA_SPECIE).find(([, v]) => specieCespite.includes(v));
+        if (specieMatch) costiDirettiPerSpecie[specieMatch[0]] += (r.quota || 0);
+        else costiGenerali += (r.quota || 0); // "Generale" o non riconosciuto -> generale
+      });
+
+      // Tasso dei costi Generali: formula aggressiva a livello aziendale (esclude tutti gli
+      // improduttivi dal divisore), poi ripartito a ogni specie in proporzione ai suoi UBA-giorni
+      const ubaGiorniImproduttiviAzienda = righeUba.filter(r => r.categoria_contabile === "IMPRODUTTIVO_USCITO").reduce((s, r) => s + r.uba_giorni, 0);
+      const tassoGenerali = ubaGiorniProduttiviAzienda > 0 ? (costiGenerali - valoreRiformaTotale) / ubaGiorniProduttiviAzienda : 0;
+
       const perSpecie = ["bovino", "suino", "ovino"].map(sp => {
         const righeSp = righeUba.filter(r => r.specie === sp);
         if (righeSp.length === 0) return null;
         const ubaGiorniSp = righeSp.reduce((s, r) => s + r.uba_giorni, 0);
         const ubaGiorniSpProduttivi = righeSp.filter(r => r.categoria_contabile !== "IMPRODUTTIVO_USCITO").reduce((s, r) => s + r.uba_giorni, 0);
+
+        // Costi diretti di questa specie: formula aggressiva DENTRO la specie stessa
+        // (i suoi improduttivi si spalmano sui suoi produttivi, non su altre specie)
+        const costoDirettoSpecie = costiDirettiPerSpecie[sp] || 0;
+        const tassoDirettoSpecie = ubaGiorniSpProduttivi > 0 ? costoDirettoSpecie / ubaGiorniSpProduttivi : 0;
+
+        const quotaGeneraliSpecie = round2(tassoGenerali * ubaGiorniSpProduttivi);
+        const costoAllocatoTotale = round2(costoDirettoSpecie + quotaGeneraliSpecie);
+        const incidenzaUbaGiorno = ubaGiorniSpProduttivi > 0 ? costoAllocatoTotale / ubaGiorniSpProduttivi : 0;
+
         return {
           specie: sp,
-          percentualeSulTotale: ubaGiorniTotali > 0 ? (ubaGiorniSp / ubaGiorniTotali * 100) : 0,
-          costoAllocato: round2(ubaGiorniSpProduttivi * tasso.tassoRettificato),
+          percentualeSulTotale: ubaGiorniTotaliAzienda > 0 ? (ubaGiorniSp / ubaGiorniTotaliAzienda * 100) : 0,
+          costoDirettoSpecie: round2(costoDirettoSpecie),
+          quotaGeneraliSpecie,
+          costoAllocatoTotale,
+          ubaGiorniSpProduttivi: round2(ubaGiorniSpProduttivi),
+          incidenzaUbaGiorno: Math.round(incidenzaUbaGiorno * 1000000) / 1000000,
         };
       }).filter(Boolean);
 
-      // Costo per ogni animale/unità (per trasparenza e per il salvataggio)
-      const costoPerAnimale = righeUba.map(r => ({
-        ...r,
-        costo_mantenimento: round2(r.uba_giorni * tasso.tassoRettificato),
-      }));
+      // Tasso aziendale complessivo (per il riepilogo in alto — resta utile come vista d'insieme)
+      const tassoSemplice = ubaGiorniTotaliAzienda > 0 ? (costiTotali - valoreRiformaTotale) / ubaGiorniTotaliAzienda : 0;
+      const tassoRettificatoAziendale = ubaGiorniProduttiviAzienda > 0 ? (costiTotali - valoreRiformaTotale) / ubaGiorniProduttiviAzienda : 0;
+      const perditaSpalmata = round2((tassoRettificatoAziendale - tassoSemplice) * ubaGiorniProduttiviAzienda);
+      const tasso = {
+        tassoSemplice: Math.round(tassoSemplice * 1000000) / 1000000,
+        tassoRettificato: Math.round(tassoRettificatoAziendale * 1000000) / 1000000,
+        perditaSpalmata,
+        ubaGiorniProduttivi: round2(ubaGiorniProduttiviAzienda),
+        ubaGiorniImproduttivi: round2(ubaGiorniImproduttiviAzienda),
+      };
+
+      // Costo per ogni animale/unità: usa il tasso SPECIFICO della sua specie (incidenzaUbaGiorno),
+      // coerente con l'allocazione per specie qui sopra — non più il tasso aziendale unico.
+      const mappaIncidenzaPerSpecie = new Map(perSpecie.map(p => [p.specie, p.incidenzaUbaGiorno]));
+      const costoPerAnimale = righeUba.map(r => {
+        const tassoSpecie = mappaIncidenzaPerSpecie.get(r.specie) ?? tasso.tassoRettificato;
+        return { ...r, costo_mantenimento: round2(r.uba_giorni * tassoSpecie) };
+      });
 
       setRisultato({ costiOrdinari, costoAmmortamenti, costiTotali, valoreRiformaTotale, tasso, perSpecie, costoPerAnimale, righeUba });
     } catch (err) {
@@ -161,12 +217,18 @@ export default function ReportCosti() {
 
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 16 }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: C.muted, marginBottom: 10 }}>ALLOCAZIONE PER SPECIE</div>
+            <p style={{ fontSize: 12, color: C.muted, marginTop: 0, marginBottom: 10 }}>
+              I costi diretti (Destinazione/Imputazione = quella specie) restano dentro la specie; i costi Generali si ripartiscono in proporzione agli UBA-giorni produttivi.
+            </p>
             <table style={{ width: "100%", fontSize: 13 }}>
               <thead>
                 <tr style={{ color: C.muted, textAlign: "left" }}>
                   <th style={{ padding: "4px 8px" }}>Specie</th>
                   <th style={{ padding: "4px 8px", textAlign: "right" }}>% sul totale UBA-giorni</th>
-                  <th style={{ padding: "4px 8px", textAlign: "right" }}>Costo allocato</th>
+                  <th style={{ padding: "4px 8px", textAlign: "right" }}>Costi diretti</th>
+                  <th style={{ padding: "4px 8px", textAlign: "right" }}>Quota Generali</th>
+                  <th style={{ padding: "4px 8px", textAlign: "right" }}>Totale allocato</th>
+                  <th style={{ padding: "4px 8px", textAlign: "right" }}>Incidenza €/UBA-gg</th>
                 </tr>
               </thead>
               <tbody>
@@ -174,7 +236,10 @@ export default function ReportCosti() {
                   <tr key={r.specie} style={{ borderTop: `1px solid ${C.border}` }}>
                     <td style={{ padding: "6px 8px", textTransform: "capitalize" }}>{r.specie}</td>
                     <td style={{ padding: "6px 8px", textAlign: "right" }}>{r.percentualeSulTotale.toFixed(1)}%</td>
-                    <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700 }}>{r.costoAllocato.toFixed(2)}€</td>
+                    <td style={{ padding: "6px 8px", textAlign: "right" }}>{r.costoDirettoSpecie.toFixed(2)}€</td>
+                    <td style={{ padding: "6px 8px", textAlign: "right" }}>{r.quotaGeneraliSpecie.toFixed(2)}€</td>
+                    <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700 }}>{r.costoAllocatoTotale.toFixed(2)}€</td>
+                    <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700, color: C.primary }}>{r.incidenzaUbaGiorno.toFixed(4)}€</td>
                   </tr>
                 ))}
               </tbody>
