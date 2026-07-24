@@ -18,8 +18,7 @@ const AREA_ORTO = "Orto";
 // specifica quale animale, finisce in un bucket "non specificato" a parte
 const AREA_ANIMALI_NON_ALLEVAMENTO = "Animali non d'allevamento";
 
-export default function ReportCosti() {
-  const [anno, setAnno] = useState(new Date().getFullYear());
+export default function ReportCosti({ anno }) {
   const [calcolando, setCalcolando] = useState(false);
   const [risultato, setRisultato] = useState(null);
   const [salvando, setSalvando] = useState(false);
@@ -196,23 +195,15 @@ export default function ReportCosti() {
 
   return (
     <div style={{ padding: 20, maxWidth: 1000, margin: "0 auto" }}>
-      <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Report Costi</h1>
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 20 }}>
         Tasso €/UBA-giorno (formula aggressiva: i costi degli animali improduttivi si ridistribuiscono sui produttivi/riproduttori) e allocazione per specie/animale.
       </p>
 
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 20 }}>
-        <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
-          <div>
-            <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 3 }}>Anno</label>
-            <input type="number" value={anno} onChange={e => setAnno(parseInt(e.target.value))}
-              style={{ padding: "7px 10px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 13, width: 100 }} />
-          </div>
-          <button onClick={calcola} disabled={calcolando}
-            style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-            {calcolando ? "Calcolo..." : "📊 Calcola"}
-          </button>
-        </div>
+        <button onClick={calcola} disabled={calcolando}
+          style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+          {calcolando ? "Calcolo..." : "📊 Calcola"}
+        </button>
         <div style={{ fontSize: 11, color: C.muted, marginTop: 10 }}>
           ⚠️ Semplificazione attuale: il valore di riforma (V(t)) è impostato a 0 — il meccanismo di stima del valore di realizzo dei riproduttori non è ancora costruito (sezione 15 del documento di riferimento).
         </div>

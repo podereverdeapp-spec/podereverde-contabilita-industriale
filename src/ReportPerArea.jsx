@@ -12,8 +12,7 @@ const AREE_ORDINARIE = [
 ];
 const MAPPA_SPECIE = { bovino: "Bovini", suino: "Suini", ovino: "Ovini" };
 
-export default function ReportPerArea() {
-  const [anno, setAnno] = useState(new Date().getFullYear());
+export default function ReportPerArea({ anno }) {
   const [calcolando, setCalcolando] = useState(false);
   const [righe, setRighe] = useState(null);
   const [rigaRossa, setRigaRossa] = useState(null);
@@ -127,23 +126,15 @@ export default function ReportPerArea() {
 
   return (
     <div style={{ padding: 20, maxWidth: 1300, margin: "0 auto" }}>
-      <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Report per Area</h1>
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 20 }}>
         Una riga per ogni Area: imponibile complessivo, incidenza €/UBA-giorno aziendale, e la scomposizione per specie (costo allocato + incidenza specifica).
       </p>
 
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 20 }}>
-        <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
-          <div>
-            <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 3 }}>Anno</label>
-            <input type="number" value={anno} onChange={e => setAnno(parseInt(e.target.value))}
-              style={{ padding: "7px 10px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 13, width: 100 }} />
-          </div>
-          <button onClick={calcola} disabled={calcolando}
-            style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-            {calcolando ? "Calcolo..." : "📊 Calcola"}
-          </button>
-        </div>
+        <button onClick={calcola} disabled={calcolando}
+          style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+          {calcolando ? "Calcolo..." : "📊 Calcola"}
+        </button>
       </div>
 
       {righe && (

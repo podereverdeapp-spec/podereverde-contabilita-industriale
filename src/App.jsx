@@ -9,11 +9,9 @@ import CaricaFatture from "./CaricaFatture";
 import CaricaFattureAttive from "./CaricaFattureAttive";
 import Cespiti from "./Cespiti";
 import ReportUba from "./ReportUba";
-import ReportCosti from "./ReportCosti";
+import SezioneReportCosti from "./SezioneReportCosti";
 import SchedaAnimale from "./SchedaAnimale";
 import ReportRiproduttori from "./ReportRiproduttori";
-import ReportPerArea from "./ReportPerArea";
-import ReportPerAreaCentro from "./ReportPerAreaCentro";
 import Parametri from "./Parametri";
 import ReportAcquistoAnimali from "./ReportAcquistoAnimali";
 import { C, FONT } from "./style";
@@ -31,8 +29,6 @@ const TAB = [
   { id: "costi", label: "Report Costi", icon: "📊" },
   { id: "scheda", label: "Scheda Animale", icon: "🔍" },
   { id: "riproduttori", label: "Report Riproduttori", icon: "🐄" },
-  { id: "perarea", label: "Report per Area", icon: "📋" },
-  { id: "perareacentro", label: "Report per Area e Centro", icon: "📋" },
   { id: "parametri", label: "Parametri", icon: "⚙️" },
 ];
 
@@ -102,11 +98,9 @@ export default function App() {
         {tab === "acquisto" && <ReportAcquistoAnimali />}
         {tab === "cespiti" && <Cespiti />}
         {tab === "uba" && <ReportUba onVediScheda={vaiAllaSchedaAnimale} />}
-        {tab === "costi" && <ReportCosti />}
+        {tab === "costi" && <SezioneReportCosti />}
         {tab === "scheda" && <SchedaAnimale ricercaIniziale={ricercaSchedaAnimale} onRicercaConsumata={() => setRicercaSchedaAnimale(null)} />}
         {tab === "riproduttori" && <ReportRiproduttori />}
-        {tab === "perarea" && <ReportPerArea />}
-        {tab === "perareacentro" && <ReportPerAreaCentro />}
         {tab === "parametri" && <Parametri />}
       </main>
     </div>

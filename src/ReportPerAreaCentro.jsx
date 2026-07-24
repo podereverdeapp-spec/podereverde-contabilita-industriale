@@ -16,8 +16,7 @@ function classificaDestinazione(dest) {
   return m ? m[0] : "generale";
 }
 
-export default function ReportPerAreaCentro() {
-  const [anno, setAnno] = useState(new Date().getFullYear());
+export default function ReportPerAreaCentro({ anno }) {
   const [calcolando, setCalcolando] = useState(false);
   const [gruppi, setGruppi] = useState(null); // [{ area, riga, sottoRighe: [{ etichetta, ...calcolo }] }]
   const [rigaRossa, setRigaRossa] = useState(null);
@@ -150,23 +149,15 @@ export default function ReportPerAreaCentro() {
 
   return (
     <div style={{ padding: 20, maxWidth: 1300, margin: "0 auto" }}>
-      <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Report per Area e Centro di Costo</h1>
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 20 }}>
         Come Report per Area, ma con il dettaglio di ogni Centro di Costo sotto l'area (per gli Ammortamenti, la Categoria Ammortamento fa le veci del centro di costo). Clicca su un'area per espandere.
       </p>
 
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 20 }}>
-        <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
-          <div>
-            <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 3 }}>Anno</label>
-            <input type="number" value={anno} onChange={e => setAnno(parseInt(e.target.value))}
-              style={{ padding: "7px 10px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 13, width: 100 }} />
-          </div>
-          <button onClick={calcola} disabled={calcolando}
-            style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-            {calcolando ? "Calcolo..." : "📊 Calcola"}
-          </button>
-        </div>
+        <button onClick={calcola} disabled={calcolando}
+          style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+          {calcolando ? "Calcolo..." : "📊 Calcola"}
+        </button>
       </div>
 
       {gruppi && (
