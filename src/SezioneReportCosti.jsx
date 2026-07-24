@@ -3,6 +3,7 @@ import { C } from "./style";
 import ReportCosti from "./ReportCosti";
 import ReportPerArea from "./ReportPerArea";
 import ReportPerAreaCentro from "./ReportPerAreaCentro";
+import ReportStorico from "./ReportStorico";
 
 // Un tocco di sfondo diverso per ciascun livello di dettaglio, per non confondersi
 // passando dall'uno all'altro — dal più aggregato (aziendale) al più dettagliato (centro di costo)
@@ -10,6 +11,10 @@ const LIVELLI = [
   { id: "aggregato", label: "Aggregato (aziendale)", sfondo: "#F4F7FB", accento: C.blue },
   { id: "area", label: "Per Area", sfondo: "#F3FAF3", accento: C.green },
   { id: "areacentro", label: "Per Area e Centro di Costo", sfondo: "#FFF8ED", accento: C.accent },
+  { id: "storico_generale", label: "Storico — Generale", sfondo: "#F4F7FB", accento: C.blue },
+  { id: "storico_bovini", label: "Storico — Bovini", sfondo: "#F7F1EC", accento: C.bovini },
+  { id: "storico_suini", label: "Storico — Suini", sfondo: "#FBF0F2", accento: C.suini },
+  { id: "storico_ovini", label: "Storico — Ovini", sfondo: "#F1F6EC", accento: C.ovini },
 ];
 
 export default function SezioneReportCosti() {
@@ -26,15 +31,17 @@ export default function SezioneReportCosti() {
           Dal costo aggregato aziendale, alle singole Aree, fino al dettaglio per Centro di Costo — stesso motore di calcolo, tre livelli di dettaglio.
         </p>
 
-        <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 16 }}>
-          <div>
-            <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 3 }}>Anno (condiviso tra i tre livelli)</label>
-            <input type="number" value={anno} onChange={e => setAnno(parseInt(e.target.value))}
-              style={{ padding: "7px 10px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 13, width: 100 }} />
+        {!livello.startsWith("storico_") && (
+          <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 16 }}>
+            <div>
+              <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 3 }}>Anno (condiviso tra Aggregato/Area/Area e Centro)</label>
+              <input type="number" value={anno} onChange={e => setAnno(parseInt(e.target.value))}
+                style={{ padding: "7px 10px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 13, width: 100 }} />
+            </div>
           </div>
-        </div>
+        )}
 
-        <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
           {LIVELLI.map(l => (
             <button key={l.id} onClick={() => setLivello(l.id)}
               style={{
@@ -53,6 +60,10 @@ export default function SezioneReportCosti() {
         {livello === "aggregato" && <ReportCosti anno={anno} />}
         {livello === "area" && <ReportPerArea anno={anno} />}
         {livello === "areacentro" && <ReportPerAreaCentro anno={anno} />}
+        {livello === "storico_generale" && <ReportStorico specieFiltro={null} titolo="tutte le specie" />}
+        {livello === "storico_bovini" && <ReportStorico specieFiltro="bovino" titolo="Bovini" />}
+        {livello === "storico_suini" && <ReportStorico specieFiltro="suino" titolo="Suini (suini+lotti)" />}
+        {livello === "storico_ovini" && <ReportStorico specieFiltro="ovino" titolo="Ovini" />}
       </div>
     </div>
   );

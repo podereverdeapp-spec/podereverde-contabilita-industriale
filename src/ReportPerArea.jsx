@@ -1,16 +1,7 @@
 import { useState } from "react";
-import { supabase } from "./supabase";
 import { C } from "./style";
-import { calcolaReportUba, calcolaRigaAggregata } from "./motoreUba";
-import { numerizzaCampi, round2, formattaEuro } from "./parsingUtils";
-
-// Aree "normali" (fatture ordinarie, Fisso+Variabile), nell'ordine del Piano dei Conti
-const AREE_ORDINARIE = [
-  "Allevamento", "Coltivazione", "Lavoro", "Energia Elettrica", "Acqua", "Consulenze",
-  "Assicurazioni", "Lavorazioni prodotti allevamento", "Spese Promozionali",
-  "Canoni ed Abbonamenti", "Varie", "Oneri Finanziari",
-];
-const MAPPA_SPECIE = { bovino: "Bovini", suino: "Suini", ovino: "Ovini" };
+import { calcolaDatiPerArea } from "./calcoloReportCosti";
+import { formattaEuro } from "./parsingUtils";
 
 export default function ReportPerArea({ anno }) {
   const [calcolando, setCalcolando] = useState(false);
@@ -22,102 +13,12 @@ export default function ReportPerArea({ anno }) {
     setRighe(null);
     setRigaRossa(null);
     try {
-      const [{ data: animali, error: eA }, { data: lotti, error: eL }, { data: suiniLotto, error: eS }] = await Promise.all([
-        supabase.from("animali").select("id,bdn,nome,specie,sesso,nascita,stato,data_uscita,motivo_uscita,data_ingresso,razza,riproduttore"),
-        supabase.from("lotti_suini").select("*"),
-        supabase.from("suini_lotto").select("*"),
-      ]);
-      if (eA || eL || eS) throw new Error((eA || eL || eS).message);
-
-      const righeUba = calcolaReportUba(animali || [], lotti || [], suiniLotto || [], anno);
-      if (righeUba.length === 0) {
-        alert(`Nessun animale presente nell'anno ${anno}. Verifica prima con "Report UBA".`);
-        setCalcolando(false);
-        return;
+      const { righe: r, rigaRossa: rr } = await calcolaDatiPerArea(anno);
+      if (r.length === 0 && rr.length === 0) {
+        alert(`Nessun dato trovato per l'anno ${anno}. Verifica prima con "Report UBA".`);
       }
-      const ubaGiorniProduttiviAziendali = righeUba.filter(r => r.categoria_contabile !== "IMPRODUTTIVO_USCITO").reduce((s, r) => s + r.uba_giorni, 0);
-      const ubaGiorniProduttiviPerSpecie = {
-        bovino: righeUba.filter(r => r.specie === "bovino" && r.categoria_contabile !== "IMPRODUTTIVO_USCITO").reduce((s, r) => s + r.uba_giorni, 0),
-        suino: righeUba.filter(r => r.specie === "suino" && r.categoria_contabile !== "IMPRODUTTIVO_USCITO").reduce((s, r) => s + r.uba_giorni, 0),
-        ovino: righeUba.filter(r => r.specie === "ovino" && r.categoria_contabile !== "IMPRODUTTIVO_USCITO").reduce((s, r) => s + r.uba_giorni, 0),
-      };
-
-      // Fatture ordinarie dell'anno, CON area, destinazione, tipo_costo
-      const { data: fattureAnno, error: eF } = await supabase
-        .from("ci_fatture").select("id, data").eq("tipo", "PASSIVA")
-        .gte("data", `${anno}-01-01`).lte("data", `${anno}-12-31`);
-      if (eF) throw new Error(eF.message);
-      const idFattureAnno = (fattureAnno || []).map(f => f.id);
-
-      let articoliAnno = [];
-      if (idFattureAnno.length > 0) {
-        const { data: articoli, error: eArt } = await supabase
-          .from("ci_articoli_fattura").select("totale_riga, tipo_costo, destinazione, area")
-          .in("fattura_id", idFattureAnno).in("tipo_costo", ["Fisso", "Variabile"]);
-        if (eArt) throw new Error(eArt.message);
-        articoliAnno = numerizzaCampi(articoli || [], ["totale_riga"]);
-      }
-
-      // Quote ammortamento dell'anno, CON la specie di imputazione del cespite
-      const { data: cespiti, error: eC } = await supabase.from("ci_cespiti").select("id, specie");
-      if (eC) throw new Error(eC.message);
-      const mappaCespiteSpecie = new Map((cespiti || []).map(c => [c.id, c.specie || []]));
-      const idCespiti = (cespiti || []).map(c => c.id);
-      let quoteAnno = [];
-      if (idCespiti.length > 0) {
-        const { data: quote, error: eQ } = await supabase
-          .from("ci_cespiti_ammortamento").select("quota, cespite_id").eq("anno", anno).in("cespite_id", idCespiti);
-        if (eQ) throw new Error(eQ.message);
-        quoteAnno = numerizzaCampi(quote || [], ["quota"]);
-      }
-
-      function classificaDestinazione(dest) {
-        const specieMatch = Object.entries(MAPPA_SPECIE).find(([, v]) => v === dest);
-        return specieMatch ? specieMatch[0] : "generale";
-      }
-
-      // --- Righe per Area ordinaria ---
-      const risultatoRighe = AREE_ORDINARIE.map(area => {
-        const costiDiretti = { bovino: 0, suino: 0, ovino: 0, generale: 0 };
-        articoliAnno.filter(r => (r.area || "").trim() === area).forEach(r => {
-          const chiave = classificaDestinazione((r.destinazione || "").trim());
-          costiDiretti[chiave] += (r.totale_riga || 0);
-        });
-        const calcolo = calcolaRigaAggregata(costiDiretti, ubaGiorniProduttiviPerSpecie, ubaGiorniProduttiviAziendali);
-        return { area, ...calcolo };
-      }).filter(r => r.imponibileComplessivo > 0);
-
-      // --- Ammortamenti: separo quote con specie definita da quelle "Nessuno" (specie=[]) ---
-      const costiDirettiAmmortamenti = { bovino: 0, suino: 0, ovino: 0, generale: 0 };
-      let quoteNessunoTotale = 0;
-      quoteAnno.forEach(r => {
-        const specieCespite = mappaCespiteSpecie.get(r.cespite_id) || [];
-        if (specieCespite.length === 0) { quoteNessunoTotale += (r.quota || 0); return; }
-        const specieMatch = Object.entries(MAPPA_SPECIE).find(([, v]) => specieCespite.includes(v));
-        if (specieMatch) costiDirettiAmmortamenti[specieMatch[0]] += (r.quota || 0);
-        else costiDirettiAmmortamenti.generale += (r.quota || 0); // "Generale"
-      });
-      const totaleAmmortamentiConSpecie = costiDirettiAmmortamenti.bovino + costiDirettiAmmortamenti.suino + costiDirettiAmmortamenti.ovino + costiDirettiAmmortamenti.generale;
-      if (totaleAmmortamentiConSpecie > 0) {
-        const calcoloAmm = calcolaRigaAggregata(costiDirettiAmmortamenti, ubaGiorniProduttiviPerSpecie, ubaGiorniProduttiviAziendali);
-        risultatoRighe.push({ area: "Ammortamenti", ...calcoloAmm });
-      }
-
-      // --- Zona rossa: Orto + Animali non d'allevamento + Ammortamenti "Nessuno" ---
-      const costiOrto = articoliAnno.filter(r => (r.area || "").trim() === "Orto").reduce((s, r) => s + (r.totale_riga || 0), 0);
-      const costiAnimaliNonAllevamento = articoliAnno.filter(r => (r.area || "").trim() === "Animali non d'allevamento").reduce((s, r) => s + (r.totale_riga || 0), 0);
-
-      const zonaRossa = [
-        { label: "Orto", valore: costiOrto },
-        { label: "Animali non d'allevamento", valore: costiAnimaliNonAllevamento },
-        { label: "Ammortamenti (Imputazione: Nessuno)", valore: round2(quoteNessunoTotale) },
-      ].filter(r => r.valore > 0).map(r => ({
-        ...r,
-        tasso: ubaGiorniProduttiviAziendali > 0 ? Math.round(r.valore / ubaGiorniProduttiviAziendali * 1000000) / 1000000 : 0,
-      }));
-
-      setRighe(risultatoRighe);
-      setRigaRossa(zonaRossa);
+      setRighe(r);
+      setRigaRossa(rr);
     } catch (err) {
       alert(`⚠️ Errore nel calcolo:\n\n${err.message}`);
     }
