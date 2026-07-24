@@ -7,6 +7,16 @@ import { numerizzaCampi, round2, formattaEuro, formattaNumero } from "./parsingU
 // Mappa tra il nome specie usato nel motore UBA (minuscolo) e quello usato come
 // Destinazione sulle fatture / Imputazione sui cespiti (maiuscolo, italiano)
 const MAPPA_SPECIE = { bovino: "Bovini", suino: "Suini", ovino: "Ovini" };
+// Specie senza fasce UBA: i loro costi diretti restano un dato a sé, MAI dentro i Generali
+// (che si ripartiscono solo su Bovini/Suini/Ovini in base agli UBA-giorni)
+const SPECIE_SENZA_UBA = ["Pollame", "Cavalli"];
+// Orto è un'AREA (non una Destinazione, che riguarda solo le specie animali) — va riconosciuto
+// e separato in base al campo area, non destinazione
+const AREA_ORTO = "Orto";
+// Animali non d'allevamento: si riconosce SIA per Area SIA per Destinazione (qualunque delle
+// due basta), per non perderne nessuno — se solo l'Area corrisponde ma la Destinazione non
+// specifica quale animale, finisce in un bucket "non specificato" a parte
+const AREA_ANIMALI_NON_ALLEVAMENTO = "Animali non d'allevamento";
 
 export default function ReportCosti() {
   const [anno, setAnno] = useState(new Date().getFullYear());
@@ -42,7 +52,7 @@ export default function ReportCosti() {
       let articoliAnno = [];
       if (idFattureAnno.length > 0) {
         const { data: articoli, error: eArt } = await supabase
-          .from("ci_articoli_fattura").select("totale_riga, tipo_costo, destinazione")
+          .from("ci_articoli_fattura").select("totale_riga, tipo_costo, destinazione, area")
           .in("fattura_id", idFattureAnno).in("tipo_costo", ["Fisso", "Variabile"]);
         if (eArt) throw new Error(eArt.message);
         articoliAnno = numerizzaCampi(articoli || [], ["totale_riga"]);
@@ -75,9 +85,14 @@ export default function ReportCosti() {
 
       let costiGenerali = 0;
       const costiDirettiPerSpecie = { bovino: 0, suino: 0, ovino: 0 };
+      const costiAltreSpecie = { Pollame: 0, Cavalli: 0, Orto: 0, "Animali non d'allevamento (non specificato)": 0 };
 
       articoliAnno.forEach(r => {
         const dest = (r.destinazione || "").trim();
+        const area = (r.area || "").trim();
+        if (area === AREA_ORTO) { costiAltreSpecie.Orto += (r.totale_riga || 0); return; }
+        if (SPECIE_SENZA_UBA.includes(dest)) { costiAltreSpecie[dest] += (r.totale_riga || 0); return; }
+        if (area === AREA_ANIMALI_NON_ALLEVAMENTO) { costiAltreSpecie["Animali non d'allevamento (non specificato)"] += (r.totale_riga || 0); return; }
         const specieMatch = Object.entries(MAPPA_SPECIE).find(([, v]) => v === dest);
         if (specieMatch) costiDirettiPerSpecie[specieMatch[0]] += (r.totale_riga || 0);
         else costiGenerali += (r.totale_riga || 0); // Generali, vuoto, o non riconosciuto -> generale
@@ -85,7 +100,9 @@ export default function ReportCosti() {
       quoteAnno.forEach(r => {
         const specieCespite = mappaCespiteSpecie.get(r.cespite_id) || [];
         const specieMatch = Object.entries(MAPPA_SPECIE).find(([, v]) => specieCespite.includes(v));
+        const altraSpecieMatch = SPECIE_SENZA_UBA.find(sp => specieCespite.includes(sp));
         if (specieMatch) costiDirettiPerSpecie[specieMatch[0]] += (r.quota || 0);
+        else if (altraSpecieMatch) costiAltreSpecie[altraSpecieMatch] += (r.quota || 0);
         else costiGenerali += (r.quota || 0); // "Generale" o non riconosciuto -> generale
       });
 
@@ -140,7 +157,7 @@ export default function ReportCosti() {
         return { ...r, costo_mantenimento: round2(r.uba_giorni * tassoSpecie) };
       });
 
-      setRisultato({ costiOrdinari, costoAmmortamenti, costiTotali, valoreRiformaTotale, tasso, perSpecie, costoPerAnimale, righeUba });
+      setRisultato({ costiOrdinari, costoAmmortamenti, costiTotali, valoreRiformaTotale, tasso, perSpecie, costoPerAnimale, righeUba, costiAltreSpecie });
     } catch (err) {
       alert(`⚠️ Errore nel calcolo:\n\n${err.message}`);
     }
@@ -245,6 +262,36 @@ export default function ReportCosti() {
               </tbody>
             </table>
           </div>
+
+          {(risultato.costiAltreSpecie.Pollame > 0 || risultato.costiAltreSpecie.Cavalli > 0 || risultato.costiAltreSpecie.Orto > 0 || risultato.costiAltreSpecie["Animali non d'allevamento (non specificato)"] > 0) && (
+            <div style={{ background: "#FDECEC", border: `1.5px solid ${C.red}`, borderRadius: 12, padding: 16, marginBottom: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.red, marginBottom: 8 }}>⚠️ ANIMALI NON D'ALLEVAMENTO E ORTO (costi diretti — esclusi dal calcolo UBA/costo per capo)</div>
+              <table style={{ width: "100%", fontSize: 13 }}>
+                <thead>
+                  <tr style={{ color: C.muted, textAlign: "left" }}>
+                    <th style={{ padding: "4px 8px" }}></th>
+                    <th style={{ padding: "4px 8px", textAlign: "right" }}>Costo diretto</th>
+                    <th style={{ padding: "4px 8px", textAlign: "right" }}>Incidenza su UBA-giorni allevamento</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {["Pollame", "Cavalli", "Orto", "Animali non d'allevamento (non specificato)"].map(chiave => risultato.costiAltreSpecie[chiave] > 0 && (
+                    <tr key={chiave} style={{ borderTop: `1px solid ${C.red}55` }}>
+                      <td style={{ padding: "6px 8px", fontWeight: 700, color: C.red }}>{chiave}</td>
+                      <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700, color: C.red }}>{formattaEuro(risultato.costiAltreSpecie[chiave])}</td>
+                      <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700, color: C.red }}>
+                        {risultato.tasso.ubaGiorniProduttivi > 0 ? formattaEuro(risultato.costiAltreSpecie[chiave] / risultato.tasso.ubaGiorniProduttivi, 4) : "—"}/UBA-gg
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div style={{ fontSize: 11, color: C.text, marginTop: 8 }}>
+                Esclusi dai costi Generali — non si spalmano su nessuna specie d'allevamento. L'incidenza è calcolata sul totale degli UBA-giorni produttivi di Bovini+Suini+Ovini, come dato di confronto (non un costo effettivamente allocato).
+                {risultato.costiAltreSpecie["Animali non d'allevamento (non specificato)"] > 0 && " La riga \"non specificato\" ha Area=\"Animali non d'allevamento\" ma nessuna Destinazione precisa (Pollame o Cavalli) — se vuoi, torna su Carica Fatture e precisala."}
+              </div>
+            </div>
+          )}
 
           <button onClick={salvaRisultato} disabled={salvando}
             style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 10, padding: "12px 24px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
