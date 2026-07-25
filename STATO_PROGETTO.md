@@ -193,7 +193,20 @@ Ricerca testuale trasversale su numero fattura, fornitore/cliente, descrizione a
 
 Formato italiano ovunque: punto per le migliaia, virgola per i decimali (`formattaNumero`/`formattaEuro` in `parsingUtils.js`, usa `toLocaleString("it-IT", {useGrouping:true})` — **attenzione**: senza `useGrouping:true` esplicito, i numeri a 4 cifre non venivano raggruppati correttamente, bug trovato in fase di test).
 
-## 17. Layout app
+## 17. Layout app — menu a cartelle, tre livelli (v68)
+
+Struttura finale (dopo un secondo giro di feedback — "Strumenti" era una cartella generica, gli strumenti operano tutti sulle fatture, quindi ora sono una sottocartella dentro Fatture):
+
+- **Dashboard** (voce singola)
+- **Fatture** (cartella) → **Gestione** (sottocartella: Carica Fatture, Fatture Passive, Fatture Attive, Costi Diretti) + **Analisi** (sottocartella: Articoli & Prezzi, Ricerca, Controllo Anomalie, Da Armonizzare)
+- **Anagrafiche** (cartella): Fornitori, Clienti
+- **Animali** (cartella): Report Acquisto Animali, Report UBA, Scheda Animale, Report Riproduttori
+- **Costi** (cartella): Report Costi, Cespiti
+- **Parametri** (voce singola)
+
+Ogni cartella di primo livello ha in cima una voce **"📖 Istruzioni"** — guida operativa dettagliata (passo-passo per ogni pagina della cartella, scritta pensando a un operatore che non conosce già il sistema, non solo per Filippo). Componente generico `PaginaIstruzioni.jsx` + un file di contenuto per cartella (`IstruzioniFatture.jsx`, ecc.).
+
+`MENU` in App.jsx supporta ora 3 livelli (`cartella` → `sottocartella` → `voce`); `cartellaDiPagina()` cerca ricorsivamente e restituisce sia la cartella sia l'eventuale sottocartella da aprire; `vaiA()` sostituisce ogni `setTab()` diretto in tutto il file (incluso l'`onNavigate` della Dashboard e il salto verso Scheda Animale da Report UBA), aprendo automaticamente i livelli giusti.
 
 Menu laterale verticale a sinistra (non più orizzontale in alto) — più comodo con 14 voci. Sezioni con più viste interne (Report Costi, Cespiti) usano pulsanti di navigazione secondaria con sfondi colorati distinti per orientarsi.
 
