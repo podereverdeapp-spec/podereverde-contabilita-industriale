@@ -63,6 +63,14 @@ export default function ReportStoricoMangimi({ specieFiltro, titolo }) {
       riga["kg/UBA-gg Media"] = numeroExcel(r.media.kgUba);
       return riga;
     });
+    const rigaTotale = { "Prodotto": "TOTALE €/UBA-gg e kg/UBA-gg" };
+    anni.forEach(a => {
+      rigaTotale[`€/UBA-gg ${a}`] = numeroExcel(righe.reduce((s, r) => s + r.valoriPerAnno[anni.indexOf(a)].euroUba, 0));
+      rigaTotale[`kg/UBA-gg ${a}`] = numeroExcel(righe.reduce((s, r) => s + r.valoriPerAnno[anni.indexOf(a)].kgUba, 0));
+    });
+    rigaTotale["€/UBA-gg Media"] = numeroExcel(righe.reduce((s, r) => s + r.media.euroUba, 0));
+    rigaTotale["kg/UBA-gg Media"] = numeroExcel(righe.reduce((s, r) => s + r.media.kgUba, 0));
+    righeExcel.push(rigaTotale);
     esportaExcel(`StoricoMangimi_${titolo}_${annoBase}`, [{ nome: `Storico ${titolo}`, righe: righeExcel }]);
   }
 
@@ -130,6 +138,21 @@ export default function ReportStoricoMangimi({ specieFiltro, titolo }) {
                   ))}
                 </tbody>
               </table>
+              <div style={{ background: C.primary + "15", padding: "10px 8px", display: "flex", fontSize: 11, borderTop: `2px solid ${C.primary}` }}>
+                <div style={{ flex: 1.3, fontWeight: 700, color: C.primary, paddingLeft: 8 }}>TOTALE €/UBA-gg e kg/UBA-gg</div>
+                {anni.map((a, i) => (
+                  <Fragment key={a}>
+                    <div style={{ flex: 1, textAlign: "right" }}>—</div>
+                    <div style={{ flex: 1, textAlign: "right" }}>—</div>
+                    <div style={{ flex: 1, textAlign: "right", fontWeight: 700 }}>{formattaNumero(righe.reduce((s, r) => s + r.valoriPerAnno[i].euroUba, 0), 4)}</div>
+                    <div style={{ flex: 1, textAlign: "right", fontWeight: 700 }}>{formattaNumero(righe.reduce((s, r) => s + r.valoriPerAnno[i].kgUba, 0), 4)}</div>
+                  </Fragment>
+                ))}
+                <div style={{ flex: 1, textAlign: "right" }}>—</div>
+                <div style={{ flex: 1, textAlign: "right" }}>—</div>
+                <div style={{ flex: 1, textAlign: "right", fontWeight: 700 }}>{formattaNumero(righe.reduce((s, r) => s + r.media.euroUba, 0), 4)}</div>
+                <div style={{ flex: 1, textAlign: "right", fontWeight: 700 }}>{formattaNumero(righe.reduce((s, r) => s + r.media.kgUba, 0), 4)}</div>
+              </div>
             </div>
           )}
         </>

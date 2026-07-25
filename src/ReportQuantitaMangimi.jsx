@@ -38,6 +38,17 @@ export default function ReportQuantitaMangimi() {
       "Suini €/UBA-gg": numeroExcel(p.perCosto.perSpecie.suino.incidenza), "Suini kg/UBA-gg": numeroExcel(p.perKg.perSpecie.suino.incidenza),
       "Ovini €/UBA-gg": numeroExcel(p.perCosto.perSpecie.ovino.incidenza), "Ovini kg/UBA-gg": numeroExcel(p.perKg.perSpecie.ovino.incidenza),
     }));
+    if (perProdotto && perProdotto.length > 0) {
+      righeProdottoExcel.push({
+        "Prodotto": "TOTALE (somma di tutti i mangimi)",
+        "Bovini €/UBA-gg": numeroExcel(perProdotto.reduce((s, p) => s + p.perCosto.perSpecie.bovino.incidenza, 0)),
+        "Bovini kg/UBA-gg": numeroExcel(perProdotto.reduce((s, p) => s + p.perKg.perSpecie.bovino.incidenza, 0)),
+        "Suini €/UBA-gg": numeroExcel(perProdotto.reduce((s, p) => s + p.perCosto.perSpecie.suino.incidenza, 0)),
+        "Suini kg/UBA-gg": numeroExcel(perProdotto.reduce((s, p) => s + p.perKg.perSpecie.suino.incidenza, 0)),
+        "Ovini €/UBA-gg": numeroExcel(perProdotto.reduce((s, p) => s + p.perCosto.perSpecie.ovino.incidenza, 0)),
+        "Ovini kg/UBA-gg": numeroExcel(perProdotto.reduce((s, p) => s + p.perKg.perSpecie.ovino.incidenza, 0)),
+      });
+    }
     esportaExcel(`ReportMangimi_${anno}`, [
       { nome: "Report Mangimi", righe: righeExcel },
       { nome: "Per Prodotto - UBA", righe: righeProdottoExcel },
@@ -154,6 +165,15 @@ export default function ReportQuantitaMangimi() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+              <div style={{ background: C.primary + "15", borderRadius: 10, padding: "10px 16px", marginTop: 8, display: "flex", fontSize: 12 }}>
+                <div style={{ flex: 1.7, fontWeight: 700, color: C.primary }}>TOTALE (somma di tutti i mangimi)</div>
+                <div style={{ flex: 1, textAlign: "right", fontWeight: 700 }}>{formattaNumero(perProdotto.reduce((s, p) => s + p.perCosto.perSpecie.bovino.incidenza, 0), 4)}</div>
+                <div style={{ flex: 1, textAlign: "right", fontWeight: 700 }}>{formattaNumero(perProdotto.reduce((s, p) => s + p.perKg.perSpecie.bovino.incidenza, 0), 4)}</div>
+                <div style={{ flex: 1, textAlign: "right", fontWeight: 700 }}>{formattaNumero(perProdotto.reduce((s, p) => s + p.perCosto.perSpecie.suino.incidenza, 0), 4)}</div>
+                <div style={{ flex: 1, textAlign: "right", fontWeight: 700 }}>{formattaNumero(perProdotto.reduce((s, p) => s + p.perKg.perSpecie.suino.incidenza, 0), 4)}</div>
+                <div style={{ flex: 1, textAlign: "right", fontWeight: 700 }}>{formattaNumero(perProdotto.reduce((s, p) => s + p.perCosto.perSpecie.ovino.incidenza, 0), 4)}</div>
+                <div style={{ flex: 1, textAlign: "right", fontWeight: 700 }}>{formattaNumero(perProdotto.reduce((s, p) => s + p.perKg.perSpecie.ovino.incidenza, 0), 4)}</div>
               </div>
             </>
           )}
