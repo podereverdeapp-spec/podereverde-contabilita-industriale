@@ -193,19 +193,17 @@ Ricerca testuale trasversale su numero fattura, fornitore/cliente, descrizione a
 
 Formato italiano ovunque: punto per le migliaia, virgola per i decimali (`formattaNumero`/`formattaEuro` in `parsingUtils.js`, usa `toLocaleString("it-IT", {useGrouping:true})` — **attenzione**: senza `useGrouping:true` esplicito, i numeri a 4 cifre non venivano raggruppati correttamente, bug trovato in fase di test).
 
-## 17. Layout app — menu a cartelle (v72, struttura finale dopo correzione)
-
-Struttura finale (Filippo ha corretto un posizionamento sbagliato — Ricerca/Controllo Anomalie/Da Armonizzare erano finite in "Studi" insieme ad Articoli & Prezzi, ma andavano invece dentro "Fatture"):
+## 17. Layout app — menu a cartelle (v79, struttura finale)
 
 - **Dashboard** (voce singola)
-- **Fatture** (cartella, 7 pagine): Carica Fatture, Fatture Passive, Fatture Attive, Costi Diretti, **Ricerca, Controllo Anomalie, Da Armonizzare**
+- **Fatture** (cartella, 8 pagine): Carica Fatture, Fatture Passive, Fatture Attive, Costi Diretti, Ricerca, Controllo Anomalie, Da Armonizzare, **Articoli & Prezzi** (spostata qui da Studi — opera sugli stessi dati fattura degli altri strumenti della cartella, non fa calcoli di ripartizione costi/UBA come invece Report Costi/Cespiti)
 - **Anagrafiche** (cartella): Fornitori, Clienti
 - **Animali** (cartella): Report Acquisto Animali, Report UBA, Scheda Animale, Report Riproduttori
 - **Costi** (cartella): Report Costi, Cespiti
-- **Studi** (cartella, solo analisi che non toccano le singole fatture): Articoli & Prezzi, Report Quantità Mangimi
+- **Studi** (cartella) → sottocartella **Mangimi**: Report Quantità Mangimi, Storico Bovini/Suini/Ovini
 - **Parametri** (voce singola)
 
-Ogni cartella ha una voce "📖 Istruzioni" in cima (componente `PaginaIstruzioni.jsx` + un file di contenuto per cartella). **Struttura piatta ovunque** (nessuna sottocartella, dopo aver provato e poi tolto Gestione/Analisi dentro Fatture in una sessione precedente). `MENU` in App.jsx, `cartellaDiPagina()` cerca la cartella giusta per aprirla automaticamente, `vaiA()` sostituisce ogni `setTab()` diretto.
+Ogni cartella ha una voce "📖 Istruzioni" in cima. Struttura a 3 livelli quando serve (Studi → Mangimi → pagine), piatta altrove.
 
 Menu laterale verticale a sinistra (non più orizzontale in alto) — più comodo con 14 voci. Sezioni con più viste interne (Report Costi, Cespiti) usano pulsanti di navigazione secondaria con sfondi colorati distinti per orientarsi.
 

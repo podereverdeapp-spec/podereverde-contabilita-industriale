@@ -4,25 +4,24 @@ export default function IstruzioniStudi() {
   return (
     <PaginaIstruzioni
       titolo="Studi"
-      introduzione="Analisi di sola lettura su prodotti e quantità — non calcolano né scrivono nulla di nuovo, guardano dati già esistenti da un'angolatura diversa rispetto alle pagine di Fatture."
+      introduzione="Analisi più ampie, organizzate per argomento — oggi contiene la sottocartella Mangimi, con i report di quantità e il loro andamento storico."
       sezioni={[
         {
-          pagina: "Articoli & Prezzi", icon: "🏷️",
-          aCosaServe: "Confronta i prezzi pagati per lo stesso prodotto nel tempo, anche tra fornitori diversi — utile per capire se un prezzo è aumentato o se conviene cambiare fornitore.",
+          pagina: "Mangimi → Report Quantità Mangimi", icon: "🌾",
+          aCosaServe: "Per ogni fornitore e prodotto di mangime: quanto costato nell'anno, e quanto acquistato in tonnellate e kilogrammi, con la destinazione (specie). Sotto, una seconda sezione con €/UBA-giorno e kg/UBA-giorno per ogni prodotto, per Bovini/Suini/Ovini.",
           comeSiUsa: [
-            "Cerca un prodotto per nome, oppure filtra per fornitore/cliente o per tipo (acquisti/vendite).",
-            "Ogni riga mostra prezzo minimo, medio, massimo e più recente — se il prezzo più recente è in rosso, ha raggiunto un nuovo massimo storico.",
-            "Clicca sullo scostamento percentuale per vedere il grafico dell'andamento nel tempo.",
-            "Clicca sulla riga per espandere lo storico completo di acquisti/vendite di quel prodotto.",
+            "Scegli l'anno e premi Calcola.",
+            "Solo i prodotti già armonizzati (unità di misura confermata in \"Da Armonizzare\", dentro Fatture) entrano nel calcolo — quelli ancora in attesa appaiono in un riquadro giallo a parte, esclusi dal totale.",
+            "La seconda sezione ripartisce i costi/quantità \"Generali\" su Bovini/Suini/Ovini in proporzione ai loro UBA-giorni — stessa regola di Report Costi. In fondo, una riga TOTALE con la somma di tutti i mangimi.",
           ],
         },
         {
-          pagina: "Report Quantità Mangimi", icon: "🌾",
-          aCosaServe: "Per ogni fornitore e prodotto di mangime: quanto costato nell'anno, e quanto acquistato in tonnellate e kilogrammi, con la destinazione (specie). Il primo di una serie di report di quantità, uno per ciascun centro di costo tracciato.",
+          pagina: "Mangimi → Storico — Bovini / Suini / Ovini", icon: "📈",
+          aCosaServe: "Confronto tra l'anno scelto e i 3 precedenti (+ media), per ogni prodotto di mangime: quantità, costo, €/UBA-giorno e kg/UBA-giorno per quella specie. In cima, due grafici con l'andamento del totale aggregato nel tempo.",
           comeSiUsa: [
-            "Scegli l'anno e premi Calcola.",
-            "Solo i prodotti già armonizzati (unità di misura confermata in \"Da Armonizzare\") entrano nel calcolo — quelli ancora in attesa appaiono in un riquadro giallo a parte, esclusi dal totale, con l'invito ad andare a completarli.",
-            "Ogni riga è una combinazione fornitore + prodotto + destinazione — se lo stesso prodotto va a specie diverse, compaiono righe separate.",
+            "Scegli l'anno più recente del confronto e premi \"📊 Calcola confronto\".",
+            "I due grafici in cima mostrano il totale di tutti i mangimi insieme (non un singolo prodotto), con una linea tratteggiata per la media dei 4 anni.",
+            "La tabella sotto mostra ogni prodotto singolarmente, con una riga TOTALE in fondo per €/UBA-gg e kg/UBA-gg.",
           ],
         },
       ]}

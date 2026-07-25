@@ -75,6 +75,16 @@ export default function IstruzioniFatture() {
             "Scegli l'unità corretta dal menu a tendina e premi \"✓ Conferma unità\" — la regola vale poi automaticamente per tutte le fatture future dello stesso fornitore e prodotto.",
           ],
         },
+        {
+          pagina: "Articoli & Prezzi", icon: "🏷️",
+          aCosaServe: "Confronta i prezzi pagati per lo stesso prodotto nel tempo, anche tra fornitori diversi — utile per capire se un prezzo è aumentato o se conviene cambiare fornitore.",
+          comeSiUsa: [
+            "Cerca un prodotto per nome, oppure filtra per fornitore/cliente o per tipo (acquisti/vendite).",
+            "Ogni riga mostra prezzo minimo, medio, massimo e più recente — se il prezzo più recente è in rosso, ha raggiunto un nuovo massimo storico.",
+            "Clicca sullo scostamento percentuale per vedere il grafico dell'andamento nel tempo.",
+            "Clicca sulla riga per espandere lo storico completo di acquisti/vendite di quel prodotto.",
+          ],
+        },
       ]}
     />
   );

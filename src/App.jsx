@@ -39,6 +39,7 @@ const MENU = [
     { tipo: "voce", id: "ricerca", label: "Ricerca", icon: "🔎" },
     { tipo: "voce", id: "anomalie", label: "Controllo Anomalie", icon: "🔍" },
     { tipo: "voce", id: "armonizza", label: "Da Armonizzare", icon: "⚖️" },
+    { tipo: "voce", id: "articoliprezzi", label: "Articoli & Prezzi", icon: "🏷️" },
   ]},
   { tipo: "cartella", id: "cart-anagrafiche", label: "Anagrafiche", icon: "🏢", contenuto: [
     { tipo: "voce", id: "istr-anagrafiche", label: "Istruzioni", icon: "📖" },
@@ -59,11 +60,12 @@ const MENU = [
   ]},
   { tipo: "cartella", id: "cart-studi", label: "Studi", icon: "🔎", contenuto: [
     { tipo: "voce", id: "istr-studi", label: "Istruzioni", icon: "📖" },
-    { tipo: "voce", id: "articoliprezzi", label: "Articoli & Prezzi", icon: "🏷️" },
-    { tipo: "voce", id: "quantitamangimi", label: "Report Quantità Mangimi", icon: "🌾" },
-    { tipo: "voce", id: "storico-mangimi-bovini", label: "Storico Mangimi — Bovini", icon: "📈" },
-    { tipo: "voce", id: "storico-mangimi-suini", label: "Storico Mangimi — Suini", icon: "📈" },
-    { tipo: "voce", id: "storico-mangimi-ovini", label: "Storico Mangimi — Ovini", icon: "📈" },
+    { tipo: "sottocartella", id: "sub-mangimi", label: "Mangimi", icon: "🌾", voci: [
+      { id: "quantitamangimi", label: "Report Quantità Mangimi", icon: "🌾" },
+      { id: "storico-mangimi-bovini", label: "Storico Mangimi — Bovini", icon: "📈" },
+      { id: "storico-mangimi-suini", label: "Storico Mangimi — Suini", icon: "📈" },
+      { id: "storico-mangimi-ovini", label: "Storico Mangimi — Ovini", icon: "📈" },
+    ]},
   ]},
   { tipo: "voce", id: "parametri", label: "Parametri", icon: "⚙️" },
 ];
