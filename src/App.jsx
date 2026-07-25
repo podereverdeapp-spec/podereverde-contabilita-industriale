@@ -16,6 +16,7 @@ import ArticoliPrezzi from "./ArticoliPrezzi";
 import CostiDiretti from "./CostiDiretti";
 import ControlloAnomalie from "./ControlloAnomalie";
 import DaArmonizzare from "./DaArmonizzare";
+import ReportQuantitaMangimi from "./ReportQuantitaMangimi";
 import IstruzioniFatture from "./IstruzioniFatture";
 import IstruzioniAnagrafiche from "./IstruzioniAnagrafiche";
 import IstruzioniAnimali from "./IstruzioniAnimali";
@@ -29,18 +30,10 @@ const MENU = [
   { tipo: "voce", id: "dashboard", label: "Dashboard", icon: "📊" },
   { tipo: "cartella", id: "cart-fatture", label: "Fatture", icon: "📥", contenuto: [
     { tipo: "voce", id: "istr-fatture", label: "Istruzioni", icon: "📖" },
-    { tipo: "sottocartella", id: "sub-gestione", label: "Gestione", icon: "🗂️", voci: [
-      { id: "carica", label: "Carica Fatture", icon: "📥" },
-      { id: "passive", label: "Fatture Passive", icon: "📄" },
-      { id: "attive", label: "Fatture Attive", icon: "💰" },
-      { id: "costidiretti", label: "Costi Diretti", icon: "💼" },
-    ]},
-    { tipo: "sottocartella", id: "sub-analisi", label: "Analisi", icon: "🔎", voci: [
-      { id: "articoliprezzi", label: "Articoli & Prezzi", icon: "🏷️" },
-      { id: "ricerca", label: "Ricerca", icon: "🔎" },
-      { id: "anomalie", label: "Controllo Anomalie", icon: "🔍" },
-      { id: "armonizza", label: "Da Armonizzare", icon: "⚖️" },
-    ]},
+    { tipo: "voce", id: "carica", label: "Carica Fatture", icon: "📥" },
+    { tipo: "voce", id: "passive", label: "Fatture Passive", icon: "📄" },
+    { tipo: "voce", id: "attive", label: "Fatture Attive", icon: "💰" },
+    { tipo: "voce", id: "costidiretti", label: "Costi Diretti", icon: "💼" },
   ]},
   { tipo: "cartella", id: "cart-anagrafiche", label: "Anagrafiche", icon: "🏢", contenuto: [
     { tipo: "voce", id: "istr-anagrafiche", label: "Istruzioni", icon: "📖" },
@@ -58,6 +51,14 @@ const MENU = [
     { tipo: "voce", id: "istr-costi", label: "Istruzioni", icon: "📖" },
     { tipo: "voce", id: "costi", label: "Report Costi", icon: "📊" },
     { tipo: "voce", id: "cespiti", label: "Cespiti", icon: "🏗️" },
+  ]},
+  { tipo: "cartella", id: "cart-studi", label: "Studi", icon: "🔎", contenuto: [
+    { tipo: "voce", id: "istr-studi", label: "Istruzioni", icon: "📖" },
+    { tipo: "voce", id: "articoliprezzi", label: "Articoli & Prezzi", icon: "🏷️" },
+    { tipo: "voce", id: "ricerca", label: "Ricerca", icon: "🔎" },
+    { tipo: "voce", id: "anomalie", label: "Controllo Anomalie", icon: "🔍" },
+    { tipo: "voce", id: "armonizza", label: "Da Armonizzare", icon: "⚖️" },
+    { tipo: "voce", id: "quantitamangimi", label: "Report Quantità Mangimi", icon: "🌾" },
   ]},
   { tipo: "voce", id: "parametri", label: "Parametri", icon: "⚙️" },
 ];
@@ -216,6 +217,7 @@ export default function App() {
         {tab === "costidiretti" && <CostiDiretti />}
         {tab === "anomalie" && <ControlloAnomalie />}
         {tab === "armonizza" && <DaArmonizzare />}
+        {tab === "quantitamangimi" && <ReportQuantitaMangimi />}
         {tab === "istr-fatture" && <IstruzioniFatture />}
         {tab === "istr-anagrafiche" && <IstruzioniAnagrafiche />}
         {tab === "istr-animali" && <IstruzioniAnimali />}

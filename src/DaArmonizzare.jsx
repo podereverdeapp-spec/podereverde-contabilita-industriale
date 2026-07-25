@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, Fragment } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { fetchAllPages } from "./parsingUtils";
+import { RicomposizioneFattura } from "./FatturePassive";
 
 // Centri di costo con quantità tracciate per i report — solo questi generano voci
 // "Da Armonizzare"; gli altri centri di costo non hanno bisogno di unità armonizzate.
@@ -32,12 +33,13 @@ export default function DaArmonizzare() {
     setLoading(true);
     try {
       const { data: righe, error: eR } = await fetchAllPages((da, a) => supabase
-        .from("ci_articoli_fattura").select("descrizione, fattura_id, centro_costo").in("centro_costo", CENTRI_CON_QUANTITA).range(da, a));
+        .from("ci_articoli_fattura").select("descrizione, fattura_id, centro_costo, quantita, unita_misura").in("centro_costo", CENTRI_CON_QUANTITA).range(da, a));
       if (eR) throw new Error(eR.message);
 
       const idFatture = [...new Set((righe || []).map(r => r.fattura_id))];
-      const { data: fatture } = await fetchAllPages((da, a) => supabase.from("ci_fatture").select("id, fornitore_id").in("id", idFatture).range(da, a));
+      const { data: fatture } = await fetchAllPages((da, a) => supabase.from("ci_fatture").select("id, fornitore_id, numero, data").in("id", idFatture).range(da, a));
       const mappaFattureFornitore = new Map((fatture || []).map(f => [f.id, f.fornitore_id]));
+      const mappaFattureDettaglio = new Map((fatture || []).map(f => [f.id, f]));
 
       const { data: fornitori } = await supabase.from("ci_fornitori").select("id, nome");
       const mappaFornitori = new Map((fornitori || []).map(f => [f.id, f.nome]));
@@ -54,9 +56,12 @@ export default function DaArmonizzare() {
         const chiave = `${fornitoreId}|${r.descrizione.trim().toLowerCase()}`;
         if (chiaviConRegola.has(chiave)) return;
         if (!combinazioni.has(chiave)) {
-          combinazioni.set(chiave, { fornitore_id: fornitoreId, fornitore: mappaFornitori.get(fornitoreId) || "—", descrizione: r.descrizione, centro_costo: r.centro_costo, count: 0 });
+          combinazioni.set(chiave, { fornitore_id: fornitoreId, fornitore: mappaFornitori.get(fornitoreId) || "—", descrizione: r.descrizione, centro_costo: r.centro_costo, count: 0, occorrenze: [] });
         }
-        combinazioni.get(chiave).count++;
+        const combo = combinazioni.get(chiave);
+        combo.count++;
+        const f = mappaFattureDettaglio.get(r.fattura_id);
+        combo.occorrenze.push({ fattura_id: r.fattura_id, numero: f?.numero, data: f?.data, quantita: r.quantita, unita_misura: r.unita_misura });
       });
 
       // Per ciascuna combinazione senza regola, cerco un suggerimento simile tra le regole
@@ -118,15 +123,81 @@ export default function DaArmonizzare() {
 
 function RigaArmonizza({ c, onConferma, salvando }) {
   const [unita, setUnita] = useState("Kilogrammi");
+  const [espansa, setEspansa] = useState(false);
+  const [fatturaAperta, setFatturaAperta] = useState(null); // fattura_id in visualizzazione completa
+  const [datiFatturaAperta, setDatiFatturaAperta] = useState(null); // { fattura, righe }
+  const [caricandoFattura, setCaricandoFattura] = useState(false);
+
+  async function apriFattura(fatturaId) {
+    if (fatturaAperta === fatturaId) { setFatturaAperta(null); return; }
+    setFatturaAperta(fatturaId);
+    setCaricandoFattura(true);
+    try {
+      const { data: fattura, error: eF } = await supabase.from("ci_fatture").select("*, ci_fornitori(nome), ci_clienti(nome)").eq("id", fatturaId).single();
+      if (eF) throw new Error(eF.message);
+      const { data: righe, error: eR } = await supabase.from("ci_articoli_fattura").select("*").eq("fattura_id", fatturaId).order("id");
+      if (eR) throw new Error(eR.message);
+      setDatiFatturaAperta({ fattura, righe: (righe || []).map(r => ({ ...r, quantita: parseFloat(r.quantita), prezzo_unitario: parseFloat(r.prezzo_unitario), totale_riga: parseFloat(r.totale_riga), aliquota_iva: parseFloat(r.aliquota_iva), totale_iva: parseFloat(r.totale_iva) })) });
+    } catch (err) {
+      alert(`⚠️ Errore nell'apertura della fattura:\n\n${err.message}`);
+    }
+    setCaricandoFattura(false);
+  }
 
   return (
     <div style={{ background: "#FFF7E6", border: `1.5px solid ${C.yellow}`, borderRadius: 10, padding: 14 }}>
       <div style={{ fontWeight: 700 }}>{c.fornitore} — {c.descrizione}</div>
       <div style={{ fontSize: 12, color: C.muted, marginBottom: 8 }}>
         Centro di costo: {c.centro_costo} · comparso in {c.count} righe fattura, mai con un'unità confermata.
+        {" "}
+        <button onClick={() => setEspansa(e => !e)}
+          style={{ background: "none", border: "none", color: C.blue, textDecoration: "underline", cursor: "pointer", fontSize: 12, padding: 0 }}>
+          {espansa ? "▲ nascondi fatture" : "▼ vedi le fatture"}
+        </button>
       </div>
+      {espansa && (
+        <div style={{ background: "#fff", borderRadius: 8, padding: "8px 12px", marginBottom: 8, fontSize: 12 }}>
+          <table style={{ width: "100%" }}>
+            <thead>
+              <tr style={{ color: C.muted, textAlign: "left" }}>
+                <th style={{ padding: "3px 6px" }}>Fattura n.</th><th style={{ padding: "3px 6px" }}>Data</th>
+                <th style={{ padding: "3px 6px", textAlign: "right" }}>Quantità</th><th style={{ padding: "3px 6px" }}>Unità scritta in fattura</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {c.occorrenze.map((o, i) => (
+                <Fragment key={i}>
+                  <tr style={{ borderTop: `1px solid ${C.border}` }}>
+                    <td style={{ padding: "3px 6px" }}>{o.numero}</td>
+                    <td style={{ padding: "3px 6px" }}>{o.data}</td>
+                    <td style={{ padding: "3px 6px", textAlign: "right" }}>{o.quantita}</td>
+                    <td style={{ padding: "3px 6px" }}>{o.unita_misura || <em style={{ color: C.muted }}>(vuota)</em>}</td>
+                    <td style={{ padding: "3px 6px" }}>
+                      <button onClick={() => apriFattura(o.fattura_id)}
+                        style={{ background: "none", border: `1px solid ${C.blue}`, color: C.blue, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                        {fatturaAperta === o.fattura_id ? "▲ chiudi" : "📄 apri fattura"}
+                      </button>
+                    </td>
+                  </tr>
+                  {fatturaAperta === o.fattura_id && (
+                    <tr>
+                      <td colSpan={5} style={{ padding: 0, background: "#FAFAF8" }}>
+                        {caricandoFattura ? (
+                          <div style={{ padding: 12, color: C.muted }}>Caricamento...</div>
+                        ) : datiFatturaAperta && (
+                          <RicomposizioneFattura fattura={datiFatturaAperta.fattura} righe={datiFatturaAperta.righe} />
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
       <div style={{ fontSize: 12, color: "#8B6F00", fontWeight: 700, marginBottom: 8 }}>
-        ⚖️ Nessuna regola trovata per questo fornitore/prodotto — scegli qui sotto l'unità di misura corretta (controllando una fattura reale, se necessario) per includerlo nei report di quantità.
+        ⚖️ Nessuna regola trovata per questo fornitore/prodotto — scegli qui sotto l'unità di misura corretta (controllando le fatture qui sopra, se necessario) per includerlo nei report di quantità.
       </div>
       {c.suggerimento && (
         <div style={{ fontSize: 12, background: "#EAF2E8", borderRadius: 6, padding: "6px 10px", marginBottom: 8 }}>

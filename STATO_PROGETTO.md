@@ -265,6 +265,10 @@ con `MOTIVI_PRODUTTIVI_EXP = ["macellazione","macellato","venduto","riformato","
 
 ## 22. Armonizzazione unità di misura — meccanismo costruito
 
+**Bug reale trovato da Filippo — RLS non disattivato**: `ci_regole_armonizzazione_unita` dava errore "new row violates row-level security policy" al primo utilizzo — lo script originale probabilmente non era stato eseguito per intero (o l'`alter table ... disable row level security` non è passato). Fix a parte fornito (`fix_rls_armonizzazione.sql`). **Promemoria per il futuro**: quando si crea una tabella nuova, verificare sempre che RLS sia davvero disattivato provando un inserimento reale, non solo fidandosi di aver scritto la riga nello script.
+
+**Migliorata l'esperienza in "Da Armonizzare"** (richiesta esplicita di Filippo — "datemi la possibilità di controllare le fatture dalla sezione Armonizzare, se no devo cambiare sezione", poi "e se mi dessi anche di aprirle quelle fatture"): ogni prodotto in attesa ha un link "▼ vedi le fatture" che espande, senza lasciare la pagina, l'elenco delle fatture reali che lo contengono (numero, data, quantità, unità scritta in originale) — e ogni riga ha un pulsante "📄 apri fattura" che mostra la ricomposizione completa della fattura (stesso componente `RicomposizioneFattura` riusato da Ricerca/Fatture Passive/Fatture Attive), inline, senza cambiare pagina.
+
 **Nota di processo (errore reale commesso, da non ripetere)**: quando si genera un file (SQL, Excel, qualunque cosa), va SEMPRE consegnato subito con `present_files` — non basta scriverne il percorso nel testo della risposta, altrimenti Filippo non riceve il link per scaricarlo. Successo con `schema_costi_diretti.sql`: generato ma non consegnato nello stesso turno, notato solo perché Filippo l'ha richiesto esplicitamente.
 
 **Schema**: `ci_regole_armonizzazione_unita` (fornitore_id + descrizione_prodotto esatta → unità confermata + fattore di conversione in kg), stesso spirito delle regole FCV/FCF esistenti — si impara una volta, si applica da sola alle fatture future dello stesso fornitore+prodotto.

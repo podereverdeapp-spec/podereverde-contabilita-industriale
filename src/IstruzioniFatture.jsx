@@ -4,10 +4,10 @@ export default function IstruzioniFatture() {
   return (
     <PaginaIstruzioni
       titolo="Fatture"
-      introduzione="Questa cartella raccoglie tutto ciò che riguarda le fatture — dal caricamento iniziale alla loro consultazione, fino agli strumenti che analizzano i dati che contengono. È divisa in due sotto-cartelle: Gestione (dove le fatture entrano nel sistema) e Analisi (dove si consultano e controllano i dati già caricati)."
+      introduzione="Questa cartella raccoglie il caricamento e la consultazione di tutte le fatture — sia passive (acquisti) sia attive (vendite) — più i costi diretti che non derivano da una fattura fornitore (es. il lavoro)."
       sezioni={[
         {
-          pagina: "Gestione → Carica Fatture", icon: "📥",
+          pagina: "Carica Fatture", icon: "📥",
           aCosaServe: "È il punto di ingresso di ogni fattura, sia passiva (acquisti) sia attiva (vendite). Da qui si carica un file Excel con le fatture grezze, e il sistema prova a classificarle automaticamente riga per riga secondo il Piano dei Conti (Area, Centro di Costo, Destinazione, Tipo di Costo).",
           comeSiUsa: [
             "Prepara un file Excel con le colonne richieste (Data, Numero, Fornitore/Cliente, Descrizione, Quantità, Prezzo unitario, Imponibile — vedi il formato di esempio se disponibile).",
