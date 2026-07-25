@@ -242,6 +242,18 @@ con `MOTIVI_PRODUTTIVI_EXP = ["macellazione","macellato","venduto","riformato","
 
 **"Riporto quota UBA"**: se un animale presente nel report UBA dell'anno precedente non compare nel nuovo import, si riporta l'ultima quota nota, a meno che non sia uscito per macellazione/decesso. Meccanismo di Prima App — probabilmente non più necessario dato che ora l'UBA si calcola direttamente dagli animali reali ogni volta, non da un import storico.
 
+## 21. Costi Diretti e Controllo Anomalie (nuove pagine)
+
+**Costi Diretti** (`ci_costi_diretti`, nuova tabella): per costi che non passano da una fattura fornitore — costo del lavoro (buste paga, per dipendente o come totale aggregato — campo `dipendente` facoltativo: valorizzato per il dettaglio, vuoto per un aggregato) e altri costi simili. Stessa classificazione Area/Centro di Costo/Destinazione/Tipo di Costo di `ci_articoli_fattura`, letta dinamicamente da `ci_piano_dei_conti`. **IMPORTANTE — limite noto**: questi costi sono oggi registrati e consultabili nella loro pagina, ma **non sono ancora inclusi nei calcoli di Report Costi** (calcoloReportCosti.js legge solo `ci_articoli_fattura`) — l'integrazione nei report resta da fare come passo successivo.
+
+**Controllo Anomalie** (nuova pagina): trova fatture con totale a zero o senza righe articolo associate (sintomo di un caricamento interrotto — es. il caso reale trovato con Filippo: fattura PROGEO SCA V2-250008516 del 2025-02-18, un "guscio vuoto" che bloccava il ricaricamento tramite il controllo duplicati). Permette di eliminare il guscio vuoto direttamente dall'app (solo se non ha righe articolo — altrimenti richiede controllo manuale, per non perdere dati).
+
+**Ancora da fare (discusso ma non costruito)**: finestra di dialogo per l'inserimento manuale di una singola fattura (senza passare da import Excel massivo) — utile sia per correggere casi come questo sia per fatture isolate.
+
+## 22. Armonizzazione unità di misura (in corso, ragionamento fornitore per fornitore)
+
+Le unità di misura sono oggi testo libero, senza vincoli — stesso prodotto/fornitore può avere unità diverse tra una fattura e l'altra (es. "Kilogrammi" e "Unità" per lo stesso articolo Cooperativa Ceri). Deciso con Filippo di procedere **fornitore per fornitore, prodotto per prodotto** (non una regola generale subito), partendo da Mangimi. Generato un file Excel di revisione (`Revisione_Unita_Mangimi.xlsx`) con evidenziazione dei casi da controllare (unità mancante, unità incoerente sullo stesso prodotto, righe che non sembrano prodotti mangime). Il prompt di lettura PDF fatture (`api/leggi-fattura-pdf.js`) oggi accetta solo 8 unità fisse (Unità/Tons/Quintali/Kilogrammi/Litri/Balloni/Rotoballe/Rotoli), senza nessuna conversione — da rivedere una volta chiarite le regole di armonizzazione per fornitore.
+
 ## 20. Problemi noti / da monitorare
 
 **Limite di 1000 righe Supabase — CORRETTO (bug reale, trovato da Filippo)**: tutte le query dirette a `animali`/`lotti_suini`/`suini_lotto` (Report UBA, Report Costi, tutti i Report Costi per anno, Report Riproduttori, Report Acquisto Animali, Scheda Animale) usavano `select("*")` senza paginazione — Supabase/PostgREST limita di default ogni query a 1000 righe, troncando silenziosamente (nessun errore) i risultati se una tabella supera quella soglia. Sintomo osservato: animali/suinetti mancanti nel Report UBA, specialmente i più recenti (2026). Corretto con una nuova utilità condivisa `fetchAllPages()` in `parsingUtils.js`, che pagina automaticamente finché non esaurisce tutte le righe — applicata a tutte le query dirette su queste 3 tabelle in 6 file. Testato con un caso simulato di 2500 righe (oltre il limite).
