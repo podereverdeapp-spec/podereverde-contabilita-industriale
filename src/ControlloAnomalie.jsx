@@ -35,10 +35,14 @@ export default function ControlloAnomalie() {
       fattureNum.forEach(f => {
         const sueRighe = righePerFattura.get(f.id) || [];
         const nRighe = sueRighe.length;
+        const sommaRighe = sueRighe.reduce((s, r) => s + (parseFloat(r.totale_riga) || 0), 0);
         const controparte = f.tipo === "ATTIVA" ? mappaClienti.get(f.cliente_id) : mappaFornitori.get(f.fornitore_id);
         const problemi = [];
         if ((f.totale_lordo || 0) === 0) problemi.push("Totale fattura a zero");
         if (nRighe === 0) problemi.push("Nessuna riga articolo associata");
+        if (nRighe > 0 && Math.abs(sommaRighe - (f.totale_netto || 0)) > 0.5) {
+          problemi.push(`Fattura incompleta: la somma delle righe salvate (${sommaRighe.toFixed(2)}€) non coincide con l'imponibile dichiarato (${(f.totale_netto || 0).toFixed(2)}€) — probabile riga ancora da classificare, mai completata`);
+        }
         if (problemi.length > 0) {
           trovate.push({ ...f, controparte, nRighe, problemi });
         }
@@ -72,7 +76,7 @@ export default function ControlloAnomalie() {
     <div style={{ padding: 20, maxWidth: 1000, margin: "0 auto" }}>
       <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Controllo Anomalie</h1>
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 20 }}>
-        Fatture con totale a zero o senza righe articolo — probabile caricamento interrotto/incompleto. Se una fattura non ha righe, puoi eliminare il "guscio vuoto" da qui per poterla ricaricare correttamente; se ha righe, va controllata a mano (non viene eliminata automaticamente).
+        Fatture con totale a zero, senza righe articolo, o con la somma delle righe salvate che non coincide con l'imponibile dichiarato — quest'ultimo caso è il più insidioso: succede quando una fattura viene caricata e alcune righe restano "da classificare" senza mai essere completate, lasciando la fattura silenziosamente incompleta nei report. Se una fattura non ha righe, puoi eliminare il "guscio vuoto" da qui per poterla ricaricare correttamente; se ha righe (anche solo alcune), va completata a mano in Carica Fatture — non viene eliminata automaticamente.
       </p>
 
       {loading ? <p style={{ color: C.muted }}>Controllo in corso...</p> : (

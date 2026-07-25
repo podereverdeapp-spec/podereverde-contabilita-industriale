@@ -17,10 +17,12 @@ import CostiDiretti from "./CostiDiretti";
 import ControlloAnomalie from "./ControlloAnomalie";
 import DaArmonizzare from "./DaArmonizzare";
 import ReportQuantitaMangimi from "./ReportQuantitaMangimi";
+import ReportStoricoMangimi from "./ReportStoricoMangimi";
 import IstruzioniFatture from "./IstruzioniFatture";
 import IstruzioniAnagrafiche from "./IstruzioniAnagrafiche";
 import IstruzioniAnimali from "./IstruzioniAnimali";
 import IstruzioniCosti from "./IstruzioniCosti";
+import IstruzioniStudi from "./IstruzioniStudi";
 import Ricerca from "./Ricerca";
 import Parametri from "./Parametri";
 import ReportAcquistoAnimali from "./ReportAcquistoAnimali";
@@ -34,6 +36,9 @@ const MENU = [
     { tipo: "voce", id: "passive", label: "Fatture Passive", icon: "📄" },
     { tipo: "voce", id: "attive", label: "Fatture Attive", icon: "💰" },
     { tipo: "voce", id: "costidiretti", label: "Costi Diretti", icon: "💼" },
+    { tipo: "voce", id: "ricerca", label: "Ricerca", icon: "🔎" },
+    { tipo: "voce", id: "anomalie", label: "Controllo Anomalie", icon: "🔍" },
+    { tipo: "voce", id: "armonizza", label: "Da Armonizzare", icon: "⚖️" },
   ]},
   { tipo: "cartella", id: "cart-anagrafiche", label: "Anagrafiche", icon: "🏢", contenuto: [
     { tipo: "voce", id: "istr-anagrafiche", label: "Istruzioni", icon: "📖" },
@@ -55,10 +60,10 @@ const MENU = [
   { tipo: "cartella", id: "cart-studi", label: "Studi", icon: "🔎", contenuto: [
     { tipo: "voce", id: "istr-studi", label: "Istruzioni", icon: "📖" },
     { tipo: "voce", id: "articoliprezzi", label: "Articoli & Prezzi", icon: "🏷️" },
-    { tipo: "voce", id: "ricerca", label: "Ricerca", icon: "🔎" },
-    { tipo: "voce", id: "anomalie", label: "Controllo Anomalie", icon: "🔍" },
-    { tipo: "voce", id: "armonizza", label: "Da Armonizzare", icon: "⚖️" },
     { tipo: "voce", id: "quantitamangimi", label: "Report Quantità Mangimi", icon: "🌾" },
+    { tipo: "voce", id: "storico-mangimi-bovini", label: "Storico Mangimi — Bovini", icon: "📈" },
+    { tipo: "voce", id: "storico-mangimi-suini", label: "Storico Mangimi — Suini", icon: "📈" },
+    { tipo: "voce", id: "storico-mangimi-ovini", label: "Storico Mangimi — Ovini", icon: "📈" },
   ]},
   { tipo: "voce", id: "parametri", label: "Parametri", icon: "⚙️" },
 ];
@@ -218,10 +223,14 @@ export default function App() {
         {tab === "anomalie" && <ControlloAnomalie />}
         {tab === "armonizza" && <DaArmonizzare />}
         {tab === "quantitamangimi" && <ReportQuantitaMangimi />}
+        {tab === "storico-mangimi-bovini" && <ReportStoricoMangimi specieFiltro="bovino" titolo="Bovini" />}
+        {tab === "storico-mangimi-suini" && <ReportStoricoMangimi specieFiltro="suino" titolo="Suini" />}
+        {tab === "storico-mangimi-ovini" && <ReportStoricoMangimi specieFiltro="ovino" titolo="Ovini" />}
         {tab === "istr-fatture" && <IstruzioniFatture />}
         {tab === "istr-anagrafiche" && <IstruzioniAnagrafiche />}
         {tab === "istr-animali" && <IstruzioniAnimali />}
         {tab === "istr-costi" && <IstruzioniCosti />}
+        {tab === "istr-studi" && <IstruzioniStudi />}
         {tab === "ricerca" && <Ricerca />}
         {tab === "parametri" && <Parametri />}
       </main>

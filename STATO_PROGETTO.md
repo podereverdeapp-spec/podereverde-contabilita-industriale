@@ -193,20 +193,19 @@ Ricerca testuale trasversale su numero fattura, fornitore/cliente, descrizione a
 
 Formato italiano ovunque: punto per le migliaia, virgola per i decimali (`formattaNumero`/`formattaEuro` in `parsingUtils.js`, usa `toLocaleString("it-IT", {useGrouping:true})` — **attenzione**: senza `useGrouping:true` esplicito, i numeri a 4 cifre non venivano raggruppati correttamente, bug trovato in fase di test).
 
-## 17. Layout app — menu a cartelle, tre livelli (v68)
+## 17. Layout app — menu a cartelle (v72, struttura finale dopo correzione)
 
-Struttura finale (dopo un secondo giro di feedback — "Strumenti" era una cartella generica, gli strumenti operano tutti sulle fatture, quindi ora sono una sottocartella dentro Fatture):
+Struttura finale (Filippo ha corretto un posizionamento sbagliato — Ricerca/Controllo Anomalie/Da Armonizzare erano finite in "Studi" insieme ad Articoli & Prezzi, ma andavano invece dentro "Fatture"):
 
 - **Dashboard** (voce singola)
-- **Fatture** (cartella) → **Gestione** (sottocartella: Carica Fatture, Fatture Passive, Fatture Attive, Costi Diretti) + **Analisi** (sottocartella: Articoli & Prezzi, Ricerca, Controllo Anomalie, Da Armonizzare)
+- **Fatture** (cartella, 7 pagine): Carica Fatture, Fatture Passive, Fatture Attive, Costi Diretti, **Ricerca, Controllo Anomalie, Da Armonizzare**
 - **Anagrafiche** (cartella): Fornitori, Clienti
 - **Animali** (cartella): Report Acquisto Animali, Report UBA, Scheda Animale, Report Riproduttori
 - **Costi** (cartella): Report Costi, Cespiti
+- **Studi** (cartella, solo analisi che non toccano le singole fatture): Articoli & Prezzi, Report Quantità Mangimi
 - **Parametri** (voce singola)
 
-Ogni cartella di primo livello ha in cima una voce **"📖 Istruzioni"** — guida operativa dettagliata (passo-passo per ogni pagina della cartella, scritta pensando a un operatore che non conosce già il sistema, non solo per Filippo). Componente generico `PaginaIstruzioni.jsx` + un file di contenuto per cartella (`IstruzioniFatture.jsx`, ecc.).
-
-`MENU` in App.jsx supporta ora 3 livelli (`cartella` → `sottocartella` → `voce`); `cartellaDiPagina()` cerca ricorsivamente e restituisce sia la cartella sia l'eventuale sottocartella da aprire; `vaiA()` sostituisce ogni `setTab()` diretto in tutto il file (incluso l'`onNavigate` della Dashboard e il salto verso Scheda Animale da Report UBA), aprendo automaticamente i livelli giusti.
+Ogni cartella ha una voce "📖 Istruzioni" in cima (componente `PaginaIstruzioni.jsx` + un file di contenuto per cartella). **Struttura piatta ovunque** (nessuna sottocartella, dopo aver provato e poi tolto Gestione/Analisi dentro Fatture in una sessione precedente). `MENU` in App.jsx, `cartellaDiPagina()` cerca la cartella giusta per aprirla automaticamente, `vaiA()` sostituisce ogni `setTab()` diretto.
 
 Menu laterale verticale a sinistra (non più orizzontale in alto) — più comodo con 14 voci. Sezioni con più viste interne (Report Costi, Cespiti) usano pulsanti di navigazione secondaria con sfondi colorati distinti per orientarsi.
 
@@ -259,11 +258,21 @@ con `MOTIVI_PRODUTTIVI_EXP = ["macellazione","macellato","venduto","riformato","
 
 **Costi Diretti** (`ci_costi_diretti`, nuova tabella): per costi che non passano da una fattura fornitore — costo del lavoro (buste paga, per dipendente o come totale aggregato — campo `dipendente` facoltativo: valorizzato per il dettaglio, vuoto per un aggregato) e altri costi simili. Stessa classificazione Area/Centro di Costo/Destinazione/Tipo di Costo di `ci_articoli_fattura`, letta dinamicamente da `ci_piano_dei_conti`. **IMPORTANTE — limite noto**: questi costi sono oggi registrati e consultabili nella loro pagina, ma **non sono ancora inclusi nei calcoli di Report Costi** (calcoloReportCosti.js legge solo `ci_articoli_fattura`) — l'integrazione nei report resta da fare come passo successivo.
 
-**Controllo Anomalie** (nuova pagina): trova fatture con totale a zero o senza righe articolo associate (sintomo di un caricamento interrotto — es. il caso reale trovato con Filippo: fattura PROGEO SCA V2-250008516 del 2025-02-18, un "guscio vuoto" che bloccava il ricaricamento tramite il controllo duplicati). Permette di eliminare il guscio vuoto direttamente dall'app (solo se non ha righe articolo — altrimenti richiede controllo manuale, per non perdere dati).
+**Controllo Anomalie** (nuova pagina): trova fatture con totale a zero o senza righe articolo associate (sintomo di un caricamento interrotto — es. il caso reale trovato con Filippo: fattura PROGEO SCA V2-250008516 del 2025-02-18, un "guscio vuoto" che bloccava il ricaricamento tramite il controllo duplicati). Permette di eliminare il guscio vuoto direttamente dall'app (solo se non ha righe articolo — altrimenti richiede controllo manuale, per non perdere dati). **Terzo controllo aggiunto**: fatture con righe salvate ma la cui somma non coincide con l'imponibile dichiarato — il caso più insidioso, perché la fattura ESISTE con dei dati (supera i primi due controlli) ma è rimasta silenziosamente incompleta (una riga MASCHERA mai completata) — Report Costi lavorerebbe solo con la parte salvata, senza saperlo. Testato con un caso mock (somma coincidente → non segnalata; somma discordante → segnalata correttamente).
 
 **Ancora da fare (discusso ma non costruito)**: finestra di dialogo per l'inserimento manuale di una singola fattura (senza passare da import Excel massivo) — utile sia per correggere casi come questo sia per fatture isolate.
 
-## 22. Armonizzazione unità di misura — meccanismo costruito
+## 23. Report Quantità Mangimi (primo report di quantità, Studi)
+
+**Prima sezione**: per fornitore + prodotto + destinazione — costo dell'anno, quantità in tonnellate e kilogrammi (usa le regole di `ci_regole_armonizzazione_unita` per convertire; i prodotti non ancora armonizzati sono esclusi ed elencati a parte).
+
+**Seconda sezione (sotto, stesso foglio)**: per ogni PRODOTTO complessivo (sommato su tutti i fornitori) — €/UBA-giorno e kg/UBA-giorno per Bovini, Suini (**incluse le unità di lotto non individualizzate**) e Ovini. Riusa **identica** `calcolaRigaAggregata` (da `motoreUba.js`, la stessa funzione di Report Costi) — chiamata due volte, una per i costi e una per i kg, dato che è pura aritmetica e funziona per qualunque grandezza. I costi/quantità con destinazione "Generali" si ripartiscono proporzionalmente agli UBA-giorni produttivi di ciascuna specie (stessa regola già stabilita per i costi ordinari) — non restano un blocco unico. Pollame/Cavalli sono esclusi da questa sezione (non pertinenti per bovini/suini/ovini). `caricaDatiGrezziAnno` di `calcoloReportCosti.js` esportata per riuso, invece di ricalcolare l'UBA-giorni da capo.
+
+Testato con un caso con quota Generali da ripartire: nessun euro perso o creato, incidenza per specie calcolata esattamente come atteso.
+
+**Logica estratta in modulo condiviso** `calcoloQuantitaMangimi.js` (`calcolaDatiMangimiAnno(anno)`) — riusata sia dal report ad anno singolo sia dai 3 nuovi Storico.
+
+**Storico Mangimi — Bovini/Suini/Ovini (3 nuove pagine, Studi)**: stesso pattern di `ReportStorico.jsx` (Report Costi) — confronto anno scelto + 3 precedenti + media, ma per prodotto invece che per Area, con 4 colonne per anno (Quantità kg, Costo, €/UBA-gg, kg/UBA-gg) invece di 2. Componente generico `ReportStoricoMangimi.jsx`, parametrico per specie (`specieFiltro`/`titolo`), con funzione di unione `unisciPerProdotto` — prodotti assenti in un anno valgono 0 in quell'anno, senza spostare la media. Testato con un prodotto presente in 3 anni su 4.
 
 **Bug reale trovato da Filippo — RLS non disattivato**: `ci_regole_armonizzazione_unita` dava errore "new row violates row-level security policy" al primo utilizzo — lo script originale probabilmente non era stato eseguito per intero (o l'`alter table ... disable row level security` non è passato). Fix a parte fornito (`fix_rls_armonizzazione.sql`). **Promemoria per il futuro**: quando si crea una tabella nuova, verificare sempre che RLS sia davvero disattivato provando un inserimento reale, non solo fidandosi di aver scritto la riga nello script.
 
