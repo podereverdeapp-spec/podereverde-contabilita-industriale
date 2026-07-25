@@ -1,5 +1,5 @@
 import { useState, Fragment } from "react";
-import { C } from "./style";
+import { C, FONT } from "./style";
 import { calcolaDatiMangimiAnno } from "./calcoloQuantitaMangimi";
 import { formattaEuro, formattaNumero } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
@@ -33,6 +33,7 @@ export default function ReportStoricoMangimi({ specieFiltro, titolo }) {
   const [annoBase, setAnnoBase] = useState(new Date().getFullYear());
   const [calcolando, setCalcolando] = useState(false);
   const [righe, setRighe] = useState(null);
+  const [totaliPerAnno, setTotaliPerAnno] = useState(null);
 
   const anni = [annoBase, annoBase - 1, annoBase - 2, annoBase - 3];
 
@@ -41,7 +42,13 @@ export default function ReportStoricoMangimi({ specieFiltro, titolo }) {
     setRighe(null);
     try {
       const datiPerAnno = await Promise.all(anni.map(a => calcolaDatiMangimiAnno(a).catch(() => ({ perProdotto: [] }))));
-      setRighe(unisciPerProdotto(datiPerAnno, specieFiltro));
+      const righeUnite = unisciPerProdotto(datiPerAnno, specieFiltro);
+      setRighe(righeUnite);
+      setTotaliPerAnno(anni.map((a, i) => ({
+        anno: a,
+        euroUba: round2(righeUnite.reduce((s, r) => s + r.valoriPerAnno[i].euroUba, 0)),
+        kgUba: round2(righeUnite.reduce((s, r) => s + r.valoriPerAnno[i].kgUba, 0)),
+      })));
     } catch (err) {
       alert(`⚠️ Errore nel calcolo storico:\n\n${err.message}`);
     }
@@ -95,6 +102,19 @@ export default function ReportStoricoMangimi({ specieFiltro, titolo }) {
         </div>
         <div style={{ fontSize: 11, color: C.muted, marginTop: 8 }}>Confronta {anni.slice().reverse().join(", ")} — gli anni non ancora caricati mostreranno semplicemente 0.</div>
       </div>
+
+      {totaliPerAnno && (
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 20 }}>
+          <div style={{ flex: 1, minWidth: 300, background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.primary, marginBottom: 4 }}>€/UBA-gg totale — andamento</div>
+            <GraficoAndamento dati={totaliPerAnno} campo="euroUba" />
+          </div>
+          <div style={{ flex: 1, minWidth: 300, background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.primary, marginBottom: 4 }}>kg/UBA-gg totale — andamento</div>
+            <GraficoAndamento dati={totaliPerAnno} campo="kgUba" />
+          </div>
+        </div>
+      )}
 
       {righe && (
         <>
@@ -163,3 +183,51 @@ export default function ReportStoricoMangimi({ specieFiltro, titolo }) {
 
 const th = { padding: "6px 8px", textAlign: "center", fontSize: 10, fontWeight: 700 };
 const td = { padding: "5px 8px", fontSize: 11 };
+
+// Grafico lineare in SVG puro (nessuna libreria esterna) — stesso font e palette dell'app,
+// area sfumata sotto la curva, etichette valore sui punti, linea tratteggiata per la media.
+function GraficoAndamento({ dati, campo }) {
+  const punti = dati.slice().sort((a, b) => a.anno - b.anno); // dal più vecchio al più recente
+  if (punti.length < 2) return <div style={{ padding: 12, color: C.muted, fontSize: 12 }}>Servono almeno 2 anni per tracciare un andamento.</div>;
+
+  const media = round2(punti.reduce((s, p) => s + p[campo], 0) / punti.length);
+  const W = 360, H = 190, PAD_X = 34, PAD_TOP = 44, PAD_BOTTOM = 30;
+  const valori = punti.map(p => p[campo]);
+  const min = Math.min(...valori, media), max = Math.max(...valori, media);
+  const range = (max - min) || Math.max(max, 1) * 0.2 || 1;
+  const margine = range * 0.15; // un po' d'aria sopra e sotto, non attaccato ai bordi
+  const minY = min - margine, maxY = max + margine, rangeY = maxY - minY || 1;
+
+  const x = i => PAD_X + (i / (punti.length - 1)) * (W - 2 * PAD_X);
+  const y = v => H - PAD_BOTTOM - ((v - minY) / rangeY) * (H - PAD_TOP - PAD_BOTTOM);
+
+  const linea = punti.map((p, i) => `${i === 0 ? "M" : "L"} ${x(i).toFixed(1)} ${y(p[campo]).toFixed(1)}`).join(" ");
+  const area = `${linea} L ${x(punti.length - 1).toFixed(1)} ${(H - PAD_BOTTOM)} L ${x(0).toFixed(1)} ${(H - PAD_BOTTOM)} Z`;
+  const yMedia = y(media);
+  const idGradiente = `areaGrad-${campo}`;
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", maxWidth: W, height: "auto", fontFamily: FONT }}>
+      <defs>
+        <linearGradient id={idGradiente} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={C.primary} stopOpacity="0.22" />
+          <stop offset="100%" stopColor={C.primary} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+
+      <line x1={PAD_X} y1={yMedia} x2={W - PAD_X} y2={yMedia} stroke={C.accent} strokeDasharray="3 4" strokeWidth="1.2" />
+      <text x={PAD_X} y={16} fontSize="10.5" fontWeight="600" fill={C.accent}>┅ media {formattaNumero(media, 3)}</text>
+
+      <path d={area} fill={`url(#${idGradiente})`} stroke="none" />
+      <path d={linea} fill="none" stroke={C.primary} strokeWidth="2.25" strokeLinejoin="round" strokeLinecap="round" />
+
+      {punti.map((p, i) => (
+        <Fragment key={i}>
+          <text x={x(i)} y={y(p[campo]) - 11} fontSize="10.5" fontWeight="700" fill={C.text} textAnchor="middle">{formattaNumero(p[campo], 3)}</text>
+          <circle cx={x(i)} cy={y(p[campo])} r="3.5" fill="#fff" stroke={C.primary} strokeWidth="2" />
+          <text x={x(i)} y={H - PAD_BOTTOM + 18} fontSize="10.5" fill={C.muted} textAnchor="middle">{p.anno}</text>
+        </Fragment>
+      ))}
+    </svg>
+  );
+}
