@@ -3,6 +3,7 @@ import { C } from "./style";
 import { calcolaDatiPerArea, calcolaDatiPerAreaCentro } from "./calcoloReportCosti";
 import { formattaEuro } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
+import GraficoAndamento from "./GraficoAndamento";
 
 const round2 = n => Math.round((n + Number.EPSILON) * 100) / 100;
 
@@ -66,7 +67,18 @@ export default function ReportStorico({ specieFiltro, titolo }) {
       const righeCentro = unisciPerChiave(datiPerAreaCentro, chiaviCentro, valoriCentro)
         .map(r => { const [area, etichetta] = r.chiave.split("||"); return { ...r, area, etichetta }; });
 
-      setRisultato({ righeArea, rigaRossa, righeCentro });
+      // Totali aggregati per anno (somma di tutte le Aree — zona rossa esclusa, resta
+      // sempre a parte) — per i due grafici in cima alla pagina. Valido sommare
+      // direttamente anche il tasso/incidenza: lo stesso UBA-giorni è il divisore per
+      // ogni Area nello stesso anno, quindi la somma dei rapporti è il rapporto delle somme.
+      const totaliPerAnno = anni.map((anno, i) => {
+        const d = datiPerArea[i];
+        const valoreAssoluto = round2(d.righe.reduce((s, r) => s + (specieFiltro ? r.perSpecie[specieFiltro].costoAllocato : r.imponibileComplessivo), 0));
+        const tasso = round2(d.righe.reduce((s, r) => s + (specieFiltro ? r.perSpecie[specieFiltro].incidenza : r.tassoArea), 0));
+        return { anno, valoreAssoluto, tasso };
+      });
+
+      setRisultato({ righeArea, rigaRossa, righeCentro, totaliPerAnno });
     } catch (err) {
       alert(`⚠️ Errore nel calcolo storico:\n\n${err.message}`);
     }
@@ -121,6 +133,17 @@ export default function ReportStorico({ specieFiltro, titolo }) {
 
       {risultato && (
         <>
+          <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 20 }}>
+            <div style={{ flex: 1, minWidth: 300, background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.primary, marginBottom: 4 }}>{labelCampo1} totale — andamento</div>
+              <GraficoAndamento punti={risultato.totaliPerAnno.map(t => ({ anno: t.anno, valore: t.valoreAssoluto }))} decimaliValore={2} />
+            </div>
+            <div style={{ flex: 1, minWidth: 300, background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.primary, marginBottom: 4 }}>€/UBA-gg totale — andamento</div>
+              <GraficoAndamento punti={risultato.totaliPerAnno.map(t => ({ anno: t.anno, valore: t.tasso }))} decimaliValore={4} />
+            </div>
+          </div>
+
           <button onClick={esporta}
             style={{ background: C.green, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", marginBottom: 16 }}>
             📥 Esporta Excel
