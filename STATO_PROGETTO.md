@@ -250,7 +250,23 @@ con `MOTIVI_PRODUTTIVI_EXP = ["macellazione","macellato","venduto","riformato","
 
 **Ancora da fare (discusso ma non costruito)**: finestra di dialogo per l'inserimento manuale di una singola fattura (senza passare da import Excel massivo) — utile sia per correggere casi come questo sia per fatture isolate.
 
-## 22. Armonizzazione unità di misura (in corso, ragionamento fornitore per fornitore)
+## 22. Armonizzazione unità di misura — meccanismo costruito
+
+**Nota di processo (errore reale commesso, da non ripetere)**: quando si genera un file (SQL, Excel, qualunque cosa), va SEMPRE consegnato subito con `present_files` — non basta scriverne il percorso nel testo della risposta, altrimenti Filippo non riceve il link per scaricarlo. Successo con `schema_costi_diretti.sql`: generato ma non consegnato nello stesso turno, notato solo perché Filippo l'ha richiesto esplicitamente.
+
+**Schema**: `ci_regole_armonizzazione_unita` (fornitore_id + descrizione_prodotto esatta → unità confermata + fattore di conversione in kg), stesso spirito delle regole FCV/FCF esistenti — si impara una volta, si applica da sola alle fatture future dello stesso fornitore+prodotto.
+
+**5 centri di costo con quantità tracciate** (costante `CENTRI_CON_QUANTITA`, condivisa tra `CaricaFatture.jsx` e `DaArmonizzare.jsx`): Foraggio, Mangimi, Coltivazione Sementi, Coltivazione Concimi e Fitosanitari, Gasolio e lubrificanti.
+
+**Doppio livello di segnalazione, con testo esplicito per un operatore che non conosce il contesto** (richiesto esplicitamente da Filippo — "considera che posso non caricare io"):
+1. **Al momento del caricamento** (`CaricaFatture.jsx`): se la riga è in uno dei 5 centri di costo e non esiste ancora una regola per quel fornitore+prodotto, appare un avviso giallo con istruzioni dirette ("salva comunque la riga, poi vai in *Da Armonizzare*...")
+2. **Pagina dedicata "Da Armonizzare"**: elenco permanente di tutte le combinazioni ancora prive di regola, con **suggerimento di similarità testuale** (Jaccard su parole, soglia 0.4) se lo stesso fornitore ha già un prodotto scritto in modo simile — mostrato come proposta da confermare, mai applicato automaticamente. Testato con casi reali (stesso prodotto scritto diverso → punteggio alto; prodotti diversi dello stesso fornitore → punteggio basso, correttamente non suggerito).
+
+**Stesso principio applicato anche a MASCHERA** (classificazione automatica non trovata): il badge ora dice esplicitamente "Nessuna regola automatica trovata... scegli qui sotto..." invece della sola parola "MASCHERA".
+
+**Caso reale scoperto insieme a Filippo**: PROGEO SCA è in **Tons** (non Kilogrammi come inizialmente creduto) — confermato controllando la fattura PDF reale (V2-250008516, Boviformer, 2,75 TN). La stessa fattura ha anche rivelato una discrepanza di data tra il PDF (19/02/2025) e quanto risultava nel database (18/02/2025, un "guscio vuoto" poi individuabile/eliminabile da Controllo Anomalie).
+
+**Ancora da fare**: il report di quantità vero e proprio (che userà queste regole per convertire e sommare le quantità) — questo è stato il lavoro preparatorio, il report in sé non è stato ancora costruito.
 
 Le unità di misura sono oggi testo libero, senza vincoli — stesso prodotto/fornitore può avere unità diverse tra una fattura e l'altra (es. "Kilogrammi" e "Unità" per lo stesso articolo Cooperativa Ceri). Deciso con Filippo di procedere **fornitore per fornitore, prodotto per prodotto** (non una regola generale subito), partendo da Mangimi. Generato un file Excel di revisione (`Revisione_Unita_Mangimi.xlsx`) con evidenziazione dei casi da controllare (unità mancante, unità incoerente sullo stesso prodotto, righe che non sembrano prodotti mangime). Il prompt di lettura PDF fatture (`api/leggi-fattura-pdf.js`) oggi accetta solo 8 unità fisse (Unità/Tons/Quintali/Kilogrammi/Litri/Balloni/Rotoballe/Rotoli), senza nessuna conversione — da rivedere una volta chiarite le regole di armonizzazione per fornitore.
 

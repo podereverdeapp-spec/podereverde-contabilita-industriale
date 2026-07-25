@@ -15,6 +15,7 @@ import ReportRiproduttori from "./ReportRiproduttori";
 import ArticoliPrezzi from "./ArticoliPrezzi";
 import CostiDiretti from "./CostiDiretti";
 import ControlloAnomalie from "./ControlloAnomalie";
+import DaArmonizzare from "./DaArmonizzare";
 import Ricerca from "./Ricerca";
 import Parametri from "./Parametri";
 import ReportAcquistoAnimali from "./ReportAcquistoAnimali";
@@ -36,6 +37,7 @@ const TAB = [
   { id: "articoliprezzi", label: "Articoli & Prezzi", icon: "🏷️" },
   { id: "costidiretti", label: "Costi Diretti", icon: "💼" },
   { id: "anomalie", label: "Controllo Anomalie", icon: "🔍" },
+  { id: "armonizza", label: "Da Armonizzare", icon: "⚖️" },
   { id: "ricerca", label: "Ricerca", icon: "🔎" },
   { id: "parametri", label: "Parametri", icon: "⚙️" },
 ];
@@ -110,6 +112,7 @@ export default function App() {
         {tab === "articoliprezzi" && <ArticoliPrezzi />}
         {tab === "costidiretti" && <CostiDiretti />}
         {tab === "anomalie" && <ControlloAnomalie />}
+        {tab === "armonizza" && <DaArmonizzare />}
         {tab === "ricerca" && <Ricerca />}
         {tab === "parametri" && <Parametri />}
       </main>

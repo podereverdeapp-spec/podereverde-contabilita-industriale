@@ -31,6 +31,7 @@ export default function CaricaFatture() {
   const [regoleFisse, setRegoleFisse] = useState([]);
   const [regoleVariabili, setRegoleVariabili] = useState([]);
   const [pianoConti, setPianoConti] = useState([]);
+  const [regoleArmonizzazione, setRegoleArmonizzazione] = useState([]);
   const [righe, setRighe] = useState([]); // righe caricate + classificate
   const [loadingDati, setLoadingDati] = useState(true);
   const [modalita, setModalita] = useState("excel"); // "excel" | "pdf"
@@ -56,12 +57,13 @@ export default function CaricaFatture() {
 
   async function caricaDatiRiferimento() {
     setLoadingDati(true);
-    const [{ data: f, error: eF }, { data: rf, error: eRF }, { data: rv, error: eRV }, { data: pc, error: ePC }] =
+    const [{ data: f, error: eF }, { data: rf, error: eRF }, { data: rv, error: eRV }, { data: pc, error: ePC }, { data: ra, error: eRA }] =
       await Promise.all([
         supabase.from("ci_fornitori").select("*"),
         supabase.from("ci_regole_fornitore_fissa").select("*"),
         supabase.from("ci_regole_fornitore_variabile").select("*"),
         supabase.from("ci_piano_dei_conti").select("*").order("area").order("centro_costo"),
+        supabase.from("ci_regole_armonizzazione_unita").select("fornitore_id, descrizione_prodotto"),
       ]);
     const errore = eF || eRF || eRV || ePC;
     if (errore) {
@@ -71,7 +73,9 @@ export default function CaricaFatture() {
       setRegoleFisse(rf || []);
       setRegoleVariabili(rv || []);
       setPianoConti(pc || []);
+      setRegoleArmonizzazione(ra || []);
     }
+    if (eRA) console.error("Regole armonizzazione non caricate:", eRA.message);
     setLoadingDati(false);
 
     const { data: bozza } = await supabase
@@ -568,6 +572,7 @@ export default function CaricaFatture() {
               <RigaFattura
                 key={r.id} riga={r}
                 aree={areeDisponibili()} centriPerArea={centriPerArea}
+                regoleArmonizzazione={regoleArmonizzazione}
                 onChange={campi => aggiornaRiga(r.id, campi)}
                 onSalva={() => salvaRiga(r)}
                 onScarta={() => scartaRiga(r)}
@@ -604,13 +609,18 @@ function StatBox({ label, value, color }) {
   );
 }
 
-function RigaFattura({ riga, aree, centriPerArea, onChange, onSalva, onAnnulla, onScarta }) {
+function RigaFattura({ riga, aree, centriPerArea, regoleArmonizzazione, onChange, onSalva, onAnnulla, onScarta }) {
   const r = riga;
   const bordoColore = r.giaCaricata ? C.accent : r.scartata ? C.muted : r.salvata ? C.green : r.nonQuadra ? "#B8860B" : r.stato === "MASCHERA" ? C.red : r.stato === "FCF" ? C.blue : C.green;
   const isTrasportoAnimali = r.editArea === "TRASPORTO ANIMALI";
   const isAcquistoAnimali = r.editArea === "ACQUISTO ANIMALI";
   const isAmmortamento = r.editArea === "Ammortamenti";
   const eraMaschera = r.stato === "MASCHERA"; // solo per queste ha senso proporre di creare una regola
+
+  const CENTRI_CON_QUANTITA = ["Foraggio", "Mangimi", "Coltivazione Sementi", "Coltivazione Concimi e Fitosanitari", "Gasolio e lubrificanti"];
+  const centroCostoAttuale = r.editCentro || null;
+  const daArmonizzare = centroCostoAttuale && CENTRI_CON_QUANTITA.includes(centroCostoAttuale) && r.fornitore_obj?.id &&
+    !(regoleArmonizzazione || []).some(g => g.fornitore_id === r.fornitore_obj.id && g.descrizione_prodotto.trim().toLowerCase() === r.descrizione.trim().toLowerCase());
 
   return (
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderLeft: `4px solid ${bordoColore}`, borderRadius: 10, padding: 14, opacity: (r.giaCaricata || r.scartata) ? 0.55 : 1 }}>
@@ -626,9 +636,21 @@ function RigaFattura({ riga, aree, centriPerArea, onChange, onSalva, onAnnulla, 
           </div>
         </div>
         <span style={{ background: bordoColore + "22", color: bordoColore, padding: "3px 10px", borderRadius: 8, fontSize: 12, fontWeight: 700, height: "fit-content" }}>
-          {r.giaCaricata ? "GIÀ CARICATA" : r.scartata ? "🗑️ SCARTATA" : r.salvata ? "✓ SALVATA" : r.nonQuadra ? "⚠️ NON QUADRA" : r.stato}
+          {r.giaCaricata ? "GIÀ CARICATA" : r.scartata ? "🗑️ SCARTATA" : r.salvata ? "✓ SALVATA" : r.nonQuadra ? "⚠️ NON QUADRA" : r.stato === "MASCHERA" ? "⚖️ Da classificare a mano" : r.stato}
         </span>
       </div>
+
+      {r.stato === "MASCHERA" && !r.salvata && !r.scartata && !r.giaCaricata && (
+        <div style={{ fontSize: 12, color: C.red, marginTop: 4, marginBottom: 4 }}>
+          Nessuna regola automatica trovata per questo fornitore/prodotto — scegli qui sotto Area, Centro di Costo, Destinazione e Tipo di Costo, poi salva la riga.
+        </div>
+      )}
+
+      {daArmonizzare && !r.salvata && !r.scartata && !r.giaCaricata && (
+        <div style={{ fontSize: 12, color: "#8B6F00", background: "#FFF7E6", borderRadius: 6, padding: "6px 10px", marginTop: 4, marginBottom: 4 }}>
+          ⚖️ Prodotto senza unità di misura confermata per i report di quantità — salva comunque la riga, poi vai in "Da Armonizzare" nel menu per definirla (una volta sola, vale per tutte le fatture future di questo fornitore/prodotto).
+        </div>
+      )}
 
       {r.scartata && (
         <div style={{ fontSize: 12, color: C.muted, fontStyle: "italic" }}>
