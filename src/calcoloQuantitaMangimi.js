@@ -6,9 +6,11 @@ import { calcolaRigaAggregata } from "./motoreUba";
 export const CENTRO_COSTO_MANGIMI = "Mangimi";
 const MAPPA_DESTINAZIONE_SPECIE = { "Bovini": "bovino", "Suini": "suino", "Ovini": "ovino", "Generali": "generale", "Bovini e Ovini": "bovinoOvino" };
 
-// Calcola tutti i dati del Report Quantità Mangimi per un singolo anno — usato sia dalla
-// vista ad anno singolo sia, chiamata 4 volte, dalla vista Storico.
-export async function calcolaDatiMangimiAnno(anno) {
+// Calcola tutti i dati del Report Quantità per un CENTRO DI COSTO e un anno — usato
+// sia dalla vista ad anno singolo sia, chiamata 4 volte, dalla vista Storico. Generico:
+// funziona per qualunque centro di costo con quantità tracciate (Mangimi, Foraggio, ecc.),
+// non solo Mangimi — le funzioni sotto sono wrapper per compatibilità con il codice esistente.
+export async function calcolaDatiQuantitaAnno(anno, centroCosto) {
   const inizioAnno = `${anno}-01-01`, fineAnno = `${anno}-12-31`;
   const { data: fatture, error: eF } = await fetchAllPages((da, a) => supabase
     .from("ci_fatture").select("id, fornitore_id").eq("tipo", "PASSIVA").gte("data", inizioAnno).lte("data", fineAnno).range(da, a));
@@ -20,7 +22,7 @@ export async function calcolaDatiMangimiAnno(anno) {
   if (idFatture.length > 0) {
     const { data, error } = await fetchAllPages((da, a) => supabase
       .from("ci_articoli_fattura").select("fattura_id, descrizione, quantita, totale_riga, destinazione, centro_costo")
-      .in("fattura_id", idFatture).eq("centro_costo", CENTRO_COSTO_MANGIMI).range(da, a));
+      .in("fattura_id", idFatture).eq("centro_costo", centroCosto).range(da, a));
     if (error) throw new Error(error.message);
     righeArticolo = data || [];
   }
@@ -28,7 +30,7 @@ export async function calcolaDatiMangimiAnno(anno) {
   const { data: fornitori } = await supabase.from("ci_fornitori").select("id, nome");
   const mappaFornitori = new Map((fornitori || []).map(f => [f.id, f.nome]));
 
-  const { data: regole } = await supabase.from("ci_regole_armonizzazione_unita").select("*").eq("centro_costo", CENTRO_COSTO_MANGIMI);
+  const { data: regole } = await supabase.from("ci_regole_armonizzazione_unita").select("*").eq("centro_costo", centroCosto);
   const mappaRegole = new Map((regole || []).map(r => [`${r.fornitore_id}|${r.descrizione_prodotto.trim().toLowerCase()}`, r]));
 
   const gruppi = new Map();
@@ -64,7 +66,8 @@ export async function calcolaDatiMangimiAnno(anno) {
   righe.sort((a, b) => a.fornitore.localeCompare(b.fornitore) || a.descrizione.localeCompare(b.descrizione));
 
   // Per prodotto (sommato su tutti i fornitori): €/UBA-gg e kg/UBA-gg per specie,
-  // con ripartizione dei Generali — stessa funzione condivisa di Report Costi.
+  // con ripartizione dei Generali e di Bovini e Ovini — stessa funzione condivisa di
+  // Report Costi, che gestisce già entrambi i pool correttamente.
   const { ubaGiorniProduttiviAziendali, ubaGiorniProduttiviPerSpecie } = await caricaDatiGrezziAnno(anno);
 
   const prodotti = new Map();
@@ -99,4 +102,15 @@ export async function calcolaDatiMangimiAnno(anno) {
   perProdotto.sort((a, b) => a.descrizione.localeCompare(b.descrizione));
 
   return { righe, perProdotto, nonArmonizzate: [...senzaRegola.values()] };
+}
+
+// Wrapper per compatibilità con il codice Mangimi esistente (ReportQuantitaMangimi.jsx,
+// ReportStoricoMangimi.jsx, calcoloPerformanceEta.js) — nessuna modifica richiesta lì.
+export async function calcolaDatiMangimiAnno(anno) {
+  return calcolaDatiQuantitaAnno(anno, CENTRO_COSTO_MANGIMI);
+}
+
+export const CENTRO_COSTO_FORAGGIO = "Foraggio";
+export async function calcolaDatiForaggioAnno(anno) {
+  return calcolaDatiQuantitaAnno(anno, CENTRO_COSTO_FORAGGIO);
 }

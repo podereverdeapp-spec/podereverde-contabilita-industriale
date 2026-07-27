@@ -22,6 +22,8 @@ import PerformanceEtaMaschi from "./PerformanceEtaMaschi";
 import PerformanceEtaFemmine from "./PerformanceEtaFemmine";
 import StoricoPerformanceEta from "./StoricoPerformanceEta";
 import ReportStoricoMangimi from "./ReportStoricoMangimi";
+import ReportQuantitaForaggio from "./ReportQuantitaForaggio";
+import ReportStoricoForaggio from "./ReportStoricoForaggio";
 import IstruzioniFatture from "./IstruzioniFatture";
 import IstruzioniAnagrafiche from "./IstruzioniAnagrafiche";
 import IstruzioniAnimali from "./IstruzioniAnimali";
@@ -73,6 +75,12 @@ const MENU = [
       { id: "storico-mangimi-bovini", label: "Storico Mangimi — Bovini", icon: "📈" },
       { id: "storico-mangimi-suini", label: "Storico Mangimi — Suini", icon: "📈" },
       { id: "storico-mangimi-ovini", label: "Storico Mangimi — Ovini", icon: "📈" },
+    ]},
+    { tipo: "sottocartella", id: "sub-foraggio", label: "Foraggio", icon: "🌱", voci: [
+      { id: "quantitaforaggio", label: "Report Quantità Foraggio", icon: "🌱" },
+      { id: "storico-foraggio-bovini", label: "Storico Foraggio — Bovini", icon: "📈" },
+      { id: "storico-foraggio-suini", label: "Storico Foraggio — Suini", icon: "📈" },
+      { id: "storico-foraggio-ovini", label: "Storico Foraggio — Ovini", icon: "📈" },
     ]},
   ]},
   { tipo: "voce", id: "parametri", label: "Parametri", icon: "⚙️" },
@@ -240,6 +248,10 @@ export default function App() {
         {tab === "storico-mangimi-bovini" && <ReportStoricoMangimi specieFiltro="bovino" titolo="Bovini" />}
         {tab === "storico-mangimi-suini" && <ReportStoricoMangimi specieFiltro="suino" titolo="Suini" />}
         {tab === "storico-mangimi-ovini" && <ReportStoricoMangimi specieFiltro="ovino" titolo="Ovini" />}
+        {tab === "quantitaforaggio" && <ReportQuantitaForaggio />}
+        {tab === "storico-foraggio-bovini" && <ReportStoricoForaggio specieFiltro="bovino" titolo="Bovini" />}
+        {tab === "storico-foraggio-suini" && <ReportStoricoForaggio specieFiltro="suino" titolo="Suini" />}
+        {tab === "storico-foraggio-ovini" && <ReportStoricoForaggio specieFiltro="ovino" titolo="Ovini" />}
         {tab === "istr-fatture" && <IstruzioniFatture />}
         {tab === "istr-anagrafiche" && <IstruzioniAnagrafiche />}
         {tab === "istr-animali" && <IstruzioniAnimali />}

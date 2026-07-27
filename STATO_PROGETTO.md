@@ -406,3 +406,11 @@ Durante il controllo del Foraggio, emerse due anomalie reali nei dati caricati, 
 
 - **Azienda Agricola Mario Mariotti**: unico fornitore Foraggio 2025-2026 — destinazione corretta da "Bovini" a "Bovini e Ovini" (il foraggio serve entrambe le specie, non solo i bovini). Riscontrato che un primo update proposto non era stato eseguito (la verifica successiva mostrava ancora "Bovini") — poi rieseguito su tutti gli anni insieme.
 - **Canteri** (fornitore di ferramenta): finito per errore sotto Foraggio — spostato con tutte le sue fatture/righe ad Area Allevamento, Centro di Costo "Ferramenta e materiali di consumo", Tipo di Costo Variabile. Verificato che non fosse un fornitore FCF con una regola fissa sbagliata (era FRO, quindi errore umano puntuale in fase di classificazione, non un problema di sistema che si sarebbe ripetuto da solo).
+
+## 28. Report Quantità Foraggio + Storico (nuove pagine, Studi → sottocartella Foraggio)
+
+**Generalizzato il modulo di calcolo**: `calcoloQuantitaMangimi.js` ora espone `calcolaDatiQuantitaAnno(anno, centroCosto)`, generico per qualunque centro di costo con quantità tracciate — `calcolaDatiMangimiAnno(anno)` e `calcolaDatiForaggioAnno(anno)` sono wrapper sottili sopra la stessa funzione, nessuna duplicazione di logica. Gestisce già correttamente "Bovini e Ovini" (grazie al lavoro fatto per quella destinazione), senza bisogno di modifiche aggiuntive.
+
+**4 nuove pagine** (stessa sottocartella Studi, nuova voce "Foraggio" accanto a "Mangimi"): Report Quantità Foraggio, Storico Foraggio — Bovini/Suini/Ovini — generate dal template Mangimi (stessa UI, stesso pattern), `ReportStoricoForaggio.jsx` riusa lo stesso componente generico parametrico per specie di Mangimi.
+
+Testato con il caso reale (Foraggio Mariotti, 13.526,50€ tutto "Bovini e Ovini"): suino riceve esattamente 0, bovino e ovino si dividono l'intero importo in proporzione ai loro UBA-giorni.
