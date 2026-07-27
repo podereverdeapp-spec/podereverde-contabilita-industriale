@@ -52,8 +52,8 @@ export default function PerformanceEta({ onNavigate }) {
             "Giorni fascia": s.giorniFascia,
             "Costo fascia (€)": s.costoComplessivoFascia != null ? numeroExcel(s.costoComplessivoFascia) : null,
             "Consumo fascia (kg)": s.consumoComplessivoFascia != null ? numeroExcel(s.consumoComplessivoFascia) : null,
-            "Costo per kg incremento peso": s.costoMangimeKg != null ? numeroExcel(s.costoMangimeKg) : null,
-            "Kg alimenti per kg incremento peso": s.fcrMangime != null ? numeroExcel(s.fcrMangime) : null,
+            "Costo per kg peso vivo (media)": s.costoPerKgPesoVivo != null ? numeroExcel(s.costoPerKgPesoVivo) : null,
+            "Kg alimenti per kg peso vivo (media)": s.kgAlimentiPerKgPesoVivo != null ? numeroExcel(s.kgAlimentiPerKgPesoVivo) : null,
             "N. animali": s.nAnimali,
             "Dati sufficienti": s.datiSufficienti ? "Sì" : "No",
           });
@@ -166,8 +166,8 @@ function TabellaStep({ titolo, step }) {
             <th style={{ padding: "6px 8px", textAlign: "right" }}>Giorni fascia</th>
             <th style={{ padding: "6px 8px", textAlign: "right" }}>Costo fascia (€)</th>
             <th style={{ padding: "6px 8px", textAlign: "right" }}>Consumo fascia (kg)</th>
-            <th style={{ padding: "6px 8px", textAlign: "right" }}>Costo per kg incremento peso</th>
-            <th style={{ padding: "6px 8px", textAlign: "right" }}>Kg alimenti per kg incremento peso</th>
+            <th style={{ padding: "6px 8px", textAlign: "right" }} title="Costo diviso per il peso MEDIO tra ingresso e uscita della fascia — non il peso esatto in ogni istante">Costo/kg peso vivo (media)</th>
+            <th style={{ padding: "6px 8px", textAlign: "right" }} title="Consumo diviso per il peso MEDIO tra ingresso e uscita della fascia — non il peso esatto in ogni istante">Kg alim./kg peso vivo (media)</th>
             <th style={{ padding: "6px 8px", textAlign: "right" }}>N. animali</th>
           </tr>
         </thead>
@@ -189,8 +189,8 @@ function TabellaStep({ titolo, step }) {
                   <td style={{ padding: "6px 8px", textAlign: "right", color: C.muted }}>{s.giorniFascia ?? "—"}</td>
                   <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700 }}>{s.costoComplessivoFascia != null ? formattaEuro(s.costoComplessivoFascia, 2) : "—"}</td>
                   <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700 }}>{s.consumoComplessivoFascia != null ? formattaNumero(s.consumoComplessivoFascia, 1) : "—"}</td>
-                  <td style={{ padding: "6px 8px", textAlign: "right" }}>{s.costoMangimeKg != null ? formattaEuro(s.costoMangimeKg, 2) : "—"}</td>
-                  <td style={{ padding: "6px 8px", textAlign: "right" }}>{s.fcrMangime != null ? formattaNumero(s.fcrMangime, 2) : "—"}</td>
+                  <td style={{ padding: "6px 8px", textAlign: "right" }}>{s.costoPerKgPesoVivo != null ? formattaEuro(s.costoPerKgPesoVivo, 2) : "—"}</td>
+                  <td style={{ padding: "6px 8px", textAlign: "right" }}>{s.kgAlimentiPerKgPesoVivo != null ? formattaNumero(s.kgAlimentiPerKgPesoVivo, 2) : "—"}</td>
                   <td style={{ padding: "6px 8px", textAlign: "right" }}>{s.nAnimali}</td>
                 </>
               ) : (
@@ -223,8 +223,8 @@ export function TabellaStepCurva({ titolo, step }) {
             <th style={{ padding: "6px 8px", textAlign: "right" }}>Giorni fascia</th>
             <th style={{ padding: "6px 8px", textAlign: "right", background: COLORE_COPPIA_2 }}>Costo fascia (€)</th>
             <th style={{ padding: "6px 8px", textAlign: "right", background: COLORE_COPPIA_2 }}>Consumo fascia (kg)</th>
-            <th style={{ padding: "6px 8px", textAlign: "right", background: COLORE_COPPIA_3 }}>Costo per kg incremento peso</th>
-            <th style={{ padding: "6px 8px", textAlign: "right", background: COLORE_COPPIA_3 }}>Kg alimenti per kg incremento peso</th>
+            <th style={{ padding: "6px 8px", textAlign: "right", background: COLORE_COPPIA_3 }} title="Costo diviso per il peso MEDIO tra ingresso e uscita della fascia — non il peso esatto in ogni istante">Costo/kg peso vivo (media)</th>
+            <th style={{ padding: "6px 8px", textAlign: "right", background: COLORE_COPPIA_3 }} title="Consumo diviso per il peso MEDIO tra ingresso e uscita della fascia — non il peso esatto in ogni istante">Kg alim./kg peso vivo (media)</th>
             <th style={{ padding: "6px 8px", textAlign: "right" }}>% Maschi</th>
           </tr>
         </thead>
@@ -241,8 +241,8 @@ export function TabellaStepCurva({ titolo, step }) {
               <td style={{ padding: "6px 8px", textAlign: "right", color: C.muted }}>{s.giorniFascia ?? "—"}</td>
               <td style={{ padding: "6px 8px", textAlign: "right", background: COLORE_COPPIA_2, fontWeight: 700 }}>{s.costoComplessivoFascia != null ? formattaEuro(s.costoComplessivoFascia, 2) : "—"}</td>
               <td style={{ padding: "6px 8px", textAlign: "right", background: COLORE_COPPIA_2, fontWeight: 700 }}>{s.consumoComplessivoFascia != null ? formattaNumero(s.consumoComplessivoFascia, 1) : "—"}</td>
-              <td style={{ padding: "6px 8px", textAlign: "right", background: COLORE_COPPIA_3 }}>{s.costoMangimeKg != null ? formattaEuro(s.costoMangimeKg, 2) : "—"}</td>
-              <td style={{ padding: "6px 8px", textAlign: "right", background: COLORE_COPPIA_3 }}>{s.fcrMangime != null ? formattaNumero(s.fcrMangime, 2) : "—"}</td>
+              <td style={{ padding: "6px 8px", textAlign: "right", background: COLORE_COPPIA_3 }}>{s.costoPerKgPesoVivo != null ? formattaEuro(s.costoPerKgPesoVivo, 2) : "—"}</td>
+              <td style={{ padding: "6px 8px", textAlign: "right", background: COLORE_COPPIA_3 }}>{s.kgAlimentiPerKgPesoVivo != null ? formattaNumero(s.kgAlimentiPerKgPesoVivo, 2) : "—"}</td>
               <td style={{ padding: "6px 8px", textAlign: "right", color: C.muted }} title={`${s.nM} maschi, ${s.nF} femmine con questo dato in questa fascia`}>{formattaNumero(s.percM, 0)}%</td>
             </tr>
           ))}
@@ -273,8 +273,8 @@ export function TabellaStepSemplice({ titolo, step }) {
             <th style={{ padding: "5px 8px", textAlign: "right" }}>Giorni fascia</th>
             <th style={{ padding: "5px 8px", textAlign: "right", background: COLORE_COPPIA_2 }}>Costo fascia (€)</th>
             <th style={{ padding: "5px 8px", textAlign: "right", background: COLORE_COPPIA_2 }}>Consumo fascia (kg)</th>
-            <th style={{ padding: "5px 8px", textAlign: "right", background: COLORE_COPPIA_3 }}>Costo per kg incremento peso</th>
-            <th style={{ padding: "5px 8px", textAlign: "right", background: COLORE_COPPIA_3 }}>Kg alimenti per kg incremento peso</th>
+            <th style={{ padding: "5px 8px", textAlign: "right", background: COLORE_COPPIA_3 }} title="Costo diviso per il peso MEDIO tra ingresso e uscita della fascia">Costo/kg peso vivo (media)</th>
+            <th style={{ padding: "5px 8px", textAlign: "right", background: COLORE_COPPIA_3 }} title="Consumo diviso per il peso MEDIO tra ingresso e uscita della fascia">Kg alim./kg peso vivo (media)</th>
           </tr>
         </thead>
         <tbody>
@@ -290,8 +290,8 @@ export function TabellaStepSemplice({ titolo, step }) {
               <td style={{ padding: "5px 8px", textAlign: "right", color: C.muted }}>{s.giorniFascia ?? "—"}</td>
               <td style={{ padding: "5px 8px", textAlign: "right", background: COLORE_COPPIA_2, fontWeight: 700 }}>{s.costoComplessivoFascia != null ? formattaEuro(s.costoComplessivoFascia, 2) : "—"}</td>
               <td style={{ padding: "5px 8px", textAlign: "right", background: COLORE_COPPIA_2, fontWeight: 700 }}>{s.consumoComplessivoFascia != null ? formattaNumero(s.consumoComplessivoFascia, 1) : "—"}</td>
-              <td style={{ padding: "5px 8px", textAlign: "right", background: COLORE_COPPIA_3 }}>{s.costoMangimeKg != null ? formattaEuro(s.costoMangimeKg, 2) : "—"}</td>
-              <td style={{ padding: "5px 8px", textAlign: "right", background: COLORE_COPPIA_3 }}>{s.fcrMangime != null ? formattaNumero(s.fcrMangime, 2) : "—"}</td>
+              <td style={{ padding: "5px 8px", textAlign: "right", background: COLORE_COPPIA_3 }}>{s.costoPerKgPesoVivo != null ? formattaEuro(s.costoPerKgPesoVivo, 2) : "—"}</td>
+              <td style={{ padding: "5px 8px", textAlign: "right", background: COLORE_COPPIA_3 }}>{s.kgAlimentiPerKgPesoVivo != null ? formattaNumero(s.kgAlimentiPerKgPesoVivo, 2) : "—"}</td>
             </tr>
           ))}
         </tbody>

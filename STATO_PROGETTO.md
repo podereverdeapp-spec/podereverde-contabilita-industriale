@@ -487,3 +487,21 @@ Testato con un caso mock: combinato = solo Mangimi + solo Foraggio, verificato n
 **Canteri**: regole residue (VETRO MASC, VITE PERF) spostate da centro_costo Foraggio a "Ferramenta e materiali di consumo", coerenti con dove sono ora le fatture reali.
 
 **Bilancio della sessione di pulizia Mangimi/Foraggio**: nessun bug di codice trovato in questa sessione (tutti i problemi erano regole di armonizzazione con unità/fattore sbagliati, dati non logica applicativa) — tranne la mancanza dell'abbreviazione TN nel prompt PDF, unica correzione di codice.
+
+## 36. Rinomina in blocco dei PDF fattura (Carica Fatture)
+
+**Richiesto da Filippo**: le fatture scaricate da Aruba arrivano con un nome file generico — vuole rinominarle con Fornitore_Data_Numero.pdf, usando gli stessi dati che l'app già estrae leggendole.
+
+**Implementato**: dopo la lettura in blocco di una cartella di PDF (funzione già esistente), un nuovo pulsante "📦 Scarica N PDF rinominati (ZIP)" — genera uno ZIP (libreria `jszip`, aggiunta al progetto) con tutti i PDF letti, ciascuno rinominato `Fornitore_Data_Numero.pdf` (caratteri non ammessi nei nomi file sanificati; se due fatture producessero lo stesso nome, si aggiunge un contatore per non sovrascrivere). Se mancano tutti i dati, resta il nome originale come riserva. L'app non salva mai il PDF stesso da nessuna parte (lo legge solo per estrarne i dati) — questo è un download aggiuntivo, non uno storage persistente.
+
+Testato con casi reali (nomi fornitore lunghi con punteggiatura, numeri fattura con slash come "V2/250008516").
+
+## 37. Nuova metrica "peso vivo (media)" — sostituisce le colonne che esplodevano nelle fasce adulte tarde
+
+**Problema**: "Costo/FCR per kg di CRESCITA" esplode matematicamente quando l'IPG tende a zero (fasce adulte tarde, 7°-10° anno) — non un errore di dati, ma un limite intrinseco di dividere per un numero vicinissimo a zero. Confuso da distinguere da un vero errore (come i due appena corretti).
+
+**Soluzione proposta da Filippo**: sostituire quelle due colonne con costo/consumo per kg di **peso vivo mantenuto** (non di crescita) — non esplode mai, perché il peso di un animale non è mai zero, nemmeno da adulto fermo. Usa il **peso medio** della fascia (ingresso+uscita)/2, scelto perché il peso cambia durante la fascia (specialmente da giovane) — decisione presa insieme dopo discussione sull'alternativa (peso di uscita).
+
+**Implementato**: nuovi campi `costoPerKgPesoVivo`/`kgAlimentiPerKgPesoVivo` in `calcolaDatiEconomiciFascia()` (parametro `pesoMedio` aggiunto, passato da tutti e 3 i generatori di step). Colonne rinominate in tutte le tabelle (Metodo A, Ponderata, Solo M/F): "Costo/kg peso vivo (media)" e "Kg alim./kg peso vivo (media)" — con **tooltip esplicativo** (richiesto da Filippo: "occorre avvisare che è una media") che chiarisce l'uso del peso medio, non un valore esatto.
+
+Testato con un caso mock a IPG quasi-zero: vecchia metrica dava 94,91€/kg (assurdo), nuova dà 0,22€/kg peso vivo (ragionevole e stabile).

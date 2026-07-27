@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import * as XLSX from "xlsx-js-style";
+import JSZip from "jszip";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { classificaRiga } from "./motoreClassificazione";
@@ -37,6 +38,7 @@ export default function CaricaFatture() {
   const [modalita, setModalita] = useState("excel"); // "excel" | "pdf"
   const [leggendoPdf, setLeggendoPdf] = useState(false);
   const [progressoPdf, setProgressoPdf] = useState({ fatti: 0, totale: 0, erroriFile: [] });
+  const [pdfDaRinominare, setPdfDaRinominare] = useState([]); // [{ file, nomeSuggerito }] — pronti per lo ZIP
   const [bozzaTrovata, setBozzaTrovata] = useState(null);
   const fileInputRef = useRef(null);
   const cartellaInputRef = useRef(null);
@@ -132,6 +134,37 @@ export default function CaricaFatture() {
     });
   }
 
+  // Nome file suggerito per il PDF rinominato: Fornitore_Data_Numero.pdf — sanifica i
+  // caratteri non ammessi nei nomi file (/ \ : * ? " < > |) e usa il nome originale
+  // come riserva se mancano dati essenziali.
+  function costruisciNomeFilePdf(fornitore, data, numero, nomeOriginale) {
+    const pulisci = s => String(s || "").trim().replace(/[/\\:*?"<>|]/g, "-").replace(/\s+/g, "_");
+    const f = pulisci(fornitore), d = pulisci(data), n = pulisci(numero);
+    if (!f && !d && !n) return nomeOriginale;
+    return `${f || "Fornitore"}_${d || "data"}_${n || "numero"}.pdf`;
+  }
+
+  async function scaricaPdfRinominati() {
+    const zip = new JSZip();
+    const nomiUsati = new Set();
+    for (const { file, nomeSuggerito } of pdfDaRinominare) {
+      let nomeFinale = nomeSuggerito;
+      let contatore = 2;
+      while (nomiUsati.has(nomeFinale)) { // evita di sovrascrivere se due fatture danno lo stesso nome
+        nomeFinale = nomeSuggerito.replace(/\.pdf$/i, `_${contatore}.pdf`);
+        contatore++;
+      }
+      nomiUsati.add(nomeFinale);
+      zip.file(nomeFinale, file);
+    }
+    const blob = await zip.generateAsync({ type: "blob" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `Fatture_rinominate_${new Date().toISOString().slice(0, 10)}.zip`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   async function gestisciCartellaPdf(e) {
     const tuttiFile = Array.from(e.target.files || []);
     const pdfFile = tuttiFile.filter(f => f.name.toLowerCase().endsWith(".pdf"));
@@ -143,9 +176,11 @@ export default function CaricaFatture() {
 
     setLeggendoPdf(true);
     setProgressoPdf({ fatti: 0, totale: pdfFile.length, erroriFile: [] });
+    setPdfDaRinominare([]);
     const datiCombinati = [];
     const erroriFile = [];
     const fattureNonQuadrano = [];
+    const nuoviPdfRinominati = [];
 
     for (const file of pdfFile) {
       try {
@@ -160,6 +195,8 @@ export default function CaricaFatture() {
           erroriFile.push(`${file.name}: ${risultato.error || "errore sconosciuto"}`);
         } else {
           const est = risultato.estratto;
+          const nomeSuggerito = costruisciNomeFilePdf(est.fornitore, est.data, est.numero, file.name);
+          nuoviPdfRinominati.push({ file, nomeSuggerito });
           (est.righe || []).forEach(riga => {
             datiCombinati.push({
               "Fornitore": est.fornitore || "", "P.IVA": est.piva || "",
@@ -182,6 +219,7 @@ export default function CaricaFatture() {
 
     setLeggendoPdf(false);
     setProgressoPdf(p => ({ ...p, erroriFile }));
+    setPdfDaRinominare(nuoviPdfRinominati);
     if (fattureNonQuadrano.length > 0) {
       alert(`⚠️ ${fattureNonQuadrano.length} fatture hanno una somma delle righe che NON coincide con i totali scritti sul PDF — controllale con attenzione prima di salvarle, potrebbe mancare una riga o essere stata letta male:\n\n${fattureNonQuadrano.join("\n")}`);
     }
@@ -551,6 +589,12 @@ export default function CaricaFatture() {
                   <div style={{ height: "100%", background: C.primary, borderRadius: 4, width: `${progressoPdf.totale > 0 ? (progressoPdf.fatti / progressoPdf.totale) * 100 : 0}%`, transition: "width 0.3s" }} />
                 </div>
               </div>
+            )}
+            {!leggendoPdf && pdfDaRinominare.length > 0 && (
+              <button onClick={scaricaPdfRinominati}
+                style={{ marginTop: 10, background: C.accent, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                📦 Scarica {pdfDaRinominare.length} PDF rinominati (ZIP) — Fornitore_Data_Numero.pdf
+              </button>
             )}
           </>
         )}

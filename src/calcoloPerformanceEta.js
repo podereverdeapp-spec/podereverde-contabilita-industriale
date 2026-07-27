@@ -64,7 +64,7 @@ function regressioneLineare(punti) {
 // precedente (o il peso di nascita standard/reale per la prima fascia).
 // Dati economici di una fascia — condivisi da tutti e 3 i modi di calcolare peso/IPG
 // (fasce indipendenti, curva singola, curva ponderata), per non duplicare la logica.
-function calcolaDatiEconomiciFascia(fascia, giornoInizio, giornoFine, ipg, tassoMangime) {
+function calcolaDatiEconomiciFascia(fascia, giornoInizio, giornoFine, ipg, tassoMangime, pesoMedio) {
   const giorniFascia = Number.isFinite(giornoFine) ? giornoFine - giornoInizio : null;
   let costoGiornalieroPerCapo = null, kgMangimeGiornalieroPerCapo = null;
   if (tassoMangime) {
@@ -78,7 +78,21 @@ function calcolaDatiEconomiciFascia(fascia, giornoInizio, giornoFine, ipg, tasso
     costoMangimeKg = Math.round((costoGiornalieroPerCapo / ipg) * 100) / 100;
     fcrMangime = Math.round((kgMangimeGiornalieroPerCapo / ipg) * 100) / 100;
   }
-  return { coeffUba: fascia.coeff, giorniFascia, costoGiornalieroPerCapo, kgMangimeGiornalieroPerCapo, costoComplessivoFascia, consumoComplessivoFascia, costoMangimeKg, fcrMangime };
+  // Metrica di MANTENIMENTO (richiesta da Filippo, per non far esplodere il dato nelle
+  // fasce ad IPG quasi-zero): costo/consumo per kg di PESO VIVO portato dall'animale
+  // — non per kg di CRESCITA. Usa il peso medio della fascia (ingresso+uscita)/2, dato
+  // che il peso cambia durante la fascia, specialmente nelle fasce giovani. Non esplode
+  // mai (il peso non è mai zero), a differenza di costoMangimeKg/fcrMangime.
+  let costoPerKgPesoVivo = null, kgAlimentiPerKgPesoVivo = null;
+  if (costoComplessivoFascia != null && pesoMedio > 0) {
+    costoPerKgPesoVivo = Math.round((costoComplessivoFascia / pesoMedio) * 100) / 100;
+    kgAlimentiPerKgPesoVivo = Math.round((consumoComplessivoFascia / pesoMedio) * 100) / 100;
+  }
+  return {
+    coeffUba: fascia.coeff, giorniFascia, costoGiornalieroPerCapo, kgMangimeGiornalieroPerCapo,
+    costoComplessivoFascia, consumoComplessivoFascia, costoMangimeKg, fcrMangime,
+    pesoMedio: pesoMedio > 0 ? round2(pesoMedio) : null, costoPerKgPesoVivo, kgAlimentiPerKgPesoVivo,
+  };
 }
 
 function calcolaStepPerTipo(animaliConGiorni, fasce, pesoNascitaAncora, campoObiettivo, tassoMangime, includiPesoIngresso) {
@@ -145,7 +159,8 @@ function calcolaStepPerTipo(animaliConGiorni, fasce, pesoNascitaAncora, campoObi
       ipgMassimoGiovanile = ipgMassimoGiovanile == null ? regressione.pendenza : Math.max(ipgMassimoGiovanile, regressione.pendenza);
     }
 
-    const datiEconomici = calcolaDatiEconomiciFascia(fascia, giornoInizioFascia, giornoFineFascia, proiezioneInstabile ? 0 : (regressione?.pendenza ?? 0), tassoMangime);
+    const pesoMedioFascia = (pesoIngressoFascia > 0 && pesoUscitaFascia > 0) ? (pesoIngressoFascia + pesoUscitaFascia) / 2 : null;
+    const datiEconomici = calcolaDatiEconomiciFascia(fascia, giornoInizioFascia, giornoFineFascia, proiezioneInstabile ? 0 : (regressione?.pendenza ?? 0), tassoMangime, pesoMedioFascia);
 
     step.push({
       label: fascia.label, giornoInizio: giornoInizioFascia, giornoFine: giornoFineFascia,
@@ -284,7 +299,8 @@ export async function calcolaPerformanceEta(annoMangime) {
         const pesoUscita = Number.isFinite(giornoFine) ? round2(gompertz(giornoFine, curva.A, curva.b, curva.k)) : null;
         const durata = Number.isFinite(giornoFine) ? giornoFine - giornoInizio : null;
         const ipg = pesoUscita != null && durata ? Math.round((pesoUscita - pesoIngresso) / durata * 10000) / 10000 : null;
-        const datiEconomici = calcolaDatiEconomiciFascia(fascia, giornoInizio, giornoFine, ipg ?? 0, tassoMangime);
+        const pesoMedioFascia = (pesoIngresso > 0 && pesoUscita > 0) ? (pesoIngresso + pesoUscita) / 2 : null;
+        const datiEconomici = calcolaDatiEconomiciFascia(fascia, giornoInizio, giornoFine, ipg ?? 0, tassoMangime, pesoMedioFascia);
         giornoInizio = Number.isFinite(giornoFine) ? giornoFine : giornoInizio;
         return { label: fascia.label, pesoIngresso, pesoUscita, ipg, ...datiEconomici };
       });
@@ -315,7 +331,8 @@ export async function calcolaPerformanceEta(annoMangime) {
         const pesoUscita = Number.isFinite(giornoFine) ? pesoA(giornoFine) : null;
         const durata = Number.isFinite(giornoFine) ? giornoFine - giornoInizio : null;
         const ipg = pesoUscita != null && durata ? Math.round((pesoUscita - pesoIngresso) / durata * 10000) / 10000 : null;
-        const datiEconomici = calcolaDatiEconomiciFascia(fascia, giornoInizio, giornoFine, ipg ?? 0, tassoMangime);
+        const pesoMedioFascia = (pesoIngresso > 0 && pesoUscita > 0) ? (pesoIngresso + pesoUscita) / 2 : null;
+        const datiEconomici = calcolaDatiEconomiciFascia(fascia, giornoInizio, giornoFine, ipg ?? 0, tassoMangime, pesoMedioFascia);
         giornoInizio = Number.isFinite(giornoFine) ? giornoFine : giornoInizio;
         return { label: fascia.label, pesoIngresso, pesoUscita, ipg, percM: round2(percM * 100), nM, nF, ...datiEconomici };
       });
