@@ -414,3 +414,54 @@ Durante il controllo del Foraggio, emerse due anomalie reali nei dati caricati, 
 **4 nuove pagine** (stessa sottocartella Studi, nuova voce "Foraggio" accanto a "Mangimi"): Report Quantità Foraggio, Storico Foraggio — Bovini/Suini/Ovini — generate dal template Mangimi (stessa UI, stesso pattern), `ReportStoricoForaggio.jsx` riusa lo stesso componente generico parametrico per specie di Mangimi.
 
 Testato con il caso reale (Foraggio Mariotti, 13.526,50€ tutto "Bovini e Ovini"): suino riceve esattamente 0, bovino e ovino si dividono l'intero importo in proporzione ai loro UBA-giorni.
+
+## 29. Bug reale trovato da Filippo — "Da Armonizzare" nascondeva righe che il report segnalava
+
+**Sintomo**: Report Quantità Foraggio segnalava prodotti da armonizzare, ma la pagina "Da Armonizzare" non ne mostrava nessuno.
+
+**Causa trovata**: la chiave usata da `DaArmonizzare.jsx` per decidere "questo fornitore+prodotto ha già una regola" ignorava il **centro di costo** — se lo stesso fornitore+descrizione aveva già una regola confermata per un ALTRO centro di costo (es. Mangimi), la riga Foraggio veniva considerata "già a posto" per errore, anche se non aveva nessuna regola propria. Il report invece controllava correttamente `.eq("centro_costo", centroCosto)`, per questo i due si contraddicevano.
+
+**Corretto**: chiave estesa a `fornitore_id|descrizione|centro_costo` sia per il controllo "ha regola" sia per il suggerimento di similarità (che ora resta anche lui dentro lo stesso centro di costo — un fattore di conversione di Mangimi non ha senso suggerito per Foraggio, sono grandezze diverse).
+
+**Trovato anche un problema di schema correlato**: il vincolo di unicità su `ci_regole_armonizzazione_unita` era `(fornitore_id, descrizione_prodotto)`, senza centro di costo — se davvero fosse servita una regola diversa per lo stesso fornitore+prodotto in due centri di costo diversi, il salvataggio della seconda sarebbe fallito. Migrazione fornita (`fix_vincolo_armonizzazione.sql`) per estendere il vincolo a `(fornitore_id, descrizione_prodotto, centro_costo)`.
+
+Riprodotto lo scenario esatto con un test mock (regola Mangimi esistente, riga Foraggio) — confermato il bug prima della correzione, confermata la correzione dopo.
+
+## 30. Secondo bug reale trovato con la query diagnostica — regola esistente ma con fattore_kg NULL
+
+**Sintomo persistente** (dopo il fix precedente): "Da Armonizzare" mostrava ancora tutto sistemato per Foraggio.
+
+**Causa trovata con la query diagnostica** (Filippo ha lanciato `verifica_foraggio_armonizzazione.sql`): la riga "fieno in **totoballe**" (refuso in fattura per "rotoballe") aveva già una regola salvata, ma con **fattore_kg = null** (qualcuno l'aveva confermata come "Unità" senza fattore) — una regola incompleta/inutilizzabile. Il report la segnala correttamente come "da armonizzare" (controlla `!regola.fattore_kg`, non solo l'esistenza della regola) — ma "Da Armonizzare" considerava "ha già una regola" chiunque avesse UNA riga salvata, fattore valido o no.
+
+**Corretto**: `chiaviConRegola` ora filtra solo le regole con `fattore_kg` valido (`.filter(g => g.fattore_kg)`), coerente col report.
+
+**Correlato**: dato che una regola "rotta" può già esistere per quella combinazione esatta, confermarne una nuova corretta userebbe un `insert` semplice che violerebbe il vincolo di unicità — cambiato in `upsert` con `onConflict: "fornitore_id,descrizione_prodotto,centro_costo"`, così una correzione aggiorna la riga esistente invece di fallire.
+
+## 31. Orzo classificato per errore come Foraggio (invece che Mangime)
+
+Notato da Filippo controllando il risultato della query: una riga di storno con "orzo al naturale" risultava sotto centro_costo Foraggio — ma l'orzo (cereale) è Mangime, non Foraggio (fieno/rotoballe). Query di verifica + update forniti (`verifica_orzo_foraggio.sql`) per trovare e spostare tutte le righe con "orzo" nella descrizione, oggi sotto Foraggio, verso Mangimi.
+
+## 32. Performance per Fascia d'Età — Mangimi + Foraggio uniti nel calcolo economico
+
+**Deciso con Filippo**: ciò che serve alla crescita corporea (e quindi va collegato all'IPG in questo report) è Mangimi + Foraggio insieme — non solo Mangimi come finora. Il Pascolo si affronterà quando si parlerà di Coltivazione. Gli Integratori restano esclusi: servono al benessere dell'animale, non al suo accrescimento.
+
+**Implementato**: `calcolaPerformanceEta` ora chiama sia `calcolaDatiMangimiAnno` sia `calcolaDatiForaggioAnno` (in parallelo) e **somma** le loro incidenze €/UBA-gg e kg/UBA-gg per specie — stessa proprietà matematica di sempre (stesso UBA-giorni come divisore per entrambi i centri di costo, nello stesso anno/specie → sommare le incidenze è legittimo). Testato con un caso mock (0,36 + 0,14 = 0,50 €/UBA-gg).
+
+**Etichette aggiornate** in tutte le pagine (Performance, Solo Maschi, Solo Femmine, Storico): "Kg mangime per kg incremento peso" → "Kg alimenti per kg incremento peso"; "Anno di riferimento per il costo mangime" → "...mangime+foraggio"; testi esplicativi aggiornati per menzionare entrambi i centri di costo.
+
+## 33. Nuova sottocartella "Accrescimento e Costi" (Studi) — 4 pagine, solo Bovini per ora
+
+**Deciso con Filippo** (dopo diverse iterazioni sulla struttura): la vecchia cartella Animali → Performance per Fascia d'Età si è spostata in Studi → **Accrescimento e Costi**, insieme alle sue pagine Solo Maschi/Solo Femmine/Storico (stessi componenti, solo riposizionati nel menu). Aggiunte **4 nuove pagine**, solo per Bovini (Ovini/Suini in seguito), ciascuna che isola un centro di costo diverso nel calcolo economico:
+
+- **Tutti gli Alimenti** — Mangimi + Foraggio insieme (tasso combinato)
+- **Mangimi** — solo Mangimi
+- **Foraggio** — solo Foraggio
+- **Pascolo** — segnaposto vuoto (nessun tasso ancora — arriverà con Coltivazione)
+
+**Implementato**: `calcolaPerformanceEta` ora calcola **tre tassi distinti** (`tassiSoloMangimePerSpecie`, `tassiSoloForaggioPerSpecie`, `tassiCombinatoPerSpecie`) invece di uno solo già sommato — il Metodo A/B esistenti continuano a usare il Combinato (nessuna modifica al comportamento attuale), le 4 nuove pagine usano il tasso specifico che serve. Nuovi campi nel risultato per specie: `stepVivoTuttiAlimenti`, `stepVivoSoloMangimi`, `stepVivoSoloForaggio`, `stepVivoPascolo` (quest'ultimo con tasso `null`, tutte le colonne economiche mostrano "—").
+
+**Componente generico** `AccrescimentoCostiPagina.jsx` (parametrico per `campo`/`titolo`/`descrizione`/`vuota`), riusa `TabellaStepCurva` — nessuna duplicazione di UI tra le 4 pagine.
+
+Testato con un caso mock: combinato = solo Mangimi + solo Foraggio, verificato numericamente.
+
+**Ancora da fare**: estendere le 4 pagine (+ Solo Maschi/Femmine/Storico) a Ovini e Suini.

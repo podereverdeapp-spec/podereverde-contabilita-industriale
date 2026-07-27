@@ -36,7 +36,7 @@ export default function PerformanceEtaFemmine({ onNavigate }) {
       </p>
 
       <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 20 }}>
-        <label style={{ fontSize: 13, color: C.muted }}>Anno di riferimento per il costo mangime:</label>
+        <label style={{ fontSize: 13, color: C.muted }}>Anno di riferimento per il costo mangime+foraggio:</label>
         <input type="number" value={annoMangime} onChange={e => setAnnoMangime(parseInt(e.target.value))}
           style={{ width: 100, padding: "7px 8px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 13 }} />
         <button onClick={carica} disabled={loading}

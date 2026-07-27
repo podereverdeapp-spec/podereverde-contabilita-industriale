@@ -47,13 +47,17 @@ export default function DaArmonizzare() {
       const { data: regoleEsistenti, error: eG } = await supabase.from("ci_regole_armonizzazione_unita").select("*");
       if (eG) throw new Error(eG.message);
       setRegole(regoleEsistenti || []);
-      const chiaviConRegola = new Set((regoleEsistenti || []).map(g => `${g.fornitore_id}|${g.descrizione_prodotto.trim().toLowerCase()}`));
+      // La chiave include il centro di costo: una regola confermata per lo stesso
+      // fornitore+prodotto ma in un ALTRO centro di costo (es. Mangimi) non deve
+      // "coprire" anche Foraggio — sono due armonizzazioni distinte, ciascuna con
+      // il proprio fattore di conversione potenzialmente diverso.
+      const chiaviConRegola = new Set((regoleEsistenti || []).filter(g => g.fattore_kg).map(g => `${g.fornitore_id}|${g.descrizione_prodotto.trim().toLowerCase()}|${g.centro_costo || ""}`));
 
       const combinazioni = new Map();
       (righe || []).forEach(r => {
         const fornitoreId = mappaFattureFornitore.get(r.fattura_id);
         if (!fornitoreId) return;
-        const chiave = `${fornitoreId}|${r.descrizione.trim().toLowerCase()}`;
+        const chiave = `${fornitoreId}|${r.descrizione.trim().toLowerCase()}|${r.centro_costo || ""}`;
         if (chiaviConRegola.has(chiave)) return;
         if (!combinazioni.has(chiave)) {
           combinazioni.set(chiave, { fornitore_id: fornitoreId, fornitore: mappaFornitori.get(fornitoreId) || "—", descrizione: r.descrizione, centro_costo: r.centro_costo, count: 0, occorrenze: [] });
@@ -65,9 +69,10 @@ export default function DaArmonizzare() {
       });
 
       // Per ciascuna combinazione senza regola, cerco un suggerimento simile tra le regole
-      // già confermate PER LO STESSO FORNITORE
+      // già confermate PER LO STESSO FORNITORE E STESSO CENTRO DI COSTO (un fattore di
+      // conversione di Mangimi non ha senso suggerito per Foraggio, sono grandezze diverse)
       const risultato = [...combinazioni.values()].map(c => {
-        const regolePariFornitore = (regoleEsistenti || []).filter(g => g.fornitore_id === c.fornitore_id);
+        const regolePariFornitore = (regoleEsistenti || []).filter(g => g.fornitore_id === c.fornitore_id && g.centro_costo === c.centro_costo);
         let suggerimento = null, miglioreScore = 0.4; // soglia minima per proporre un suggerimento
         regolePariFornitore.forEach(g => {
           const score = similarita(c.descrizione, g.descrizione_prodotto);
@@ -86,10 +91,10 @@ export default function DaArmonizzare() {
   async function confermaRegola(c, unita, fattoreKg) {
     setSalvando(`${c.fornitore_id}|${c.descrizione}`);
     try {
-      const { error } = await supabase.from("ci_regole_armonizzazione_unita").insert([{
+      const { error } = await supabase.from("ci_regole_armonizzazione_unita").upsert([{
         fornitore_id: c.fornitore_id, descrizione_prodotto: c.descrizione,
         unita_confermata: unita, fattore_kg: fattoreKg, centro_costo: c.centro_costo,
-      }]);
+      }], { onConflict: "fornitore_id,descrizione_prodotto,centro_costo" });
       if (error) throw new Error(error.message);
       carica();
     } catch (err) {
@@ -123,6 +128,7 @@ export default function DaArmonizzare() {
 
 function RigaArmonizza({ c, onConferma, salvando }) {
   const [unita, setUnita] = useState("Kilogrammi");
+  const [fattoreManuale, setFattoreManuale] = useState("");
   const [espansa, setEspansa] = useState(false);
   const [fatturaAperta, setFatturaAperta] = useState(null); // fattura_id in visualizzazione completa
   const [datiFatturaAperta, setDatiFatturaAperta] = useState(null); // { fattura, righe }
@@ -209,7 +215,12 @@ function RigaArmonizza({ c, onConferma, salvando }) {
           style={{ padding: "6px 8px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 13 }}>
           {UNITA_OPZIONI.map(u => <option key={u} value={u}>{u}</option>)}
         </select>
-        <button onClick={() => onConferma(c, unita, FATTORE_KG[unita])} disabled={salvando}
+        {unita === "Unità" && (
+          <input type="number" placeholder="Fattore kg per unità (es. 340)" value={fattoreManuale}
+            onChange={e => setFattoreManuale(e.target.value)}
+            style={{ padding: "6px 8px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 13, width: 190 }} />
+        )}
+        <button onClick={() => onConferma(c, unita, unita === "Unità" ? (parseFloat(fattoreManuale) || null) : FATTORE_KG[unita])} disabled={salvando}
           style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
           {salvando ? "Salvataggio..." : "✓ Conferma unità"}
         </button>

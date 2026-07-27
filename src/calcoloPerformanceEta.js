@@ -1,7 +1,7 @@
 import { supabase } from "./supabase";
 import { fetchAllPages, round2 } from "./parsingUtils";
 import { UBA_FASCE_EXP } from "./motoreUba";
-import { calcolaDatiMangimiAnno } from "./calcoloQuantitaMangimi";
+import { calcolaDatiMangimiAnno, calcolaDatiForaggioAnno } from "./calcoloQuantitaMangimi";
 
 // Curva di Gompertz: peso(t) = A * exp(-b * exp(-k*t)) — A=peso maturo asintotico,
 // b=costante di scala, k=velocità di maturazione. Modello raccomandato in letteratura
@@ -206,20 +206,32 @@ export async function calcolaPerformanceEta(annoMangime) {
     .not("data_uscita", "is", null).range(da, a));
   if (error) throw new Error(error.message);
 
-  // Tassi mangime totali (€/UBA-gg e kg/UBA-gg, sommati su tutti i prodotti mangime)
-  // per l'anno di riferimento scelto — stessa proprietà matematica già usata in
-  // Report Quantità Mangimi: divisore uguale per ogni prodotto, la somma è legittima.
-  let tassiMangimePerSpecie = null;
+  // Tre tassi ALIMENTAZIONE-CRESCITA distinti (€/UBA-gg e kg/UBA-gg): solo Mangimi,
+  // solo Foraggio, e Combinato (Mangimi+Foraggio insieme) — servono alle 4 pagine
+  // separate di "Accrescimento e Costi" (Tutti gli Alimenti/Mangimi/Foraggio/Pascolo).
+  // Il Pascolo non ha ancora un tasso (nessun dato di costo, arriverà con Coltivazione).
+  // Stessa proprietà matematica di sempre: stesso UBA-giorni come divisore, quindi
+  // sommare le incidenze tra centri di costo diversi è legittimo.
+  let tassiSoloMangimePerSpecie = null, tassiSoloForaggioPerSpecie = null, tassiCombinatoPerSpecie = null;
   if (annoMangime) {
-    const datiMangime = await calcolaDatiMangimiAnno(annoMangime);
-    tassiMangimePerSpecie = {};
+    const [datiMangime, datiForaggio] = await Promise.all([
+      calcolaDatiMangimiAnno(annoMangime),
+      calcolaDatiForaggioAnno(annoMangime),
+    ]);
+    tassiSoloMangimePerSpecie = {}; tassiSoloForaggioPerSpecie = {}; tassiCombinatoPerSpecie = {};
     for (const specie of ["bovino", "suino", "ovino"]) {
-      tassiMangimePerSpecie[specie] = {
-        euroUba: round2(datiMangime.perProdotto.reduce((s, p) => s + p.perCosto.perSpecie[specie].incidenza, 0)),
-        kgUba: round2(datiMangime.perProdotto.reduce((s, p) => s + p.perKg.perSpecie[specie].incidenza, 0)),
-      };
+      const euroMangime = datiMangime.perProdotto.reduce((s, p) => s + p.perCosto.perSpecie[specie].incidenza, 0);
+      const euroForaggio = datiForaggio.perProdotto.reduce((s, p) => s + p.perCosto.perSpecie[specie].incidenza, 0);
+      const kgMangime = datiMangime.perProdotto.reduce((s, p) => s + p.perKg.perSpecie[specie].incidenza, 0);
+      const kgForaggio = datiForaggio.perProdotto.reduce((s, p) => s + p.perKg.perSpecie[specie].incidenza, 0);
+      tassiSoloMangimePerSpecie[specie] = { euroUba: round2(euroMangime), kgUba: round2(kgMangime) };
+      tassiSoloForaggioPerSpecie[specie] = { euroUba: round2(euroForaggio), kgUba: round2(kgForaggio) };
+      tassiCombinatoPerSpecie[specie] = { euroUba: round2(euroMangime + euroForaggio), kgUba: round2(kgMangime + kgForaggio) };
     }
   }
+  // Retro-compatibilità: il resto del file (Metodo A, Metodo B esistenti) continua a
+  // usare il tasso combinato, come già deciso — nessuna modifica al comportamento attuale.
+  const tassiMangimePerSpecie = tassiCombinatoPerSpecie;
 
   const { data: pesiStandard, error: eP } = await supabase.from("pesi_standard_specie").select("*");
   if (eP) throw new Error(eP.message);
@@ -322,6 +334,13 @@ export async function calcolaPerformanceEta(annoMangime) {
       stepVivoF: leggiFasceDaCurvaSingola(curveVivoPerSesso.F, tassiMangimePerSpecie?.[specie]),
       stepCarcassaM: leggiFasceDaCurvaSingola(curveCarcassaPerSesso.M, tassiMangimePerSpecie?.[specie]),
       stepCarcassaF: leggiFasceDaCurvaSingola(curveCarcassaPerSesso.F, tassiMangimePerSpecie?.[specie]),
+      // Le 4 pagine di "Accrescimento e Costi": stessa curva Ponderata, tasso diverso
+      // a seconda di quale/i centro/i di costo si vuole isolare. Pascolo: nessun tasso
+      // ancora (null) — tutte le colonne economiche mostreranno "—", in attesa dei dati.
+      stepVivoTuttiAlimenti: leggiFasceDaCurvePonderate(curveVivoPerSesso, "peso_vivo_uscita", tassiCombinatoPerSpecie?.[specie]),
+      stepVivoSoloMangimi: leggiFasceDaCurvePonderate(curveVivoPerSesso, "peso_vivo_uscita", tassiSoloMangimePerSpecie?.[specie]),
+      stepVivoSoloForaggio: leggiFasceDaCurvePonderate(curveVivoPerSesso, "peso_vivo_uscita", tassiSoloForaggioPerSpecie?.[specie]),
+      stepVivoPascolo: leggiFasceDaCurvePonderate(curveVivoPerSesso, "peso_vivo_uscita", null),
     };
   }
   return risultato;

@@ -62,10 +62,10 @@ export default function StoricoPerformanceEta() {
         const riga = { "Fascia": r.label };
         anni.forEach((a, i) => {
           riga[`Costo/kg ${a}`] = r.perAnno[i].costo != null ? numeroExcel(r.perAnno[i].costo) : null;
-          riga[`Kg mangime/kg ${a}`] = r.perAnno[i].kg != null ? numeroExcel(r.perAnno[i].kg) : null;
+          riga[`Kg alimenti/kg ${a}`] = r.perAnno[i].kg != null ? numeroExcel(r.perAnno[i].kg) : null;
         });
         riga["Costo/kg Media"] = r.media.costo != null ? numeroExcel(r.media.costo) : null;
-        riga["Kg mangime/kg Media"] = r.media.kg != null ? numeroExcel(r.media.kg) : null;
+        riga["Kg alimenti/kg Media"] = r.media.kg != null ? numeroExcel(r.media.kg) : null;
         return riga;
       });
       fogli.push({ nome: SPECIE_LABEL[specie], righe: righeExcel });
@@ -77,7 +77,7 @@ export default function StoricoPerformanceEta() {
     <div style={{ padding: 20, maxWidth: 1300, margin: "0 auto" }}>
       <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Storico Performance per Fascia d'Età</h1>
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 16 }}>
-        Confronto tra l'anno scelto e i 3 precedenti (+ media): come cambia il <strong>costo per kg di incremento peso</strong> e i <strong>kg di mangime per kg di incremento</strong>, fascia per fascia — stessa curva di crescita (peso ponderato M/F), ma tassi mangime diversi per anno, che già riflettono quanti animali c'erano realmente in azienda in ciascun anno. Utile per vedere se, al crescere della mandria, l'efficienza migliora o peggiora.
+        Confronto tra l'anno scelto e i 3 precedenti (+ media): come cambia il <strong>costo per kg di incremento peso</strong> e i <strong>kg di alimenti (mangimi+foraggio) per kg di incremento</strong>, fascia per fascia — stessa curva di crescita (peso ponderato M/F), ma tassi mangime+foraggio diversi per anno, che già riflettono quanti animali c'erano realmente in azienda in ciascun anno. Utile per vedere se, al crescere della mandria, l'efficienza migliora o peggiora.
       </p>
 
       <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 20 }}>
@@ -89,7 +89,7 @@ export default function StoricoPerformanceEta() {
           {calcolando ? "Calcolo (4 anni)..." : "📊 Calcola confronto"}
         </button>
       </div>
-      <p style={{ fontSize: 11, color: C.muted, marginTop: -12, marginBottom: 20 }}>Confronta {anni.slice().reverse().join(", ")} — gli anni senza tasso mangime armonizzato mostreranno "—".</p>
+      <p style={{ fontSize: 11, color: C.muted, marginTop: -12, marginBottom: 20 }}>Confronta {anni.slice().reverse().join(", ")} — gli anni senza tasso mangime+foraggio armonizzato mostreranno "—".</p>
 
       {errore && <p style={{ color: C.red }}>⚠️ {errore}</p>}
 
@@ -117,11 +117,11 @@ export default function StoricoPerformanceEta() {
                         {anni.map(a => (
                           <Fragment key={a}>
                             <th style={th}>Costo/kg</th>
-                            <th style={th}>Kg mang./kg</th>
+                            <th style={th}>Kg alim./kg</th>
                           </Fragment>
                         ))}
                         <th style={th}>Costo/kg</th>
-                        <th style={th}>Kg mang./kg</th>
+                        <th style={th}>Kg alim./kg</th>
                       </tr>
                     </thead>
                     <tbody>

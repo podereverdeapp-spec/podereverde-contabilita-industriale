@@ -10,7 +10,7 @@ const SPECIE_LABEL = { bovino: "Bovini", suino: "Suini", ovino: "Ovini" };
 // (peso, IPG, coefficiente, giorni, N. animali) restano su sfondo bianco.
 const COLORE_COPPIA_1 = "#EBF3F9"; // €/gg — kg/gg per capo
 const COLORE_COPPIA_2 = "#EAF2E8"; // Costo — Consumo complessivo fascia
-const COLORE_COPPIA_3 = "#FFF2DC"; // Costo per kg incremento peso — Kg mangime per kg incremento peso
+const COLORE_COPPIA_3 = "#FFF2DC"; // Costo per kg incremento peso — Kg alimenti per kg incremento peso
 
 export default function PerformanceEta({ onNavigate }) {
   const [dati, setDati] = useState(null);
@@ -53,7 +53,7 @@ export default function PerformanceEta({ onNavigate }) {
             "Costo fascia (€)": s.costoComplessivoFascia != null ? numeroExcel(s.costoComplessivoFascia) : null,
             "Consumo fascia (kg)": s.consumoComplessivoFascia != null ? numeroExcel(s.consumoComplessivoFascia) : null,
             "Costo per kg incremento peso": s.costoMangimeKg != null ? numeroExcel(s.costoMangimeKg) : null,
-            "Kg mangime per kg incremento peso": s.fcrMangime != null ? numeroExcel(s.fcrMangime) : null,
+            "Kg alimenti per kg incremento peso": s.fcrMangime != null ? numeroExcel(s.fcrMangime) : null,
             "N. animali": s.nAnimali,
             "Dati sufficienti": s.datiSufficienti ? "Sì" : "No",
           });
@@ -82,7 +82,7 @@ export default function PerformanceEta({ onNavigate }) {
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 20 }}>
         <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Come si calcola questa pagina</div>
         <p style={{ fontSize: 12, color: C.text, margin: 0, lineHeight: 1.6 }}>
-          Due metodi affiancati per ogni specie: <strong>Metodo A</strong> (fasce indipendenti) stima ogni fascia d'età per conto proprio, con gli animali usciti proprio in quella fascia — semplice, ma fragile quando pochi animali cadono in una fascia. <strong>Metodo B</strong> (curva di Gompertz) adatta un'unica curva di crescita a tutti gli animali della specie insieme, separatamente per maschi e femmine (un maschio adulto pesa — e mangia — più di una femmina adulta), poi mostra qui sotto la <strong>media ponderata</strong> sulla composizione reale maschi/femmine osservata in ciascuna fascia. Le colonne €/kg e FCR usano <strong>solo il costo mangime</strong> dell'anno scelto sotto — primo passo di un percorso più ampio, un centro di costo alla volta.
+          Due metodi affiancati per ogni specie: <strong>Metodo A</strong> (fasce indipendenti) stima ogni fascia d'età per conto proprio, con gli animali usciti proprio in quella fascia — semplice, ma fragile quando pochi animali cadono in una fascia. <strong>Metodo B</strong> (curva di Gompertz) adatta un'unica curva di crescita a tutti gli animali della specie insieme, separatamente per maschi e femmine (un maschio adulto pesa — e mangia — più di una femmina adulta), poi mostra qui sotto la <strong>media ponderata</strong> sulla composizione reale maschi/femmine osservata in ciascuna fascia. Le colonne €/kg e FCR usano <strong>Mangimi + Foraggio insieme</strong> (entrambi contribuiscono alla crescita corporea) dell'anno scelto sotto — il Pascolo si aggiungerà parlando di Coltivazione, gli Integratori restano esclusi (servono al benessere, non all'accrescimento).
         </p>
         <p style={{ fontSize: 12, color: C.text, margin: "10px 0 0 0", lineHeight: 1.6 }}>
           Le curve Solo Maschi e Solo Femmine che compongono la media ponderata sono su due pagine dedicate:
@@ -100,7 +100,7 @@ export default function PerformanceEta({ onNavigate }) {
       </div>
 
       <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 20 }}>
-        <label style={{ fontSize: 13, color: C.muted }}>Anno di riferimento per il costo mangime:</label>
+        <label style={{ fontSize: 13, color: C.muted }}>Anno di riferimento per il costo mangime+foraggio:</label>
         <input type="number" value={annoMangime} onChange={e => setAnnoMangime(parseInt(e.target.value))}
           style={{ width: 100, padding: "7px 8px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 13 }} />
         <button onClick={carica} disabled={loading}
@@ -167,7 +167,7 @@ function TabellaStep({ titolo, step }) {
             <th style={{ padding: "6px 8px", textAlign: "right" }}>Costo fascia (€)</th>
             <th style={{ padding: "6px 8px", textAlign: "right" }}>Consumo fascia (kg)</th>
             <th style={{ padding: "6px 8px", textAlign: "right" }}>Costo per kg incremento peso</th>
-            <th style={{ padding: "6px 8px", textAlign: "right" }}>Kg mangime per kg incremento peso</th>
+            <th style={{ padding: "6px 8px", textAlign: "right" }}>Kg alimenti per kg incremento peso</th>
             <th style={{ padding: "6px 8px", textAlign: "right" }}>N. animali</th>
           </tr>
         </thead>
@@ -224,7 +224,7 @@ export function TabellaStepCurva({ titolo, step }) {
             <th style={{ padding: "6px 8px", textAlign: "right", background: COLORE_COPPIA_2 }}>Costo fascia (€)</th>
             <th style={{ padding: "6px 8px", textAlign: "right", background: COLORE_COPPIA_2 }}>Consumo fascia (kg)</th>
             <th style={{ padding: "6px 8px", textAlign: "right", background: COLORE_COPPIA_3 }}>Costo per kg incremento peso</th>
-            <th style={{ padding: "6px 8px", textAlign: "right", background: COLORE_COPPIA_3 }}>Kg mangime per kg incremento peso</th>
+            <th style={{ padding: "6px 8px", textAlign: "right", background: COLORE_COPPIA_3 }}>Kg alimenti per kg incremento peso</th>
             <th style={{ padding: "6px 8px", textAlign: "right" }}>% Maschi</th>
           </tr>
         </thead>
@@ -274,7 +274,7 @@ export function TabellaStepSemplice({ titolo, step }) {
             <th style={{ padding: "5px 8px", textAlign: "right", background: COLORE_COPPIA_2 }}>Costo fascia (€)</th>
             <th style={{ padding: "5px 8px", textAlign: "right", background: COLORE_COPPIA_2 }}>Consumo fascia (kg)</th>
             <th style={{ padding: "5px 8px", textAlign: "right", background: COLORE_COPPIA_3 }}>Costo per kg incremento peso</th>
-            <th style={{ padding: "5px 8px", textAlign: "right", background: COLORE_COPPIA_3 }}>Kg mangime per kg incremento peso</th>
+            <th style={{ padding: "5px 8px", textAlign: "right", background: COLORE_COPPIA_3 }}>Kg alimenti per kg incremento peso</th>
           </tr>
         </thead>
         <tbody>

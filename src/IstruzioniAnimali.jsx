@@ -46,25 +46,6 @@ export default function IstruzioniAnimali() {
             "Quando un riproduttore esce davvero dall'azienda (macellato/venduto), usa \"⚖️ Applica conguagli\": confronta il valore stimato con quello reale e corregge la differenza sui figli dell'anno di uscita.",
           ],
         },
-        {
-          pagina: "Performance per Fascia d'Età", icon: "📐",
-          aCosaServe: "Stima il peso di un animale all'ingresso e all'uscita di ogni fascia d'età, e l'IPG (Incremento Peso Giornaliero) — con due metodi affiancati: Metodo A (fasce indipendenti, semplice ma fragile con pochi animali) e Metodo B (curva di Gompertz, un'unica curva su tutti gli animali insieme, separata per maschi e femmine e poi ricomposta in una media ponderata sulla composizione reale). Tutte le tabelle includono anche il coefficiente UBA, il costo/consumo giornaliero e complessivo per fascia, e il \"Costo per kg incremento peso\" / \"Kg mangime per kg incremento peso\" (colonne accoppiate colorate) — usano il tasso mangime dell'anno scelto.",
-          comeSiUsa: [
-            "Si apre già calcolata — nessun anno da scegliere per i pesi, solo per il costo mangime.",
-            "Se una fascia mostra \"Dati insufficienti\", significa che non ci sono abbastanza animali con quel dato — non si inventa un numero, si aspetta più dati.",
-            "L'icona ⚠️ nel Metodo A segnala una proiezione instabile (peso mantenuto stabile invece di un valore innaturale).",
-            "In fondo alla spiegazione, due pulsanti portano alle pagine \"Solo Maschi\" e \"Solo Femmine\" — le due curve separate che compongono la media ponderata del Metodo B.",
-            "Il calcolo si affina da solo mano a mano che si registrano nuove pesate nella tab \"⚖️ Pesate\" di podereverdeapp.it.",
-          ],
-        },
-        {
-          pagina: "Performance — Solo Maschi / Solo Femmine", icon: "♂️♀️",
-          aCosaServe: "Le due curve di Gompertz separate (una per sesso) che, ponderate sulla composizione reale di ciascuna fascia, formano il Metodo B della pagina principale — utile per capire quanto pesano davvero i due sessi separatamente, non solo il dato aggregato.",
-          comeSiUsa: [
-            "Si raggiungono dai due pulsanti nella pagina principale, o direttamente dal menu.",
-            "Stessa struttura per fascia d'età, ma senza ponderazione — è la curva di un solo sesso alla volta.",
-          ],
-        },
       ]}
     />
   );

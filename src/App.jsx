@@ -24,6 +24,7 @@ import StoricoPerformanceEta from "./StoricoPerformanceEta";
 import ReportStoricoMangimi from "./ReportStoricoMangimi";
 import ReportQuantitaForaggio from "./ReportQuantitaForaggio";
 import ReportStoricoForaggio from "./ReportStoricoForaggio";
+import AccrescimentoCostiPagina from "./AccrescimentoCostiPagina";
 import IstruzioniFatture from "./IstruzioniFatture";
 import IstruzioniAnagrafiche from "./IstruzioniAnagrafiche";
 import IstruzioniAnimali from "./IstruzioniAnimali";
@@ -58,10 +59,6 @@ const MENU = [
     { tipo: "voce", id: "uba", label: "Report UBA", icon: "🐮" },
     { tipo: "voce", id: "scheda", label: "Scheda Animale", icon: "🔍" },
     { tipo: "voce", id: "riproduttori", label: "Report Riproduttori", icon: "🐄" },
-    { tipo: "voce", id: "performanceeta", label: "Performance per Fascia d'Età", icon: "📐" },
-    { tipo: "voce", id: "performanceeta-maschi", label: "Performance — Solo Maschi", icon: "♂️" },
-    { tipo: "voce", id: "performanceeta-femmine", label: "Performance — Solo Femmine", icon: "♀️" },
-    { tipo: "voce", id: "storico-performanceeta", label: "Storico Performance per Fascia d'Età", icon: "📈" },
   ]},
   { tipo: "cartella", id: "cart-costi", label: "Costi", icon: "📊", contenuto: [
     { tipo: "voce", id: "istr-costi", label: "Istruzioni", icon: "📖" },
@@ -81,6 +78,16 @@ const MENU = [
       { id: "storico-foraggio-bovini", label: "Storico Foraggio — Bovini", icon: "📈" },
       { id: "storico-foraggio-suini", label: "Storico Foraggio — Suini", icon: "📈" },
       { id: "storico-foraggio-ovini", label: "Storico Foraggio — Ovini", icon: "📈" },
+    ]},
+    { tipo: "sottocartella", id: "sub-accrescimento-costi", label: "Accrescimento e Costi", icon: "⚖️", voci: [
+      { id: "acc-bovini-tutti", label: "Bovini — Tutti gli Alimenti", icon: "🐄" },
+      { id: "acc-bovini-mangimi", label: "Bovini — Mangimi", icon: "🌾" },
+      { id: "acc-bovini-foraggio", label: "Bovini — Foraggio", icon: "🌱" },
+      { id: "acc-bovini-pascolo", label: "Bovini — Pascolo", icon: "🌳" },
+      { id: "performanceeta", label: "Bovini — Performance per Fascia d'Età", icon: "📐" },
+      { id: "performanceeta-maschi", label: "Bovini — Solo Maschi", icon: "♂️" },
+      { id: "performanceeta-femmine", label: "Bovini — Solo Femmine", icon: "♀️" },
+      { id: "storico-performanceeta", label: "Bovini — Storico", icon: "📈" },
     ]},
   ]},
   { tipo: "voce", id: "parametri", label: "Parametri", icon: "⚙️" },
@@ -252,6 +259,10 @@ export default function App() {
         {tab === "storico-foraggio-bovini" && <ReportStoricoForaggio specieFiltro="bovino" titolo="Bovini" />}
         {tab === "storico-foraggio-suini" && <ReportStoricoForaggio specieFiltro="suino" titolo="Suini" />}
         {tab === "storico-foraggio-ovini" && <ReportStoricoForaggio specieFiltro="ovino" titolo="Ovini" />}
+        {tab === "acc-bovini-tutti" && <AccrescimentoCostiPagina campo="stepVivoTuttiAlimenti" titolo="Tutti gli Alimenti" descrizione="Mangimi + Foraggio insieme (il Pascolo si aggiungerà quando avremo i suoi dati) — il quadro economico completo di quanto costa la crescita, per fascia d'età." />}
+        {tab === "acc-bovini-mangimi" && <AccrescimentoCostiPagina campo="stepVivoSoloMangimi" titolo="Mangimi" descrizione="Solo il costo/consumo Mangimi, isolato dal Foraggio — utile per capire il peso specifico di questo centro di costo da solo." />}
+        {tab === "acc-bovini-foraggio" && <AccrescimentoCostiPagina campo="stepVivoSoloForaggio" titolo="Foraggio" descrizione="Solo il costo/consumo Foraggio, isolato dai Mangimi — utile per capire il peso specifico di questo centro di costo da solo." />}
+        {tab === "acc-bovini-pascolo" && <AccrescimentoCostiPagina campo="stepVivoPascolo" titolo="Pascolo" descrizione="Pagina segnaposto — il Pascolo si affronterà insieme a Coltivazione." vuota />}
         {tab === "istr-fatture" && <IstruzioniFatture />}
         {tab === "istr-anagrafiche" && <IstruzioniAnagrafiche />}
         {tab === "istr-animali" && <IstruzioniAnimali />}
