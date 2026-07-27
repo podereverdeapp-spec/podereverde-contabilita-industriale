@@ -33,7 +33,7 @@ Rispondi SOLO con un oggetto JSON valido, nessun testo prima o dopo, in questo f
 
 Gli importi devono essere numeri (mai stringhe, mai simboli di valuta). "aliquota_iva" è la percentuale (es. 22, 10, 4, 0), MAI una frazione.
 
-"unita_misura" — SOLO queste unità sono ammesse: "Unità", "Tons", "Quintali", "Kilogrammi", "Litri", "Balloni", "Rotoballe", "Rotoli". Cerca nel testo della fattura se una di queste è esplicitamente indicata (anche abbreviata: kg, q.li, lt). Se la fattura usa un'unità diversa (es. "Sacchi", "Pezzi", "Confezioni") o non la specifica, usa null — non approssimare né inventare una delle otto ammesse.
+"unita_misura" — SOLO queste unità sono ammesse: "Unità", "Tons", "Quintali", "Kilogrammi", "Litri", "Balloni", "Rotoballe", "Rotoli", "Balle", "Rotoloni". Cerca nel testo della fattura se una di queste è esplicitamente indicata (anche abbreviata: kg, q.li, lt). Se la fattura usa un'unità diversa (es. "Sacchi", "Pezzi", "Confezioni") o non la specifica, usa null — non approssimare né inventare una delle dieci ammesse.
 
 "verifica_totali": somma l'imponibile e l'IVA di tutte le righe che hai estratto, confrontali con l'imponibile totale, l'IVA totale e il totale fattura scritti per intero sul PDF originale (di solito nel riepilogo finale). "corrisponde" è true se la somma coincide con questi totali (tolleranza 1 centesimo), false altrimenti.
 

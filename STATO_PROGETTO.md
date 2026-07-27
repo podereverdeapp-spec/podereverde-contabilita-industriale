@@ -391,3 +391,18 @@ Le unità di misura sono oggi testo libero, senza vincoli — stesso prodotto/fo
 - Il browser di Filippo a volte traduce automaticamente la pagina, storpiando i nomi delle voci — disattivare la traduzione automatica per il sito
 - **Report generali** e completamento **componenti di lotto** in podereverdeapp.it: ancora da fare (vedi sezioni 18 e task aperti)
 - Traghettamento costi all'assegnazione BDN (sezione 8): requisito registrato, non ancora implementato
+
+## 26. Foraggio — unità di misura rotoballe/balle/balloni/rotoloni = 340 kg
+
+Il Foraggio si esprime in fattura con termini diversi per la stessa cosa (una balla/rotoballa di fieno): "Rotoballe", "Balle", "Balloni", "Rotoloni". Confermato da Filippo: 1 unità di qualunque di questi termini = 340 kg.
+
+**Aggiunte a `UNITA_OPZIONI`/`FATTORE_KG` in `DaArmonizzare.jsx`**: tutti e 4 i termini ora selezionabili, ciascuno con fattore di conversione fisso 340 kg — si armonizzano come qualunque altro prodotto, per fornitore+descrizione, tramite il meccanismo "Da Armonizzare" già esistente.
+
+**Aggiunti anche a `api/leggi-fattura-pdf.js`** (lista unità riconosciute in lettura PDF): mancavano "Balle" e "Rotoloni" (c'erano già "Balloni" e "Rotoballe", più "Rotoli" che resta distinto) — ora tutti e 4 vengono riconosciuti in automatico invece di tornare null.
+
+## 27. Pulizia dati Foraggio — sessione di correzione con Filippo
+
+Durante il controllo del Foraggio, emerse due anomalie reali nei dati caricati, corrette via SQL (query fornite, eseguite da Filippo su Supabase):
+
+- **Azienda Agricola Mario Mariotti**: unico fornitore Foraggio 2025-2026 — destinazione corretta da "Bovini" a "Bovini e Ovini" (il foraggio serve entrambe le specie, non solo i bovini). Riscontrato che un primo update proposto non era stato eseguito (la verifica successiva mostrava ancora "Bovini") — poi rieseguito su tutti gli anni insieme.
+- **Canteri** (fornitore di ferramenta): finito per errore sotto Foraggio — spostato con tutte le sue fatture/righe ad Area Allevamento, Centro di Costo "Ferramenta e materiali di consumo", Tipo di Costo Variabile. Verificato che non fosse un fornitore FCF con una regola fissa sbagliata (era FRO, quindi errore umano puntuale in fase di classificazione, non un problema di sistema che si sarebbe ripetuto da solo).

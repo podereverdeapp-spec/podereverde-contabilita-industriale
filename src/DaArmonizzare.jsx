@@ -8,8 +8,8 @@ import { RicomposizioneFattura } from "./FatturePassive";
 // "Da Armonizzare"; gli altri centri di costo non hanno bisogno di unità armonizzate.
 const CENTRI_CON_QUANTITA = ["Foraggio", "Mangimi", "Coltivazione Sementi", "Coltivazione Concimi e Fitosanitari", "Gasolio e lubrificanti"];
 
-const UNITA_OPZIONI = ["Kilogrammi", "Tons", "Quintali", "Litri", "Unità"];
-const FATTORE_KG = { Kilogrammi: 1, Tons: 1000, Quintali: 100, Litri: null, Unità: null };
+const UNITA_OPZIONI = ["Kilogrammi", "Tons", "Quintali", "Litri", "Unità", "Rotoballe", "Balle", "Balloni", "Rotoloni"];
+const FATTORE_KG = { Kilogrammi: 1, Tons: 1000, Quintali: 100, Litri: null, Unità: null, Rotoballe: 340, Balle: 340, Balloni: 340, Rotoloni: 340 };
 
 // Similarità testuale semplice (Jaccard su parole) — solo un SUGGERIMENTO da confermare
 // a mano, mai applicata automaticamente.
