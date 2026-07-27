@@ -17,6 +17,7 @@ import CostiDiretti from "./CostiDiretti";
 import ControlloAnomalie from "./ControlloAnomalie";
 import DaArmonizzare from "./DaArmonizzare";
 import ReportQuantitaMangimi from "./ReportQuantitaMangimi";
+import PerformanceEta from "./PerformanceEta";
 import ReportStoricoMangimi from "./ReportStoricoMangimi";
 import IstruzioniFatture from "./IstruzioniFatture";
 import IstruzioniAnagrafiche from "./IstruzioniAnagrafiche";
@@ -52,6 +53,7 @@ const MENU = [
     { tipo: "voce", id: "uba", label: "Report UBA", icon: "🐮" },
     { tipo: "voce", id: "scheda", label: "Scheda Animale", icon: "🔍" },
     { tipo: "voce", id: "riproduttori", label: "Report Riproduttori", icon: "🐄" },
+    { tipo: "voce", id: "performanceeta", label: "Performance per Fascia d'Età", icon: "📐" },
   ]},
   { tipo: "cartella", id: "cart-costi", label: "Costi", icon: "📊", contenuto: [
     { tipo: "voce", id: "istr-costi", label: "Istruzioni", icon: "📖" },
@@ -220,6 +222,7 @@ export default function App() {
         {tab === "costi" && <SezioneReportCosti />}
         {tab === "scheda" && <SchedaAnimale ricercaIniziale={ricercaSchedaAnimale} onRicercaConsumata={() => setRicercaSchedaAnimale(null)} />}
         {tab === "riproduttori" && <ReportRiproduttori />}
+        {tab === "performanceeta" && <PerformanceEta />}
         {tab === "articoliprezzi" && <ArticoliPrezzi />}
         {tab === "costidiretti" && <CostiDiretti />}
         {tab === "anomalie" && <ControlloAnomalie />}

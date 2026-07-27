@@ -46,6 +46,16 @@ export default function IstruzioniAnimali() {
             "Quando un riproduttore esce davvero dall'azienda (macellato/venduto), usa \"⚖️ Applica conguagli\": confronta il valore stimato con quello reale e corregge la differenza sui figli dell'anno di uscita.",
           ],
         },
+        {
+          pagina: "Performance per Fascia d'Età", icon: "📐",
+          aCosaServe: "Stima il peso di un animale all'ingresso e all'uscita di ogni fascia d'età (Vitella/Vitellone/Adulto per i bovini, e analoghe per suini e ovini), e l'IPG (Incremento Peso Giornaliero) — calcolato con una regressione sugli animali già usciti/pesati, non su una singola stima. Funziona anche con pochi dati o dati parziali (solo peso vivo, o solo carcassa).",
+          comeSiUsa: [
+            "Si apre già calcolata — nessun anno da scegliere, usa tutti gli animali usciti disponibili.",
+            "Per ogni specie, due tabelle affiancate: Peso vivo e Peso carcassa, ciascuna con le fasce d'età in righe.",
+            "Se una fascia mostra \"Dati insufficienti\", significa che ci sono meno di 2 animali usciti in quella fascia con quel tipo di peso noto — non si inventa un numero, si aspetta più dati.",
+            "Il calcolo si affina da solo mano a mano che si registrano nuove pesate nella tab \"⚖️ Pesate\" di podereverdeapp.it.",
+          ],
+        },
       ]}
     />
   );

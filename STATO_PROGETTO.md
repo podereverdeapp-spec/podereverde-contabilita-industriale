@@ -260,7 +260,17 @@ con `MOTIVI_PRODUTTIVI_EXP = ["macellazione","macellato","venduto","riformato","
 
 **Ancora da fare (discusso ma non costruito)**: finestra di dialogo per l'inserimento manuale di una singola fattura (senza passare da import Excel massivo) — utile sia per correggere casi come questo sia per fatture isolate.
 
-## 23. Report Quantità Mangimi (primo report di quantità, Studi)
+## 24. Performance per fascia d'età — COSTRUITA (Animali)
+
+**Deciso con Filippo**: partire subito con i dati reali già disponibili (pochi, e spesso parziali — solo peso vivo o solo carcassa), invece di aspettare di avere uno storico pesate completo.
+
+**Meccanismo a "step" con regressione, implementato in `calcoloPerformanceEta.js`**: per ogni fascia d'età (stesse fasce di `UBA_FASCE_EXP`), regressione lineare (minimi quadrati, `regressioneLineare()`) sugli animali usciti/pesati proprio in quella fascia. La prima fascia usa come "ancora" il peso di nascita (reale se noto, altrimenti lo standard di specie da `pesi_standard_specie`) — le fasce successive ereditano il peso proiettato di fine della fascia precedente, a cascata. Calcolato **separatamente per peso vivo e peso carcassa** (la carcassa non ha un'ancora di nascita, dato che un "peso carcassa alla nascita" non ha senso). Se una fascia ha meno di 2 animali con quel tipo di peso noto, mostra esplicitamente "Dati insufficienti" invece di inventare un numero.
+
+**Testato con scenario misto realistico**: animali con solo vivo noto, altri con solo carcassa, distribuiti su fasce diverse — verificato che ogni combinazione desse il risultato atteso (incluse le fasce con dati insufficienti, correttamente rilevate).
+
+**Pagina**: "Performance per Fascia d'Età" (Animali) — due tabelle per specie (Vivo/Carcassa), aggiornata automaticamente sui dati reali di `animali` (nessuna selezione anno, usa tutti gli usciti disponibili).
+
+**Semplificazioni ancora da affinare**: la fascia "Adulto" oggi è trattata come un blocco unico (non ancora spezzata per anno di vita da adulto, come discusso concettualmente con Filippo — il peso continua a crescere anche da adulto, solo più lentamente); le 3 metriche economiche (costo al kg, costo per IPG, FCR mangime/IPG) non sono ancora calcolate — questa pagina fornisce solo i pesi/IPG stimati, il collegamento ai costi (Report Quantità Mangimi) resta il prossimo passo.
 
 **Prima sezione**: per fornitore + prodotto + destinazione — costo dell'anno, quantità in tonnellate e kilogrammi (usa le regole di `ci_regole_armonizzazione_unita` per convertire; i prodotti non ancora armonizzati sono esclusi ed elencati a parte).
 
