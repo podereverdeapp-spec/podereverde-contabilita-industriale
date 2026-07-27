@@ -465,3 +465,25 @@ Notato da Filippo controllando il risultato della query: una riga di storno con 
 Testato con un caso mock: combinato = solo Mangimi + solo Foraggio, verificato numericamente.
 
 **Ancora da fare**: estendere le 4 pagine (+ Solo Maschi/Femmine/Storico) a Ovini e Suini.
+
+## 34. Bug di DATI (non di codice) — regola Quintali/100 sbagliata per Orzo Farina di Cooperativa Ceri
+
+**Sintomo**: Filippo ha notato un valore assurdo (177 kg/giorno per capo) nella pagina Accrescimento e Costi.
+
+**Indagine**: partendo dal dato grezzo (quanti kg di Mangime per Bovini nel 2025), è emerso che "-ORZO FARINA..." di Cooperativa Ceri aveva una regola confermata **Quintali/100**, ma le fatture sono realmente espresse in **Kilogrammi** (quantità tipiche 5.000-6.000, del tutto normali per kg, assurde per quintali che sarebbero 500-600 tonnellate a consegna). La regola sbagliata moltiplicava per 100 quantità già in kg.
+
+**Nota di processo**: la prima query diagnostica confondeva `a.unita_misura` (unità grezza di fattura) con `r.unita_confermata` (unità della regola realmente usata nel calcolo) — sembravano dire "Kilogrammi" ma la colonna mostrata era quella sbagliata. Corretto con una seconda query che mostra entrambe fianco a fianco, isolando la vera discrepanza.
+
+**Corretto**: regola aggiornata a Kilogrammi/1 per tutti i prodotti "-ORZO FARINA..." di Cooperativa Ceri (query fornita, eseguita da Filippo). Nessuna modifica al codice necessaria — era un dato sbagliato nel database, non un bug applicativo.
+
+**Promemoria per il futuro**: quando si controllano regole di armonizzazione, controllare sempre `r.unita_confermata`/`r.fattore_kg` (la regola realmente applicata), non `a.unita_misura` (il dato grezzo di fattura, che può essere inconsistente o irrilevante una volta che una regola è confermata).
+
+## 35. Continuazione indagine anomalie unità — OVIFORMER, Canteri, e abbreviazione TN mancante
+
+**OVIFORMER (Progeo)**: regola era Unità/null (fattore nullo, contribuiva zero kg). Confrontando con il prodotto gemello BOVIFORMER (stesso fornitore, stessa famiglia "-FORMER"), e verificando che il prezzo per tonnellata torni coerente (~380€/ton in entrambi i casi), corretto a Tons/1000.
+
+**Causa probabile trovata**: il prompt di lettura PDF fatture riconosceva le abbreviazioni "kg, q.li, lt" ma non menzionava "tn/t" per Tons — probabile motivo per cui l'IA non ha riconosciuto l'unità sulla fattura originale (probabilmente scritta "TN") e ha lasciato null invece di leggerla come Tons. Aggiunta l'abbreviazione mancante al prompt.
+
+**Canteri**: regole residue (VETRO MASC, VITE PERF) spostate da centro_costo Foraggio a "Ferramenta e materiali di consumo", coerenti con dove sono ora le fatture reali.
+
+**Bilancio della sessione di pulizia Mangimi/Foraggio**: nessun bug di codice trovato in questa sessione (tutti i problemi erano regole di armonizzazione con unità/fattore sbagliati, dati non logica applicativa) — tranne la mancanza dell'abbreviazione TN nel prompt PDF, unica correzione di codice.
