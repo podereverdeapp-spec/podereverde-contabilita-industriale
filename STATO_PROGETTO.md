@@ -270,7 +270,74 @@ con `MOTIVI_PRODUTTIVI_EXP = ["macellazione","macellato","venduto","riformato","
 
 **Pagina**: "Performance per Fascia d'Età" (Animali) — due tabelle per specie (Vivo/Carcassa), aggiornata automaticamente sui dati reali di `animali` (nessuna selezione anno, usa tutti gli usciti disponibili).
 
-**Semplificazioni ancora da affinare**: la fascia "Adulto" oggi è trattata come un blocco unico (non ancora spezzata per anno di vita da adulto, come discusso concettualmente con Filippo — il peso continua a crescere anche da adulto, solo più lentamente); le 3 metriche economiche (costo al kg, costo per IPG, FCR mangime/IPG) non sono ancora calcolate — questa pagina fornisce solo i pesi/IPG stimati, il collegamento ai costi (Report Quantità Mangimi) resta il prossimo passo.
+**Bug di dati reale trovato validando con un file vero** (bovini usciti, caricato da Filippo): 8 bovini avevano un "Peso nascita" palesemente sbagliato (275/276/500 kg — un vitello non pesa così tanto alla nascita). **Causa individuata**: tutti e 8 erano `Provenienza="Acquistato"` — quasi certamente il peso all'ingresso/acquisto, finito per errore nel campo peso di nascita (6 avevano anche la nota "Peso vivo stimato da resa media", a conferma). **Corretto**: soglia massima plausibile per specie (`SOGLIA_MASSIMA_PESO_NASCITA`: 80kg bovino, 3kg suino, 8kg ovino) — oltre la soglia, o se mancante, si usa lo standard di specie (`pesi_standard_specie`) invece del valore registrato, per QUALUNQUE animale (acquistato o nato in azienda, stessa regola per tutti — semplificazione scelta da Filippo rispetto alla mia proposta iniziale più complessa di "usa data_ingresso per gli acquistati"). **Validato con i dati reali**: la media del peso di nascita usato è passata da 82,76 kg (sbagliata, inquinata dagli 8 casi anomali) a 47,9 kg (plausibile) dopo la correzione.
+
+**Validato anche il calcolo della fascia Adulto con dati reali** (56 bovini con oltre 730 giorni di vita, 51 con peso noto): nessun bug — "Dati insufficienti" era solo un artefatto del mio esempio di fantasia precedente, non del codice reale. Con i dati veri: IPG adulto 0,048 kg/gg (vivo), 0,028 kg/gg (carcassa) — piccolo ma positivo, biologicamente sensato.
+
+**Peso all'ingresso integrato come punto aggiuntivo nella regressione (Vivo)**: nuovo campo `animali.peso_ingresso` (podereverdeapp.it) — quando un animale ha peso e data di ingresso noti, e questi cadono dentro una fascia d'età, si aggiunge come punto reale (giorni-dalla-nascita, peso) alla regressione di quella fascia, insieme ai punti di uscita — non solo per l'ancora, ma come dato pieno. Solo per il peso vivo (l'ingresso non è mai una misura di carcassa). Testato con un caso mock (nessun animale uscito in una fascia, ma un peso_ingresso presente → regressione comunque calcolabile con l'ancora di nascita).
+
+**Adulto spezzato per anno di vita** (richiesto da Filippo, "mutatis mutandis" per ogni specie): la fascia finale (Adulto, `fino:Infinity`) viene ora espansa in segmenti di 365 giorni ciascuno — `espandiFasceAdulto()` — quanti ne servono per coprire l'animale più vecchio realmente presente nei dati (calcolato ogni volta, non fisso). Testato: con un bovino a 4339 giorni di vita, genera correttamente 10 fasce annuali (1° anno adulto, 2° anno adulto, ecc.), l'ultima chiusa esattamente sul massimo osservato — non lasciata infinita, altrimenti la prossima volta un animale ancora più vecchio non genererebbe una fascia in più da sola.
+
+**Bug reale di instabilità numerica trovato e corretto, testando con i dati veri dei bovini**: con pochi animali per fascia annuale (alcuni anni hanno solo 1-2 capi), la regressione a catena può "esplodere" — nel test reale, il "4° anno adulto" (2 soli animali) proiettava un peso di **-28.720 kg**, un artefatto numerico propagato poi a tutte le fasce successive. **Corretto**: se la proiezione è ≤0 o implica una perdita di peso superiore al 10% rispetto all'ingresso (biologicamente implausibile per un adulto), non si propaga — il peso resta stabile rispetto all'ingresso, la fascia si segnala con `proiezioneInstabile:true` (badge ⚠️ nell'interfaccia), e €/kg e FCR non si calcolano per quella fascia (gate aggiunto anche lì). Verificato di nuovo con i dati reali dopo la correzione: nessun valore innaturale residuo.
+
+**Secondo bug trovato da Filippo controllando il file Excel** (l'occhio clinico ha visto quello che il primo controllo non catturava): il "3° anno adulto" mostrava IPG **1,059 kg/gg — più alto del Vitellone in crescita attiva (0,897)!** Il controllo di stabilità esistente bloccava solo le proiezioni troppo BASSE (crescita negativa), non quelle troppo ALTE. **Corretto**: aggiunto un tetto — nessuna fascia "adulto" può avere un IPG superiore al massimo IPG osservato nelle fasce giovanili (Vitella/Vitellone), tracciato progressivamente (`ipgMassimoGiovanile`) mentre si attraversano le fasce in ordine. Oltre il tetto, stessa gestione delle altre proiezioni instabili (peso tenuto stabile, non propagato). Verificato di nuovo con i dati reali: il 3° anno ora si segnala correttamente come instabile invece di mostrare un IPG implausibile.
+
+### Passo 2 — Curva di Gompertz (metodo B, affianca il metodo a fasce indipendenti)
+
+**Ricerca**: modello Gompertz confermato in letteratura come il più raccomandato per bovini da carne al pascolo/estensivi (Angus Uruguay, Nellore al pascolo Brasile, bufali al pascolo) — scelto su richiesta esplicita di Filippo di privilegiare fonti estensive/semi-brade invece che da allevamento intensivo. **I parametri però si stimano sempre dai dati reali dell'azienda** (adattamento ai minimi quadrati non lineare, `adattaGompertz()`), mai importati dalla letteratura — razze e genetiche diverse renderebbero i parametri esterni fuorvianti.
+
+**Validato rigorosamente prima di adottarlo**:
+1. Confermato che l'ottimizzazione converge al vero minimo globale (5 punti di partenza diversi, stesso risultato) — non un artefatto numerico
+2. Confrontato contro i 10 animali più vecchi realmente usciti (fino a 11,9 anni): la curva **unica** sottostimava sistematicamente un gruppo di animali pesanti (scarti fino a +328 kg)
+3. **Causa trovata**: non è la razza (la maggioranza è "Meticcia" sia tra i pesanti sia tra i leggeri) — è la **differenza tra sesso**: maschi adulti sensibilmente più pesanti delle femmine (media 853 vs 652 kg nei dati reali)
+
+**Corretto — curve separate per sesso + media ponderata per fascia** (soluzione proposta da Filippo): due curve Gompertz indipendenti (M/F) per peso vivo e per carcassa. Per ogni fascia d'età, il peso mostrato è una **media ponderata sulla composizione reale M/F osservata in quella specifica fascia** (non una percentuale fissa uguale ovunque — nella mandria di Filippo i maschi adulti sono pochissimi, la maggior parte viene macellata da giovane, quindi la composizione cambia molto con l'età). Se una fascia non ha animali di un dato dato/sesso, si usa 50/50 come riserva (genera qualche piccolo salto nella transizione dati-reali → nessun-dato, da affinare quando ci saranno più pesate).
+
+**Interfaccia**: sezione "METODO B" nella pagina, affiancata al "METODO A" (fasce indipendenti) per confronto diretto. Per ciascun tipo di peso (Vivo/Carcassa), **tre tabelle in sequenza** (richiesto da Filippo): Ponderata M/F in cima (`TabellaStepCurva`, con %Maschi per trasparenza), poi Solo Maschi e Solo Femmine sotto (`TabellaStepSemplice`, stessa curva letta per fascia ma senza ponderazione) — così si vede sia il dato aggregato sia i due sessi separati che lo compongono.
+
+**Ancora da fare**: estendere Passo 2 a suini/ovini (oggi validato solo su bovini, con dati reali caricati da Filippo); collegare costo/FCR anche al metodo B (oggi calcolati solo nel metodo A); eventualmente esplorare ulteriore stratificazione (razza) se la variabilità residua lo giustificherà.
+
+**Ristrutturato in 3 pagine** (richiesto da Filippo): "Performance per Fascia d'Età" (Metodo A + Metodo B ponderato + spiegazione della metodologia + link alle altre due), "Performance — Solo Maschi", "Performance — Solo Femmine" (curve pure, senza ponderazione). Componenti `TabellaStepCurva`/`TabellaStepSemplice`/`NotaPochiDati` esportati da `PerformanceEta.jsx` e riusati dalle due pagine sesso-specifiche, nessuna duplicazione di codice UI.
+
+**Colonne coefficiente UBA / costo-kg giornaliero per capo** (richiesta di Filippo — "il primo dato è Costo €/UBA-gg e kg/UBA-gg in ragione della fascia d'età"): nel Metodo A, esposte come colonne a sé (Coeff. UBA, €/gg per capo, Kg/gg per capo) — la base visibile da cui si derivano poi €/kg e FCR, prima calcolata solo internamente. Calcolate indipendentemente dall'IPG (bastano fascia+tasso mangime), quindi disponibili anche quando IPG non è ancora affidabile.
+
+**Costo e consumo complessivo per fascia** (richiesto subito dopo): `costoGiornalieroPerCapo × giorni_nella_fascia` e `kgMangimeGiornalieroPerCapo × giorni_nella_fascia` — colonne "Giorni fascia", "Costo fascia (€)", "Consumo fascia (kg)" nel Metodo A. Ogni fascia ora ha sempre `giornoFine` finito (grazie a `espandiFasceAdulto`), quindi i giorni sono sempre calcolabili. Testato con un caso mock.
+
+**Colonne economiche unificate anche nel Metodo B** (richiesto da Filippo: "unire i dati delle prime tabelle con tutti questi ulteriori... per pagina 1, 2 e 3"): logica economica estratta in `calcolaDatiEconomiciFascia()`, condivisa da tutti e 3 i modi di calcolare peso/IPG (fasce indipendenti, curva singola, curva ponderata) — nessuna duplicazione, verificato con test di non-regressione dopo il refactoring. Ora TUTTE le tabelle (Metodo A, Ponderata, Solo Maschi, Solo Femmine) mostrano lo stesso set completo di colonne: Peso ingr/usc, IPG, Coeff. UBA, €/gg e kg/gg per capo, Giorni fascia, Costo e Consumo fascia, €/kg mangime, FCR mangime.
+
+**Colorazione a coppie €/kg** (richiesta esplicita): 3 sfondi colorati distinti per le 3 coppie di colonne accoppiate euro↔kg (€/gg↔kg/gg per capo; Costo↔Consumo fascia; €/kg mangime↔FCR mangime) — tutti i dati "singoli" (peso, IPG, coefficiente, giorni, N. animali, %Maschi) restano su sfondo bianco. Tabelle passate da affiancate a impilate verticalmente (ora troppo larghe, 12-13 colonne) in tutte e 3 le pagine.
+
+### Storico Performance per Fascia d'Età (nuova pagina, Animali)
+
+**Confronto tra anni** (richiesto da Filippo — "vedere se all'aumentare dei capi allevati migliora o peggiora la situazione"): stessa curva di crescita ponderata M/F (costruita su tutti gli animali di sempre — non abbiamo ancora abbastanza dati per farne una per anno), ma **tassi mangime diversi per anno** (anno scelto + 3 precedenti + media, stesso pattern degli altri Storico). Il tasso €/UBA-gg di ogni anno già incorpora gli UBA-giorni REALI di quell'anno (quanti animali c'erano davvero, da `caricaDatiGrezziAnno`) — non serve calcolarlo a parte, per questo il confronto è valido per misurare l'efficienza dell'allevatore nel tempo.
+
+Tabella: righe = fasce d'età, colonne = "Costo per kg incremento peso" e "Kg mangime per kg incremento peso" per ciascuno dei 4 anni + media. **Media**: ignora gli anni senza tasso mangime armonizzato (non li tratta come zero) — testato con un caso mock (3 anni su 4 senza dato → media coincide col solo anno valido).
+
+**Solo Ponderata/Peso Vivo per ora** — non ancora esteso a Solo Maschi/Femmine/Carcassa (da fare se utile).
+
+## 25. Nuova destinazione "Bovini e Ovini" (mista) — per il Foraggio e altri centri di costo
+
+**Problema trovato da Filippo**: il Foraggio non va solo ai bovini, va anche agli ovini (i suini invece non se ne cibano mai). Classificarlo come "Generali" sarebbe sbagliato: quel pool si ripartisce su TUTTE le specie, dando ai suini una quota di un costo che non consumano mai.
+
+**Soluzione — nuova destinazione generale** (non solo per Foraggio, disponibile per qualunque centro di costo): "Bovini e Ovini", aggiunta al dropdown Destinazione (`CaricaFatture.jsx`, `CostiDiretti.jsx`, `Ricerca.jsx`). Si ripartisce **solo** tra bovino e ovino, in proporzione ai loro UBA-giorni — suini **completamente esclusi**, sia dalla riga diretta sia dal denominatore della ripartizione.
+
+**Implementazione**: nuovo campo `bovinoOvino` nell'oggetto `costiDiretti`, gestito in `calcolaRigaAggregata()` (`motoreUba.js`, funzione condivisa — nessuna modifica necessaria nei consumatori a valle come Report Quantità Mangimi o Performance per Fascia d'Età, che leggono semplicemente `perSpecie.bovino/suino/ovino` già corretti). Aggiornati anche: `classificaDestinazione()` in `calcoloReportCosti.js` (usato dalla vista Per Area/Per Centro di Costo), `MAPPA_DESTINAZIONE_SPECIE` in `calcoloQuantitaMangimi.js`, e l'implementazione **indipendente** della vista Aggregato in `ReportCosti.jsx` (che non passa da `calcolaRigaAggregata`, ha la sua propria logica di ripartizione — trovata e corretta separatamente, stesso principio).
+
+Testato con un caso mock (1000€ "Bovini e Ovini", UBA-giorni 5000/3000/2000 per bovino/suino/ovino): suino riceve esattamente 0, bovino+ovino si dividono l'intero importo in proporzione, nessun euro perso o creato.
+
+**Semplificazioni ancora da affinare**: la fascia "Adulto" oggi è trattata come un blocco unico (non ancora spezzata per anno di vita da adulto); le altre 2 metriche economiche (costo per IPG oltre a quello già fatto, FCR già fatto) restano da estendere agli altri centri di costo oltre Mangimi.
+
+
+
+### Piano a 5 step concordato per collegare i costi (partendo da Mangimi)
+
+1. **Fatto**: €/kg e FCR mangime per fascia, un anno di riferimento scelto dall'utente — `costoGiornalieroPerCapo = coefficiente_UBA_fascia × tasso_€/UBA-gg_mangime`; `€/kg = costoGiornalieroPerCapo / IPG_fascia`; stessa formula per kg/UBA-gg → FCR. Riusa il tasso mangime totale (somma su tutti i prodotti armonizzati) già validato in Report Quantità Mangimi. Testato numericamente.
+2. Da fare: agganciare il vero anno di ciascun segmento (oggi mescola animali usciti in anni diversi con un unico tasso di riferimento)
+3. Da fare: estendere da "solo mangime" a tutti i costi (Report Costi, non solo Quantità Mangimi)
+4. Da fare: spezzare "Adulto" per anno di vita da adulto
+5. Da fare: confronto costo marginale al kg vs prezzo di vendita (`prezzi_riforma`) per il momento ottimale di macellazione/vendita
+
+**Deciso con Filippo**: il report "complessivo" (Step 3, tutti i costi insieme) resta per dopo — si procede per centri di costo separati, uno alla volta, partendo da Mangimi.
 
 **Prima sezione**: per fornitore + prodotto + destinazione — costo dell'anno, quantità in tonnellate e kilogrammi (usa le regole di `ci_regole_armonizzazione_unita` per convertire; i prodotti non ancora armonizzati sono esclusi ed elencati a parte).
 

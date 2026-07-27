@@ -9,7 +9,7 @@ const AREE_ORDINARIE = [
   "Assicurazioni", "Lavorazioni prodotti allevamento", "Spese Promozionali",
   "Canoni ed Abbonamenti", "Varie", "Oneri Finanziari", "Orto", "Animali non d'allevamento", "Ammortamenti",
 ];
-const DESTINAZIONI = ["Bovini", "Suini", "Ovini", "Generali", "Pollame", "Cavalli"];
+const DESTINAZIONI = ["Bovini", "Suini", "Ovini", "Bovini e Ovini", "Generali", "Pollame", "Cavalli"];
 
 export default function Ricerca() {
   const [fatture, setFatture] = useState([]);

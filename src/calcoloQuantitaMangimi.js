@@ -4,7 +4,7 @@ import { caricaDatiGrezziAnno } from "./calcoloReportCosti";
 import { calcolaRigaAggregata } from "./motoreUba";
 
 export const CENTRO_COSTO_MANGIMI = "Mangimi";
-const MAPPA_DESTINAZIONE_SPECIE = { "Bovini": "bovino", "Suini": "suino", "Ovini": "ovino", "Generali": "generale" };
+const MAPPA_DESTINAZIONE_SPECIE = { "Bovini": "bovino", "Suini": "suino", "Ovini": "ovino", "Generali": "generale", "Bovini e Ovini": "bovinoOvino" };
 
 // Calcola tutti i dati del Report Quantità Mangimi per un singolo anno — usato sia dalla
 // vista ad anno singolo sia, chiamata 4 volte, dalla vista Storico.
@@ -81,8 +81,8 @@ export async function calcolaDatiMangimiAnno(anno) {
     if (!prodotti.has(chiaveProd)) {
       prodotti.set(chiaveProd, {
         descrizione: r.descrizione,
-        costiDiretti: { bovino: 0, suino: 0, ovino: 0, generale: 0 },
-        kgDiretti: { bovino: 0, suino: 0, ovino: 0, generale: 0 },
+        costiDiretti: { bovino: 0, suino: 0, ovino: 0, generale: 0, bovinoOvino: 0 },
+        kgDiretti: { bovino: 0, suino: 0, ovino: 0, generale: 0, bovinoOvino: 0 },
       });
     }
     const p = prodotti.get(chiaveProd);

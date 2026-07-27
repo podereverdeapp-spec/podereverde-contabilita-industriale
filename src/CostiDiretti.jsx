@@ -4,7 +4,7 @@ import { C } from "./style";
 import { numerizzaCampi, formattaEuro, round2 } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
 
-const DESTINAZIONI = ["Bovini", "Suini", "Ovini", "Generali", "Pollame", "Cavalli"];
+const DESTINAZIONI = ["Bovini", "Suini", "Ovini", "Bovini e Ovini", "Generali", "Pollame", "Cavalli"];
 const TIPI_COSTO = ["Fisso", "Variabile"];
 
 export default function CostiDiretti() {

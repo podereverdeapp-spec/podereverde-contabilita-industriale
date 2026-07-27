@@ -695,7 +695,7 @@ function RigaFattura({ riga, aree, centriPerArea, regoleArmonizzazione, onChange
               <Select label="Centro di Costo" value={r.editCentro} options={centriPerArea(r.editArea)} onChange={v => onChange({ editCentro: v })} />
             )}
             {!isAcquistoAnimali && (
-              <Select label="Destinazione" value={r.editDestinazione} options={["Bovini", "Suini", "Ovini", "Generali", "Pollame", "Cavalli"]} onChange={v => onChange({ editDestinazione: v })} />
+              <Select label="Destinazione" value={r.editDestinazione} options={["Bovini", "Suini", "Ovini", "Bovini e Ovini", "Generali", "Pollame", "Cavalli"]} onChange={v => onChange({ editDestinazione: v })} />
             )}
             {!isTrasportoAnimali && !isAcquistoAnimali && (
               <Select label="Tipo di Costo" value={r.editTipo}

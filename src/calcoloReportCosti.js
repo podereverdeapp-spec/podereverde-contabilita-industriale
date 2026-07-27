@@ -10,6 +10,7 @@ export const AREE_ORDINARIE = [
 export const MAPPA_SPECIE = { bovino: "Bovini", suino: "Suini", ovino: "Ovini" };
 
 function classificaDestinazione(dest) {
+  if (dest === "Bovini e Ovini") return "bovinoOvino";
   const m = Object.entries(MAPPA_SPECIE).find(([, v]) => v === dest);
   return m ? m[0] : "generale";
 }
@@ -80,7 +81,7 @@ export async function calcolaDatiPerArea(anno) {
   const { ubaGiorniProduttiviAziendali, ubaGiorniProduttiviPerSpecie, articoliAnno, quoteAnno, mappaCespiteSpecie } = await caricaDatiGrezziAnno(anno);
 
   const righe = AREE_ORDINARIE.map(area => {
-    const costiDiretti = { bovino: 0, suino: 0, ovino: 0, generale: 0 };
+    const costiDiretti = { bovino: 0, suino: 0, ovino: 0, generale: 0, bovinoOvino: 0 };
     articoliAnno.filter(r => (r.area || "").trim() === area).forEach(r => {
       costiDiretti[classificaDestinazione((r.destinazione || "").trim())] += (r.totale_riga || 0);
     });
@@ -112,7 +113,7 @@ export async function calcolaDatiPerAreaCentro(anno) {
   const { ubaGiorniProduttiviAziendali, ubaGiorniProduttiviPerSpecie, articoliAnno, quoteAnno, mappaCespiteSpecie, mappaCespiteCategoria } = await caricaDatiGrezziAnno(anno);
 
   function calcolaPerGruppo(righeFiltrate) {
-    const costiDiretti = { bovino: 0, suino: 0, ovino: 0, generale: 0 };
+    const costiDiretti = { bovino: 0, suino: 0, ovino: 0, generale: 0, bovinoOvino: 0 };
     righeFiltrate.forEach(r => { costiDiretti[classificaDestinazione((r.destinazione || "").trim())] += (r.totale_riga || 0); });
     return calcolaRigaAggregata(costiDiretti, ubaGiorniProduttiviPerSpecie, ubaGiorniProduttiviAziendali);
   }
@@ -141,7 +142,7 @@ export async function calcolaDatiPerAreaCentro(anno) {
 
   if (righeAmmortamentoConSpecie.length > 0) {
     function calcolaPerGruppoAmmortamento(righeFiltrate) {
-      const costiDiretti = { bovino: 0, suino: 0, ovino: 0, generale: 0 };
+      const costiDiretti = { bovino: 0, suino: 0, ovino: 0, generale: 0, bovinoOvino: 0 };
       righeFiltrate.forEach(r => {
         const specieMatch = Object.entries(MAPPA_SPECIE).find(([, v]) => r.specieCespite.includes(v));
         costiDiretti[specieMatch ? specieMatch[0] : "generale"] += (r.quota || 0);

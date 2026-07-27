@@ -18,6 +18,9 @@ import ControlloAnomalie from "./ControlloAnomalie";
 import DaArmonizzare from "./DaArmonizzare";
 import ReportQuantitaMangimi from "./ReportQuantitaMangimi";
 import PerformanceEta from "./PerformanceEta";
+import PerformanceEtaMaschi from "./PerformanceEtaMaschi";
+import PerformanceEtaFemmine from "./PerformanceEtaFemmine";
+import StoricoPerformanceEta from "./StoricoPerformanceEta";
 import ReportStoricoMangimi from "./ReportStoricoMangimi";
 import IstruzioniFatture from "./IstruzioniFatture";
 import IstruzioniAnagrafiche from "./IstruzioniAnagrafiche";
@@ -54,6 +57,9 @@ const MENU = [
     { tipo: "voce", id: "scheda", label: "Scheda Animale", icon: "🔍" },
     { tipo: "voce", id: "riproduttori", label: "Report Riproduttori", icon: "🐄" },
     { tipo: "voce", id: "performanceeta", label: "Performance per Fascia d'Età", icon: "📐" },
+    { tipo: "voce", id: "performanceeta-maschi", label: "Performance — Solo Maschi", icon: "♂️" },
+    { tipo: "voce", id: "performanceeta-femmine", label: "Performance — Solo Femmine", icon: "♀️" },
+    { tipo: "voce", id: "storico-performanceeta", label: "Storico Performance per Fascia d'Età", icon: "📈" },
   ]},
   { tipo: "cartella", id: "cart-costi", label: "Costi", icon: "📊", contenuto: [
     { tipo: "voce", id: "istr-costi", label: "Istruzioni", icon: "📖" },
@@ -222,7 +228,10 @@ export default function App() {
         {tab === "costi" && <SezioneReportCosti />}
         {tab === "scheda" && <SchedaAnimale ricercaIniziale={ricercaSchedaAnimale} onRicercaConsumata={() => setRicercaSchedaAnimale(null)} />}
         {tab === "riproduttori" && <ReportRiproduttori />}
-        {tab === "performanceeta" && <PerformanceEta />}
+        {tab === "performanceeta" && <PerformanceEta onNavigate={vaiA} />}
+        {tab === "performanceeta-maschi" && <PerformanceEtaMaschi onNavigate={vaiA} />}
+        {tab === "performanceeta-femmine" && <PerformanceEtaFemmine onNavigate={vaiA} />}
+        {tab === "storico-performanceeta" && <StoricoPerformanceEta />}
         {tab === "articoliprezzi" && <ArticoliPrezzi />}
         {tab === "costidiretti" && <CostiDiretti />}
         {tab === "anomalie" && <ControlloAnomalie />}
