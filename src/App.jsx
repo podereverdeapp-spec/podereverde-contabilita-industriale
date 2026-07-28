@@ -28,6 +28,7 @@ import AccrescimentoCostiPagina from "./AccrescimentoCostiPagina";
 import RazioniSuiniComposizione from "./RazioniSuiniComposizione";
 import RazioniSuiniConsumi from "./RazioniSuiniConsumi";
 import PromptEstrazionePDF from "./PromptEstrazionePDF";
+import ConsultazioneAnimali from "./ConsultazioneAnimali";
 import IstruzioniFatture from "./IstruzioniFatture";
 import IstruzioniAnagrafiche from "./IstruzioniAnagrafiche";
 import IstruzioniAnimali from "./IstruzioniAnimali";
@@ -63,6 +64,7 @@ const MENU = [
     { tipo: "voce", id: "uba", label: "Report UBA", icon: "🐮" },
     { tipo: "voce", id: "scheda", label: "Scheda Animale", icon: "🔍" },
     { tipo: "voce", id: "riproduttori", label: "Report Riproduttori", icon: "🐄" },
+    { tipo: "voce", id: "consultazione-animali", label: "Consultazione Animali per Anno", icon: "📋" },
   ]},
   { tipo: "cartella", id: "cart-costi", label: "Costi", icon: "📊", contenuto: [
     { tipo: "voce", id: "istr-costi", label: "Istruzioni", icon: "📖" },
@@ -276,6 +278,7 @@ export default function App() {
         {tab === "razioni-suini-composizione" && <RazioniSuiniComposizione />}
         {tab === "razioni-suini-consumi" && <RazioniSuiniConsumi />}
         {tab === "prompt-estrazione-pdf" && <PromptEstrazionePDF />}
+        {tab === "consultazione-animali" && <ConsultazioneAnimali />}
         {tab === "istr-fatture" && <IstruzioniFatture />}
         {tab === "istr-anagrafiche" && <IstruzioniAnagrafiche />}
         {tab === "istr-animali" && <IstruzioniAnimali />}

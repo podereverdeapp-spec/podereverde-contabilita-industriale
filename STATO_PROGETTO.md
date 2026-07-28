@@ -626,3 +626,15 @@ Testato con un caso mock a IPG quasi-zero: vecchia metrica dava 94,91€/kg (ass
 - Aggiunta la regola simmetrica per le Attive (segnalare a parte se un PDF è chiaramente un acquisto, non una vendita)
 
 **Chiarito nelle note della pagina**: questo prompt (2 tabelle Excel) è ORA DIVERSO dal prompt interno del programma (`api/leggi-fattura-pdf.js`, formato JSON per l'elaborazione automatica in Carica Fatture) — stessa logica di fondo (Cassa, unità di misura, note di credito), ma output pensato per uso manuale/esterno. Se uno dei due cambia in futuro, l'altro va aggiornato a mano per restare coerente.
+
+## 48. Nuova pagina "Consultazione Animali per Anno" (Animali)
+
+**Richiesto da Filippo**: oltre alla ricerca puntuale (Scheda Animale), una vista che mostri TUTTI gli animali presenti nell'azienda durante un anno scelto, raggruppati per specie con una demarcazione colorata, evidenziando se sono usciti durante l'anno o ancora presenti a fine anno.
+
+**Costruita** `ConsultazioneAnimali.jsx`: selettore anno, poi 3 blocchi (Bovini/Suini/Ovini) — ciascuno con una barra colorata laterale e intestazione tabella nel colore della specie (riusa `C.bovini`/`C.suini`/`C.ovini`, già esistenti nella palette). Per ogni capo: identificativo, nome, sesso, nascita, badge "Presente a fine anno" (verde) o "Uscito nell'anno" (giallo) con data/motivo.
+
+**Logica presenza nell'anno**: un animale entra in lista se nato/costituito prima della fine dell'anno E (mai uscito, oppure uscito dopo l'inizio dell'anno) — chi era già uscito PRIMA dell'inizio dell'anno scelto viene correttamente escluso. Testato con 4 casi (mai uscito, uscito dentro l'anno, uscito prima dell'anno [escluso], uscito dopo l'anno [incluso senza segnalazione]) — tutti corretti.
+
+**Suini**: include sia gli animali tracciati singolarmente sia i suinetti nei lotti (`suini_lotto`, escludendo `stato==="registrato_individuale"` per non contare due volte chi è stato promosso a tracciamento individuale) — stesso principio generale già seguito per Razioni/Consumi.
+
+**Nota sul bug "Scheda Animale non si compila"**: indagine in corso, non ancora risolta — confermato che NON è RLS (verificate le policy, `animali`/`lotti_suini`/`suini_lotto` hanno già una policy anon aperta "per Contabilita Industriale"). Cliccando su un risultato di ricerca, la scheda resta vuota senza errore visibile — controllato il codice (rendering, guardie null) senza trovare un crash evidente finora. Da riprendere.
