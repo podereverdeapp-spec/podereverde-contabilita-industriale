@@ -505,3 +505,25 @@ Testato con casi reali (nomi fornitore lunghi con punteggiatura, numeri fattura 
 **Implementato**: nuovi campi `costoPerKgPesoVivo`/`kgAlimentiPerKgPesoVivo` in `calcolaDatiEconomiciFascia()` (parametro `pesoMedio` aggiunto, passato da tutti e 3 i generatori di step). Colonne rinominate in tutte le tabelle (Metodo A, Ponderata, Solo M/F): "Costo/kg peso vivo (media)" e "Kg alim./kg peso vivo (media)" — con **tooltip esplicativo** (richiesto da Filippo: "occorre avvisare che è una media") che chiarisce l'uso del peso medio, non un valore esatto.
 
 Testato con un caso mock a IPG quasi-zero: vecchia metrica dava 94,91€/kg (assurdo), nuova dà 0,22€/kg peso vivo (ragionevole e stabile).
+
+## 38. Metrica peso vivo (media) — estesa correttamente anche a Carcassa
+
+**Confermato da Filippo**: la metrica di mantenimento serve sia per peso vivo sia per peso carcassa. Il calcolo era **già corretto** per entrambi (la funzione è generica, usa qualunque peso le viene passato) — mancava solo l'etichetta: le tabelle Carcassa mostravano comunque "peso vivo" nell'intestazione, fuorviante.
+
+**Corretto**: `TabellaStep`/`TabellaStepCurva`/`TabellaStepSemplice` ora accettano un prop `tipoPeso` ("vivo" o "carcassa", default "vivo" per compatibilità), usato nell'intestazione e nel tooltip della colonna. Tutte le chiamate per le tabelle Carcassa (Metodo A, Ponderata, Solo Maschi, Solo Femmine) aggiornate per passare `tipoPeso="carcassa"`.
+
+## 39. Nuova cartella "Razioni" (Passo 1) — Razioni Suini
+
+**Richiesto da Filippo**: cartella a sé stante (stesso livello di Fatture/Animali/Costi/Studi) per gestire le razioni alimentari teoriche distribuite per specie/categoria, da confrontare in futuro con i consumi reali (Passo 3). Iniziato dai Suini.
+
+**Schema DB** (`schema_razioni.sql`): `ci_razioni_categorie` (specie, categoria, tipo_animale, fascia età in giorni, flag `richiede_riproduttore`/`richiede_sesso`/`richiede_gravidanza_allattamento`, periodo_note) + `ci_razioni_prodotti` (categoria_id, prodotto, kg_giorno) — **normalizzato apposta** (una riga per prodotto, non colonne fisse) perché Filippo ha richiesto esplicitamente che le razioni siano modificabili sia in quantità sia aggiungendo nuovi tipi di mangime a una categoria, senza dover alterare lo schema.
+
+**Seed iniziale**: le 8 categorie suine da `TABELLA_RAZIONI_SUINI.xlsx` (Riproduttore, Riproduttrice, Riproduttrice gravidanza/allattamento, Magroncello ×3 fasi, Magrone, Da Ingrasso), con i relativi prodotti/kg-giorno.
+
+**Pagina** `RazioniSuini.jsx`: una card per categoria, tabella prodotti con modifica inline (kg/giorno), eliminazione riga, e aggiunta nuovo prodotto — tutto CRUD diretto su Supabase, nessuna logica di calcolo ancora.
+
+**Logica di assegnazione confermata con Filippo per il Passo 2** (non ancora costruita): per ogni suino/lotto realmente presente durante l'anno, la razione si assegna giorno per giorno in base a fascia d'età + tipo (Riproduttore=maschio riproduttore; Riproduttrice=femmina riproduttore, con **due** razioni diverse a seconda che la data cada o no nella finestra [-7,+45] giorni da un evento "parto" registrato; Magroncello/Magrone solo per età; Da Ingrasso=adulto non riproduttore). **Vale sia per i suini tracciati singolarmente sia per i suinetti nei lotti (`lotti_suini`)** — principio generale ribadito da Filippo: quando si parla di suini, considerare sempre entrambe le fonti insieme.
+
+**Dati disponibili in podereverdeapp.it, verificati nel codice** (`allevamento_app.jsx`/`ExportManager.jsx`): campo booleano `riproduttore` + `sesso` sull'animale per Riproduttore/Riproduttrice; tabella eventi con `tipo_evento="parto"` e `data_evento` per le date dei parti; `lotti_suini.data_parto` per la nascita dei lotti.
+
+**Passo 3 (non ancora costruito)**: confronto consumo teorico (somma razioni × giorni-presenza-anno per tutti i suini/lotti) contro consumo reale (Report Quantità Mangimi, destinazione Suini).

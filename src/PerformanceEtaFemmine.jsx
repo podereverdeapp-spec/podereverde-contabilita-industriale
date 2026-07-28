@@ -57,7 +57,7 @@ export default function PerformanceEtaFemmine({ onNavigate }) {
                 <h2 style={{ color: C.primary, fontSize: 18, marginBottom: 10 }}>{SPECIE_LABEL[specie]}</h2>
                 <div style={{ display: "flex", flexDirection: "column", gap: 16, overflowX: "auto" }}>
                   {d.stepVivoF ? <TabellaStepSemplice titolo="Peso vivo" step={d.stepVivoF} /> : <NotaPochiDati />}
-                  {d.stepCarcassaF ? <TabellaStepSemplice titolo="Peso carcassa" step={d.stepCarcassaF} /> : <NotaPochiDati />}
+                  {d.stepCarcassaF ? <TabellaStepSemplice titolo="Peso carcassa" step={d.stepCarcassaF} tipoPeso="carcassa" /> : <NotaPochiDati />}
                 </div>
               </div>
             );

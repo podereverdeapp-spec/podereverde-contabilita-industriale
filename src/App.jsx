@@ -25,6 +25,7 @@ import ReportStoricoMangimi from "./ReportStoricoMangimi";
 import ReportQuantitaForaggio from "./ReportQuantitaForaggio";
 import ReportStoricoForaggio from "./ReportStoricoForaggio";
 import AccrescimentoCostiPagina from "./AccrescimentoCostiPagina";
+import RazioniSuini from "./RazioniSuini";
 import IstruzioniFatture from "./IstruzioniFatture";
 import IstruzioniAnagrafiche from "./IstruzioniAnagrafiche";
 import IstruzioniAnimali from "./IstruzioniAnimali";
@@ -89,6 +90,9 @@ const MENU = [
       { id: "performanceeta-femmine", label: "Bovini — Solo Femmine", icon: "♀️" },
       { id: "storico-performanceeta", label: "Bovini — Storico", icon: "📈" },
     ]},
+  ]},
+  { tipo: "cartella", id: "cart-razioni", label: "Razioni", icon: "🥣", contenuto: [
+    { id: "razioni-suini", label: "Razioni Suini", icon: "🐖" },
   ]},
   { tipo: "voce", id: "parametri", label: "Parametri", icon: "⚙️" },
 ];
@@ -263,6 +267,7 @@ export default function App() {
         {tab === "acc-bovini-mangimi" && <AccrescimentoCostiPagina campo="stepVivoSoloMangimi" titolo="Mangimi" descrizione="Solo il costo/consumo Mangimi, isolato dal Foraggio — utile per capire il peso specifico di questo centro di costo da solo." />}
         {tab === "acc-bovini-foraggio" && <AccrescimentoCostiPagina campo="stepVivoSoloForaggio" titolo="Foraggio" descrizione="Solo il costo/consumo Foraggio, isolato dai Mangimi — utile per capire il peso specifico di questo centro di costo da solo." />}
         {tab === "acc-bovini-pascolo" && <AccrescimentoCostiPagina campo="stepVivoPascolo" titolo="Pascolo" descrizione="Pagina segnaposto — il Pascolo si affronterà insieme a Coltivazione." vuota />}
+        {tab === "razioni-suini" && <RazioniSuini />}
         {tab === "istr-fatture" && <IstruzioniFatture />}
         {tab === "istr-anagrafiche" && <IstruzioniAnagrafiche />}
         {tab === "istr-animali" && <IstruzioniAnimali />}

@@ -129,14 +129,14 @@ export default function PerformanceEta({ onNavigate }) {
                     <div style={{ fontSize: 12, fontWeight: 700, color: C.muted, marginBottom: 6 }}>METODO A — Fasce indipendenti</div>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 }}>
                       <TabellaStep titolo="Peso vivo" step={d.stepVivo} />
-                      <TabellaStep titolo="Peso carcassa" step={d.stepCarcassa} />
+                      <TabellaStep titolo="Peso carcassa" step={d.stepCarcassa} tipoPeso="carcassa" />
                     </div>
                     <div style={{ fontSize: 12, fontWeight: 700, color: C.muted, marginBottom: 6 }}>
                       METODO B — Media ponderata M/F (curva di Gompertz)
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 16, overflowX: "auto" }}>
                       {d.stepVivoDaCurva ? <TabellaStepCurva titolo={`Peso vivo — maturo M: ${d.curveVivoPerSesso.M ? formattaNumero(d.curveVivoPerSesso.M.A, 0) + " kg" : "—"}, F: ${d.curveVivoPerSesso.F ? formattaNumero(d.curveVivoPerSesso.F.A, 0) + " kg" : "—"}`} step={d.stepVivoDaCurva} /> : <NotaPochiDati />}
-                      {d.stepCarcassaDaCurva ? <TabellaStepCurva titolo={`Peso carcassa — maturo M: ${d.curveCarcassaPerSesso.M ? formattaNumero(d.curveCarcassaPerSesso.M.A, 0) + " kg" : "—"}, F: ${d.curveCarcassaPerSesso.F ? formattaNumero(d.curveCarcassaPerSesso.F.A, 0) + " kg" : "—"}`} step={d.stepCarcassaDaCurva} /> : <NotaPochiDati />}
+                      {d.stepCarcassaDaCurva ? <TabellaStepCurva titolo={`Peso carcassa — maturo M: ${d.curveCarcassaPerSesso.M ? formattaNumero(d.curveCarcassaPerSesso.M.A, 0) + " kg" : "—"}, F: ${d.curveCarcassaPerSesso.F ? formattaNumero(d.curveCarcassaPerSesso.F.A, 0) + " kg" : "—"}`} step={d.stepCarcassaDaCurva} tipoPeso="carcassa" /> : <NotaPochiDati />}
                     </div>
                   </>
                 )}
@@ -149,7 +149,7 @@ export default function PerformanceEta({ onNavigate }) {
   );
 }
 
-function TabellaStep({ titolo, step }) {
+function TabellaStep({ titolo, step, tipoPeso = "vivo" }) {
   return (
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
       <div style={{ background: C.primary, color: "#fff", padding: "8px 12px", fontSize: 13, fontWeight: 700 }}>{titolo}</div>
@@ -166,8 +166,8 @@ function TabellaStep({ titolo, step }) {
             <th style={{ padding: "6px 8px", textAlign: "right" }}>Giorni fascia</th>
             <th style={{ padding: "6px 8px", textAlign: "right" }}>Costo fascia (€)</th>
             <th style={{ padding: "6px 8px", textAlign: "right" }}>Consumo fascia (kg)</th>
-            <th style={{ padding: "6px 8px", textAlign: "right" }} title="Costo diviso per il peso MEDIO tra ingresso e uscita della fascia — non il peso esatto in ogni istante">Costo/kg peso vivo (media)</th>
-            <th style={{ padding: "6px 8px", textAlign: "right" }} title="Consumo diviso per il peso MEDIO tra ingresso e uscita della fascia — non il peso esatto in ogni istante">Kg alim./kg peso vivo (media)</th>
+            <th style={{ padding: "6px 8px", textAlign: "right" }} title={`Costo diviso per il peso ${tipoPeso} MEDIO tra ingresso e uscita della fascia — non il peso esatto in ogni istante`}>{`Costo/kg peso ${tipoPeso} (media)`}</th>
+            <th style={{ padding: "6px 8px", textAlign: "right" }} title={`Consumo diviso per il peso ${tipoPeso} MEDIO tra ingresso e uscita della fascia — non il peso esatto in ogni istante`}>{`Kg alim./kg peso ${tipoPeso} (media)`}</th>
             <th style={{ padding: "6px 8px", textAlign: "right" }}>N. animali</th>
           </tr>
         </thead>
@@ -206,7 +206,7 @@ function TabellaStep({ titolo, step }) {
   );
 }
 
-export function TabellaStepCurva({ titolo, step }) {
+export function TabellaStepCurva({ titolo, step, tipoPeso = "vivo" }) {
   return (
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
       <div style={{ background: C.accent, color: "#fff", padding: "8px 12px", fontSize: 13, fontWeight: 700 }}>{titolo}</div>
@@ -223,8 +223,8 @@ export function TabellaStepCurva({ titolo, step }) {
             <th style={{ padding: "6px 8px", textAlign: "right" }}>Giorni fascia</th>
             <th style={{ padding: "6px 8px", textAlign: "right", background: COLORE_COPPIA_2 }}>Costo fascia (€)</th>
             <th style={{ padding: "6px 8px", textAlign: "right", background: COLORE_COPPIA_2 }}>Consumo fascia (kg)</th>
-            <th style={{ padding: "6px 8px", textAlign: "right", background: COLORE_COPPIA_3 }} title="Costo diviso per il peso MEDIO tra ingresso e uscita della fascia — non il peso esatto in ogni istante">Costo/kg peso vivo (media)</th>
-            <th style={{ padding: "6px 8px", textAlign: "right", background: COLORE_COPPIA_3 }} title="Consumo diviso per il peso MEDIO tra ingresso e uscita della fascia — non il peso esatto in ogni istante">Kg alim./kg peso vivo (media)</th>
+            <th style={{ padding: "6px 8px", textAlign: "right", background: COLORE_COPPIA_3 }} title={`Costo diviso per il peso ${tipoPeso} MEDIO tra ingresso e uscita della fascia — non il peso esatto in ogni istante`}>{`Costo/kg peso ${tipoPeso} (media)`}</th>
+            <th style={{ padding: "6px 8px", textAlign: "right", background: COLORE_COPPIA_3 }} title={`Consumo diviso per il peso ${tipoPeso} MEDIO tra ingresso e uscita della fascia — non il peso esatto in ogni istante`}>{`Kg alim./kg peso ${tipoPeso} (media)`}</th>
             <th style={{ padding: "6px 8px", textAlign: "right" }}>% Maschi</th>
           </tr>
         </thead>
@@ -256,7 +256,7 @@ export function NotaPochiDati() {
   return <p style={{ color: C.muted, fontSize: 12, fontStyle: "italic" }}>Servono almeno 4 animali con quel peso noto per adattare la curva in modo affidabile.</p>;
 }
 
-export function TabellaStepSemplice({ titolo, step }) {
+export function TabellaStepSemplice({ titolo, step, tipoPeso = "vivo" }) {
   return (
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
       <div style={{ background: C.muted, color: "#fff", padding: "6px 12px", fontSize: 12, fontWeight: 700 }}>{titolo}</div>
@@ -273,8 +273,8 @@ export function TabellaStepSemplice({ titolo, step }) {
             <th style={{ padding: "5px 8px", textAlign: "right" }}>Giorni fascia</th>
             <th style={{ padding: "5px 8px", textAlign: "right", background: COLORE_COPPIA_2 }}>Costo fascia (€)</th>
             <th style={{ padding: "5px 8px", textAlign: "right", background: COLORE_COPPIA_2 }}>Consumo fascia (kg)</th>
-            <th style={{ padding: "5px 8px", textAlign: "right", background: COLORE_COPPIA_3 }} title="Costo diviso per il peso MEDIO tra ingresso e uscita della fascia">Costo/kg peso vivo (media)</th>
-            <th style={{ padding: "5px 8px", textAlign: "right", background: COLORE_COPPIA_3 }} title="Consumo diviso per il peso MEDIO tra ingresso e uscita della fascia">Kg alim./kg peso vivo (media)</th>
+            <th style={{ padding: "5px 8px", textAlign: "right", background: COLORE_COPPIA_3 }} title={`Costo diviso per il peso ${tipoPeso} MEDIO tra ingresso e uscita della fascia`}>{`Costo/kg peso ${tipoPeso} (media)`}</th>
+            <th style={{ padding: "5px 8px", textAlign: "right", background: COLORE_COPPIA_3 }} title={`Consumo diviso per il peso ${tipoPeso} MEDIO tra ingresso e uscita della fascia`}>{`Kg alim./kg peso ${tipoPeso} (media)`}</th>
           </tr>
         </thead>
         <tbody>
