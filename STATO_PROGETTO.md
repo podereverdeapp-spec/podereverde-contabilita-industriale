@@ -654,3 +654,9 @@ Testato con 4 casi mock (descrizione esatta, descrizione simile per sottostringa
 ## 50. Indagine bug "salvataggio Acquisto Animali non risponde"
 
 Controllato `validaRiga()`: nessuna validazione specifica blocca l'area "ACQUISTO ANIMALI" (solo Trasporto Animali e Ammortamenti hanno controlli dedicati) — quindi il pulsante dovrebbe essere sempre cliccabile per questa area. Sospetto principale, dato il pattern ripetuto in questa sessione: RLS su `ci_report_acquisto_animali` — query di verifica fornita, ancora da controllare con Filippo. Non ancora risolto.
+
+## 51. Corretti due bug reali trovati da Filippo con l'uso reale
+
+**Bug 1 — colonna mancante**: "Errore nel salvataggio della riga... Could not find the 'prezzo_unitario' column of 'ci_report_acquisto_animali' in the schema cache" — il codice salva questa colonna da tempo, ma non è mai stata creata nel database. Migrazione fornita (`aggiungi_prezzo_unitario_acquisto_animali.sql`). Questo bug spiega retroattivamente anche l'indagine precedente su "il salvataggio Acquisto Animali non risponde" — il salvataggio falliva silenziosamente prima che l'alert diventasse visibile a Filippo nella sua interazione.
+
+**Bug 2 — controllo anti-duplicati troppo ristretto**: il controllo (sezione 49) verificava i duplicati **solo tra cespiti dello stesso fornitore** (`eq("fornitore_id", fornitoreId)`) — se i dati storici hanno il fornitore collegato in modo diverso (o assente), il controllo non li trovava. **Corretto**: ora confronta con TUTTI i cespiti esistenti, indipendentemente dal fornitore — la nota nell'avviso lo segnala esplicitamente ("anche di un fornitore diverso").

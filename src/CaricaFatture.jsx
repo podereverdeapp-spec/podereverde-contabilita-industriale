@@ -416,13 +416,14 @@ export default function CaricaFatture() {
         if (riga.editArea === "Ammortamenti" && fornitoreId) {
           // Controllo anti-duplicati PRIMA di creare qualunque riga (richiesto da
           // Filippo: i cespiti storici importati non hanno numero fattura, quindi il
-          // confronto si fa per fornitore+descrizione simile E/O fornitore+importo
-          // simile, non per numero fattura). Fatto qui, prima di trovaOCreaFattura,
-          // così se l'utente annulla non resta nessun dato parziale/orfano.
-          const { data: cespitiFornitore } = await supabase.from("ci_cespiti")
-            .select("id,descrizione,data_acquisto,costo_acquisto").eq("fornitore_id", fornitoreId);
+          // confronto si fa per descrizione simile E/O importo simile). ESTESO A TUTTI
+          // I CESPITI, non solo quelli dello stesso fornitore — i dati storici possono
+          // avere un fornitore collegato in modo diverso o assente, quindi limitare il
+          // controllo al solo fornitore corrente perdeva i duplicati reali.
+          const { data: tuttiCespiti } = await supabase.from("ci_cespiti")
+            .select("id,descrizione,data_acquisto,costo_acquisto,fornitore_id");
           const descrizioneNorm = riga.descrizione.trim().toLowerCase();
-          const possibiliDuplicati = (cespitiFornitore || []).filter(c => {
+          const possibiliDuplicati = (tuttiCespiti || []).filter(c => {
             const descNormEsistente = (c.descrizione || "").trim().toLowerCase();
             const stessaDescrizione = descNormEsistente === descrizioneNorm ||
               (descNormEsistente.length > 5 && (descNormEsistente.includes(descrizioneNorm) || descrizioneNorm.includes(descNormEsistente)));
@@ -432,7 +433,7 @@ export default function CaricaFatture() {
           if (possibiliDuplicati.length > 0) {
             const elenco = possibiliDuplicati.map(c => `- "${c.descrizione}" del ${c.data_acquisto}, ${formattaEuro(c.costo_acquisto)}`).join("\n");
             const procedi = window.confirm(
-              `⚠️ Possibile cespite già registrato per questo fornitore (stessa descrizione o stesso importo):\n\n${elenco}\n\nQuesto bene NON ha numero fattura nei dati storici, quindi il confronto è approssimato — controlla tu se è davvero lo stesso.\n\nOK = registra comunque come nuovo cespite separato.\nAnnulla = fermati qui, non salvare nulla (decidi tu come procedere, es. modificando quello esistente).`
+              `⚠️ Possibile cespite già registrato (stessa descrizione o stesso importo, anche di un fornitore diverso — i dati storici potrebbero avere il fornitore collegato in modo diverso):\n\n${elenco}\n\nQuesto bene NON ha numero fattura nei dati storici, quindi il confronto è approssimato — controlla tu se è davvero lo stesso.\n\nOK = registra comunque come nuovo cespite separato.\nAnnulla = fermati qui, non salvare nulla (decidi tu come procedere, es. modificando quello esistente).`
             );
             if (!procedi) { aggiornaRiga(riga.id, { salvataggioInCorso: false }); return; }
           }
