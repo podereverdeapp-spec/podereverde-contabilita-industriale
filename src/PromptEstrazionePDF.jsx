@@ -23,7 +23,11 @@ Gli importi devono essere numeri (mai stringhe, mai simboli di valuta). "aliquot
 
 "verifica_totali": somma l'imponibile e l'IVA di tutte le righe che hai estratto, confrontali con l'imponibile totale, l'IVA totale e il totale fattura scritti per intero sul PDF originale (di solito nel riepilogo finale). "corrisponde" è true se la somma coincide con questi totali (tolleranza 1 centesimo), false altrimenti.
 
-Se un campo non è presente o leggibile, usa null.`;
+Se un campo non è presente o leggibile, usa null.
+
+ATTENZIONE — Cassa Previdenziale/professionale (INARCASSA, ENPAIA, cassa forense, ecc.): molti liberi professionisti (ingegneri, consulenti, geometri, commercialisti...) aggiungono in fattura un addebito per la propria cassa di previdenza — di solito una percentuale fissa (es. 4%) sull'imponibile dei servizi. Questo addebito TIPICAMENTE NON compare come riga separata nella tabella "PRODOTTI E SERVIZI", ma solo nel riepilogo finale (es. sotto "Calcolo Fattura", voce tipo "Cassa (NOME)" o "Cassa previdenziale"). Cercalo SEMPRE, anche se non è un articolo esplicito: se lo trovi, aggiungilo come UNA RIGA IN PIÙ nell'array "righe" (oltre a quelle dei servizi veri), con descrizione che inizia ESATTAMENTE con "[CASSA PROFESSIONALE] " seguito dal nome della cassa se indicato (es. "[CASSA PROFESSIONALE] INARCASSA"), quantita 1, unita_misura null, imponibile pari all'importo della cassa, aliquota_iva quella indicata per quella voce nel riepilogo (spesso 0). Questo per ogni fornitore che la applica, non solo per alcuni specifici.
+
+Leggi tutti i PDF di fattura che trovi nella cartella: [INSERISCI QUI IL PERCORSO DELLA CARTELLA SUL TUO COMPUTER, es. C:\\Utenti\\Filippo\\Documenti\\Fatture2025] — elaborali tutti, uno per uno. (Questa riga serve solo se usi uno strumento IA che può leggere file direttamente dal tuo computer, es. Claude Desktop/Code — se invece usi una chat web, carica i PDF singolarmente e ignora questa riga.)`;
 
 const PROMPT_ATTIVE = `Sei un assistente che estrae dati strutturati da fatture italiane in formato PDF, per un'azienda agricola (Podere Verde - allevamento bovini/suini/ovini). Ti fornirò uno o più PDF di fatture ATTIVE (di vendita, emesse da Podere Verde verso un cliente).
 
@@ -47,7 +51,11 @@ Gli importi devono essere numeri (mai stringhe, mai simboli di valuta). "aliquot
 
 "verifica_totali": somma l'imponibile e l'IVA di tutte le righe che hai estratto, confrontali con l'imponibile totale, l'IVA totale e il totale fattura scritti per intero sul PDF originale (di solito nel riepilogo finale). "corrisponde" è true se la somma coincide con questi totali (tolleranza 1 centesimo), false altrimenti.
 
-Se un campo non è presente o leggibile, usa null.`;
+Se un campo non è presente o leggibile, usa null.
+
+ATTENZIONE — Cassa Previdenziale/professionale: se il cliente/emittente applica un addebito per la propria cassa di previdenza professionale nel riepilogo finale (non come riga prodotto), aggiungilo come riga extra con descrizione che inizia con "[CASSA PROFESSIONALE] " seguito dal nome della cassa se indicato — stessa logica delle fatture Passive.
+
+Leggi tutti i PDF di fattura che trovi nella cartella: [INSERISCI QUI IL PERCORSO DELLA CARTELLA SUL TUO COMPUTER, es. C:\\Utenti\\Filippo\\Documenti\\FattureAttive2025] — elaborali tutti, uno per uno. (Questa riga serve solo se usi uno strumento IA che può leggere file direttamente dal tuo computer — se invece usi una chat web, carica i PDF singolarmente e ignora questa riga.)`;
 
 function BloccoPrompt({ titolo, testo, note }) {
   const [copiato, setCopiato] = useState(false);

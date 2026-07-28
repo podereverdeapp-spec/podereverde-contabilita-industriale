@@ -34,6 +34,22 @@ export function trovaFornitore(fornitori, { piva, nome }) {
 // Applica il motore di classificazione a una riga grezza.
 // Ritorna: { stato, area, centro_costo, destinazione, tipo_costo, nota, fornitore }
 export function classificaRiga(riga, { fornitori, regoleFisse, regoleVariabili }) {
+  // Controllo universale, INDIPENDENTE dal fornitore: le Casse previdenziali/professionali
+  // (INARCASSA, ENPAIA, ecc.) non compaiono come riga prodotto in fattura, ma nel
+  // riepilogo finale — il prompt di lettura PDF le tagga con questo prefisso quando le
+  // trova. Qualunque consulente le usi, vanno sempre in Consulenze → Casse Professionisti
+  // (richiesto da Filippo: "bisogna stare attenti anche agli altri", non solo ai due
+  // fornitori visti finora) — restano comunque MASCHERA, destinazione/tipo di costo si
+  // assegnano a mano come per ogni altra riga.
+  if (normalizza(riga.descrizione).startsWith("[cassa professionale]")) {
+    return {
+      stato: "MASCHERA",
+      area: "Consulenze", centro_costo: "Casse Professionisti", destinazione: null, tipo_costo: null,
+      nota: "Cassa previdenziale/professionale rilevata nel riepilogo fattura — assegna destinazione e tipo di costo",
+      fornitore: trovaFornitore(fornitori, { piva: riga.piva, nome: riga.fornitore }),
+    };
+  }
+
   const fornitore = trovaFornitore(fornitori, { piva: riga.piva, nome: riga.fornitore });
 
   if (!fornitore) {

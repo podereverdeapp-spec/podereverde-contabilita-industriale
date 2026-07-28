@@ -37,7 +37,9 @@ Gli importi devono essere numeri (mai stringhe, mai simboli di valuta). "aliquot
 
 "verifica_totali": somma l'imponibile e l'IVA di tutte le righe che hai estratto, confrontali con l'imponibile totale, l'IVA totale e il totale fattura scritti per intero sul PDF originale (di solito nel riepilogo finale). "corrisponde" è true se la somma coincide con questi totali (tolleranza 1 centesimo), false altrimenti.
 
-Se un campo non è presente o leggibile, usa null.`;
+Se un campo non è presente o leggibile, usa null.
+
+ATTENZIONE — Cassa Previdenziale/professionale (INARCASSA, ENPAIA, cassa forense, ecc.): molti liberi professionisti (ingegneri, consulenti, geometri, commercialisti...) aggiungono in fattura un addebito per la propria cassa di previdenza — di solito una percentuale fissa (es. 4%) sull'imponibile dei servizi. Questo addebito TIPICAMENTE NON compare come riga separata nella tabella "PRODOTTI E SERVIZI", ma solo nel riepilogo finale (es. sotto "Calcolo Fattura", voce tipo "Cassa (NOME)" o "Cassa previdenziale"). Cercalo SEMPRE, anche se non è un articolo esplicito: se lo trovi, aggiungilo come UNA RIGA IN PIÙ nell'array "righe" (oltre a quelle dei servizi veri), con descrizione che inizia ESATTAMENTE con "[CASSA PROFESSIONALE] " seguito dal nome della cassa se indicato (es. "[CASSA PROFESSIONALE] INARCASSA"), quantita 1, unita_misura null, imponibile pari all'importo della cassa, aliquota_iva quella indicata per quella voce nel riepilogo (spesso 0). Questo per ogni fornitore che la applica, non solo per alcuni specifici.`;
 
   try {
     const response = await fetch("https://api.anthropic.com/v1/messages", {

@@ -604,3 +604,15 @@ Testato con un caso mock a IPG quasi-zero: vecchia metrica dava 94,91€/kg (ass
 **Nota inclusa nella pagina stessa**: se il prompt reale nel codice cambia, questa pagina non si aggiorna da sola — va tenuta allineata a mano.
 
 **Ancora aperto**: Filippo aveva anche chiesto la rinomina file (fornitore/cliente+data+numero) "anche per i clienti" — non costruita in questa sessione, dato che le fatture attive non hanno un flusso di caricamento PDF a cui agganciarla (si carica solo da Excel). Da chiarire se serve un percorso diverso (es. un tool di sola rinomina, senza caricamento in contabilità) quando si ripresenta l'argomento.
+
+## 46. Casse Previdenziali/professionali — rilevate nel riepilogo fattura, mai perse
+
+**Problema reale trovato da Filippo con due fatture vere** (Ing. Stefano Tiberi, Stefano Cortesi): molti liberi professionisti aggiungono un addebito di Cassa previdenziale (INARCASSA, ENPAIA, ecc.) — di solito il 4% dell'imponibile — che compare **solo nel riepilogo finale** della fattura ("Calcolo Fattura"), MAI come riga separata in "PRODOTTI E SERVIZI". Il prompt di lettura PDF, leggendo solo la tabella prodotti, perdeva completamente questo importo.
+
+**Corretto in due punti**:
+1. **Prompt** (`api/leggi-fattura-pdf.js`, e allineata la copia in `PromptEstrazionePDF.jsx`): istruzione esplicita di cercare SEMPRE la Cassa nel riepilogo, anche se non è un articolo esplicito, e aggiungerla come riga IN PIÙ con descrizione che inizia con `"[CASSA PROFESSIONALE] "` + nome cassa se indicato.
+2. **Motore di classificazione** (`motoreClassificazione.js`): nuovo controllo **universale, indipendente dal fornitore** (prima ancora della ricerca fornitore) — qualunque riga con descrizione che inizia con quel tag va sempre in area Consulenze, centro di costo "Casse Professionisti" (nuovo, aggiunto al piano dei conti), restando MASCHERA per assegnare destinazione/tipo di costo a mano (richiesto da Filippo: "bisogna stare attenti anche agli altri" — non solo ai due fornitori visti, qualunque consulente la usi viene riconosciuto allo stesso modo).
+
+**Testato** con un caso mock replicando i due fornitori reali (INARCASSA/ENPAIA) — entrambi riconosciuti correttamente, una riga normale di consulenza non scatta il controllo.
+
+**Migrazione**: `aggiungi_casse_professionisti.sql` (nuovo centro di costo nel piano dei conti, sicura da rilanciare).
