@@ -92,7 +92,7 @@ const MENU = [
     ]},
   ]},
   { tipo: "cartella", id: "cart-razioni", label: "Razioni", icon: "🥣", contenuto: [
-    { id: "razioni-suini", label: "Razioni Suini", icon: "🐖" },
+    { tipo: "voce", id: "razioni-suini", label: "Razioni Suini", icon: "🐖" },
   ]},
   { tipo: "voce", id: "parametri", label: "Parametri", icon: "⚙️" },
 ];

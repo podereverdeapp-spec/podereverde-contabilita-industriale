@@ -527,3 +527,13 @@ Testato con un caso mock a IPG quasi-zero: vecchia metrica dava 94,91€/kg (ass
 **Dati disponibili in podereverdeapp.it, verificati nel codice** (`allevamento_app.jsx`/`ExportManager.jsx`): campo booleano `riproduttore` + `sesso` sull'animale per Riproduttore/Riproduttrice; tabella eventi con `tipo_evento="parto"` e `data_evento` per le date dei parti; `lotti_suini.data_parto` per la nascita dei lotti.
 
 **Passo 3 (non ancora costruito)**: confronto consumo teorico (somma razioni × giorni-presenza-anno per tutti i suini/lotti) contro consumo reale (Report Quantità Mangimi, destinazione Suini).
+
+## 40. Bug reale — schermo bianco su Razioni Suini (tipo:"voce" mancante)
+
+**Sintomo**: schermo completamente bianco cliccando "Razioni Suini" (non solo "nessun dato" — un crash vero).
+
+**Causa trovata**: la voce "razioni-suini", dentro `contenuto:` di una cartella di primo livello, mancava di `tipo: "voce"` esplicito. Il rendering del menu laterale controlla `c.tipo === "voce"` per decidere se disegnare un pulsante semplice o una sottocartella (con `c.voci.map(...)`) — senza quel tipo, il codice provava a leggere `.voci` su un oggetto che non ce l'ha, causando un crash React (schermo bianco, nessun error boundary). La stessa funzione `cartellaDiPagina()` (apertura automatica della cartella da shortcut esterni) ha lo stesso controllo stretto.
+
+**Corretto**: aggiunto `tipo: "voce"` esplicito. Verificato che nessun'altra voce nel menu avesse lo stesso problema — le voci senza `tipo:` altrove sono tutte dentro array `voci:` di sottocartelle, un contesto diverso dove l'ambiguità voce/sottocartella non esiste (quell'array contiene sempre e solo voci semplici).
+
+**Nota per il futuro**: ogni nuova voce aggiunta DIRETTAMENTE dentro `contenuto:` di una cartella di primo livello deve avere `tipo: "voce"` esplicito — le voci dentro `voci:` di una sottocartella invece non ne hanno bisogno.
