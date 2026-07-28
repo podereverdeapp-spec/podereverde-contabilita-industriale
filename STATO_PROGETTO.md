@@ -638,3 +638,19 @@ Testato con un caso mock a IPG quasi-zero: vecchia metrica dava 94,91€/kg (ass
 **Suini**: include sia gli animali tracciati singolarmente sia i suinetti nei lotti (`suini_lotto`, escludendo `stato==="registrato_individuale"` per non contare due volte chi è stato promosso a tracciamento individuale) — stesso principio generale già seguito per Razioni/Consumi.
 
 **Nota sul bug "Scheda Animale non si compila"**: indagine in corso, non ancora risolta — confermato che NON è RLS (verificate le policy, `animali`/`lotti_suini`/`suini_lotto` hanno già una policy anon aperta "per Contabilita Industriale"). Cliccando su un risultato di ricerca, la scheda resta vuota senza errore visibile — controllato il codice (rendering, guardie null) senza trovare un crash evidente finora. Da riprendere.
+
+## 49. Controllo anti-duplicati per Cespiti/Ammortamenti (Carica Fatture)
+
+**Richiesto da Filippo**: caricando acquisti di anni precedenti per gli ammortamenti, non vuole creare cespiti duplicati. I dati storici già importati **non hanno numero fattura**, quindi il confronto per numero non è possibile — serve un controllo per descrizione simile e/o importo simile, separatamente o congiuntamente.
+
+**Implementato**: prima di creare qualunque riga (fattura/articolo/dettaglio ammortamento) per una riga classificata "Ammortamenti", si cercano cespiti esistenti dello STESSO fornitore con descrizione uguale/simile (contenimento reciproco normalizzato, non solo match esatto) **oppure** stesso importo (tolleranza 1 centesimo). Se trovato, un avviso mostra il/i possibile/i duplicato/i con data e importo, e chiede: OK = registra comunque come nuovo cespite separato; Annulla = non salvare nulla.
+
+**Punto di attenzione risolto durante la costruzione**: il controllo doveva stare PRIMA di `trovaOCreaFattura` e di qualunque insert — il primo tentativo lo aveva messo dopo la creazione di fattura/articolo/dettaglio ammortamento, il che avrebbe lasciato dati orfani se l'utente avesse annullato. Spostato all'inizio del ramo di salvataggio.
+
+**Non ancora costruito**: la vera funzione "sostituisci" (aggiorna il cespite esistente invece di crearne uno nuovo) — per ora l'utente può solo scegliere "registra comunque" o "annulla e decidi tu"; se serve un vero replace, va costruito come passo successivo (richiede un'interfaccia più ricca del semplice confirm() del browser).
+
+Testato con 4 casi mock (descrizione esatta, descrizione simile per sottostringa, stesso importo con descrizione diversa, nessun match) — tutti corretti.
+
+## 50. Indagine bug "salvataggio Acquisto Animali non risponde"
+
+Controllato `validaRiga()`: nessuna validazione specifica blocca l'area "ACQUISTO ANIMALI" (solo Trasporto Animali e Ammortamenti hanno controlli dedicati) — quindi il pulsante dovrebbe essere sempre cliccabile per questa area. Sospetto principale, dato il pattern ripetuto in questa sessione: RLS su `ci_report_acquisto_animali` — query di verifica fornita, ancora da controllare con Filippo. Non ancora risolto.
