@@ -14,6 +14,11 @@ export default function RazioniSuini() {
   const [salvando, setSalvando] = useState(null);
   const [modificaProdotto, setModificaProdotto] = useState(null);
   const [nuovoProdotto, setNuovoProdotto] = useState({});
+  const [mostraFormCategoria, setMostraFormCategoria] = useState(false);
+  const [nuovaCategoria, setNuovaCategoria] = useState({
+    categoria: "", tipo_animale: "", giorni_eta_da: "", giorni_eta_a: "", periodo_note: "",
+    richiede_riproduttore: false, richiede_sesso: "", richiede_gravidanza_allattamento: false,
+  });
 
   useEffect(() => { carica(); }, [anno]);
 
@@ -133,6 +138,33 @@ export default function RazioniSuini() {
     setSalvando(null);
   }
 
+  async function creaNuovaCategoria() {
+    if (!nuovaCategoria.categoria.trim()) { alert("Il nome della categoria è obbligatorio"); return; }
+    setSalvando("nuova-categoria");
+    try {
+      const ordineMax = categorie.length > 0 ? Math.max(...categorie.map(c => c.ordine || 0)) : 0;
+      const { error } = await supabase.from("ci_razioni_categorie").insert([{
+        specie: "suino", anno,
+        categoria: nuovaCategoria.categoria.trim(),
+        tipo_animale: nuovaCategoria.tipo_animale.trim() || null,
+        giorni_eta_da: nuovaCategoria.giorni_eta_da !== "" ? parseInt(nuovaCategoria.giorni_eta_da) : null,
+        giorni_eta_a: nuovaCategoria.giorni_eta_a !== "" ? parseInt(nuovaCategoria.giorni_eta_a) : null,
+        periodo_note: nuovaCategoria.periodo_note.trim() || null,
+        richiede_riproduttore: nuovaCategoria.richiede_riproduttore,
+        richiede_sesso: nuovaCategoria.richiede_sesso || null,
+        richiede_gravidanza_allattamento: nuovaCategoria.richiede_gravidanza_allattamento,
+        ordine: ordineMax + 1,
+      }]);
+      if (error) throw new Error(error.message);
+      setNuovaCategoria({ categoria: "", tipo_animale: "", giorni_eta_da: "", giorni_eta_a: "", periodo_note: "", richiede_riproduttore: false, richiede_sesso: "", richiede_gravidanza_allattamento: false });
+      setMostraFormCategoria(false);
+      await carica();
+    } catch (err) {
+      alert(`⚠️ Errore nella creazione della categoria:\n\n${err.message}`);
+    }
+    setSalvando(null);
+  }
+
   function labelFasciaEta(cat) {
     if (cat.giorni_eta_da == null && cat.giorni_eta_a == null) return "—";
     if (cat.giorni_eta_a == null) return `oltre ${cat.giorni_eta_da} gg`;
@@ -178,11 +210,13 @@ export default function RazioniSuini() {
 
       {loading ? <p style={{ color: C.muted }}>Caricamento...</p> : errore ? (
         <p style={{ color: C.red }}>⚠️ {errore}</p>
-      ) : categorie.length === 0 ? (
-        <p style={{ color: C.muted, fontSize: 13 }}>Nessuna razione per il {anno} — {esisteAnnoPrecedenteConDati ? "usa il pulsante sopra per copiarle dall'anno precedente." : "inserisci lo schema iniziale (schema_razioni.sql) se è il primo anno."}</p>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          {categorie.map(cat => {
+        <>
+          {categorie.length === 0 && (
+            <p style={{ color: C.muted, fontSize: 13 }}>Nessuna razione per il {anno} — {esisteAnnoPrecedenteConDati ? "usa il pulsante sopra per copiarle dall'anno precedente, oppure" : ""} crea una categoria nuova qui sotto.</p>
+          )}
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            {categorie.map(cat => {
             const prodotti = prodottiPerCategoria[cat.id] || [];
             const totale = prodotti.reduce((s, p) => s + (p.kg_giorno || 0), 0);
             const nuovo = nuovoProdotto[cat.id] || { nome: "", kg: "" };
@@ -259,7 +293,80 @@ export default function RazioniSuini() {
               </div>
             );
           })}
-        </div>
+          </div>
+
+          {!bloccato && (
+            <div style={{ background: C.card, border: `1px dashed ${C.border}`, borderRadius: 12, marginTop: 16, padding: 14 }}>
+              {!mostraFormCategoria ? (
+                <button onClick={() => setMostraFormCategoria(true)}
+                  style={{ background: C.accent, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                  + Nuova categoria
+                </button>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, color: C.primary }}>Nuova categoria per il {anno}</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <label style={{ fontSize: 12, color: C.muted }}>Nome categoria*
+                      <input value={nuovaCategoria.categoria} onChange={e => setNuovaCategoria(c => ({ ...c, categoria: e.target.value }))}
+                        style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 13, marginTop: 3 }} />
+                    </label>
+                    <label style={{ fontSize: 12, color: C.muted }}>Tipo animale (nota descrittiva)
+                      <input value={nuovaCategoria.tipo_animale} onChange={e => setNuovaCategoria(c => ({ ...c, tipo_animale: e.target.value }))}
+                        style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 13, marginTop: 3 }} />
+                    </label>
+                    <label style={{ fontSize: 12, color: C.muted }}>Giorni età da
+                      <input type="number" value={nuovaCategoria.giorni_eta_da} onChange={e => setNuovaCategoria(c => ({ ...c, giorni_eta_da: e.target.value }))}
+                        style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 13, marginTop: 3 }} />
+                    </label>
+                    <label style={{ fontSize: 12, color: C.muted }}>Giorni età a (vuoto = "oltre")
+                      <input type="number" value={nuovaCategoria.giorni_eta_a} onChange={e => setNuovaCategoria(c => ({ ...c, giorni_eta_a: e.target.value }))}
+                        style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 13, marginTop: 3 }} />
+                    </label>
+                    <label style={{ fontSize: 12, color: C.muted, gridColumn: "1 / -1" }}>Periodo/note
+                      <input value={nuovaCategoria.periodo_note} onChange={e => setNuovaCategoria(c => ({ ...c, periodo_note: e.target.value }))}
+                        style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 13, marginTop: 3 }} />
+                    </label>
+                  </div>
+                  <div style={{ display: "flex", gap: 16, alignItems: "center", marginTop: 6, flexWrap: "wrap" }}>
+                    <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}>
+                      <input type="checkbox" checked={nuovaCategoria.richiede_riproduttore}
+                        onChange={e => setNuovaCategoria(c => ({ ...c, richiede_riproduttore: e.target.checked }))} />
+                      È una categoria riproduttiva (Riproduttore/Riproduttrice)
+                    </label>
+                    {nuovaCategoria.richiede_riproduttore && (
+                      <>
+                        <label style={{ fontSize: 12 }}>Sesso:
+                          <select value={nuovaCategoria.richiede_sesso} onChange={e => setNuovaCategoria(c => ({ ...c, richiede_sesso: e.target.value }))}
+                            style={{ marginLeft: 6, padding: "3px 6px", borderRadius: 6, border: `1.5px solid ${C.border}` }}>
+                            <option value="">—</option>
+                            <option value="M">Maschio (Riproduttore)</option>
+                            <option value="F">Femmina (Riproduttrice)</option>
+                          </select>
+                        </label>
+                        <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}>
+                          <input type="checkbox" checked={nuovaCategoria.richiede_gravidanza_allattamento}
+                            onChange={e => setNuovaCategoria(c => ({ ...c, richiede_gravidanza_allattamento: e.target.checked }))} />
+                          Si applica solo nella finestra gravidanza/allattamento (-7/+45gg dal parto)
+                        </label>
+                      </>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                    <button onClick={creaNuovaCategoria} disabled={salvando === "nuova-categoria"}
+                      style={{ background: C.green, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                      {salvando === "nuova-categoria" ? "Salvataggio..." : "✓ Crea categoria"}
+                    </button>
+                    <button onClick={() => setMostraFormCategoria(false)}
+                      style={{ background: "none", border: `1.5px solid ${C.border}`, borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer" }}>
+                      Annulla
+                    </button>
+                  </div>
+                  <p style={{ fontSize: 11, color: C.muted, margin: "4px 0 0 0" }}>Dopo averla creata, aggiungi i prodotti (kg/giorno) dalla card che comparirà sopra.</p>
+                </div>
+              )}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

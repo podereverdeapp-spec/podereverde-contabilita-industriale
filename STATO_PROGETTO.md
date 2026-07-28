@@ -551,3 +551,34 @@ Testato con un caso mock a IPG quasi-zero: vecchia metrica dava 94,91€/kg (ass
 **Bug trovato e corretto in questa sessione**: schermo bianco su "Razioni Suini" causato da una voce di menu senza `tipo: "voce"` esplicito, dentro `contenuto:` di una cartella di primo livello — il rendering del menu prova a leggere `.voci` (proprietà delle sottocartelle) su un oggetto che non ce l'ha, causando un crash React senza error boundary. Verificato che nessun'altra voce nel menu avesse lo stesso problema (le voci senza tipo altrove sono tutte dentro array `voci:` di sottocartelle, dove l'ambiguità non esiste).
 
 **Migrazione**: `schema_razioni_anni.sql` (aggiunge `anno` a `ci_razioni_categorie`, crea `ci_razioni_anni_bloccati`, assegna le razioni suine già inserite al 2025).
+
+## 42. Composizione Razioni — form "Nuova Categoria" per operatori senza SQL
+
+**Richiesto da Filippo**: possibilità di inserire razioni per anni passati (o categorie nuove) direttamente dall'interfaccia, per operatori che non caricano dati in modo massivo/via SQL come nella sessione con Filippo.
+
+**Aggiunto**: sezione "+ Nuova categoria" in fondo alla pagina (nascosta quando l'anno è bloccato) — form con nome categoria, tipo animale (nota descrittiva), fascia età (da/a in giorni), periodo/note, e i 3 flag usati dalla logica di assegnazione futura (è riproduttiva, sesso M/F, si applica solo nella finestra gravidanza/allattamento). Dopo la creazione, i prodotti (kg/giorno) si aggiungono dalla card che compare subito sopra, con lo stesso meccanismo già esistente.
+
+**Bug trovato e corretto in questa sessione (correlato)**: RLS (Row Level Security) risultava attivo su tutte e 3 le tabelle Razioni (`rowsecurity: true`), nonostante gli script di schema includessero `disable row level security` — la CAUSA per cui l'app mostrava "Nessuna razione" mentre la query SQL diretta (che bypassa RLS) vedeva correttamente i dati. Verificato e ridisattivato esplicitamente.
+
+**Nota di processo**: durante il caricamento dati, uno script è stato eseguito due volte per errore, duplicando le 8 categorie 2025 — corretto con una query di deduplicazione (usando `row_number()` invece di `min(uuid)`, che non esiste in Postgres per colonne UUID — primo tentativo fallito, corretto al secondo).
+
+## 43. Razioni → Suini → Consumi — confronto teorico/reale costruito
+
+**Costruito il Passo 2/3** (Consumi): confronto tra consumo teorico (dalle razioni × suini/lotti realmente presenti nell'anno) e consumo reale (Report Quantità Mangimi, quota Suini), suddiviso per alimento — kg e valore (€), con scarto.
+
+**Schema DB reale usato** (verificato in `allevamento_app.jsx`, non supposto): `animali` (sesso, riproduttore, nascita, data_uscita, stato), `lotti_suini` (data_parto), `suini_lotto` (unità individuali dentro un lotto, con proprio `stato`/`data_uscita` — **esclude** `stato==="registrato_individuale"` per non contare due volte un suinetto "promosso" a tracciamento individuale), `eventi_riproduttivi` (`tipo_evento="parto"`, `data_evento`, `animale_id`).
+
+**Logica di assegnazione** (`calcoloConsumiRazioniSuini.js`):
+- Riusa `periodoNellAnnoExp` (già in `motoreUba.js`) per calcolare la presenza nell'anno — stessa logica di Report UBA, per coerenza
+- **Riproduttore (M)**: tutta la presenza → categoria Riproduttore
+- **Riproduttrice (F)**: calcolo **analitico** (non giorno-per-giorno) delle finestre [-7,+45] attorno a ciascun parto registrato, unite se si sovrappongono (parti ravvicinati) — il resto dei giorni è Riproduttrice normale
+- **Non riproduttori** (Magroncello ×3/Magrone/Da Ingrasso): calcolo **analitico** per fascia d'età (nessun ciclo giorno-per-giorno, solo intersezione di intervalli di date) — testato: la somma dei giorni per tutte le fasce torna esattamente al totale dei giorni di presenza, nessuna sovrapposizione o buco
+- Suinetti nei lotti: stessa logica età-based, usando `lotto.data_parto` come nascita
+
+**Match teorico↔reale per prodotto**: parole chiave (non nome esatto) — "Orzo Farina" matcha descrizioni contenenti "orzo" o "grancereale" (richiesto esplicitamente da Filippo, dato che Gruppo Italiano Mangimi chiama lo stesso prodotto "Grancereale"); gli altri 3 prodotti per parola chiave specifica (suistar/sprint/sl 1).
+
+**Valore teorico**: non esiste un listino prezzi teorico separato — usa il prezzo medio reale pagato (costo reale ÷ kg reale) per quell'alimento, moltiplicato per il kg teorico.
+
+**Testato con casi mock** prima di consegnare: fasce d'età (somma esatta a 365 giorni, nessuna sovrapposizione), finestra riproduttrice singola (53 giorni = 7+1+45, esatto) e parti multipli ravvicinati (somma esatta a 365, finestre unite correttamente).
+
+**Pagina** `RazioniSuiniConsumi.jsx`: tabella con Kg teorico/reale/scarto, Valore teorico/reale/scarto per alimento; tooltip sul nome alimento mostra quali descrizioni fattura sono state riconosciute come corrispondenti (trasparenza sul matching).
