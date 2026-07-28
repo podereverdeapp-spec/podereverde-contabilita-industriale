@@ -660,3 +660,15 @@ Controllato `validaRiga()`: nessuna validazione specifica blocca l'area "ACQUIST
 **Bug 1 — colonna mancante**: "Errore nel salvataggio della riga... Could not find the 'prezzo_unitario' column of 'ci_report_acquisto_animali' in the schema cache" — il codice salva questa colonna da tempo, ma non è mai stata creata nel database. Migrazione fornita (`aggiungi_prezzo_unitario_acquisto_animali.sql`). Questo bug spiega retroattivamente anche l'indagine precedente su "il salvataggio Acquisto Animali non risponde" — il salvataggio falliva silenziosamente prima che l'alert diventasse visibile a Filippo nella sua interazione.
 
 **Bug 2 — controllo anti-duplicati troppo ristretto**: il controllo (sezione 49) verificava i duplicati **solo tra cespiti dello stesso fornitore** (`eq("fornitore_id", fornitoreId)`) — se i dati storici hanno il fornitore collegato in modo diverso (o assente), il controllo non li trovava. **Corretto**: ora confronta con TUTTI i cespiti esistenti, indipendentemente dal fornitore — la nota nell'avviso lo segnala esplicitamente ("anche di un fornitore diverso").
+
+## 52. Schema ci_report_acquisto_animali — mancavano PIÙ colonne, non solo prezzo_unitario
+
+Dopo aver corretto "prezzo_unitario", è emerso un secondo errore identico per "quantita" — segno che la tabella ha probabilmente diverse colonne mancanti rispetto a quello che il codice si aspetta di scrivere, non solo una. Fornita migrazione completa (`fix_completo_schema_acquisto_animali.sql`) con TUTTE le colonne usate nei due punti del codice che scrivono su questa tabella (fonte, fornitore_id, data_fattura, numero_fattura, importo, quantita, unita_misura, prezzo_unitario, specie, razza, destinazione_acquisto, bdn, nr_lotto, articolo_fattura_id) — include una query di verifica finale per controllare l'elenco completo delle colonne prima di considerare il problema chiuso.
+
+## 53. Bug reale — "già caricata" non riconosceva mai Acquisto Animali
+
+**Causa trovata**: il controllo "questa fattura è già stata caricata" verifica solo `ci_fatture` — ma "ACQUISTO ANIMALI" salva DIRETTAMENTE in `ci_report_acquisto_animali`, senza mai passare da `ci_fatture`/`ci_articoli_fattura`. Risultato: ricaricando lo stesso PDF di acquisto animali, non veniva MAI riconosciuto come già presente, comparendo sempre come nuovo (rischio di duplicati se salvato due volte).
+
+**Corretto**: il controllo ora interroga ANCHE `ci_report_acquisto_animali` (fornitore+numero+data), unendo le chiavi trovate a quelle di `ci_fatture`.
+
+**Sospetto aperto sul "non appaiono nel report"**: la query di `ReportAcquistoAnimali.jsx` (`select("*, ci_fornitori(nome)")`, nessun filtro) sembra strutturalmente corretta — probabile che il vero problema fosse semplicemente che il salvataggio falliva ancora silenziosamente per colonne mancanti (sezione 52) prima che Filippo eseguisse la migrazione completa. Da confermare dopo che avrà eseguito `fix_completo_schema_acquisto_animali.sql` e riprovato.

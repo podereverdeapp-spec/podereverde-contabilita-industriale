@@ -293,12 +293,18 @@ export default function CaricaFatture() {
 
     const fornitoreIds = [...new Set(risultati.map(r => r.fornitore_obj?.id).filter(Boolean))];
     if (fornitoreIds.length > 0) {
-      const { data: fattureEsistenti, error } = await supabase
-        .from("ci_fatture").select("fornitore_id, numero, data").in("fornitore_id", fornitoreIds);
-      if (error) {
-        alert(`⚠️ Non sono riuscito a controllare i duplicati (procedo comunque, ma verifica a mano):\n\n${error.message}`);
+      const [{ data: fattureEsistenti, error }, { data: acquistiEsistenti, error: eAcq }] = await Promise.all([
+        supabase.from("ci_fatture").select("fornitore_id, numero, data").in("fornitore_id", fornitoreIds),
+        supabase.from("ci_report_acquisto_animali").select("fornitore_id, numero_fattura, data_fattura").in("fornitore_id", fornitoreIds),
+      ]);
+      if (error || eAcq) {
+        alert(`⚠️ Non sono riuscito a controllare i duplicati (procedo comunque, ma verifica a mano):\n\n${(error || eAcq).message}`);
       } else {
         const chiaviEsistenti = new Set((fattureEsistenti || []).map(f => `${f.fornitore_id}|${f.numero}|${f.data}`));
+        // Acquisto Animali salva su una tabella diversa (mai una riga in ci_fatture),
+        // quindi il controllo "già caricata" va esteso anche a questa — altrimenti
+        // ricaricando lo stesso PDF non viene mai riconosciuto come già salvato
+        (acquistiEsistenti || []).forEach(a => chiaviEsistenti.add(`${a.fornitore_id}|${a.numero_fattura}|${a.data_fattura}`));
         risultati.forEach(r => {
           if (r.fornitore_obj) {
             r.giaCaricata = chiaviEsistenti.has(`${r.fornitore_obj.id}|${r.numero}|${r.data}`);
