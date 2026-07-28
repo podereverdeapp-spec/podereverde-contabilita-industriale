@@ -537,3 +537,17 @@ Testato con un caso mock a IPG quasi-zero: vecchia metrica dava 94,91€/kg (ass
 **Corretto**: aggiunto `tipo: "voce"` esplicito. Verificato che nessun'altra voce nel menu avesse lo stesso problema — le voci senza `tipo:` altrove sono tutte dentro array `voci:` di sottocartelle, un contesto diverso dove l'ambiguità voce/sottocartella non esiste (quell'array contiene sempre e solo voci semplici).
 
 **Nota per il futuro**: ogni nuova voce aggiunta DIRETTAMENTE dentro `contenuto:` di una cartella di primo livello deve avere `tipo: "voce"` esplicito — le voci dentro `voci:` di una sottocartella invece non ne hanno bisogno.
+
+## 41. Razioni ristrutturate: sottocartella Suini con Composizione Razioni (per anno, con blocco) + Consumi
+
+**Ristrutturazione richiesta da Filippo**: le razioni possono cambiare di anno in anno, ma un anno già "dato/fornito" non deve più cambiare — tranne durante il caricamento iniziale dei dati storici, quando serve poterle ancora correggere. Struttura finale:
+
+`Razioni → Suini (sottocartella) → Composizione Razioni + Consumi`
+
+**Composizione Razioni** (`RazioniSuiniComposizione.jsx`, sostituisce il vecchio `RazioniSuini.jsx`): selettore anno, stesso CRUD di prima (modifica/aggiungi/elimina prodotto) ma ora **per anno** (`ci_razioni_categorie.anno`, nuova colonna). **Blocco esplicito** (non automatico per calendario, deciso con Filippo — un pulsante 🔒/🔓 "Blocca/Sblocca anno", tabella `ci_razioni_anni_bloccati` (specie, anno, bloccato)) — quando bloccato, tutti i controlli di modifica spariscono (sola lettura). **Clonazione da anno precedente**: se l'anno scelto non ha ancora razioni ma un anno precedente sì, appare un pulsante per copiarle come punto di partenza (poi modificabili se serve).
+
+**Consumi** (`RazioniSuiniConsumi.jsx`): pagina segnaposto con selettore anno — è il prossimo passo da costruire (assegnazione giorno per giorno + confronto teorico/reale).
+
+**Bug trovato e corretto in questa sessione**: schermo bianco su "Razioni Suini" causato da una voce di menu senza `tipo: "voce"` esplicito, dentro `contenuto:` di una cartella di primo livello — il rendering del menu prova a leggere `.voci` (proprietà delle sottocartelle) su un oggetto che non ce l'ha, causando un crash React senza error boundary. Verificato che nessun'altra voce nel menu avesse lo stesso problema (le voci senza tipo altrove sono tutte dentro array `voci:` di sottocartelle, dove l'ambiguità non esiste).
+
+**Migrazione**: `schema_razioni_anni.sql` (aggiunge `anno` a `ci_razioni_categorie`, crea `ci_razioni_anni_bloccati`, assegna le razioni suine già inserite al 2025).
