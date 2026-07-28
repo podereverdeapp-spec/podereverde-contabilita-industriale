@@ -27,6 +27,7 @@ import ReportStoricoForaggio from "./ReportStoricoForaggio";
 import AccrescimentoCostiPagina from "./AccrescimentoCostiPagina";
 import RazioniSuiniComposizione from "./RazioniSuiniComposizione";
 import RazioniSuiniConsumi from "./RazioniSuiniConsumi";
+import PromptEstrazionePDF from "./PromptEstrazionePDF";
 import IstruzioniFatture from "./IstruzioniFatture";
 import IstruzioniAnagrafiche from "./IstruzioniAnagrafiche";
 import IstruzioniAnimali from "./IstruzioniAnimali";
@@ -49,6 +50,7 @@ const MENU = [
     { tipo: "voce", id: "anomalie", label: "Controllo Anomalie", icon: "🔍" },
     { tipo: "voce", id: "armonizza", label: "Da Armonizzare", icon: "⚖️" },
     { tipo: "voce", id: "articoliprezzi", label: "Articoli & Prezzi", icon: "🏷️" },
+    { tipo: "voce", id: "prompt-estrazione-pdf", label: "Prompt Estrazione PDF", icon: "🤖" },
   ]},
   { tipo: "cartella", id: "cart-anagrafiche", label: "Anagrafiche", icon: "🏢", contenuto: [
     { tipo: "voce", id: "istr-anagrafiche", label: "Istruzioni", icon: "📖" },
@@ -273,6 +275,7 @@ export default function App() {
         {tab === "acc-bovini-pascolo" && <AccrescimentoCostiPagina campo="stepVivoPascolo" titolo="Pascolo" descrizione="Pagina segnaposto — il Pascolo si affronterà insieme a Coltivazione." vuota />}
         {tab === "razioni-suini-composizione" && <RazioniSuiniComposizione />}
         {tab === "razioni-suini-consumi" && <RazioniSuiniConsumi />}
+        {tab === "prompt-estrazione-pdf" && <PromptEstrazionePDF />}
         {tab === "istr-fatture" && <IstruzioniFatture />}
         {tab === "istr-anagrafiche" && <IstruzioniAnagrafiche />}
         {tab === "istr-animali" && <IstruzioniAnimali />}

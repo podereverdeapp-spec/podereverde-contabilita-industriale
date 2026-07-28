@@ -592,3 +592,15 @@ Testato con un caso mock a IPG quasi-zero: vecchia metrica dava 94,91€/kg (ass
 **Corretto**: il pulsante "✓ Conferma unità" ora è **disabilitato** (grigio, non cliccabile) quando l'unità scelta è Unità o Litri e non è stato inserito un numero valido — tooltip esplicativo su hover. Impossibile ormai confermare "a vuoto" per queste due unità.
 
 **Query fornita** per trovare le regole già salvate con fattore mancante (da vecchie conferme prima del fix), da sistemare ora che l'interfaccia lo impedisce.
+
+## 45. Nuova pagina "Prompt Estrazione PDF" (Fatture) — prompt copiabili per uso esterno
+
+**Richiesto da Filippo**: una pagina in Fatture che mostri il prompt usato per estrarre dati da PDF, copiabile per darlo a un'IA esterna (fuori dal programma).
+
+**Costruito**: `PromptEstrazionePDF.jsx` — due blocchi con pulsante "📋 Copia prompt" (clipboard):
+- **Fatture Passive**: copia ESATTA (non riassunta) del prompt realmente usato in `api/leggi-fattura-pdf.js`
+- **Fatture Attive**: nuovo prompt scritto sullo stesso modello (cliente invece di fornitore) — dato che oggi **non esiste** lettura PDF per le attive nel programma (verificato: `CaricaFattureAttive.jsx` legge solo Excel), confermato con Filippo di NON costruire quella funzionalità per ora, solo documentare il prompt per uso manuale esterno
+
+**Nota inclusa nella pagina stessa**: se il prompt reale nel codice cambia, questa pagina non si aggiorna da sola — va tenuta allineata a mano.
+
+**Ancora aperto**: Filippo aveva anche chiesto la rinomina file (fornitore/cliente+data+numero) "anche per i clienti" — non costruita in questa sessione, dato che le fatture attive non hanno un flusso di caricamento PDF a cui agganciarla (si carica solo da Excel). Da chiarire se serve un percorso diverso (es. un tool di sola rinomina, senza caricamento in contabilità) quando si ripresenta l'argomento.
