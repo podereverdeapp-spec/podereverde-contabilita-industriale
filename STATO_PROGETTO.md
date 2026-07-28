@@ -672,3 +672,13 @@ Dopo aver corretto "prezzo_unitario", è emerso un secondo errore identico per "
 **Corretto**: il controllo ora interroga ANCHE `ci_report_acquisto_animali` (fornitore+numero+data), unendo le chiavi trovate a quelle di `ci_fatture`.
 
 **Sospetto aperto sul "non appaiono nel report"**: la query di `ReportAcquistoAnimali.jsx` (`select("*, ci_fornitori(nome)")`, nessun filtro) sembra strutturalmente corretta — probabile che il vero problema fosse semplicemente che il salvataggio falliva ancora silenziosamente per colonne mancanti (sezione 52) prima che Filippo eseguisse la migrazione completa. Da confermare dopo che avrà eseguito `fix_completo_schema_acquisto_animali.sql` e riprovato.
+
+## 54. Report Acquisto Animali — modifica ed eliminazione righe
+
+**Richiesto da Filippo**: oltre a consultare (già esisteva), poter modificare i dati di una riga e poter eliminare i duplicati direttamente dal programma.
+
+**Aggiunto** a `ReportAcquistoAnimali.jsx`:
+- **✏️ Modifica**: trasforma la riga in un piccolo form inline (numero/data fattura, specie, razza, destinazione, BDN, lotto, quantità, U.M., prezzo unitario, importo — il fornitore non è modificabile da qui) con "✓ Salva modifiche"/Annulla. Il fornitore resta fisso (cambiarlo richiederebbe altre implicazioni, non richiesto ora).
+- **🗑️ Elimina**: rimuove la riga dopo conferma esplicita (mostra fornitore/fattura/importo nel messaggio di conferma) — pensato apposta per i duplicati che possono comparire ricaricando le fatture prima del fix del controllo "già caricata" (sezione 53).
+
+Entrambe le azioni operano direttamente su `ci_report_acquisto_animali`, la stessa tabella che la pagina già legge — nessuna nuova tabella o schema necessario.

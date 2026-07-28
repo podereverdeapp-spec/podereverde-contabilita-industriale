@@ -9,6 +9,9 @@ export default function ReportAcquistoAnimali() {
   const [loading, setLoading] = useState(true);
   const [filtroStato, setFiltroStato] = useState("DA_ELABORARE");
   const [animaliSenzaCosto, setAnimaliSenzaCosto] = useState([]);
+  const [modificaId, setModificaId] = useState(null); // id della riga in modifica
+  const [formModifica, setFormModifica] = useState({});
+  const [salvando, setSalvando] = useState(null);
 
   useEffect(() => { carica(); caricaAnimaliSenzaCosto(); }, []);
 
@@ -56,6 +59,58 @@ export default function ReportAcquistoAnimali() {
       return;
     }
     carica();
+  }
+
+  function iniziaModifica(r) {
+    setModificaId(r.id);
+    setFormModifica({
+      numero_fattura: r.numero_fattura || "", data_fattura: r.data_fattura || "",
+      specie: r.specie || "", razza: r.razza || "", destinazione_acquisto: r.destinazione_acquisto || "",
+      bdn: r.bdn || "", nr_lotto: r.nr_lotto || "", quantita: r.quantita ?? "", unita_misura: r.unita_misura || "",
+      prezzo_unitario: r.prezzo_unitario ?? "", importo: r.importo ?? "",
+    });
+  }
+
+  function annullaModifica() {
+    setModificaId(null);
+    setFormModifica({});
+  }
+
+  async function salvaModifica(id) {
+    setSalvando(id);
+    try {
+      const { error } = await supabase.from("ci_report_acquisto_animali").update({
+        numero_fattura: formModifica.numero_fattura || null, data_fattura: formModifica.data_fattura || null,
+        specie: formModifica.specie || null, razza: formModifica.razza || null,
+        destinazione_acquisto: formModifica.destinazione_acquisto || null,
+        bdn: formModifica.bdn || null, nr_lotto: formModifica.nr_lotto || null,
+        quantita: formModifica.quantita === "" ? null : parseFloat(formModifica.quantita),
+        unita_misura: formModifica.unita_misura || null,
+        prezzo_unitario: formModifica.prezzo_unitario === "" ? null : parseFloat(formModifica.prezzo_unitario),
+        importo: formModifica.importo === "" ? null : parseFloat(formModifica.importo),
+        updated_at: new Date().toISOString(),
+      }).eq("id", id);
+      if (error) throw new Error(error.message);
+      setModificaId(null);
+      setFormModifica({});
+      await carica();
+    } catch (err) {
+      alert(`⚠️ Errore nel salvataggio delle modifiche:\n\n${err.message}`);
+    }
+    setSalvando(null);
+  }
+
+  async function eliminaRiga(r) {
+    if (!window.confirm(`Eliminare questa riga?\n\n"${r.ci_fornitori?.nome || "—"}" — Fatt. ${r.numero_fattura || "—"} del ${r.data_fattura} — ${formattaEuro(r.importo)}\n\nOperazione irreversibile.`)) return;
+    setSalvando(r.id);
+    try {
+      const { error } = await supabase.from("ci_report_acquisto_animali").delete().eq("id", r.id);
+      if (error) throw new Error(error.message);
+      await carica();
+    } catch (err) {
+      alert(`⚠️ Errore nell'eliminazione:\n\n${err.message}`);
+    }
+    setSalvando(null);
   }
 
   const filtrate = righe.filter(r => filtroStato === "tutti" || r.stato === filtroStato);
@@ -130,6 +185,30 @@ export default function ReportAcquistoAnimali() {
               background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: 14,
               borderLeft: `4px solid ${r.stato === "DA_ELABORARE" ? C.red : C.green}`,
             }}>
+              {modificaId === r.id ? (
+                <div>
+                  <div style={{ fontSize: 12, color: C.muted, marginBottom: 8 }}><strong>{r.ci_fornitori?.nome || "—"}</strong> (fornitore non modificabile qui)</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 8 }}>
+                    <CampoModifica label="Numero fattura" value={formModifica.numero_fattura} onChange={v => setFormModifica(f => ({ ...f, numero_fattura: v }))} />
+                    <CampoModifica label="Data fattura" tipo="date" value={formModifica.data_fattura} onChange={v => setFormModifica(f => ({ ...f, data_fattura: v }))} />
+                    <CampoModifica label="Specie" value={formModifica.specie} onChange={v => setFormModifica(f => ({ ...f, specie: v }))} />
+                    <CampoModifica label="Razza" value={formModifica.razza} onChange={v => setFormModifica(f => ({ ...f, razza: v }))} />
+                    <CampoModifica label="Destinazione" value={formModifica.destinazione_acquisto} onChange={v => setFormModifica(f => ({ ...f, destinazione_acquisto: v }))} />
+                    <CampoModifica label="BDN" value={formModifica.bdn} onChange={v => setFormModifica(f => ({ ...f, bdn: v }))} />
+                    <CampoModifica label="Lotto" value={formModifica.nr_lotto} onChange={v => setFormModifica(f => ({ ...f, nr_lotto: v }))} />
+                    <CampoModifica label="Quantità" tipo="number" value={formModifica.quantita} onChange={v => setFormModifica(f => ({ ...f, quantita: v }))} />
+                    <CampoModifica label="U.M." value={formModifica.unita_misura} onChange={v => setFormModifica(f => ({ ...f, unita_misura: v }))} />
+                    <CampoModifica label="Prezzo unitario" tipo="number" value={formModifica.prezzo_unitario} onChange={v => setFormModifica(f => ({ ...f, prezzo_unitario: v }))} />
+                    <CampoModifica label="Importo" tipo="number" value={formModifica.importo} onChange={v => setFormModifica(f => ({ ...f, importo: v }))} />
+                  </div>
+                  <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                    <button onClick={() => salvaModifica(r.id)} disabled={salvando === r.id} style={btn(C.green)}>
+                      {salvando === r.id ? "Salvataggio..." : "✓ Salva modifiche"}
+                    </button>
+                    <button onClick={annullaModifica} style={btn(C.muted)}>Annulla</button>
+                  </div>
+                </div>
+              ) : (
               <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
                 <div>
                   <strong>{r.ci_fornitori?.nome || "—"}</strong>
@@ -150,17 +229,18 @@ export default function ReportAcquistoAnimali() {
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <div style={{ fontSize: 18, fontWeight: 800, color: C.primary }}>{formattaEuro(r.importo)}</div>
-                  {r.stato === "DA_ELABORARE" ? (
-                    <button onClick={() => segnaInserito(r.id)} style={btn(C.green)}>
-                      ✓ Segna inserito
-                    </button>
-                  ) : (
-                    <button onClick={() => annullaInserito(r.id)} style={btn(C.muted)}>
-                      ↩️ Riporta a "da elaborare"
-                    </button>
-                  )}
+                  <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                    {r.stato === "DA_ELABORARE" ? (
+                      <button onClick={() => segnaInserito(r.id)} style={btn(C.green)}>✓ Segna inserito</button>
+                    ) : (
+                      <button onClick={() => annullaInserito(r.id)} style={btn(C.muted)}>↩️ Riporta a "da elaborare"</button>
+                    )}
+                    <button onClick={() => iniziaModifica(r)} style={btn(C.blue)}>✏️ Modifica</button>
+                    <button onClick={() => eliminaRiga(r)} disabled={salvando === r.id} style={btn(C.red)}>🗑️ Elimina</button>
+                  </div>
                 </div>
               </div>
+              )}
             </div>
           ))}
           {filtrate.length === 0 && <p style={{ color: C.muted }}>Nessuna riga in questo stato.</p>}
@@ -175,4 +255,14 @@ function btn(color) {
     marginTop: 6, background: color + "20", color, border: "none", borderRadius: 8,
     padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer",
   };
+}
+
+function CampoModifica({ label, value, onChange, tipo = "text" }) {
+  return (
+    <label style={{ fontSize: 11, color: C.muted }}>
+      {label}
+      <input type={tipo} value={value} onChange={e => onChange(e.target.value)}
+        style={{ width: "100%", padding: "5px 7px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 12, marginTop: 2 }} />
+    </label>
+  );
 }
