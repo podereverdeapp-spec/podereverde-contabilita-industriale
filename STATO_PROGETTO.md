@@ -616,3 +616,13 @@ Testato con un caso mock a IPG quasi-zero: vecchia metrica dava 94,91€/kg (ass
 **Testato** con un caso mock replicando i due fornitori reali (INARCASSA/ENPAIA) — entrambi riconosciuti correttamente, una riga normale di consulenza non scatta il controllo.
 
 **Migrazione**: `aggiungi_casse_professionisti.sql` (nuovo centro di costo nel piano dei conti, sicura da rilanciare).
+
+## 47. Prompt Estrazione PDF — riscritti sulla struttura proposta da Filippo (2 tabelle Excel, non JSON)
+
+**Filippo ha proposto un prompt alternativo**, strutturalmente migliore per l'uso esterno (output diretto in 2 tabelle Excel — "Fatture" e "Verifica Fatture" — invece di JSON, regole numerate esplicite, gestione delle Note di Credito che il prompt precedente non aveva). Adottato come base per entrambi i prompt (Passive/Attive), aggiungendo:
+- La rilevazione Cassa Previdenziale (stessa logica già nel prompt interno dell'app)
+- L'istruzione di rinominare ogni PDF elaborato (Fornitore/Cliente_Data_Numero.pdf) al termine
+- Correzione: la lista U.M. nella proposta di Filippo aveva 8 unità, mancavano "Balle" e "Rotoloni" (ora 10, coerenti con `api/leggi-fattura-pdf.js`)
+- Aggiunta la regola simmetrica per le Attive (segnalare a parte se un PDF è chiaramente un acquisto, non una vendita)
+
+**Chiarito nelle note della pagina**: questo prompt (2 tabelle Excel) è ORA DIVERSO dal prompt interno del programma (`api/leggi-fattura-pdf.js`, formato JSON per l'elaborazione automatica in Carica Fatture) — stessa logica di fondo (Cassa, unità di misura, note di credito), ma output pensato per uso manuale/esterno. Se uno dei due cambia in futuro, l'altro va aggiornato a mano per restare coerente.

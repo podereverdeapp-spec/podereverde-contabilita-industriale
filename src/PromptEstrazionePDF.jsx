@@ -1,61 +1,92 @@
 import { useState } from "react";
 import { C } from "./style";
 
-const PROMPT_PASSIVE = `Sei un assistente che estrae dati strutturati da fatture italiane in formato PDF, per un'azienda agricola (Podere Verde - allevamento bovini/suini/ovini). Ti fornirò uno o più PDF di fatture PASSIVE (di acquisto, ricevute da un fornitore).
+const PROMPT_PASSIVE = `Ti do l'indirizzo di una cartella dove sono salvate delle fatture PASSIVE (di acquisto) in formato PDF: [INSERISCI QUI IL PERCORSO DELLA CARTELLA SUL TUO COMPUTER, es. C:\\Utenti\\Filippo\\Documenti\\Fatture2025]. Estrai i dati di TUTTE le fatture caricate e componi un file Excel con DUE tabelle:
 
-REGOLA FONDAMENTALE, da rispettare sempre: una fattura può contenere PIÙ articoli/righe con natura diversa (es. "mangime bovini" e "mangime suini" nella stessa fattura, ciascuno da classificare diversamente in contabilità industriale). Devi estrarre OGNI riga/articolo separatamente, MAI riassumere, raggruppare o sommare più righe in una sola. Se la fattura ha 5 articoli distinti, il risultato deve avere 5 elementi nell'array "righe". Ignora le righe che sono solo "IVA" o riepiloghi/totali: quelle non sono articoli.
+## Tabella 1 — "Fatture" (una riga per ogni articolo/voce di fattura)
 
-Rispondi SOLO con un oggetto JSON valido, nessun testo prima o dopo, in questo formato esatto (un oggetto per ciascuna fattura, se te ne fornisco più di una restituiscimi un array di questi oggetti):
-{
-  "fornitore": "nome esatto del fornitore/emittente della fattura",
-  "piva": "partita IVA del fornitore, solo il codice (es. IT01234567890), null se non leggibile",
-  "numero": "numero della fattura",
-  "data": "data della fattura in formato AAAA-MM-GG",
-  "righe": [
-    { "descrizione": "testo esatto della riga", "quantita": 0, "unita_misura": null, "prezzo_unitario": 0, "imponibile": 0, "aliquota_iva": 0 }
-  ],
-  "verifica_totali": { "imponibile_pdf": 0, "iva_pdf": 0, "totale_pdf": 0, "corrisponde": true }
-}
+Colonne esatte, in questo ordine:
+Fornitore | P.IVA | Numero | Data | Descrizione | Quantità | U.M. | Prezzo unitario | Imponibile | Aliquota IVA | Tipo documento
 
-Gli importi devono essere numeri (mai stringhe, mai simboli di valuta). "aliquota_iva" è la percentuale (es. 22, 10, 4, 0), MAI una frazione.
+## Tabella 2 — "Verifica Fatture" (una riga per ogni fattura, non per articolo)
 
-"unita_misura" — SOLO queste unità sono ammesse: "Unità", "Tons", "Quintali", "Kilogrammi", "Litri", "Balloni", "Rotoballe", "Rotoli", "Balle", "Rotoloni". Cerca nel testo della fattura se una di queste è esplicitamente indicata (anche abbreviata: kg, q.li, lt, tn/t per Tons). Se la fattura usa un'unità diversa (es. "Sacchi", "Pezzi", "Confezioni") o non la specifica, usa null — non approssimare né inventare una delle dieci ammesse.
+Colonne esatte, in questo ordine:
+Fornitore | Numero | Data | Imponibile calcolato (somma righe) | Imponibile da PDF | IVA calcolata (somma righe) | IVA da PDF | Totale calcolato | Totale da PDF | Corrisponde?
 
-"verifica_totali": somma l'imponibile e l'IVA di tutte le righe che hai estratto, confrontali con l'imponibile totale, l'IVA totale e il totale fattura scritti per intero sul PDF originale (di solito nel riepilogo finale). "corrisponde" è true se la somma coincide con questi totali (tolleranza 1 centesimo), false altrimenti.
+Per ogni fattura: somma l'Imponibile e l'IVA di tutte le righe che le appartengono nella Tabella 1, confrontali con l'Imponibile totale, l'IVA totale e il Totale fattura scritti per intero sul PDF originale. Scrivi "SI" in "Corrisponde?" se coincidono (tolleranza 1 centesimo per arrotondamenti), altrimenti "NO".
 
-Se un campo non è presente o leggibile, usa null.
+REGOLE OBBLIGATORIE PER LA TABELLA 1:
 
-ATTENZIONE — Cassa Previdenziale/professionale (INARCASSA, ENPAIA, cassa forense, ecc.): molti liberi professionisti (ingegneri, consulenti, geometri, commercialisti...) aggiungono in fattura un addebito per la propria cassa di previdenza — di solito una percentuale fissa (es. 4%) sull'imponibile dei servizi. Questo addebito TIPICAMENTE NON compare come riga separata nella tabella "PRODOTTI E SERVIZI", ma solo nel riepilogo finale (es. sotto "Calcolo Fattura", voce tipo "Cassa (NOME)" o "Cassa previdenziale"). Cercalo SEMPRE, anche se non è un articolo esplicito: se lo trovi, aggiungilo come UNA RIGA IN PIÙ nell'array "righe" (oltre a quelle dei servizi veri), con descrizione che inizia ESATTAMENTE con "[CASSA PROFESSIONALE] " seguito dal nome della cassa se indicato (es. "[CASSA PROFESSIONALE] INARCASSA"), quantita 1, unita_misura null, imponibile pari all'importo della cassa, aliquota_iva quella indicata per quella voce nel riepilogo (spesso 0). Questo per ogni fornitore che la applica, non solo per alcuni specifici.
+1. **Una riga = un articolo/voce della fattura.** Se una fattura contiene più voci diverse (es. mangime bovini + mangime suini + trasporto), crea una riga per ciascuna, MAI riassumere o sommare voci diverse in una sola. Ignora le righe che sono solo riepiloghi IVA o totali finali: non sono articoli.
 
-Leggi tutti i PDF di fattura che trovi nella cartella: [INSERISCI QUI IL PERCORSO DELLA CARTELLA SUL TUO COMPUTER, es. C:\\Utenti\\Filippo\\Documenti\\Fatture2025] — elaborali tutti, uno per uno. (Questa riga serve solo se usi uno strumento IA che può leggere file direttamente dal tuo computer, es. Claude Desktop/Code — se invece usi una chat web, carica i PDF singolarmente e ignora questa riga.)`;
+2. **Nessuna cella vuota** nelle colonne Fornitore, Numero, Data, Descrizione, Imponibile, Aliquota IVA, Tipo documento. Se un dato non è leggibile con certezza, scrivi "DA VERIFICARE" invece di lasciarla vuota.
 
-const PROMPT_ATTIVE = `Sei un assistente che estrae dati strutturati da fatture italiane in formato PDF, per un'azienda agricola (Podere Verde - allevamento bovini/suini/ovini). Ti fornirò uno o più PDF di fatture ATTIVE (di vendita, emesse da Podere Verde verso un cliente).
+3. **Imponibile: sempre il numero calcolato** (es. 1000.00), mai una formula. Se conosci Quantità e Prezzo unitario ma non l'Imponibile scritto in fattura, calcolalo tu (Quantità × Prezzo unitario) e scrivi il risultato numerico.
 
-REGOLA FONDAMENTALE, da rispettare sempre: una fattura può contenere PIÙ articoli/righe diverse. Devi estrarre OGNI riga/articolo separatamente, MAI riassumere, raggruppare o sommare più righe in una sola. Se la fattura ha 5 articoli distinti, il risultato deve avere 5 elementi nell'array "righe". Ignora le righe che sono solo "IVA" o riepiloghi/totali: quelle non sono articoli.
+4. **Aliquota IVA**: percentuale come numero intero (es. 22, 10, 4, 0), MAI come frazione (mai 0.22).
 
-Rispondi SOLO con un oggetto JSON valido, nessun testo prima o dopo, in questo formato esatto (un oggetto per ciascuna fattura, se te ne fornisco più di una restituiscimi un array di questi oggetti):
-{
-  "cliente": "nome esatto del cliente/destinatario della fattura",
-  "piva": "partita IVA del cliente, solo il codice (es. IT01234567890), null se non leggibile",
-  "numero": "numero della fattura",
-  "data": "data della fattura in formato AAAA-MM-GG",
-  "righe": [
-    { "descrizione": "testo esatto della riga", "quantita": 0, "unita_misura": null, "prezzo_unitario": 0, "imponibile": 0, "aliquota_iva": 0 }
-  ],
-  "verifica_totali": { "imponibile_pdf": 0, "iva_pdf": 0, "totale_pdf": 0, "corrisponde": true }
-}
+5. **U.M. — SOLO queste unità di misura sono ammesse**: Unità, Tons, Quintali, Kilogrammi, Litri, Balloni, Rotoballe, Rotoli, Balle, Rotoloni. Cerca nel testo della fattura se una di queste è esplicitamente indicata (anche in forma abbreviata: kg, q.li, lt, tn/t per Tons, ecc.). Se la fattura usa un'unità diversa (es. "Sacchi", "Pezzi", "Confezioni", "Scatole") o non specifica nessuna unità, **lascia la cella U.M. VUOTA** — non approssimare né inventare una delle dieci unità ammesse se non è quella scritta davvero in fattura.
 
-Gli importi devono essere numeri (mai stringhe, mai simboli di valuta). "aliquota_iva" è la percentuale (es. 22, 10, 4, 0), MAI una frazione.
+6. **Tipo documento**: "Fattura" per un documento normale, "Nota di credito" se il documento è esplicitamente una nota di credito, un reso, uno storno o una rettifica (cerca diciture come "NOTA DI CREDITO", "RESO", "STORNO", "RETTIFICA FATTURA N...").
 
-"unita_misura" — SOLO queste unità sono ammesse: "Unità", "Tons", "Quintali", "Kilogrammi", "Litri", "Balloni", "Rotoballe", "Rotoli", "Balle", "Rotoloni". Cerca nel testo della fattura se una di queste è esplicitamente indicata (anche abbreviata: kg, q.li, lt, tn/t per Tons). Se la fattura usa un'unità diversa o non la specifica, usa null — non approssimare né inventare una delle dieci ammesse.
+7. **Attenzione alle note di credito**: una nota di credito NON è una vendita da parte di Podere Verde, anche se riduce l'importo — resta un documento del fornitore che corregge un acquisto già fatto. Se è una nota di credito:
+   - Quantità e Imponibile vanno scritti NEGATIVI (es. -5, -125.00)
+   - Tipo documento = "Nota di credito"
+   - NON scambiarla per una fattura di vendita solo perché l'importo è negativo
 
-"verifica_totali": somma l'imponibile e l'IVA di tutte le righe che hai estratto, confrontali con l'imponibile totale, l'IVA totale e il totale fattura scritti per intero sul PDF originale (di solito nel riepilogo finale). "corrisponde" è true se la somma coincide con questi totali (tolleranza 1 centesimo), false altrimenti.
+8. Se una fattura è invece **chiaramente una vendita** da parte di Podere Verde verso un cliente (Podere Verde emette la fattura, non la riceve), NON includerla in queste tabelle — segnalamela a parte, perché va gestita diversamente.
 
-Se un campo non è presente o leggibile, usa null.
+9. **Cassa Previdenziale/professionale** (INARCASSA, ENPAIA, cassa forense, ecc.): molti liberi professionisti aggiungono in fattura un addebito per la propria cassa di previdenza — di solito una percentuale fissa (es. 4%) sull'imponibile dei servizi. Questo addebito TIPICAMENTE NON compare come riga separata nella tabella prodotti/servizi, ma solo nel riepilogo finale della fattura (es. voce "Cassa (NOME)" o "Cassa previdenziale" vicino ai totali). Cercalo SEMPRE, anche se non è un articolo esplicito: se lo trovi, aggiungilo come UNA RIGA IN PIÙ nella Tabella 1 (oltre a quelle dei servizi veri), con Descrizione che inizia ESATTAMENTE con "[CASSA PROFESSIONALE] " seguito dal nome della cassa se indicato (es. "[CASSA PROFESSIONALE] INARCASSA"), Quantità 1, U.M. vuota, Imponibile pari all'importo della cassa, Aliquota IVA quella indicata per quella voce nel riepilogo (spesso 0). Questo per ogni fornitore che la applica, non solo per alcuni specifici — molti consulenti diversi possono averla.
 
-ATTENZIONE — Cassa Previdenziale/professionale: se il cliente/emittente applica un addebito per la propria cassa di previdenza professionale nel riepilogo finale (non come riga prodotto), aggiungilo come riga extra con descrizione che inizia con "[CASSA PROFESSIONALE] " seguito dal nome della cassa se indicato — stessa logica delle fatture Passive.
+Al termine, dammi entrambe le tabelle pronte da incollare in Excel (o generami direttamente il file .xlsx con i due fogli), e un riepilogo di:
+- quante righe hai segnato "DA VERIFICARE"
+- quante fatture sono "Nota di credito"
+- quante fatture in "Verifica Fatture" hanno "Corrisponde?" = "NO" — controllale per prime, sono probabile segno di una riga persa o letta male
 
-Leggi tutti i PDF di fattura che trovi nella cartella: [INSERISCI QUI IL PERCORSO DELLA CARTELLA SUL TUO COMPUTER, es. C:\\Utenti\\Filippo\\Documenti\\FattureAttive2025] — elaborali tutti, uno per uno. (Questa riga serve solo se usi uno strumento IA che può leggere file direttamente dal tuo computer — se invece usi una chat web, carica i PDF singolarmente e ignora questa riga.)`;
+Infine, per ciascun PDF elaborato: rinomina il file sostituendo il nome esistente con uno nuovo composto da Nome del fornitore, Data della fattura e Numero della fattura (es. "COOPERATIVA CERI_2025-06-15_10-FE.pdf"), sostituendo con un trattino "-" ogni carattere non ammesso nei nomi file (come / \\ : * ? " < > |). (Questa parte richiede uno strumento IA che possa leggere e scrivere file direttamente sul tuo computer, es. Claude Desktop/Code — se invece usi una chat web dove carichi i PDF singolarmente, questa rinomina non è possibile e puoi ignorarla.)`;
+
+const PROMPT_ATTIVE = `Ti do l'indirizzo di una cartella dove sono salvate delle fatture ATTIVE (di vendita, emesse da Podere Verde verso un cliente) in formato PDF: [INSERISCI QUI IL PERCORSO DELLA CARTELLA SUL TUO COMPUTER, es. C:\\Utenti\\Filippo\\Documenti\\FattureAttive2025]. Estrai i dati di TUTTE le fatture caricate e componi un file Excel con DUE tabelle:
+
+## Tabella 1 — "Fatture" (una riga per ogni articolo/voce di fattura)
+
+Colonne esatte, in questo ordine:
+Cliente | P.IVA | Numero | Data | Descrizione | Quantità | U.M. | Prezzo unitario | Imponibile | Aliquota IVA | Tipo documento
+
+## Tabella 2 — "Verifica Fatture" (una riga per ogni fattura, non per articolo)
+
+Colonne esatte, in questo ordine:
+Cliente | Numero | Data | Imponibile calcolato (somma righe) | Imponibile da PDF | IVA calcolata (somma righe) | IVA da PDF | Totale calcolato | Totale da PDF | Corrisponde?
+
+Per ogni fattura: somma l'Imponibile e l'IVA di tutte le righe che le appartengono nella Tabella 1, confrontali con l'Imponibile totale, l'IVA totale e il Totale fattura scritti per intero sul PDF originale. Scrivi "SI" in "Corrisponde?" se coincidono (tolleranza 1 centesimo per arrotondamenti), altrimenti "NO".
+
+REGOLE OBBLIGATORIE PER LA TABELLA 1:
+
+1. **Una riga = un articolo/voce della fattura.** Se una fattura contiene più voci diverse, crea una riga per ciascuna, MAI riassumere o sommare voci diverse in una sola. Ignora le righe che sono solo riepiloghi IVA o totali finali: non sono articoli.
+
+2. **Nessuna cella vuota** nelle colonne Cliente, Numero, Data, Descrizione, Imponibile, Aliquota IVA, Tipo documento. Se un dato non è leggibile con certezza, scrivi "DA VERIFICARE" invece di lasciarla vuota.
+
+3. **Imponibile: sempre il numero calcolato** (es. 1000.00), mai una formula. Se conosci Quantità e Prezzo unitario ma non l'Imponibile scritto in fattura, calcolalo tu (Quantità × Prezzo unitario) e scrivi il risultato numerico.
+
+4. **Aliquota IVA**: percentuale come numero intero (es. 22, 10, 4, 0), MAI come frazione (mai 0.22).
+
+5. **U.M. — SOLO queste unità di misura sono ammesse**: Unità, Tons, Quintali, Kilogrammi, Litri, Balloni, Rotoballe, Rotoli, Balle, Rotoloni. Cerca nel testo della fattura se una di queste è esplicitamente indicata (anche in forma abbreviata: kg, q.li, lt, tn/t per Tons, ecc.). Se la fattura usa un'unità diversa o non specifica nessuna unità, **lascia la cella U.M. VUOTA** — non approssimare né inventare una delle dieci unità ammesse se non è quella scritta davvero in fattura.
+
+6. **Tipo documento**: "Fattura" per un documento normale, "Nota di credito" se il documento è esplicitamente una nota di credito, un reso, uno storno o una rettifica (cerca diciture come "NOTA DI CREDITO", "RESO", "STORNO", "RETTIFICA FATTURA N...").
+
+7. **Attenzione alle note di credito**: una nota di credito riduce una vendita già fatta, non è un nuovo acquisto da parte di Podere Verde. Se è una nota di credito:
+   - Quantità e Imponibile vanno scritti NEGATIVI (es. -5, -125.00)
+   - Tipo documento = "Nota di credito"
+
+8. Se una fattura è invece **chiaramente un acquisto** ricevuto da Podere Verde da un fornitore (Podere Verde riceve la fattura, non la emette), NON includerla in queste tabelle — segnalamela a parte, perché va gestita diversamente (fatture Passive).
+
+9. **Cassa Previdenziale/professionale**: se il cliente/emittente applica un addebito per la propria cassa di previdenza professionale nel riepilogo finale (non come riga prodotto/servizio separata), aggiungilo come UNA RIGA IN PIÙ nella Tabella 1, con Descrizione che inizia ESATTAMENTE con "[CASSA PROFESSIONALE] " seguito dal nome della cassa se indicato, Quantità 1, U.M. vuota, Imponibile pari all'importo della cassa, Aliquota IVA quella indicata per quella voce (spesso 0).
+
+Al termine, dammi entrambe le tabelle pronte da incollare in Excel (o generami direttamente il file .xlsx con i due fogli), e un riepilogo di:
+- quante righe hai segnato "DA VERIFICARE"
+- quante fatture sono "Nota di credito"
+- quante fatture in "Verifica Fatture" hanno "Corrisponde?" = "NO" — controllale per prime, sono probabile segno di una riga persa o letta male
+
+Infine, per ciascun PDF elaborato: rinomina il file sostituendo il nome esistente con uno nuovo composto da Nome del cliente, Data della fattura e Numero della fattura (es. "MARIO_ROSSI_2025-06-15_10.pdf"), sostituendo con un trattino "-" ogni carattere non ammesso nei nomi file (come / \\ : * ? " < > |). (Questa parte richiede uno strumento IA che possa leggere e scrivere file direttamente sul tuo computer — se invece usi una chat web dove carichi i PDF singolarmente, questa rinomina non è possibile e puoi ignorarla.)`;
 
 function BloccoPrompt({ titolo, testo, note }) {
   const [copiato, setCopiato] = useState(false);
@@ -93,7 +124,7 @@ export default function PromptEstrazionePDF() {
 
       <BloccoPrompt
         titolo="Fatture Passive (acquisto)"
-        note="Questo è esattamente il prompt già usato dentro il programma (Carica Fatture → lettura PDF) — copia identica, non una versione riassunta."
+        note="Pensato per uso esterno (chat IA fuori dal programma): produce direttamente un file Excel a due tabelle, con verifica dei totali e gestione delle note di credito. Diverso dal prompt interno del programma (in formato JSON, usato da Carica Fatture per l'elaborazione automatica) — stessa logica di fondo, output pensato per un uso manuale."
         testo={PROMPT_PASSIVE}
       />
 
