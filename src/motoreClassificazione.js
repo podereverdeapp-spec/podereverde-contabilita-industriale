@@ -34,18 +34,24 @@ export function trovaFornitore(fornitori, { piva, nome }) {
 // Applica il motore di classificazione a una riga grezza.
 // Ritorna: { stato, area, centro_costo, destinazione, tipo_costo, nota, fornitore }
 export function classificaRiga(riga, { fornitori, regoleFisse, regoleVariabili }) {
-  // Controllo universale, INDIPENDENTE dal fornitore: le Casse previdenziali/professionali
-  // (INARCASSA, ENPAIA, ecc.) non compaiono come riga prodotto in fattura, ma nel
-  // riepilogo finale — il prompt di lettura PDF le tagga con questo prefisso quando le
-  // trova. Qualunque consulente le usi, vanno sempre in Consulenze → Casse Professionisti
-  // (richiesto da Filippo: "bisogna stare attenti anche agli altri", non solo ai due
-  // fornitori visti finora) — restano comunque MASCHERA, destinazione/tipo di costo si
-  // assegnano a mano come per ogni altra riga.
+  // Controllo universale per la Cassa previdenziale/professionale (vedi sopra)
   if (normalizza(riga.descrizione).startsWith("[cassa professionale]")) {
     return {
       stato: "MASCHERA",
       area: "Consulenze", centro_costo: "Casse Professionisti", destinazione: null, tipo_costo: null,
       nota: "Cassa previdenziale/professionale rilevata nel riepilogo fattura — assegna destinazione e tipo di costo",
+      fornitore: trovaFornitore(fornitori, { piva: riga.piva, nome: riga.fornitore }),
+    };
+  }
+
+  // Controllo universale per il Gasolio (richiesto da Filippo): indipendente dal
+  // fornitore, va sempre in Coltivazione → Gasolio e lubrificanti, destinazione
+  // Generali, tipo di costo Variabile — evita di dover ripetere la stessa scelta ogni
+  // volta che arriva una fattura di gasolio, da qualunque distributore/fornitore.
+  if (normalizza(riga.descrizione).includes("gasolio")) {
+    return {
+      stato: "FCV", // già completamente classificato, come una regola variabile "risolta"
+      area: "Coltivazione", centro_costo: "Gasolio e lubrificanti", destinazione: "Generali", tipo_costo: "Variabile",
       fornitore: trovaFornitore(fornitori, { piva: riga.piva, nome: riga.fornitore }),
     };
   }

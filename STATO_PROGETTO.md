@@ -682,3 +682,19 @@ Dopo aver corretto "prezzo_unitario", è emerso un secondo errore identico per "
 - **🗑️ Elimina**: rimuove la riga dopo conferma esplicita (mostra fornitore/fattura/importo nel messaggio di conferma) — pensato apposta per i duplicati che possono comparire ricaricando le fatture prima del fix del controllo "già caricata" (sezione 53).
 
 Entrambe le azioni operano direttamente su `ci_report_acquisto_animali`, la stessa tabella che la pagina già legge — nessuna nuova tabella o schema necessario.
+
+## 55. Due miglioramenti richiesti da Filippo: default unità intelligente + regola universale Gasolio
+
+**"Da Armonizzare" partiva sempre da Kilogrammi**: anche quando la fattura diceva già chiaramente "Tons" (o altra unità riconosciuta), il menu a tendina ripartiva sempre da Kilogrammi, costringendo a cambiarla manualmente ogni volta. **Corretto**: ora il menu parte già sull'unità grezza estratta dalla fattura, se è una delle 10 riconosciute — confronto reso insensibile a maiuscolo/minuscolo (trovato e corretto durante il test: "TONS"/"tons" non avrebbero altrimenti fatto match con "Tons").
+
+**Nuova regola universale Gasolio**: come per le Casse Professionali, un controllo indipendente dal fornitore in `motoreClassificazione.js` — qualunque riga con "gasolio" nella descrizione va sempre in Area Coltivazione, Centro di Costo "Gasolio e lubrificanti", Destinazione Generali, Tipo di Costo Variabile (stato "FCV", completamente auto-classificata, non richiede più scelta manuale). Non ancora impostato un fattore di conversione fisso Litri→kg per il gasolio (Filippo ha chiesto solo che l'unità sia sempre Litri, non un fattore specifico — da chiarire se serve, dato che densità del gasolio può variare leggermente).
+
+Testato entrambi con casi mock prima di consegnare.
+
+## 56. Ricerca — modifica classificazione riga direttamente dal risultato
+
+**Richiesto da Filippo**: trovata un'anomalia (centro di costo "Pallet" 2025), chiedeva come richiamare, trovare e correggere. Controllato: Ricerca era di **sola consultazione**, nessuna modifica possibile su una riga già salvata da nessuna parte nell'app.
+
+**Costruito**: aprendo il dettaglio di una fattura in Ricerca, ogni riga ha ora un'icona ✏️ — attiva un form inline (Area/Centro di Costo/Destinazione/Tipo di Costo, con Centro di Costo filtrato in base all'Area scelta) e un pulsante "✓ Salva". Sostituita la vecchia vista di sola lettura (`RicomposizioneFattura`, condivisa con Fatture Passive — non toccata, per non rischiare di romperla lì) con una vista propria di Ricerca che include l'editabilità.
+
+Questo risolve anche in generale il caso "Finiss Bovini" e qualunque altra riga classificata male in passato — ora correggibile direttamente, senza bisogno di query SQL per correzioni singole.

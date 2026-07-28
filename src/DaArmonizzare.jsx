@@ -60,7 +60,7 @@ export default function DaArmonizzare() {
         const chiave = `${fornitoreId}|${r.descrizione.trim().toLowerCase()}|${r.centro_costo || ""}`;
         if (chiaviConRegola.has(chiave)) return;
         if (!combinazioni.has(chiave)) {
-          combinazioni.set(chiave, { fornitore_id: fornitoreId, fornitore: mappaFornitori.get(fornitoreId) || "—", descrizione: r.descrizione, centro_costo: r.centro_costo, count: 0, occorrenze: [] });
+          combinazioni.set(chiave, { fornitore_id: fornitoreId, fornitore: mappaFornitori.get(fornitoreId) || "—", descrizione: r.descrizione, centro_costo: r.centro_costo, count: 0, occorrenze: [], unitaGrezza: r.unita_misura || null });
         }
         const combo = combinazioni.get(chiave);
         combo.count++;
@@ -127,7 +127,13 @@ export default function DaArmonizzare() {
 }
 
 function RigaArmonizza({ c, onConferma, salvando }) {
-  const [unita, setUnita] = useState("Kilogrammi");
+  // Se la fattura ha già un'unità grezza riconosciuta (es. "Tons", anche se scritta
+  // "TONS" o "tons" — l'estrazione PDF non garantisce sempre la maiuscola esatta),
+  // parte già selezionata — un clic in meno invece di dover sempre ripartire da
+  // "Kilogrammi" e cambiarla a mano
+  const matchInsensibile = UNITA_OPZIONI.find(u => u.toLowerCase() === (c.unitaGrezza || "").toLowerCase());
+  const unitaIniziale = matchInsensibile || "Kilogrammi";
+  const [unita, setUnita] = useState(unitaIniziale);
   const [fattoreManuale, setFattoreManuale] = useState("");
   const [espansa, setEspansa] = useState(false);
   const [fatturaAperta, setFatturaAperta] = useState(null); // fattura_id in visualizzazione completa

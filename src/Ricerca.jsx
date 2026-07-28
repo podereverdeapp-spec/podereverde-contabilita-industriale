@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";import { numerizzaCampi, formattaEuro } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
-import { RicomposizioneFattura } from "./FatturePassive";
 
 const AREE_ORDINARIE = [
   "Allevamento", "Coltivazione", "Lavoro", "Energia Elettrica", "Acqua", "Consulenze",
@@ -17,6 +16,10 @@ export default function Ricerca() {
   const [loading, setLoading] = useState(true);
   const [espansa, setEspansa] = useState(null);
   const [righePerFattura, setRighePerFattura] = useState({});
+  const [pianoDeiConti, setPianoDeiConti] = useState([]);
+  const [modificaRigaId, setModificaRigaId] = useState(null);
+  const [formModificaRiga, setFormModificaRiga] = useState({});
+  const [salvandoRiga, setSalvandoRiga] = useState(null);
 
   const [testo, setTesto] = useState("");
   const [tipo, setTipo] = useState("tutte");
@@ -36,10 +39,42 @@ export default function Ricerca() {
     if (eF) { alert(`⚠️ Errore nel caricamento fatture:\n\n${eF.message}`); setLoading(false); return; }
     const { data: a, error: eA } = await supabase.from("ci_articoli_fattura").select("fattura_id, descrizione, area, destinazione, totale_riga");
     if (eA) { alert(`⚠️ Errore nel caricamento articoli:\n\n${eA.message}`); setLoading(false); return; }
+    const { data: pdc } = await supabase.from("ci_piano_dei_conti").select("*").order("area").order("centro_costo");
+    setPianoDeiConti(pdc || []);
 
     setFatture(numerizzaCampi(f || [], ["totale_netto", "totale_iva", "totale_lordo"]));
     setArticoli(numerizzaCampi(a || [], ["totale_riga"]));
     setLoading(false);
+  }
+
+  function centriPerArea(areaScelta) {
+    return pianoDeiConti.filter(p => p.area === areaScelta).map(p => p.centro_costo);
+  }
+
+  function iniziaModificaRiga(r) {
+    setModificaRigaId(r.id);
+    setFormModificaRiga({ area: r.area || "", centro_costo: r.centro_costo || "", destinazione: r.destinazione || "", tipo_costo: r.tipo_costo || "" });
+  }
+
+  async function salvaModificaRiga(rigaId, fatturaId) {
+    setSalvandoRiga(rigaId);
+    try {
+      const { error } = await supabase.from("ci_articoli_fattura").update({
+        area: formModificaRiga.area || null, centro_costo: formModificaRiga.centro_costo || null,
+        destinazione: formModificaRiga.destinazione || null, tipo_costo: formModificaRiga.tipo_costo || null,
+      }).eq("id", rigaId);
+      if (error) throw new Error(error.message);
+      setModificaRigaId(null);
+      setFormModificaRiga({});
+      // Ricarico solo le righe di questa fattura, e l'elenco leggero usato per i filtri
+      const { data } = await supabase.from("ci_articoli_fattura").select("*").eq("fattura_id", fatturaId).order("id");
+      setRighePerFattura(prev => ({ ...prev, [fatturaId]: numerizzaCampi(data || [], ["quantita", "prezzo_unitario", "totale_riga", "aliquota_iva", "totale_iva"]) }));
+      const { data: a } = await supabase.from("ci_articoli_fattura").select("fattura_id, descrizione, area, destinazione, totale_riga");
+      setArticoli(numerizzaCampi(a || [], ["totale_riga"]));
+    } catch (err) {
+      alert(`⚠️ Errore nel salvataggio:\n\n${err.message}`);
+    }
+    setSalvandoRiga(null);
   }
 
   const articoliPerFattura = useMemo(() => {
@@ -168,8 +203,50 @@ export default function Ricerca() {
                 </div>
               </div>
               {espansa === f.id && righePerFattura[f.id] && (
-                <div style={{ borderTop: `1px solid ${C.border}` }}>
-                  <RicomposizioneFattura fattura={f} righe={righePerFattura[f.id]} />
+                <div style={{ borderTop: `1px solid ${C.border}`, padding: 14 }}>
+                  {righePerFattura[f.id].map(r => (
+                    <div key={r.id} style={{ padding: "10px 0", borderTop: `1px solid ${C.border}` }}>
+                      {modificaRigaId === r.id ? (
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>{r.descrizione}</div>
+                          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8 }}>
+                            <CampoSelect label="Area" value={formModificaRiga.area} options={AREE_ORDINARIE}
+                              onChange={v => setFormModificaRiga(prev => ({ ...prev, area: v, centro_costo: "" }))} />
+                            <CampoSelect label="Centro di Costo" value={formModificaRiga.centro_costo} options={centriPerArea(formModificaRiga.area)}
+                              onChange={v => setFormModificaRiga(prev => ({ ...prev, centro_costo: v }))} />
+                            <CampoSelect label="Destinazione" value={formModificaRiga.destinazione} options={DESTINAZIONI}
+                              onChange={v => setFormModificaRiga(prev => ({ ...prev, destinazione: v }))} />
+                            <CampoSelect label="Tipo di Costo" value={formModificaRiga.tipo_costo} options={["Fisso", "Variabile", "Ammortizzabile"]}
+                              onChange={v => setFormModificaRiga(prev => ({ ...prev, tipo_costo: v }))} />
+                          </div>
+                          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                            <button onClick={() => salvaModificaRiga(r.id, f.id)} disabled={salvandoRiga === r.id}
+                              style={{ background: C.green, color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                              {salvandoRiga === r.id ? "Salvataggio..." : "✓ Salva"}
+                            </button>
+                            <button onClick={() => setModificaRigaId(null)}
+                              style={{ background: "none", border: `1.5px solid ${C.border}`, borderRadius: 8, padding: "6px 14px", fontSize: 12, cursor: "pointer" }}>
+                              Annulla
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                          <div>
+                            <div style={{ fontSize: 13 }}>{r.descrizione}</div>
+                            <div style={{ fontSize: 11, color: C.muted }}>
+                              {r.area || "—"} · {r.centro_costo || "—"} · {r.destinazione || "—"} · {r.tipo_costo || "—"}
+                            </div>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            <div style={{ fontWeight: 700 }}>{formattaEuro(r.totale_riga)}</div>
+                            <button onClick={() => iniziaModificaRiga(r)}
+                              style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13 }} title="Modifica classificazione">✏️</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -188,6 +265,19 @@ function Campo({ label, children }) {
       <label style={{ fontSize: 11, color: C.muted, fontWeight: 700, display: "block", marginBottom: 3 }}>{label}</label>
       {children}
     </div>
+  );
+}
+
+function CampoSelect({ label, value, options, onChange }) {
+  return (
+    <label style={{ fontSize: 11, color: C.muted }}>
+      {label}
+      <select value={value} onChange={e => onChange(e.target.value)}
+        style={{ width: "100%", padding: "5px 7px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 12, marginTop: 2 }}>
+        <option value="">—</option>
+        {options.map(o => <option key={o} value={o}>{o}</option>)}
+      </select>
+    </label>
   );
 }
 
