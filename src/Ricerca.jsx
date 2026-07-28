@@ -24,7 +24,9 @@ export default function Ricerca() {
   const [testo, setTesto] = useState("");
   const [tipo, setTipo] = useState("tutte");
   const [area, setArea] = useState("");
+  const [centroCosto, setCentroCosto] = useState("");
   const [destinazione, setDestinazione] = useState("");
+  const [tipoCosto, setTipoCosto] = useState("");
   const [anno, setAnno] = useState("");
   const [dataDa, setDataDa] = useState("");
   const [dataA, setDataA] = useState("");
@@ -37,7 +39,7 @@ export default function Ricerca() {
     setLoading(true);
     const { data: f, error: eF } = await supabase.from("ci_fatture").select("*, ci_fornitori(nome), ci_clienti(nome)").order("data", { ascending: false });
     if (eF) { alert(`⚠️ Errore nel caricamento fatture:\n\n${eF.message}`); setLoading(false); return; }
-    const { data: a, error: eA } = await supabase.from("ci_articoli_fattura").select("fattura_id, descrizione, area, destinazione, totale_riga");
+    const { data: a, error: eA } = await supabase.from("ci_articoli_fattura").select("fattura_id, descrizione, area, centro_costo, destinazione, tipo_costo, totale_riga");
     if (eA) { alert(`⚠️ Errore nel caricamento articoli:\n\n${eA.message}`); setLoading(false); return; }
     const { data: pdc } = await supabase.from("ci_piano_dei_conti").select("*").order("area").order("centro_costo");
     setPianoDeiConti(pdc || []);
@@ -98,7 +100,9 @@ export default function Ricerca() {
 
       const righeFattura = articoliPerFattura.get(f.id) || [];
       if (area && !righeFattura.some(r => r.area === area)) return false;
+      if (centroCosto && !righeFattura.some(r => r.centro_costo === centroCosto)) return false;
       if (destinazione && !righeFattura.some(r => r.destinazione === destinazione)) return false;
+      if (tipoCosto && !righeFattura.some(r => r.tipo_costo === tipoCosto)) return false;
 
       if (q) {
         const controparte = (f.ci_fornitori?.nome || f.ci_clienti?.nome || "").toLowerCase();
@@ -109,7 +113,7 @@ export default function Ricerca() {
       }
       return true;
     });
-  }, [fatture, articoliPerFattura, testo, tipo, area, destinazione, anno, dataDa, dataA, importoMin, importoMax]);
+  }, [fatture, articoliPerFattura, testo, tipo, area, centroCosto, destinazione, tipoCosto, anno, dataDa, dataA, importoMin, importoMax]);
 
   async function espandi(fatturaId) {
     if (espansa === fatturaId) { setEspansa(null); return; }
@@ -131,7 +135,15 @@ export default function Ricerca() {
   }
 
   const totaleRisultati = risultati.reduce((s, f) => s + (f.totale_lordo || 0), 0);
+  const totaleRigheCentroCosto = useMemo(() => {
+    if (!centroCosto) return null;
+    const idFattureRisultati = new Set(risultati.map(f => f.id));
+    return articoli
+      .filter(a => a.centro_costo === centroCosto && idFattureRisultati.has(a.fattura_id))
+      .reduce((s, a) => s + (a.totale_riga || 0), 0);
+  }, [centroCosto, articoli, risultati]);
   const anniDisponibili = useMemo(() => [...new Set(fatture.map(f => new Date(f.data).getFullYear()))].sort((a, b) => b - a), [fatture]);
+  const centriCostoDisponibili = useMemo(() => [...new Set(articoli.map(a => a.centro_costo).filter(Boolean))].sort(), [articoli]);
 
   return (
     <div style={{ padding: 20, maxWidth: 1300, margin: "0 auto" }}>
@@ -162,10 +174,22 @@ export default function Ricerca() {
               {AREE_ORDINARIE.map(a => <option key={a} value={a}>{a}</option>)}
             </select>
           </Campo>
+          <Campo label="Centro di Costo">
+            <select value={centroCosto} onChange={e => setCentroCosto(e.target.value)} style={selectStyle}>
+              <option value="">Tutti</option>
+              {centriCostoDisponibili.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </Campo>
           <Campo label="Specie/Destinazione">
             <select value={destinazione} onChange={e => setDestinazione(e.target.value)} style={selectStyle}>
               <option value="">Tutte</option>
               {DESTINAZIONI.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </Campo>
+          <Campo label="Tipo di Costo">
+            <select value={tipoCosto} onChange={e => setTipoCosto(e.target.value)} style={selectStyle}>
+              <option value="">Tutti</option>
+              <option value="Fisso">Fisso</option><option value="Variabile">Variabile</option><option value="Ammortizzabile">Ammortizzabile</option>
             </select>
           </Campo>
           <Campo label="Anno">
@@ -181,7 +205,11 @@ export default function Ricerca() {
         </div>
       </div>
 
-      <p style={{ color: C.muted, fontSize: 13, marginBottom: 12 }}>{risultati.length} fatture trovate — totale {formattaEuro(totaleRisultati)}</p>
+      <p style={{ color: C.muted, fontSize: 13, marginBottom: 12 }}>{risultati.length} fatture trovate — totale {formattaEuro(totaleRisultati)}
+        {totaleRigheCentroCosto != null && (
+          <strong style={{ color: C.primary }}> · Solo "{centroCosto}": {formattaEuro(totaleRigheCentroCosto)}</strong>
+        )}
+      </p>
 
       {loading ? (
         <p style={{ color: C.muted }}>Caricamento...</p>

@@ -698,3 +698,11 @@ Testato entrambi con casi mock prima di consegnare.
 **Costruito**: aprendo il dettaglio di una fattura in Ricerca, ogni riga ha ora un'icona ✏️ — attiva un form inline (Area/Centro di Costo/Destinazione/Tipo di Costo, con Centro di Costo filtrato in base all'Area scelta) e un pulsante "✓ Salva". Sostituita la vecchia vista di sola lettura (`RicomposizioneFattura`, condivisa con Fatture Passive — non toccata, per non rischiare di romperla lì) con una vista propria di Ricerca che include l'editabilità.
 
 Questo risolve anche in generale il caso "Finiss Bovini" e qualunque altra riga classificata male in passato — ora correggibile direttamente, senza bisogno di query SQL per correzioni singole.
+
+## 57. Ricerca — filtri Centro di Costo e Tipo di Costo, totale specifico per il centro filtrato
+
+**Richiesto da Filippo**: trovare l'anomalia "Pallet 2025 oltre 6.000€" era difficile senza poter filtrare direttamente per centro di costo (solo Area e Destinazione erano filtrabili prima).
+
+**Aggiunto**: due nuovi filtri — **Centro di Costo** (elenco dinamico, costruito dai valori realmente presenti nei dati, non una lista fissa) e **Tipo di Costo** (Fisso/Variabile/Ammortizzabile). Aggiunto anche `centro_costo` e `tipo_costo` alla query leggera degli articoli (prima non caricati, servivano solo per il filtro).
+
+**Totale specifico**: quando un Centro di Costo è selezionato, appare accanto al totale generale un **totale solo per quel centro di costo** (somma delle righe corrispondenti nelle fatture filtrate, non il totale_lordo dell'intera fattura) — così si vede subito la cifra esatta (es. "Pallet: 6.234,00€") senza dover sommare a mano fattura per fattura.
