@@ -106,7 +106,7 @@ export default function ReportQuantitaMangimi() {
           </p>
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
             <table style={{ width: "100%", fontSize: 13 }}>
-              <thead style={{ background: C.primary, color: "#fff" }}>
+              <thead style={{ background: C.primary, color: "#fff", position: "sticky", top: 0, zIndex: 1 }}>
                 <tr>
                   <th style={th}>Fornitore</th><th style={th}>Prodotto</th><th style={th}>Destinazione</th>
                   <th style={{ ...th, textAlign: "right" }}>Costo anno</th>
@@ -138,7 +138,7 @@ export default function ReportQuantitaMangimi() {
               </p>
               <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
                 <table style={{ width: "100%", fontSize: 12 }}>
-                  <thead style={{ background: C.primary, color: "#fff" }}>
+                  <thead style={{ background: C.primary, color: "#fff", position: "sticky", top: 0, zIndex: 1 }}>
                     <tr>
                       <th style={th} rowSpan={2}>Prodotto</th>
                       <th style={{ ...th, textAlign: "center" }} colSpan={2}>Bovini</th>

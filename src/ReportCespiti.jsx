@@ -145,7 +145,7 @@ export default function ReportCespiti() {
       <Sezione titolo="PIANO DI AMMORTAMENTO ATTESO (PROSSIMI 5 ANNI)">
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
           <table style={{ width: "100%", fontSize: 13 }}>
-            <thead style={{ background: C.primary, color: "#fff" }}>
+            <thead style={{ background: C.primary, color: "#fff", position: "sticky", top: 0, zIndex: 1 }}>
               <tr><th style={th}>Anno</th><th style={{ ...th, textAlign: "right" }}>Quota attesa</th><th style={{ ...th, textAlign: "right" }}>N° Cespiti coinvolti</th></tr>
             </thead>
             <tbody>
@@ -180,7 +180,7 @@ function TabellaSemplice({ righe, etichetta }) {
   return (
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
       <table style={{ width: "100%", fontSize: 13 }}>
-        <thead style={{ background: C.primary, color: "#fff" }}>
+        <thead style={{ background: C.primary, color: "#fff", position: "sticky", top: 0, zIndex: 1 }}>
           <tr>
             <th style={th}></th><th style={{ ...th, textAlign: "right" }}>N° Cespiti</th>
             <th style={{ ...th, textAlign: "right" }}>Costo totale</th><th style={{ ...th, textAlign: "right" }}>Quote generate</th>

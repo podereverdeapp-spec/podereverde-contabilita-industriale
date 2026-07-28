@@ -366,7 +366,7 @@ export default function SchedaAnimale({ ricercaIniziale, onRicercaConsumata }) {
               {storicoCosto && storicoCosto.length > 0 && (
                 <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", marginBottom: 16 }}>
                   <table style={{ width: "100%", fontSize: 13 }}>
-                    <thead style={{ background: C.primary, color: "#fff" }}>
+                    <thead style={{ background: C.primary, color: "#fff", position: "sticky", top: 0, zIndex: 1 }}>
                       <tr>
                         <th style={th}>Anno</th><th style={th}>UBA-giorni</th><th style={th}>Categoria</th>
                         <th style={th}>Costo mantenimento</th><th style={th}>Costo nascita ereditato</th>

@@ -68,7 +68,7 @@ export default function RazioniSuiniConsumi() {
         ) : (
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "auto" }}>
             <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
-              <thead style={{ background: C.primary, color: "#fff" }}>
+              <thead style={{ background: C.primary, color: "#fff", position: "sticky", top: 0, zIndex: 1 }}>
                 <tr>
                   <th style={th}>Alimento</th>
                   <th style={th}>Kg teorico</th>

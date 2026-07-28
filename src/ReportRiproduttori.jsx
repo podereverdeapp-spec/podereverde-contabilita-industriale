@@ -324,7 +324,7 @@ export default function ReportRiproduttori() {
       {riproduttori && riproduttori.length > 0 && (
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
           <table style={{ width: "100%", fontSize: 13 }}>
-            <thead style={{ background: C.primary, color: "#fff" }}>
+            <thead style={{ background: C.primary, color: "#fff", position: "sticky", top: 0, zIndex: 1 }}>
               <tr>
                 <th style={th}>Riproduttore</th><th style={th}>Specie</th>
                 <th style={th}>Residuo totale</th><th style={th}>Residuo rimanente</th>

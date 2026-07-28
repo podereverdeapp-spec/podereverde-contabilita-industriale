@@ -74,7 +74,7 @@ export default function ReportPerAreaCentro({ anno }) {
           </button>
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "auto", marginBottom: 16 }}>
           <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
-            <thead style={{ background: C.primary, color: "#fff" }}>
+            <thead style={{ background: C.primary, color: "#fff", position: "sticky", top: 0, zIndex: 1 }}>
               <tr>
                 <th style={th} rowSpan={2}>Area / Centro di Costo</th>
                 <th style={th} rowSpan={2}>Imponibile<br />complessivo</th>

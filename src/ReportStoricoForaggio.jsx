@@ -126,7 +126,7 @@ export default function ReportStoricoForaggio({ specieFiltro, titolo }) {
           {righe.length === 0 ? <p style={{ color: C.muted }}>Nessun dato.</p> : (
             <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "auto" }}>
               <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
-                <thead style={{ background: C.primary, color: "#fff" }}>
+                <thead style={{ background: C.primary, color: "#fff", position: "sticky", top: 0, zIndex: 1 }}>
                   <tr>
                     <th style={th} rowSpan={2}>Prodotto</th>
                     {anni.map((a, i) => <th key={a} style={{ ...th, borderLeft: i === 0 ? undefined : "1px solid #ffffff55" }} colSpan={4}>{a}</th>)}

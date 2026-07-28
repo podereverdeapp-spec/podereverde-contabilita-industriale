@@ -107,7 +107,7 @@ export default function StoricoPerformanceEta() {
                 <h2 style={{ color: C.primary, fontSize: 18, marginBottom: 10 }}>{SPECIE_LABEL[specie]} ({d.nAnimaliTotali} animali)</h2>
                 <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "auto" }}>
                   <table style={{ width: "100%", fontSize: 11, borderCollapse: "collapse" }}>
-                    <thead style={{ background: C.primary, color: "#fff" }}>
+                    <thead style={{ background: C.primary, color: "#fff", position: "sticky", top: 0, zIndex: 1 }}>
                       <tr>
                         <th style={th} rowSpan={2}>Fascia</th>
                         {anni.map((a, i) => <th key={a} style={{ ...th, borderLeft: i === 0 ? undefined : "1px solid #ffffff55" }} colSpan={2}>{a}</th>)}

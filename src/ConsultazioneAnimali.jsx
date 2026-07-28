@@ -127,7 +127,7 @@ export default function ConsultazioneAnimali() {
             </div>
             <div style={{ background: C.card, border: `1px solid ${C.border}`, borderLeft: `4px solid ${colore}`, borderRadius: 12, overflow: "hidden" }}>
               <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
-                <thead style={{ background: colore, color: "#fff" }}>
+                <thead style={{ background: colore, color: "#fff", position: "sticky", top: 0, zIndex: 1 }}>
                   <tr>
                     <th style={th}>Identificativo</th><th style={th}>Nome</th><th style={th}>Sesso</th>
                     <th style={th}>Nascita</th><th style={th}>Stato nell'anno</th><th style={th}>Data/Motivo uscita</th>
