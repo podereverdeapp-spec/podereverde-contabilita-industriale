@@ -582,3 +582,13 @@ Testato con un caso mock a IPG quasi-zero: vecchia metrica dava 94,91€/kg (ass
 **Testato con casi mock** prima di consegnare: fasce d'età (somma esatta a 365 giorni, nessuna sovrapposizione), finestra riproduttrice singola (53 giorni = 7+1+45, esatto) e parti multipli ravvicinati (somma esatta a 365, finestre unite correttamente).
 
 **Pagina** `RazioniSuiniConsumi.jsx`: tabella con Kg teorico/reale/scarto, Valore teorico/reale/scarto per alimento; tooltip sul nome alimento mostra quali descrizioni fattura sono state riconosciute come corrispondenti (trasparenza sul matching).
+
+## 44. Bug reale — "Da Armonizzare" permetteva di confermare senza un fattore valido
+
+**Sintomo**: alcune fatture, dopo aver premuto "Conferma unità", restavano lì come se non fosse successo nulla.
+
+**Causa**: per "Unità" (e anche "Litri", che ha lo stesso problema — nessun fattore predefinito, serve un numero specifico per prodotto) il pulsante era **sempre cliccabile**, anche senza aver inserito un fattore di conversione — la regola si salvava comunque, ma con `fattore_kg = null`. Il controllo (corretto in precedenza) che considera "risolto" solo chi ha un fattore valido faceva ricomparire quella riga — comportamento corretto per il calcolo, ma confuso da vedere: sembrava che "non registrasse", mentre in realtà registrava un dato incompleto.
+
+**Corretto**: il pulsante "✓ Conferma unità" ora è **disabilitato** (grigio, non cliccabile) quando l'unità scelta è Unità o Litri e non è stato inserito un numero valido — tooltip esplicativo su hover. Impossibile ormai confermare "a vuoto" per queste due unità.
+
+**Query fornita** per trovare le regole già salvate con fattore mancante (da vecchie conferme prima del fix), da sistemare ora che l'interfaccia lo impedisce.

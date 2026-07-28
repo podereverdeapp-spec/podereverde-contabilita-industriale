@@ -2,6 +2,7 @@ import { useState } from "react";
 import { C } from "./style";
 import { formattaEuro, formattaNumero } from "./parsingUtils";
 import { confrontaConsumoSuini } from "./calcoloConsumiRazioniSuini";
+import { esportaExcel, numeroExcel } from "./esportaExcel";
 
 export default function RazioniSuiniConsumi() {
   const [anno, setAnno] = useState(new Date().getFullYear());
@@ -21,6 +22,21 @@ export default function RazioniSuiniConsumi() {
     setLoading(false);
   }
 
+  function esporta() {
+    if (!dati) return;
+    const righeExcel = dati.righe.map(r => ({
+      "Alimento": r.prodotto,
+      "Kg teorico": numeroExcel(r.kgTeorico),
+      "Kg reale": numeroExcel(r.kgReale),
+      "Scarto kg": numeroExcel(r.scartoKg),
+      "Valore teorico (€)": r.valoreTeorico != null ? numeroExcel(r.valoreTeorico) : null,
+      "Valore reale (€)": numeroExcel(r.valoreReale),
+      "Scarto (€)": r.scartoValore != null ? numeroExcel(r.scartoValore) : null,
+      "Fatture corrispondenti": r.prodottiRealiCorrispondenti.join("; "),
+    }));
+    esportaExcel(`ConsumiSuini_${anno}`, [{ nome: "Consumi Suini", righe: righeExcel }]);
+  }
+
   return (
     <div style={{ padding: 20, maxWidth: 1100, margin: "0 auto" }}>
       <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Razioni → Suini → Consumi</h1>
@@ -36,6 +52,12 @@ export default function RazioniSuiniConsumi() {
           style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
           {loading ? "Calcolo..." : "📊 Calcola confronto"}
         </button>
+        {dati && dati.nCategorieUsate > 0 && (
+          <button onClick={esporta}
+            style={{ background: C.green, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+            📥 Esporta Excel
+          </button>
+        )}
       </div>
 
       {errore && <p style={{ color: C.red }}>⚠️ {errore}</p>}

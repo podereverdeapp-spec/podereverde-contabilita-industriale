@@ -215,13 +215,19 @@ function RigaArmonizza({ c, onConferma, salvando }) {
           style={{ padding: "6px 8px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 13 }}>
           {UNITA_OPZIONI.map(u => <option key={u} value={u}>{u}</option>)}
         </select>
-        {unita === "Unità" && (
-          <input type="number" placeholder="Fattore kg per unità (es. 340)" value={fattoreManuale}
+        {(unita === "Unità" || unita === "Litri") && (
+          <input type="number" placeholder="Fattore kg (es. 340)" value={fattoreManuale}
             onChange={e => setFattoreManuale(e.target.value)}
             style={{ padding: "6px 8px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 13, width: 190 }} />
         )}
-        <button onClick={() => onConferma(c, unita, unita === "Unità" ? (parseFloat(fattoreManuale) || null) : FATTORE_KG[unita])} disabled={salvando}
-          style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+        <button onClick={() => onConferma(c, unita, (unita === "Unità" || unita === "Litri") ? parseFloat(fattoreManuale) : FATTORE_KG[unita])}
+          disabled={salvando || ((unita === "Unità" || unita === "Litri") && !(parseFloat(fattoreManuale) > 0))}
+          title={(unita === "Unità" || unita === "Litri") && !(parseFloat(fattoreManuale) > 0) ? "Inserisci un fattore di conversione in kg valido prima di confermare" : undefined}
+          style={{
+            background: (unita === "Unità" || unita === "Litri") && !(parseFloat(fattoreManuale) > 0) ? C.muted : C.primary,
+            color: "#fff", border: "none", borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 700,
+            cursor: salvando || ((unita === "Unità" || unita === "Litri") && !(parseFloat(fattoreManuale) > 0)) ? "not-allowed" : "pointer",
+          }}>
           {salvando ? "Salvataggio..." : "✓ Conferma unità"}
         </button>
         {c.suggerimento && (
