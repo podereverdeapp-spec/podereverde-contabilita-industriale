@@ -706,3 +706,19 @@ Questo risolve anche in generale il caso "Finiss Bovini" e qualunque altra riga 
 **Aggiunto**: due nuovi filtri — **Centro di Costo** (elenco dinamico, costruito dai valori realmente presenti nei dati, non una lista fissa) e **Tipo di Costo** (Fisso/Variabile/Ammortizzabile). Aggiunto anche `centro_costo` e `tipo_costo` alla query leggera degli articoli (prima non caricati, servivano solo per il filtro).
 
 **Totale specifico**: quando un Centro di Costo è selezionato, appare accanto al totale generale un **totale solo per quel centro di costo** (somma delle righe corrispondenti nelle fatture filtrate, non il totale_lordo dell'intera fattura) — così si vede subito la cifra esatta (es. "Pallet: 6.234,00€") senza dover sommare a mano fattura per fattura.
+
+## 58. Intestazioni di tabella fisse (sticky) — richiesto da Filippo per facilità di lettura
+
+**Richiesto**: le righe di intestazione delle tabelle restino visibili mentre si scorre sotto, per non perdere il riferimento alle colonne su tabelle lunghe.
+
+**Applicato** (`position: "sticky", top: 0, zIndex: 1` sul `<thead>`) a tutte le tabelle con intestazione a sfondo colorato esplicito: ArticoliPrezzi, RazioniSuiniConsumi, ReportCespiti (2 tabelle), ReportPerArea, ReportPerAreaCentro, ReportQuantitaForaggio (2), ReportQuantitaMangimi (2), ReportRiproduttori, ReportStoricoForaggio, ReportStoricoMangimi, SchedaAnimale, StoricoPerformanceEta, ConsultazioneAnimali (colore dinamico per specie). **ReportUba.jsx** era già sticky da prima (nessun intervento necessario).
+
+**Non ancora applicato**: le tabelle con `<thead>` senza stile esplicito (Cespiti, Clienti, DaArmonizzare, FatturePassive, Fornitori, PerformanceEta, RazioniSuiniComposizione, ReportCosti — queste usano stili per-cella `th` invece di uno stile sul thead stesso) — da fare come passo successivo se serve, richiede un approccio leggermente diverso (aggiungere sticky al `th` invece che al `thead`, o introdurre uno stile thead dove non c'è).
+
+## 59. Storico Report Costi (Generale/Bovini/Suini/Ovini) — unificato in tabella a fisarmonica
+
+**Richiesto da Filippo**: le pagine Storico (dentro Report Costi → SezioneReportCosti.jsx, che usa `ReportStorico.jsx` con 4 `specieFiltro` diversi) mostravano "Per Area" e "Disaggregato per Centro di Costo" come **due tabelle separate** — bisognava scorrere e cercare a mano quale centro di costo apparteneva a quale area. Voleva lo stesso schema a fisarmonica già usato in "Per Area e Centro di Costo" (`ReportPerAreaCentro.jsx`): area riepilogata, clic sulla freccetta per aprire i centri di costo di quell'area.
+
+**Ricostruito**: nuovo componente `TabellaConfrontoAccordion` in `ReportStorico.jsx` — sostituisce le due tabelle "PER AREA" e "DISAGGREGATO PER CENTRO DI COSTO" con un'unica tabella, dove ogni riga Area (`righeArea`) trova le sue righe Centro di Costo corrispondenti (`righeCentro`, filtrate per `.area === areaRow.chiave`) e le mostra come sotto-righe espandibili — stesso pattern ▶/▼ di `ReportPerAreaCentro.jsx`. La riga "Orto/Non Allevamento/Ammortamenti senza imputazione" resta separata (è un avviso a parte, non naviga per area).
+
+**Si applica automaticamente a tutte e 4 le viste** (Generale/Bovini/Suini/Ovini) dato che condividono lo stesso componente — nessuna modifica separata necessaria per ciascuna. L'esportazione Excel resta con i fogli separati (Per Area / Per Centro di Costo) — Excel non ha comunque un concetto di "espandi/comprimi", quindi non serve cambiarla lì.
