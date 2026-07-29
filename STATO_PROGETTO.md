@@ -722,3 +722,13 @@ Questo risolve anche in generale il caso "Finiss Bovini" e qualunque altra riga 
 **Ricostruito**: nuovo componente `TabellaConfrontoAccordion` in `ReportStorico.jsx` — sostituisce le due tabelle "PER AREA" e "DISAGGREGATO PER CENTRO DI COSTO" con un'unica tabella, dove ogni riga Area (`righeArea`) trova le sue righe Centro di Costo corrispondenti (`righeCentro`, filtrate per `.area === areaRow.chiave`) e le mostra come sotto-righe espandibili — stesso pattern ▶/▼ di `ReportPerAreaCentro.jsx`. La riga "Orto/Non Allevamento/Ammortamenti senza imputazione" resta separata (è un avviso a parte, non naviga per area).
 
 **Si applica automaticamente a tutte e 4 le viste** (Generale/Bovini/Suini/Ovini) dato che condividono lo stesso componente — nessuna modifica separata necessaria per ciascuna. L'esportazione Excel resta con i fogli separati (Per Area / Per Centro di Costo) — Excel non ha comunque un concetto di "espandi/comprimi", quindi non serve cambiarla lì.
+
+## 60. Grafico a barre per Area negli Storici, con riga tratteggiata della media
+
+**Richiesto da Filippo**: usare lo spazio liberato dalla fisarmonica (sezione 59) per un grafico a barre per Area — €/UBA-gg dell'anno di consultazione affiancato alle barre dei 3 anni precedenti, con una riga tratteggiata "valore medio".
+
+**Costruito** `GraficoBarre.jsx` — nuovo componente SVG puro, stesso stile/font/colori di `GraficoAndamento.jsx` già esistente (riusato come riferimento), ma a colonne invece che a linea. Gestisce anche valori negativi (aste sotto lo zero) senza crash. L'ultima barra (anno di consultazione) è evidenziata in un colore più scuro (`C.primary`) rispetto alle precedenti (`C.primaryLight`), per distinguerla a colpo d'occhio.
+
+**Integrato** in `ReportStorico.jsx`: quando un'Area viene espansa nella tabella a fisarmonica, appare il grafico (per €/UBA-gg di quell'Area) PRIMA delle righe Centro di Costo — dando prima un colpo d'occhio visivo dell'andamento, poi il dettaglio numerico sotto.
+
+Testato con caso normale (4 anni, valori positivi) e caso con un valore negativo — entrambi corretti.

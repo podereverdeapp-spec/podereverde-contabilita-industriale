@@ -4,6 +4,7 @@ import { calcolaDatiPerArea, calcolaDatiPerAreaCentro } from "./calcoloReportCos
 import { formattaEuro } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
 import GraficoAndamento from "./GraficoAndamento";
+import GraficoBarre from "./GraficoBarre";
 
 const round2 = n => Math.round((n + Number.EPSILON) * 100) / 100;
 
@@ -209,6 +210,14 @@ function TabellaConfrontoAccordion({ righeArea, righeCentro, espansi, toggleEspa
                   <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{formattaEuro(rArea.media[campo1])}</td>
                   <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{formattaEuro(rArea.media[campo2], 4)}</td>
                 </tr>
+                {espansi[rArea.chiave] && (
+                  <tr>
+                    <td colSpan={1 + anni.length * 2 + 2} style={{ padding: "12px 20px", background: "#FAFAF8", borderTop: `1px solid ${C.border}` }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, marginBottom: 4 }}>{labelCampo2} — andamento {rArea.chiave}</div>
+                      <GraficoBarre punti={rArea.valoriPerAnno.map((v, i) => ({ anno: anni[i], valore: v[campo2] }))} decimaliValore={4} />
+                    </td>
+                  </tr>
+                )}
                 {espansi[rArea.chiave] && centriDiQuestaArea.map(rc => (
                   <tr key={rArea.chiave + rc.etichetta} style={{ borderTop: `1px solid ${C.border}`, background: "#FAFAF8" }}>
                     <td style={{ ...td, paddingLeft: 28, color: C.muted }}>↳ {rc.etichetta}</td>
