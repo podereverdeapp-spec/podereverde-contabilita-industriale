@@ -125,7 +125,7 @@ export default function InserimentoManualeFattura() {
         const aliquota = parseFloat(r.aliquota_iva) || 0;
         const { error } = await supabase.from("ci_articoli_fattura").insert([{
           fattura_id: fatturaId, descrizione: r.descrizione.trim(),
-          quantita: r.quantita !== "" ? parseFloat(r.quantita) : null, unita_misura: r.unita_misura || null,
+          quantita: r.quantita !== "" ? parseFloat(r.quantita) : 1, unita_misura: r.unita_misura || null,
           prezzo_unitario: r.prezzo_unitario !== "" ? parseFloat(r.prezzo_unitario) : null,
           totale_riga: imponibile, aliquota_iva: aliquota, totale_iva: round2(imponibile * aliquota / 100),
           area: r.area || null, centro_costo: r.centro_costo || null, destinazione: r.destinazione || null, tipo_costo: r.tipo_costo || null,

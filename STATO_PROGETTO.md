@@ -816,3 +816,11 @@ Testato con 5 casi (importi uguali, vicini, lontani, vicini allo zero, non numer
 Fornitore, descrizione e importo sono già noti dalla riga Excel — non richiede di reinserirli. Dopo la registrazione, la riga sparisce dall'elenco "mancanti" mostrato (senza dover rifare tutto il confronto da capo).
 
 **Bug corretto durante la costruzione**: avevo scritto `useState` invece di `useEffect` per il caricamento del piano dei conti al mount — corretto prima del deploy (avrebbe causato un caricamento ripetuto ad ogni render invece che una volta sola).
+
+## 69. Bug corretto — "quantita" mancante nell'inserimento riga fattura (Verifica Righe Mancanti + Inserimento Manuale)
+
+**Causa**: la colonna `quantita` di `ci_articoli_fattura` ha un vincolo NOT NULL — la registrazione da Verifica Righe Mancanti non la passava affatto (errore bloccante), e Inserimento Manuale Fattura la salvava `null` se il campo veniva svuotato dall'utente.
+
+**Corretto**: entrambe ora salvano sempre un valore di default (1) quando non specificato, mai null.
+
+**SESSIONE DEPLOY (risolta)**: dopo il push di v136, il sito continuava a mostrare v135 nonostante `git status` risultasse pulito e i file locali corretti — il push GitHub era andato a buon fine (verificato con `git log`), ma Vercel non generava un nuovo deployment automatico. Risolto con un commit vuoto (`git commit --allow-empty` + push) che ha sbloccato il collegamento automatico GitHub→Vercel.
