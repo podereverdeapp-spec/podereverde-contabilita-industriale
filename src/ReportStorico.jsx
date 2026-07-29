@@ -8,6 +8,17 @@ import GraficoBarre from "./GraficoBarre";
 
 const round2 = n => Math.round((n + Number.EPSILON) * 100) / 100;
 
+// Un colore per ciascuno dei 4 anni (dal più vecchio al più recente) + uno per la
+// media — tonalità scura per il valore assoluto, chiara per €/UBA-gg. Riusa tonalità
+// già presenti nella palette (bovini/suini/ovini/primary) per coerenza visiva.
+const COLORI_ANNO = [
+  { scuro: "#2C6E9B", chiaro: "#4A87B0" }, // blu (3 anni fa) — contrasto 5.51 / 3.90
+  { scuro: "#8B3A52", chiaro: "#A54F68" }, // bordeaux (2 anni fa) — contrasto 7.43 / 5.36
+  { scuro: "#5A7A3E", chiaro: "#75925A" }, // verde oliva (1 anno fa) — contrasto 4.90 / 3.49
+  { scuro: "#2E4A34", chiaro: "#4A6B50" }, // verde primary (anno di consultazione) — contrasto 9.79 / 5.98
+];
+const COLORE_MEDIA = { scuro: "#7A5F3D", chiaro: "#957B54" }; // accent — contrasto 5.95 / 4.01
+
 // Unisce le righe di 4 anni per una data chiave (area, o area+centro), restituendo
 // per ognuna i 4 valori annuali + la media. Le aree assenti in un anno valgono 0 quell'anno.
 function unisciPerChiave(datiPerAnno, estraiChiavi, estraiValori) {
@@ -179,8 +190,11 @@ function TabellaConfrontoAccordion({ righeArea, righeCentro, espansi, toggleEspa
         <thead style={{ background: C.primary, color: "#fff", position: "sticky", top: 0, zIndex: 1 }}>
           <tr>
             <th style={th} rowSpan={2}>Area / Centro di Costo</th>
-            {anni.map((a, i) => <th key={a} style={{ ...th, borderLeft: i === 0 ? undefined : "1px solid #ffffff55" }} colSpan={2}>{a}</th>)}
-            <th style={{ ...th, borderLeft: "1px solid #ffffff55" }} colSpan={2}>Media 4 anni</th>
+            {anni.map((a, i) => {
+              const col = COLORI_ANNO[anni.length - 1 - i];
+              return <th key={a} style={{ ...th, borderLeft: i === 0 ? undefined : "1px solid #ffffff55", borderBottom: `3px solid ${col.scuro}` }} colSpan={2}>{a}</th>;
+            })}
+            <th style={{ ...th, borderLeft: "1px solid #ffffff55", borderBottom: `3px solid ${COLORE_MEDIA.scuro}` }} colSpan={2}>Media 4 anni</th>
           </tr>
           <tr>
             {anni.map(a => <Fragment key={a}>
@@ -201,14 +215,17 @@ function TabellaConfrontoAccordion({ righeArea, righeCentro, espansi, toggleEspa
                   <td style={{ ...td, fontWeight: 800 }}>
                     {centriDiQuestaArea.length > 0 ? (espansi[rArea.chiave] ? "▼" : "▶") : "·"} {rArea.chiave}
                   </td>
-                  {rArea.valoriPerAnno.map((v, i) => (
-                    <Fragment key={i}>
-                      <td style={{ ...td, textAlign: "right" }}>{formattaEuro(v[campo1])}</td>
-                      <td style={{ ...td, textAlign: "right" }}>{formattaEuro(v[campo2], 4)}</td>
-                    </Fragment>
-                  ))}
-                  <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{formattaEuro(rArea.media[campo1])}</td>
-                  <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{formattaEuro(rArea.media[campo2], 4)}</td>
+                  {rArea.valoriPerAnno.map((v, i) => {
+                    const col = COLORI_ANNO[anni.length - 1 - i];
+                    return (
+                      <Fragment key={i}>
+                        <td style={{ ...td, textAlign: "right", color: col.scuro, fontWeight: 700 }}>{formattaEuro(v[campo1])}</td>
+                        <td style={{ ...td, textAlign: "right", color: col.chiaro, fontWeight: 600 }}>{formattaEuro(v[campo2], 4)}</td>
+                      </Fragment>
+                    );
+                  })}
+                  <td style={{ ...td, textAlign: "right", fontWeight: 800, color: COLORE_MEDIA.scuro }}>{formattaEuro(rArea.media[campo1])}</td>
+                  <td style={{ ...td, textAlign: "right", color: COLORE_MEDIA.chiaro, fontWeight: 600 }}>{formattaEuro(rArea.media[campo2], 4)}</td>
                 </tr>
                 {espansi[rArea.chiave] && (
                   <tr>
@@ -221,14 +238,17 @@ function TabellaConfrontoAccordion({ righeArea, righeCentro, espansi, toggleEspa
                 {espansi[rArea.chiave] && centriDiQuestaArea.map(rc => (
                   <tr key={rArea.chiave + rc.etichetta} style={{ borderTop: `1px solid ${C.border}`, background: "#FAFAF8" }}>
                     <td style={{ ...td, paddingLeft: 28, color: C.muted }}>↳ {rc.etichetta}</td>
-                    {rc.valoriPerAnno.map((v, i) => (
-                      <Fragment key={i}>
-                        <td style={{ ...td, textAlign: "right" }}>{formattaEuro(v[campo1])}</td>
-                        <td style={{ ...td, textAlign: "right" }}>{formattaEuro(v[campo2], 4)}</td>
-                      </Fragment>
-                    ))}
-                    <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{formattaEuro(rc.media[campo1])}</td>
-                    <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{formattaEuro(rc.media[campo2], 4)}</td>
+                    {rc.valoriPerAnno.map((v, i) => {
+                      const col = COLORI_ANNO[anni.length - 1 - i];
+                      return (
+                        <Fragment key={i}>
+                          <td style={{ ...td, textAlign: "right", color: col.scuro }}>{formattaEuro(v[campo1])}</td>
+                          <td style={{ ...td, textAlign: "right", color: col.chiaro, fontWeight: 600 }}>{formattaEuro(v[campo2], 4)}</td>
+                        </Fragment>
+                      );
+                    })}
+                    <td style={{ ...td, textAlign: "right", fontWeight: 700, color: COLORE_MEDIA.scuro }}>{formattaEuro(rc.media[campo1])}</td>
+                    <td style={{ ...td, textAlign: "right", color: COLORE_MEDIA.chiaro, fontWeight: 600 }}>{formattaEuro(rc.media[campo2], 4)}</td>
                   </tr>
                 ))}
               </Fragment>

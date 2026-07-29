@@ -732,3 +732,19 @@ Questo risolve anche in generale il caso "Finiss Bovini" e qualunque altra riga 
 **Integrato** in `ReportStorico.jsx`: quando un'Area viene espansa nella tabella a fisarmonica, appare il grafico (per €/UBA-gg di quell'Area) PRIMA delle righe Centro di Costo — dando prima un colpo d'occhio visivo dell'andamento, poi il dettaglio numerico sotto.
 
 Testato con caso normale (4 anni, valori positivi) e caso con un valore negativo — entrambi corretti.
+
+## 61. Colori per anno nella tabella Storico — scuro per valore assoluto, chiaro per €/UBA-gg
+
+**Richiesto da Filippo**: migliorare la leggibilità della tabella a fisarmonica assegnando un colore a ciascun anno (e alla media), con tonalità scura per i valori assoluti e chiara per €/UBA-gg.
+
+**Implementato**: 5 coppie di colori (scuro/chiaro) — 4 per gli anni (dal più vecchio al più recente: blu, rosa, verde oliva, verde primary — quest'ultimo per l'anno di consultazione, il più in evidenza) + una per la Media (accent/dorato, stessa tonalità già usata per la riga tratteggiata nei grafici, per coerenza visiva). Applicati sia ai valori nelle celle sia a un bordo colorato sotto l'intestazione di ciascun blocco anno.
+
+**Attenzione all'indicizzazione**: l'array `anni` è ordinato dal più recente al più vecchio (`[annoBase, annoBase-1, annoBase-2, annoBase-3]`), mentre la palette è ordinata dal più vecchio al più recente — l'accesso corretto è `COLORI_ANNO[anni.length - 1 - i]`. Verificato con test: anno di consultazione → verde primary, anno più vecchio → blu.
+
+Applicato alla tabella principale (`TabellaConfrontoAccordion`); la tabella "Orto/Non Allevamento" (`TabellaConfronto`, usa un colore rosso fisso per l'intera riga) non è stata toccata, dato che è già un avviso a parte con la sua logica colore.
+
+## 62. Colori Storico corretti per leggibilità reale (calcolo contrasto WCAG)
+
+**Filippo ha giustamente segnalato**: le tonalità "chiare" scelte inizialmente rischiavano di essere poco leggibili contro lo sfondo bianco. Invece di aggiustare a occhio, ho calcolato il **contrasto WCAG** (luminanza relativa) di ogni colore contro bianco — la rosa iniziale risultava la più debole (contrasto 3.09-4.11, sotto la soglia raccomandata 4.5 per testo normale). Sostituita con un bordeaux più scuro (contrasto 7.43/5.36). Le altre tonalità "chiare" restano nella fascia 3.5-4 (accettabile per testo in grassetto secondo WCAG, non ideale per testo normale piccolo) — per questo aggiunto anche `fontWeight: 600` alle celle €/UBA-gg (tonalità chiara), a compensare ulteriormente.
+
+Palette finale: blu (contrasto 5.51/3.90), bordeaux (7.43/5.36), verde oliva (4.90/3.49), verde primary (9.79/5.98), media/accent (5.95/4.01).
