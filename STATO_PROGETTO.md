@@ -828,3 +828,15 @@ Fornitore, descrizione e importo sono già noti dalla riga Excel — non richied
 ## 70. Bug corretto — altri due campi obbligatori mancanti (prezzo_unitario, stato_classificazione)
 
 Stesso tipo di problema della sezione 69, trovato subito dopo dal test reale di Filippo: anche `prezzo_unitario` (NOT NULL) mancava nell'inserimento da Verifica Righe Mancanti, e poteva mancare (diventando null) in Inserimento Manuale Fattura se il campo veniva svuotato. Corretto in entrambi i file — default all'imponibile/importo quando non specificato. Aggiunto anche `stato_classificazione: "MANUALE"` in entrambi, per coerenza con come Carica Fatture classifica le righe inserite a mano (visto in uno dei due percorsi di CaricaFatture.jsx ma non nell'altro — aggiunto difensivamente ovunque per evitare un terzo giro dello stesso tipo di errore).
+
+## 71. Verifica Righe Mancanti — esportazione diretta verso Carica Fatture
+
+**Richiesto da Filippo**: invece di registrare una riga alla volta a mano, poter trovare le righe mancanti nel file Excel e ricaricarle direttamente su Carica Fatture (che gestisce già tutto il flusso completo, incluse le aree speciali Ammortamenti/Acquisto Animali/Trasporto Animali).
+
+**Scoperta chiave**: la modalità "File Excel" di Carica Fatture si aspetta ESATTAMENTE lo stesso formato di colonne del file che Filippo usa per Verifica Righe Mancanti (Fornitore, P.IVA, Numero, Data, Descrizione, Quantità, U.M., Prezzo unitario, Imponibile, Aliquota IVA) — sono compatibili.
+
+**Costruito**: pulsante "📥 Scarica Excel per Carica Fatture" accanto all'avviso delle righe mancanti — esporta solo quelle righe (non l'intera fattura, per non ricaricare righe già corrette), in un nuovo file Excel con esattamente le colonne attese da Carica Fatture. Aggiunte 6 mappature colonna opzionali aggiuntive (P.IVA/Numero/Quantità/U.M./Prezzo unitario/Aliquota IVA), rilevate automaticamente dal nome colonna come le altre, usate solo per popolare questo export (non influenzano il confronto).
+
+**Flusso finale per Filippo**: Verifica Righe Mancanti trova le righe → scarica l'Excel generato → lo carica in Carica Fatture (modalità File Excel) → passa per il flusso di classificazione normale, incluse le aree speciali.
+
+Testato con caso mock: la mappatura produce esattamente le colonne e i tipi di dato attesi.

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import * as XLSX from "xlsx-js-style";
+import { esportaExcel } from "./esportaExcel";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { formattaEuro, round2 } from "./parsingUtils";
@@ -36,6 +37,12 @@ export default function VerificaRigheMancanti() {
   const [mappaDescrizione, setMappaDescrizione] = useState("");
   const [mappaImporto, setMappaImporto] = useState("");
   const [mappaData, setMappaData] = useState("");
+  const [mappaPiva, setMappaPiva] = useState("");
+  const [mappaNumero, setMappaNumero] = useState("");
+  const [mappaQuantita, setMappaQuantita] = useState("");
+  const [mappaUnitaMisura, setMappaUnitaMisura] = useState("");
+  const [mappaPrezzoUnitario, setMappaPrezzoUnitario] = useState("");
+  const [mappaAliquotaIva, setMappaAliquotaIva] = useState("");
   const [risultato, setRisultato] = useState(null);
   const [caricando, setCaricando] = useState(false);
   const [errore, setErrore] = useState(null);
@@ -109,6 +116,22 @@ export default function VerificaRigheMancanti() {
     setSalvandoRegistra(false);
   }
 
+  function esportaPerCaricaFatture() {
+    const righeEsportate = risultato.mancanti.map(r => ({
+      Fornitore: r[mappaFornitore] || "",
+      "P.IVA": mappaPiva ? (r[mappaPiva] || "") : "",
+      Numero: mappaNumero ? (r[mappaNumero] || "") : "",
+      Data: mappaData ? (r[mappaData] instanceof Date ? r[mappaData].toISOString().slice(0, 10) : r[mappaData]) : "",
+      Descrizione: mappaDescrizione ? (r[mappaDescrizione] || "") : "",
+      "Quantità": mappaQuantita ? (parseFloat(r[mappaQuantita]) || 1) : 1,
+      "U.M.": mappaUnitaMisura ? (r[mappaUnitaMisura] || "") : "",
+      "Prezzo unitario": mappaPrezzoUnitario ? (parseFloat(r[mappaPrezzoUnitario]) || "") : "",
+      Imponibile: round2(parseFloat(r[mappaImporto]) || 0),
+      "Aliquota IVA": mappaAliquotaIva ? (parseFloat(r[mappaAliquotaIva]) || 0) : 0,
+    }));
+    esportaExcel("righe_mancanti_da_ricaricare", [{ nome: "Righe mancanti", righe: righeEsportate }]);
+  }
+
   function gestisciFile(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -128,6 +151,12 @@ export default function VerificaRigheMancanti() {
         setMappaDescrizione(trovaColonna(["descrizione"]) || "");
         setMappaImporto(trovaColonna(["imponibile", "importo"]) || "");
         setMappaData(trovaColonna(["data"]) || "");
+        setMappaPiva(trovaColonna(["p.iva", "piva", "partita iva"]) || "");
+        setMappaNumero(trovaColonna(["numero"]) || "");
+        setMappaQuantita(trovaColonna(["quantit"]) || "");
+        setMappaUnitaMisura(trovaColonna(["u.m.", "unit"]) || "");
+        setMappaPrezzoUnitario(trovaColonna(["prezzo"]) || "");
+        setMappaAliquotaIva(trovaColonna(["aliquota", "iva"]) || "");
       } catch (err) {
         setErrore(`Impossibile leggere il file: ${err.message}`);
       }
@@ -235,6 +264,18 @@ export default function VerificaRigheMancanti() {
             style={{ marginTop: 12, background: C.green, color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
             {caricando ? "Confronto..." : "🔍 Confronta con il database"}
           </button>
+
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.muted, marginTop: 16, marginBottom: 6 }}>
+            Colonne aggiuntive, usate solo per esportare le righe mancanti verso Carica Fatture (opzionali — rilevate da sole se presenti):
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8 }}>
+            <CampoMappa label="P.IVA" value={mappaPiva} colonne={colonne} onChange={setMappaPiva} />
+            <CampoMappa label="Numero fattura" value={mappaNumero} colonne={colonne} onChange={setMappaNumero} />
+            <CampoMappa label="Quantità" value={mappaQuantita} colonne={colonne} onChange={setMappaQuantita} />
+            <CampoMappa label="U.M." value={mappaUnitaMisura} colonne={colonne} onChange={setMappaUnitaMisura} />
+            <CampoMappa label="Prezzo unitario" value={mappaPrezzoUnitario} colonne={colonne} onChange={setMappaPrezzoUnitario} />
+            <CampoMappa label="Aliquota IVA" value={mappaAliquotaIva} colonne={colonne} onChange={setMappaAliquotaIva} />
+          </div>
         </div>
       )}
 
@@ -252,8 +293,12 @@ export default function VerificaRigheMancanti() {
             </div>
           ) : (
             <>
-              <div style={{ background: "#FFF2DC", border: `1px solid ${C.yellow}`, borderRadius: 8, padding: "10px 16px", fontSize: 13, marginBottom: 10 }}>
-                ⚠️ {risultato.mancanti.length} righe del file NON risultano registrate.
+              <div style={{ background: "#FFF2DC", border: `1px solid ${C.yellow}`, borderRadius: 8, padding: "10px 16px", fontSize: 13, marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+                <span>⚠️ {risultato.mancanti.length} righe del file NON risultano registrate.</span>
+                <button onClick={esportaPerCaricaFatture}
+                  style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                  📥 Scarica Excel per Carica Fatture
+                </button>
               </div>
               <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
                 {risultato.mancanti.map((r, i) => (
