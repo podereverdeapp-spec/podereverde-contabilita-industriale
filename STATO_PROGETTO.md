@@ -824,3 +824,7 @@ Fornitore, descrizione e importo sono già noti dalla riga Excel — non richied
 **Corretto**: entrambe ora salvano sempre un valore di default (1) quando non specificato, mai null.
 
 **SESSIONE DEPLOY (risolta)**: dopo il push di v136, il sito continuava a mostrare v135 nonostante `git status` risultasse pulito e i file locali corretti — il push GitHub era andato a buon fine (verificato con `git log`), ma Vercel non generava un nuovo deployment automatico. Risolto con un commit vuoto (`git commit --allow-empty` + push) che ha sbloccato il collegamento automatico GitHub→Vercel.
+
+## 70. Bug corretto — altri due campi obbligatori mancanti (prezzo_unitario, stato_classificazione)
+
+Stesso tipo di problema della sezione 69, trovato subito dopo dal test reale di Filippo: anche `prezzo_unitario` (NOT NULL) mancava nell'inserimento da Verifica Righe Mancanti, e poteva mancare (diventando null) in Inserimento Manuale Fattura se il campo veniva svuotato. Corretto in entrambi i file — default all'imponibile/importo quando non specificato. Aggiunto anche `stato_classificazione: "MANUALE"` in entrambi, per coerenza con come Carica Fatture classifica le righe inserite a mano (visto in uno dei due percorsi di CaricaFatture.jsx ma non nell'altro — aggiunto difensivamente ovunque per evitare un terzo giro dello stesso tipo di errore).

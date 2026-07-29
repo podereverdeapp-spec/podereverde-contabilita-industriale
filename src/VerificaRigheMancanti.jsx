@@ -89,9 +89,9 @@ export default function VerificaRigheMancanti() {
         if (error) throw new Error(error.message);
       } else {
         const { error } = await supabase.from("ci_articoli_fattura").insert([{
-          fattura_id: fatturaId, descrizione, quantita: 1, totale_riga: importo, aliquota_iva: 0, totale_iva: 0,
+          fattura_id: fatturaId, descrizione, quantita: 1, prezzo_unitario: importo, totale_riga: importo, aliquota_iva: 0, totale_iva: 0,
           area: formRegistra.area || null, centro_costo: formRegistra.centro_costo || null,
-          destinazione: formRegistra.destinazione || null, tipo_costo: formRegistra.tipo_costo || null,
+          destinazione: formRegistra.destinazione || null, tipo_costo: formRegistra.tipo_costo || null, stato_classificazione: "MANUALE",
         }]);
         if (error) throw new Error(error.message);
       }
