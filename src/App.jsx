@@ -31,6 +31,7 @@ import PromptEstrazionePDF from "./PromptEstrazionePDF";
 import ConsultazioneAnimali from "./ConsultazioneAnimali";
 import InserimentoManualeFattura from "./InserimentoManualeFattura";
 import VerificaFattureMancanti from "./VerificaFattureMancanti";
+import VerificaRigheMancanti from "./VerificaRigheMancanti";
 import IstruzioniFatture from "./IstruzioniFatture";
 import IstruzioniAnagrafiche from "./IstruzioniAnagrafiche";
 import IstruzioniAnimali from "./IstruzioniAnimali";
@@ -56,6 +57,7 @@ const MENU = [
     { tipo: "voce", id: "articoliprezzi", label: "Articoli & Prezzi", icon: "🏷️" },
     { tipo: "voce", id: "prompt-estrazione-pdf", label: "Prompt Estrazione PDF", icon: "🤖" },
     { tipo: "voce", id: "verifica-fatture-mancanti", label: "Verifica Fatture Mancanti", icon: "🔍" },
+    { tipo: "voce", id: "verifica-righe-mancanti", label: "Verifica Righe Mancanti", icon: "🔎" },
   ]},
   { tipo: "cartella", id: "cart-anagrafiche", label: "Anagrafiche", icon: "🏢", contenuto: [
     { tipo: "voce", id: "istr-anagrafiche", label: "Istruzioni", icon: "📖" },
@@ -285,6 +287,7 @@ export default function App() {
         {tab === "consultazione-animali" && <ConsultazioneAnimali />}
         {tab === "inserimento-manuale" && <InserimentoManualeFattura />}
         {tab === "verifica-fatture-mancanti" && <VerificaFattureMancanti />}
+        {tab === "verifica-righe-mancanti" && <VerificaRigheMancanti />}
         {tab === "istr-fatture" && <IstruzioniFatture />}
         {tab === "istr-anagrafiche" && <IstruzioniAnagrafiche />}
         {tab === "istr-animali" && <IstruzioniAnimali />}

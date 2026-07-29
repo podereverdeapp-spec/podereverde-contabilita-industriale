@@ -792,3 +792,15 @@ Testato con caso mock: Tiberi con una regola specifica sulla propria Cassa → l
 **Nota onestà nella pagina**: senza la colonna Fornitore mappata, il confronto è solo per numero — meno preciso, rischia falsi positivi se fornitori diversi riusano lo stesso numero.
 
 Testato le funzioni di normalizzazione (zeri iniziali, separatori, formato data) con casi mock prima di consegnare.
+
+## 67. Nuova pagina "Verifica Righe Mancanti" (Fatture)
+
+**Richiesto da Filippo**: un controllo più fine di "Verifica Fatture Mancanti" — non solo "manca l'intera fattura", ma "questa singola voce/riga manca", includendo quelle finite su Ammortamenti (Cespiti) o Acquisto Animali (tabelle diverse da quella normale). File Excel di riferimento: una riga per voce/articolo (stesso formato prodotto dal prompt di estrazione PDF).
+
+**Costruita** `VerificaRigheMancanti.jsx`: per ogni fornitore distinto nel file, carica TUTTI i costi registrati per lui nell'anno da **tre fonti insieme** — `ci_articoli_fattura` (fatture normali), `ci_cespiti` (Ammortamenti), `ci_report_acquisto_animali` (Acquisto Animali) — poi confronta ogni riga del file per **importo** (il confronto principale, con tolleranza combinata: assoluta fino a 0,05€ per gli arrotondamenti, percentuale 2% oltre) contro questo insieme combinato.
+
+**Scelta di design**: il match è basato sull'importo, non sulla descrizione — la descrizione può cambiare tra estrazione PDF e classificazione finale, mentre l'importo resta stabile. La descrizione viene comunque mostrata nel risultato, a titolo informativo.
+
+**Bug trovato e corretto durante il test**: la tolleranza percentuale da sola falliva per importi vicini allo zero (una differenza minima diventa enorme in percentuale) — aggiunta una soglia assoluta minima (0,05€) che viene controllata per prima.
+
+Testato con 5 casi (importi uguali, vicini, lontani, vicini allo zero, non numerici) — tutti corretti dopo la correzione.
