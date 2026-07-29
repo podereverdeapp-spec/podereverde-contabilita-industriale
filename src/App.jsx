@@ -29,6 +29,8 @@ import RazioniSuiniComposizione from "./RazioniSuiniComposizione";
 import RazioniSuiniConsumi from "./RazioniSuiniConsumi";
 import PromptEstrazionePDF from "./PromptEstrazionePDF";
 import ConsultazioneAnimali from "./ConsultazioneAnimali";
+import InserimentoManualeFattura from "./InserimentoManualeFattura";
+import VerificaFattureMancanti from "./VerificaFattureMancanti";
 import IstruzioniFatture from "./IstruzioniFatture";
 import IstruzioniAnagrafiche from "./IstruzioniAnagrafiche";
 import IstruzioniAnimali from "./IstruzioniAnimali";
@@ -44,6 +46,7 @@ const MENU = [
   { tipo: "cartella", id: "cart-fatture", label: "Fatture", icon: "📥", contenuto: [
     { tipo: "voce", id: "istr-fatture", label: "Istruzioni", icon: "📖" },
     { tipo: "voce", id: "carica", label: "Carica Fatture", icon: "📥" },
+    { tipo: "voce", id: "inserimento-manuale", label: "Inserimento Manuale Fattura", icon: "✍️" },
     { tipo: "voce", id: "passive", label: "Fatture Passive", icon: "📄" },
     { tipo: "voce", id: "attive", label: "Fatture Attive", icon: "💰" },
     { tipo: "voce", id: "costidiretti", label: "Costi Diretti", icon: "💼" },
@@ -52,6 +55,7 @@ const MENU = [
     { tipo: "voce", id: "armonizza", label: "Da Armonizzare", icon: "⚖️" },
     { tipo: "voce", id: "articoliprezzi", label: "Articoli & Prezzi", icon: "🏷️" },
     { tipo: "voce", id: "prompt-estrazione-pdf", label: "Prompt Estrazione PDF", icon: "🤖" },
+    { tipo: "voce", id: "verifica-fatture-mancanti", label: "Verifica Fatture Mancanti", icon: "🔍" },
   ]},
   { tipo: "cartella", id: "cart-anagrafiche", label: "Anagrafiche", icon: "🏢", contenuto: [
     { tipo: "voce", id: "istr-anagrafiche", label: "Istruzioni", icon: "📖" },
@@ -279,6 +283,8 @@ export default function App() {
         {tab === "razioni-suini-consumi" && <RazioniSuiniConsumi />}
         {tab === "prompt-estrazione-pdf" && <PromptEstrazionePDF />}
         {tab === "consultazione-animali" && <ConsultazioneAnimali />}
+        {tab === "inserimento-manuale" && <InserimentoManualeFattura />}
+        {tab === "verifica-fatture-mancanti" && <VerificaFattureMancanti />}
         {tab === "istr-fatture" && <IstruzioniFatture />}
         {tab === "istr-anagrafiche" && <IstruzioniAnagrafiche />}
         {tab === "istr-animali" && <IstruzioniAnimali />}

@@ -770,3 +770,25 @@ Testato il rilevamento coerente/misto/assente con 3 casi mock prima di consegnar
 **Ripulito nel passaggio**: rimossa una doppia chiamata a `trovaFornitore()` e una doppia dichiarazione di `descrizioneNorm` (bug di sintassi introdotto durante la modifica, corretto prima del deploy) — ora calcolati una sola volta in cima alla funzione e riusati.
 
 Testato con caso mock: Tiberi con una regola specifica sulla propria Cassa → la regola specifica vince; Cortesi senza ancora una regola specifica sulla propria Cassa → cade correttamente sul controllo universale.
+
+## 65. Nuova pagina "Inserimento Manuale Fattura" (Fatture)
+
+**Richiesto da Filippo**: poter creare una fattura passiva scrivendo i dati a mano, senza dover caricare un PDF — stessa struttura di Carica Fatture (fornitore, numero, data, più righe con descrizione/quantità/prezzo/classificazione).
+
+**Costruita** `InserimentoManualeFattura.jsx`: ricerca/creazione fornitore (autocomplete sui fornitori esistenti, crea nuovo se non trovato), numero e data fattura, righe multiple (+ Aggiungi riga) con Descrizione/Quantità/U.M./Prezzo Unitario/Imponibile (calcolato automaticamente da quantità×prezzo, sovrascrivibile a mano) e Aliquota IVA. Per ogni riga, **suggerimento automatico di classificazione** (Area/Centro di Costo/Destinazione/Tipo di Costo) non appena descrizione e fornitore sono noti — riusa lo stesso `classificaRiga()` di Carica Fatture, quindi beneficia automaticamente di tutte le regole già esistenti (fisse, variabili, e i controlli universali Cassa/Gasolio).
+
+**Salvataggio**: stessa logica di `trovaOCreaFattura` di Carica Fatture (trova la fattura se esiste già per fornitore+numero+data, altrimenti la crea), poi crea ogni riga in `ci_articoli_fattura`, poi ricalcola i totali della fattura.
+
+**Limite dichiarato nella pagina stessa**: per ora pensata per fatture ordinarie — non gestisce le aree speciali (Ammortamenti/Acquisto Animali/Trasporto Animali), che nel Carica Fatture hanno un flusso di salvataggio diverso (tabelle diverse, campi aggiuntivi) — da estendere se serve, come passo successivo.
+
+**Bug RLS corretto in parallelo**: `ci_costi_diretti` aveva RLS attivo senza policy — disattivato (`fix_rls_costi_diretti.sql`).
+
+## 66. Nuova pagina "Verifica Fatture Mancanti" (Fatture)
+
+**Richiesto da Filippo**: paura che alcune fatture non siano state rilevate/caricate — serve un confronto tra un Excel esterno (es. dal portale Fatture e Corrispettivi, dal commercialista) e quello che risulta nel database, per un anno scelto.
+
+**Costruita** `VerificaFattureMancanti.jsx`: carica un file Excel (qualunque struttura — legge le intestazioni e propone da solo quali colonne usare per Fornitore/Numero/Data, indovinando dal nome colonna, ma sempre modificabile a mano). Confronta con `ci_fatture` (tipo PASSIVA) per l'anno scelto, normalizzando numero fattura (rimuove zeri iniziali, spazi, trattini, maiuscole/minuscole) e mostra le fatture del file che NON risultano nel database.
+
+**Nota onestà nella pagina**: senza la colonna Fornitore mappata, il confronto è solo per numero — meno preciso, rischia falsi positivi se fornitori diversi riusano lo stesso numero.
+
+Testato le funzioni di normalizzazione (zeri iniziali, separatori, formato data) con casi mock prima di consegnare.
