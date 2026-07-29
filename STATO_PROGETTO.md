@@ -760,3 +760,13 @@ Palette finale: blu (contrasto 5.51/3.90), bordeaux (7.43/5.36), verde oliva (4.
 2. Per OGNI fornitore distinto che vende questo prodotto, crea o aggiorna una regola in `ci_regole_fornitore_variabile` (parola_chiave = descrizione esatta del prodotto) — così le prossime fatture di qualunque di questi fornitori si classificano da sole allo stesso modo, non serve ripetere la correzione fornitore per fornitore
 
 Testato il rilevamento coerente/misto/assente con 3 casi mock prima di consegnare.
+
+## 64. Bug reale trovato — le regole specifiche (Articoli & Prezzi) venivano sempre ignorate dai controlli universali
+
+**Causa**: i controlli universali (Cassa Professionale, Gasolio) in `classificaRiga` erano i PRIMI ad essere valutati, prima ancora di controllare se esisteva una regola specifica fornitore+prodotto creata da Filippo (es. da Articoli & Prezzi). Risultato: modificare la classificazione di una Cassa specifica (Tiberi, Cortesi, o qualunque altra come ENPAV) creava correttamente la regola nel database, ma quella regola **non veniva mai applicata** alle fatture future — il controllo universale vinceva sempre comunque.
+
+**Corretto**: `classificaRiga` ora cerca PRIMA una regola specifica (fornitore + descrizione esatta) — se la trova, la usa e si ferma lì (con precedenza assoluta). Solo se NON esiste una regola specifica, cade sui controlli universali (Cassa/Gasolio) come comportamento di default. Così qualunque correzione fatta da Articoli & Prezzi ora funziona davvero per le fatture future, per qualunque fornitore/tipo di cassa (non solo Tiberi/Cortesi/INARCASSA/ENPAIA — anche ENPAV o altre).
+
+**Ripulito nel passaggio**: rimossa una doppia chiamata a `trovaFornitore()` e una doppia dichiarazione di `descrizioneNorm` (bug di sintassi introdotto durante la modifica, corretto prima del deploy) — ora calcolati una sola volta in cima alla funzione e riusati.
+
+Testato con caso mock: Tiberi con una regola specifica sulla propria Cassa → la regola specifica vince; Cortesi senza ancora una regola specifica sulla propria Cassa → cade correttamente sul controllo universale.

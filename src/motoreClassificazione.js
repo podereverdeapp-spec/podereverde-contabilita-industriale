@@ -34,13 +34,34 @@ export function trovaFornitore(fornitori, { piva, nome }) {
 // Applica il motore di classificazione a una riga grezza.
 // Ritorna: { stato, area, centro_costo, destinazione, tipo_costo, nota, fornitore }
 export function classificaRiga(riga, { fornitori, regoleFisse, regoleVariabili }) {
-  // Controllo universale per la Cassa previdenziale/professionale (vedi sopra)
-  if (normalizza(riga.descrizione).startsWith("[cassa professionale]")) {
+  const fornitoreTrovato = trovaFornitore(fornitori, { piva: riga.piva, nome: riga.fornitore });
+  const descrizioneNorm = normalizza(riga.descrizione);
+
+  // Se esiste una regola specifica per QUESTO fornitore + questa esatta descrizione
+  // (creata modificando la classificazione da Articoli & Prezzi), ha SEMPRE la
+  // precedenza sui controlli universali sotto — altrimenti una correzione fatta lì
+  // (es. per una Cassa Professionale specifica, o per un prodotto Gasolio con
+  // esigenze diverse dal solito) verrebbe sempre ignorata per le fatture future.
+  if (fornitoreTrovato) {
+    const regolaSpecifica = regoleVariabili.find(r => r.fornitore_id === fornitoreTrovato.id && descrizioneNorm.includes(normalizza(r.parola_chiave)));
+    if (regolaSpecifica) {
+      return {
+        stato: "FCV", area: regolaSpecifica.area, centro_costo: regolaSpecifica.centro_costo,
+        destinazione: regolaSpecifica.destinazione, tipo_costo: regolaSpecifica.tipo_costo,
+        fornitore: fornitoreTrovato,
+      };
+    }
+  }
+
+  // Controllo universale per la Cassa previdenziale/professionale (INARCASSA, ENPAIA,
+  // ENPAV — veterinari — e qualunque altra, il tag non dipende dal nome specifico
+  // della cassa) — solo se non c'è già una regola specifica sopra
+  if (descrizioneNorm.startsWith("[cassa professionale]")) {
     return {
       stato: "MASCHERA",
       area: "Consulenze", centro_costo: "Casse Professionisti", destinazione: null, tipo_costo: null,
       nota: "Cassa previdenziale/professionale rilevata nel riepilogo fattura — assegna destinazione e tipo di costo",
-      fornitore: trovaFornitore(fornitori, { piva: riga.piva, nome: riga.fornitore }),
+      fornitore: fornitoreTrovato,
     };
   }
 
@@ -48,15 +69,15 @@ export function classificaRiga(riga, { fornitori, regoleFisse, regoleVariabili }
   // fornitore, va sempre in Coltivazione → Gasolio e lubrificanti, destinazione
   // Generali, tipo di costo Variabile — evita di dover ripetere la stessa scelta ogni
   // volta che arriva una fattura di gasolio, da qualunque distributore/fornitore.
-  if (normalizza(riga.descrizione).includes("gasolio")) {
+  if (descrizioneNorm.includes("gasolio")) {
     return {
       stato: "FCV", // già completamente classificato, come una regola variabile "risolta"
       area: "Coltivazione", centro_costo: "Gasolio e lubrificanti", destinazione: "Generali", tipo_costo: "Variabile",
-      fornitore: trovaFornitore(fornitori, { piva: riga.piva, nome: riga.fornitore }),
+      fornitore: fornitoreTrovato,
     };
   }
 
-  const fornitore = trovaFornitore(fornitori, { piva: riga.piva, nome: riga.fornitore });
+  const fornitore = fornitoreTrovato;
 
   if (!fornitore) {
     return {
@@ -79,7 +100,6 @@ export function classificaRiga(riga, { fornitori, regoleFisse, regoleVariabili }
   }
 
   // 2. Regola per parola chiave (FCV)
-  const descrizioneNorm = normalizza(riga.descrizione);
   const variabile = regoleVariabili.find(r =>
     r.fornitore_id === fornitore.id && descrizioneNorm.includes(normalizza(r.parola_chiave))
   );
