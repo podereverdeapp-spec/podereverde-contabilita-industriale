@@ -748,3 +748,15 @@ Applicato alla tabella principale (`TabellaConfrontoAccordion`); la tabella "Ort
 **Filippo ha giustamente segnalato**: le tonalità "chiare" scelte inizialmente rischiavano di essere poco leggibili contro lo sfondo bianco. Invece di aggiustare a occhio, ho calcolato il **contrasto WCAG** (luminanza relativa) di ogni colore contro bianco — la rosa iniziale risultava la più debole (contrasto 3.09-4.11, sotto la soglia raccomandata 4.5 per testo normale). Sostituita con un bordeaux più scuro (contrasto 7.43/5.36). Le altre tonalità "chiare" restano nella fascia 3.5-4 (accettabile per testo in grassetto secondo WCAG, non ideale per testo normale piccolo) — per questo aggiunto anche `fontWeight: 600` alle celle €/UBA-gg (tonalità chiara), a compensare ulteriormente.
 
 Palette finale: blu (contrasto 5.51/3.90), bordeaux (7.43/5.36), verde oliva (4.90/3.49), verde primary (9.79/5.98), media/accent (5.95/4.01).
+
+## 63. Articoli & Prezzi — modifica classificazione, applicata a passato e futuro
+
+**Richiesto da Filippo**: correggere errori di classificazione (es. "Finiss.Bovini" attribuito a Suini invece di Bovini) direttamente da Articoli & Prezzi, e che la correzione valga anche per le fatture future dello stesso prodotto.
+
+**Punto tecnico chiarito e confermato con Filippo prima di costruire**: questa pagina raggruppa i prodotti per nome attraverso TUTTI i fornitori insieme (normalizzazione descrizione), mentre le regole di classificazione sono per singolo fornitore — quindi la correzione doveva propagarsi a tutti i fornitori coinvolti, non a uno solo.
+
+**Costruito**: espandendo un prodotto, mostra la classificazione attuale (Area/Centro di Costo/Destinazione/Tipo di Costo — solo per le righe di acquisto/PASSIVA, le vendite non hanno questo concetto) — se le fatture già caricate hanno classificazioni diverse tra loro, mostra "MISTA" invece di un valore sbagliato. Pulsante "✏️ Modifica classificazione" apre un form; salvando:
+1. Aggiorna TUTTE le righe fattura già caricate con questa descrizione (corregge il passato)
+2. Per OGNI fornitore distinto che vende questo prodotto, crea o aggiorna una regola in `ci_regole_fornitore_variabile` (parola_chiave = descrizione esatta del prodotto) — così le prossime fatture di qualunque di questi fornitori si classificano da sole allo stesso modo, non serve ripetere la correzione fornitore per fornitore
+
+Testato il rilevamento coerente/misto/assente con 3 casi mock prima di consegnare.

@@ -12,6 +12,13 @@ function normalizzaNomeProdotto(descrizione) {
 
 const round2 = n => Math.round((n + Number.EPSILON) * 100) / 100;
 
+const AREE_ORDINARIE = [
+  "Allevamento", "Coltivazione", "Lavoro", "Energia Elettrica", "Acqua", "Consulenze",
+  "Assicurazioni", "Lavorazioni prodotti allevamento", "Spese Promozionali",
+  "Canoni ed Abbonamenti", "Varie", "Oneri Finanziari", "Orto", "Animali non d'allevamento", "Ammortamenti",
+];
+const DESTINAZIONI = ["Bovini", "Suini", "Ovini", "Bovini e Ovini", "Generali", "Pollame", "Cavalli"];
+
 export default function ArticoliPrezzi() {
   const [righe, setRighe] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -20,6 +27,10 @@ export default function ArticoliPrezzi() {
   const [filtroTipo, setFiltroTipo] = useState("tutte"); // "tutte" | "PASSIVA" | "ATTIVA"
   const [espanso, setEspanso] = useState(null);
   const [grafico, setGrafico] = useState(null); // chiave prodotto per cui mostrare il grafico
+  const [pianoDeiConti, setPianoDeiConti] = useState([]);
+  const [modificaClassifica, setModificaClassifica] = useState(null); // chiave gruppo in modifica
+  const [formClassifica, setFormClassifica] = useState({});
+  const [salvandoClassifica, setSalvandoClassifica] = useState(false);
 
   useEffect(() => { carica(); }, []);
 
@@ -38,17 +49,20 @@ export default function ArticoliPrezzi() {
     let articoli = [];
     if (idFatture.length > 0) {
       const { data, error } = await supabase
-        .from("ci_articoli_fattura").select("descrizione, quantita, unita_misura, prezzo_unitario, totale_riga, fattura_id")
+        .from("ci_articoli_fattura").select("id, descrizione, quantita, unita_misura, prezzo_unitario, totale_riga, fattura_id, area, centro_costo, destinazione, tipo_costo")
         .in("fattura_id", idFatture).gt("prezzo_unitario", 0);
       if (error) { alert(`⚠️ Errore nel caricamento articoli:\n\n${error.message}`); setLoading(false); return; }
       articoli = numerizzaCampi(data || [], ["quantita", "prezzo_unitario", "totale_riga"]);
     }
 
+    const { data: pdc } = await supabase.from("ci_piano_dei_conti").select("*").order("area").order("centro_costo");
+    setPianoDeiConti(pdc || []);
+
     const arricchiti = articoli.map(a => {
       const f = mappaFatture.get(a.fattura_id);
       if (!f) return null;
       const controparte = f.tipo === "ATTIVA" ? mappaClienti.get(f.cliente_id) : mappaFornitori.get(f.fornitore_id);
-      return { ...a, numero: f.numero, data: f.data, tipo: f.tipo, controparte };
+      return { ...a, numero: f.numero, data: f.data, tipo: f.tipo, controparte, fornitore_id: f.fornitore_id };
     }).filter(a => a && a.data);
 
     setRighe(arricchiti);
@@ -74,9 +88,18 @@ export default function ArticoliPrezzi() {
       const prezzoMassimoPrecedente = prezziPrecedenti.length > 0 ? Math.max(...prezziPrecedenti) : null;
       const prezzoRecente = ordinate[0].prezzo_unitario;
       const scostamentoPct = prezzoMedio > 0 ? round2((prezzoRecente - prezzoMedio) / prezzoMedio * 100) : 0;
+      // Classificazione attuale: se tutte le righe (solo passive, hanno senso di classificazione) concordano, la mostra; altrimenti "MISTA"
+      const righePassive = ordinate.filter(r => r.tipo === "PASSIVA");
+      const unica = campo => {
+        const valori = [...new Set(righePassive.map(r => r[campo] || null))];
+        return valori.length === 1 ? valori[0] : (valori.length > 1 ? "MISTA" : null);
+      };
       return {
         descrizione: ordinate[0].descrizione, unitaMisura: ordinate[0].unita_misura,
         controparti: [...new Set(ordinate.map(r => r.controparte).filter(Boolean))],
+        fornitoriIdPassivi: [...new Set(righePassive.map(r => r.fornitore_id).filter(Boolean))],
+        idRighePassive: righePassive.map(r => r.id),
+        area: unica("area"), centroCosto: unica("centro_costo"), destinazione: unica("destinazione"), tipoCosto: unica("tipo_costo"),
         nAcquisti: ordinate.length, prezzoMinimo: Math.min(...prezzi), prezzoMassimo: Math.max(...prezzi), prezzoMedio,
         prezzoRecente, scostamentoPct, dataRecente: ordinate[0].data, storico: ordinate,
         prezzoRecenteERecord: prezzoMassimoPrecedente !== null && prezzoRecente >= prezzoMassimoPrecedente,
@@ -96,6 +119,53 @@ export default function ArticoliPrezzi() {
     }
     return ris;
   }, [gruppi, cerca, filtroControparte]);
+
+  function centriPerArea(areaScelta) {
+    return pianoDeiConti.filter(p => p.area === areaScelta).map(p => p.centro_costo);
+  }
+
+  function iniziaModificaClassifica(g, chiave) {
+    setModificaClassifica(chiave);
+    setFormClassifica({
+      area: g.area === "MISTA" ? "" : (g.area || ""),
+      centro_costo: g.centroCosto === "MISTA" ? "" : (g.centroCosto || ""),
+      destinazione: g.destinazione === "MISTA" ? "" : (g.destinazione || ""),
+      tipo_costo: g.tipoCosto === "MISTA" ? "" : (g.tipoCosto || ""),
+    });
+  }
+
+  async function salvaClassifica(g) {
+    setSalvandoClassifica(true);
+    try {
+      const nuovaClassifica = {
+        area: formClassifica.area || null, centro_costo: formClassifica.centro_costo || null,
+        destinazione: formClassifica.destinazione || null, tipo_costo: formClassifica.tipo_costo || null,
+      };
+      // 1) Corregge tutte le righe fattura già caricate con questa descrizione
+      if (g.idRighePassive.length > 0) {
+        const { error } = await supabase.from("ci_articoli_fattura").update(nuovaClassifica).in("id", g.idRighePassive);
+        if (error) throw new Error(error.message);
+      }
+      // 2) Crea/aggiorna una regola per OGNI fornitore che vende questo prodotto,
+      // così le prossime fatture si classificano da sole allo stesso modo
+      for (const fornitoreId of g.fornitoriIdPassivi) {
+        const { data: esistente } = await supabase.from("ci_regole_fornitore_variabile")
+          .select("id").eq("fornitore_id", fornitoreId).eq("parola_chiave", g.descrizione).maybeSingle();
+        if (esistente) {
+          const { error } = await supabase.from("ci_regole_fornitore_variabile").update(nuovaClassifica).eq("id", esistente.id);
+          if (error) throw new Error(error.message);
+        } else {
+          const { error } = await supabase.from("ci_regole_fornitore_variabile").insert([{ fornitore_id: fornitoreId, parola_chiave: g.descrizione, ...nuovaClassifica }]);
+          if (error) throw new Error(error.message);
+        }
+      }
+      setModificaClassifica(null);
+      await carica();
+    } catch (err) {
+      alert(`⚠️ Errore nel salvataggio della classificazione:\n\n${err.message}`);
+    }
+    setSalvandoClassifica(false);
+  }
 
   function esporta() {
     const righeExcel = filtrati.map(g => ({
@@ -191,6 +261,45 @@ export default function ArticoliPrezzi() {
                   {espanso === chiave && (
                     <tr>
                       <td colSpan={10} style={{ padding: 0, background: "#FAFAF8" }}>
+                        <div style={{ padding: "12px 20px", borderBottom: `1px solid ${C.border}` }}>
+                          {modificaClassifica === chiave ? (
+                            <div>
+                              <div style={{ fontSize: 12, fontWeight: 700, color: C.primary, marginBottom: 8 }}>
+                                Modifica classificazione per "{g.descrizione}" — si applica a tutte le fatture già caricate di questo prodotto (acquisti) e crea/aggiorna la regola per tutti i fornitori che lo vendono ({g.fornitoriIdPassivi.length}), per le prossime fatture
+                              </div>
+                              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
+                                <CampoSelect label="Area" value={formClassifica.area} options={AREE_ORDINARIE}
+                                  onChange={v => setFormClassifica(prev => ({ ...prev, area: v, centro_costo: "" }))} />
+                                <CampoSelect label="Centro di Costo" value={formClassifica.centro_costo} options={centriPerArea(formClassifica.area)}
+                                  onChange={v => setFormClassifica(prev => ({ ...prev, centro_costo: v }))} />
+                                <CampoSelect label="Destinazione" value={formClassifica.destinazione} options={DESTINAZIONI}
+                                  onChange={v => setFormClassifica(prev => ({ ...prev, destinazione: v }))} />
+                                <CampoSelect label="Tipo di Costo" value={formClassifica.tipo_costo} options={["Fisso", "Variabile", "Ammortizzabile"]}
+                                  onChange={v => setFormClassifica(prev => ({ ...prev, tipo_costo: v }))} />
+                              </div>
+                              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                                <button onClick={() => salvaClassifica(g)} disabled={salvandoClassifica}
+                                  style={{ background: C.green, color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                                  {salvandoClassifica ? "Salvataggio..." : "✓ Salva e applica alle prossime fatture"}
+                                </button>
+                                <button onClick={() => setModificaClassifica(null)}
+                                  style={{ background: "none", border: `1.5px solid ${C.border}`, borderRadius: 8, padding: "6px 14px", fontSize: 12, cursor: "pointer" }}>
+                                  Annulla
+                                </button>
+                              </div>
+                            </div>
+                          ) : g.fornitoriIdPassivi.length > 0 ? (
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                              <div style={{ fontSize: 12, color: C.muted }}>
+                                Classificazione (acquisti): <strong style={{ color: C.text }}>{g.area || "—"}</strong> · {g.centroCosto || "—"} · {g.destinazione || "—"} · {g.tipoCosto || "—"}
+                              </div>
+                              <button onClick={() => iniziaModificaClassifica(g, chiave)}
+                                style={{ background: C.blue + "20", color: C.blue, border: "none", borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                                ✏️ Modifica classificazione
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
                         <table style={{ width: "100%", fontSize: 12 }}>
                           <thead>
                             <tr style={{ color: C.muted, textAlign: "left" }}>
@@ -266,3 +375,16 @@ function GraficoPrezzo({ storico, prezzoMedio }) {
 
 const th = { padding: "8px 10px", textAlign: "left", fontSize: 11, fontWeight: 700 };
 const td = { padding: "7px 10px", fontSize: 12 };
+
+function CampoSelect({ label, value, options, onChange }) {
+  return (
+    <label style={{ fontSize: 11, color: C.muted }}>
+      {label}
+      <select value={value} onChange={e => onChange(e.target.value)}
+        style={{ width: "100%", padding: "5px 7px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 12, marginTop: 2 }}>
+        <option value="">—</option>
+        {options.map(o => <option key={o} value={o}>{o}</option>)}
+      </select>
+    </label>
+  );
+}
