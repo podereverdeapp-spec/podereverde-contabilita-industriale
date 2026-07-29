@@ -804,3 +804,15 @@ Testato le funzioni di normalizzazione (zeri iniziali, separatori, formato data)
 **Bug trovato e corretto durante il test**: la tolleranza percentuale da sola falliva per importi vicini allo zero (una differenza minima diventa enorme in percentuale) — aggiunta una soglia assoluta minima (0,05€) che viene controllata per prima.
 
 Testato con 5 casi (importi uguali, vicini, lontani, vicini allo zero, non numerici) — tutti corretti dopo la correzione.
+
+## 68. Verifica Righe Mancanti — registrazione diretta delle righe trovate mancanti
+
+**Richiesto da Filippo**: dato che il controllo (sezione 67) trova righe mancanti, serve poterle registrare direttamente da lì, sia come riga fattura normale sia come Cespite (Ammortamento).
+
+**Aggiunto**: per ogni riga mancante (con fornitore riconosciuto), pulsante "➕ Registra" apre un form inline — sceglie "Riga fattura normale" o "Cespite (Ammortamento)":
+- **Riga fattura normale**: Numero/Data fattura (trova o crea la fattura sottostante) + Area/Centro di Costo/Destinazione/Tipo di Costo
+- **Cespite**: Numero/Data fattura (idem) + Categoria Ammortamento (stessa lista di 10 categorie di Carica Fatture) + Anni Ammortamento + Imputazione (mappata a `specie` come in Carica Fatture: Bovini/Suini/Ovini/Generali/Nessuno/Cavalli/Pollame/Orto)
+
+Fornitore, descrizione e importo sono già noti dalla riga Excel — non richiede di reinserirli. Dopo la registrazione, la riga sparisce dall'elenco "mancanti" mostrato (senza dover rifare tutto il confronto da capo).
+
+**Bug corretto durante la costruzione**: avevo scritto `useState` invece di `useEffect` per il caricamento del piano dei conti al mount — corretto prima del deploy (avrebbe causato un caricamento ripetuto ad ogni render invece che una volta sola).
