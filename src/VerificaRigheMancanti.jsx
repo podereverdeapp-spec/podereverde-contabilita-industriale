@@ -50,12 +50,60 @@ export default function VerificaRigheMancanti() {
   const [formRegistra, setFormRegistra] = useState({});
   const [salvandoRegistra, setSalvandoRegistra] = useState(false);
   const [pianoDeiConti, setPianoDeiConti] = useState([]);
+  const [fattureEscluse, setFattureEscluse] = useState([]);
+  const [fornitoriTutti, setFornitoriTutti] = useState([]);
+  const [mostraEscluse, setMostraEscluse] = useState(false);
+  const [salvandoEsclusione, setSalvandoEsclusione] = useState(null);
   const inputRef = useRef(null);
 
-  useEffect(() => { supabase.from("ci_piano_dei_conti").select("*").order("area").order("centro_costo").then(({ data }) => setPianoDeiConti(data || [])); }, []);
+  useEffect(() => {
+    supabase.from("ci_piano_dei_conti").select("*").order("area").order("centro_costo").then(({ data }) => setPianoDeiConti(data || []));
+    supabase.from("ci_fatture_escluse_verifica").select("*").then(({ data }) => setFattureEscluse(data || []));
+    supabase.from("ci_fornitori").select("id, nome").then(({ data }) => setFornitoriTutti(data || []));
+  }, []);
 
   function centriPerArea(areaScelta) {
     return pianoDeiConti.filter(p => p.area === areaScelta).map(p => p.centro_costo);
+  }
+
+  async function rimuoviEsclusione(id) {
+    try {
+      const fattura = fattureEscluse.find(f => f.id === id);
+      const { error } = await supabase.from("ci_fatture_escluse_verifica").delete().eq("id", id);
+      if (error) throw new Error(error.message);
+      setFattureEscluse(prev => prev.filter(f => f.id !== id));
+      if (fattura && risultato) {
+        setRisultato(prev => ({
+          ...prev,
+          mancanti: prev.mancanti.map(m => (m._fornitoreId === fattura.fornitore_id && mappaNumero && normalizzaTesto(m[mappaNumero]) === normalizzaTesto(fattura.numero)) ? { ...m, _nonDaRegistrare: false } : m),
+        }));
+      }
+    } catch (err) {
+      alert(`⚠️ Errore nella rimozione:\n\n${err.message}`);
+    }
+  }
+
+  async function escludiFattura(r) {
+    if (!mappaNumero) { alert("Per escludere una fattura serve prima mappare la colonna Numero."); return; }
+    const numero = r[mappaNumero];
+    if (!numero) { alert("Questa riga non ha un numero fattura valido."); return; }
+    setSalvandoEsclusione(r);
+    try {
+      const { error } = await supabase.from("ci_fatture_escluse_verifica").insert([{
+        fornitore_id: r._fornitoreId || null, numero: String(numero), data: mappaData ? String(r[mappaData]).slice(0, 10) : null,
+      }]);
+      if (error) throw new Error(error.message);
+      const { data } = await supabase.from("ci_fatture_escluse_verifica").select("*");
+      setFattureEscluse(data || []);
+      // Marco (invece di rimuovere) TUTTE le righe con lo stesso fornitore+numero, non solo questa
+      setRisultato(prev => ({
+        ...prev,
+        mancanti: prev.mancanti.map(m => (m._fornitoreId === r._fornitoreId && normalizzaTesto(m[mappaNumero]) === normalizzaTesto(numero)) ? { ...m, _nonDaRegistrare: true } : m),
+      }));
+    } catch (err) {
+      alert(`⚠️ Errore nell'esclusione:\n\n${err.message}`);
+    }
+    setSalvandoEsclusione(null);
   }
 
   function iniziaRegistrazione(indice, r) {
@@ -117,7 +165,7 @@ export default function VerificaRigheMancanti() {
   }
 
   function esportaPerCaricaFatture() {
-    const righeEsportate = risultato.mancanti.map(r => ({
+    const righeEsportate = risultato.mancanti.filter(r => !r._nonDaRegistrare).map(r => ({
       Fornitore: r[mappaFornitore] || "",
       "P.IVA": mappaPiva ? (r[mappaPiva] || "") : "",
       Numero: mappaNumero ? (r[mappaNumero] || "") : "",
@@ -211,6 +259,8 @@ export default function VerificaRigheMancanti() {
         poolPerFornitore.set(nomeFornitore, pool);
       }
 
+      const escluse = new Set(fattureEscluse.map(f => `${f.fornitore_id}|${normalizzaTesto(f.numero)}`));
+
       const mancanti = [];
       const fornitoriNonTrovati = new Set();
       righeAnno.forEach(r => {
@@ -220,7 +270,9 @@ export default function VerificaRigheMancanti() {
         if (pool === null) { fornitoriNonTrovati.add(r[mappaFornitore]); mancanti.push({ ...r, _motivo: "Fornitore non trovato in anagrafica", _fornitoreId: null }); return; }
         const importoRiga = r[mappaImporto];
         const trovata = (pool || []).some(p => importoVicino(p.importo, importoRiga));
-        if (!trovata) mancanti.push({ ...r, _motivo: "Nessun importo corrispondente trovato", _fornitoreId: fornitoreId });
+        if (trovata) return; // già registrata, non compare tra le mancanti
+        const nonDaRegistrare = mappaNumero && escluse.has(`${fornitoreId}|${normalizzaTesto(r[mappaNumero])}`);
+        mancanti.push({ ...r, _motivo: "Nessun importo corrispondente trovato", _fornitoreId: fornitoreId, _nonDaRegistrare: !!nonDaRegistrare });
       });
 
       setRisultato({ totaleControllate: righeAnno.length, mancanti, fornitoriNonTrovati: [...fornitoriNonTrovati] });
@@ -247,7 +299,29 @@ export default function VerificaRigheMancanti() {
         </button>
         <input ref={inputRef} type="file" accept=".xlsx,.xls" onChange={gestisciFile} style={{ display: "none" }} />
         {righeExcel.length > 0 && <span style={{ fontSize: 12, color: C.muted }}>{righeExcel.length} righe lette dal file</span>}
+        <button onClick={() => setMostraEscluse(v => !v)}
+          style={{ marginLeft: "auto", background: "none", border: `1.5px solid ${C.border}`, borderRadius: 8, padding: "6px 12px", fontSize: 12, cursor: "pointer", color: C.muted }}>
+          {mostraEscluse ? "▲" : "▼"} Fatture escluse ({fattureEscluse.length})
+        </button>
       </div>
+
+      {mostraEscluse && (
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 14, marginBottom: 16 }}>
+          {fattureEscluse.length === 0 ? (
+            <p style={{ fontSize: 13, color: C.muted, margin: 0 }}>Nessuna fattura esclusa al momento.</p>
+          ) : (
+            fattureEscluse.map(f => (
+              <div key={f.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${C.border}`, fontSize: 13 }}>
+                <span>{fornitoriTutti.find(x => x.id === f.fornitore_id)?.nome || "Fornitore sconosciuto"} — n. {f.numero}{f.data ? ` — ${f.data}` : ""}</span>
+                <button onClick={() => rimuoviEsclusione(f.id)}
+                  style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: C.red }}>
+                  ✕ Rimuovi esclusione
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      )}
 
       {errore && <p style={{ color: C.red }}>⚠️ {errore}</p>}
 
@@ -294,7 +368,8 @@ export default function VerificaRigheMancanti() {
           ) : (
             <>
               <div style={{ background: "#FFF2DC", border: `1px solid ${C.yellow}`, borderRadius: 8, padding: "10px 16px", fontSize: 13, marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-                <span>⚠️ {risultato.mancanti.length} righe del file NON risultano registrate.</span>
+                <span>⚠️ {risultato.mancanti.filter(m => !m._nonDaRegistrare).length} righe del file NON risultano registrate
+                  {risultato.mancanti.some(m => m._nonDaRegistrare) && ` (altre ${risultato.mancanti.filter(m => m._nonDaRegistrare).length} marcate come "non da registrare")`}.</span>
                 <button onClick={esportaPerCaricaFatture}
                   style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                   📥 Scarica Excel per Carica Fatture
@@ -348,18 +423,37 @@ export default function VerificaRigheMancanti() {
                         </div>
                       </div>
                     ) : (
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, opacity: r._nonDaRegistrare ? 0.6 : 1 }}>
                         <div>
                           <div style={{ fontSize: 13 }}>{r[mappaFornitore]} — {mappaDescrizione ? r[mappaDescrizione] : "—"}</div>
-                          <div style={{ fontSize: 11, color: C.muted }}>{r._motivo}</div>
+                          <div style={{ fontSize: 11, color: C.muted }}>{r._nonDaRegistrare ? "🏷️ Non da registrare" : r._motivo}</div>
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                           <div style={{ fontWeight: 700 }}>{formattaEuro(parseFloat(r[mappaImporto]) || 0)}</div>
-                          {r._fornitoreId && (
-                            <button onClick={() => iniziaRegistrazione(i, r)}
-                              style={{ background: C.blue + "20", color: C.blue, border: "none", borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                              ➕ Registra
+                          {r._nonDaRegistrare ? (
+                            <button onClick={() => {
+                              const match = fattureEscluse.find(f => f.fornitore_id === r._fornitoreId && normalizzaTesto(f.numero) === normalizzaTesto(r[mappaNumero]));
+                              if (match) rimuoviEsclusione(match.id);
+                            }}
+                              style={{ background: "none", border: `1.5px solid ${C.border}`, borderRadius: 8, padding: "5px 12px", fontSize: 12, cursor: "pointer" }}>
+                              ↩ Riconsidera
                             </button>
+                          ) : (
+                            <>
+                              {mappaNumero && (
+                                <button onClick={() => escludiFattura(r)} disabled={salvandoEsclusione === r}
+                                  style={{ background: C.muted + "20", color: C.muted, border: "none", borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                                  title="Segna questa fattura come non da registrare — resta visibile nell'elenco">
+                                  {salvandoEsclusione === r ? "..." : "🏷️ Non da registrare"}
+                                </button>
+                              )}
+                              {r._fornitoreId && (
+                                <button onClick={() => iniziaRegistrazione(i, r)}
+                                  style={{ background: C.blue + "20", color: C.blue, border: "none", borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                                  ➕ Registra
+                                </button>
+                              )}
+                            </>
                           )}
                         </div>
                       </div>

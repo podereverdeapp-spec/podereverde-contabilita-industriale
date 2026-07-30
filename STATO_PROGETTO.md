@@ -840,3 +840,29 @@ Stesso tipo di problema della sezione 69, trovato subito dopo dal test reale di 
 **Flusso finale per Filippo**: Verifica Righe Mancanti trova le righe → scarica l'Excel generato → lo carica in Carica Fatture (modalità File Excel) → passa per il flusso di classificazione normale, incluse le aree speciali.
 
 Testato con caso mock: la mappatura produce esattamente le colonne e i tipi di dato attesi.
+
+## 72. Verifica Righe Mancanti — esclusione fatture dalle verifiche future
+
+**Richiesto da Filippo**: poter escludere una fattura intera dalla segnalazione "mancante" (es. per casi che sa già di non voler caricare).
+
+**Nuova tabella**: `ci_fatture_escluse_verifica` (fornitore_id, numero, data, motivo, creato_il) — `crea_tabella_fatture_escluse.sql`.
+
+**Costruito**: pulsante "🚫 Escludi fattura" su ogni riga mancante (visibile solo se la colonna Numero è mappata, dato che serve per identificare la fattura) — salva l'esclusione e rimuove SUBITO dall'elenco corrente tutte le righe con lo stesso fornitore+numero (non solo quella cliccata). Nei confronti futuri, le righe di fatture escluse vengono saltate silenziosamente, prima ancora di essere valutate come mancanti.
+
+**Bug in corso di investigazione (non risolto)**: Filippo segnala che righe esportate verso Carica Fatture vengono registrate con Imponibile a zero — controllato `calcolaImponibile`/`numeroRobusto` in parsingUtils.js, la logica sembra corretta in teoria (legge "Imponibile" come chiave esatta, gestisce sia numeri che stringhe con virgola). In attesa di conferma da Filippo se il valore è già a zero nel file scaricato o solo dopo il caricamento in Carica Fatture, per isolare dove nasce il problema.
+
+## 73. Verifica Righe Mancanti — consultazione e rimozione delle fatture escluse
+
+**Richiesto da Filippo**: poter vedere quali fatture ha escluso e toglierle dall'esclusione se serve, non solo aggiungerle.
+
+**Aggiunto**: pulsante "▼ Fatture escluse (N)" in alto — apre un pannello con l'elenco (fornitore, numero, data) e un "✕ Rimuovi esclusione" per ciascuna.
+
+**Correzione migrazione SQL**: `ci_fornitori.id` in questo database è `bigint`, non `uuid` come inizialmente assunto — corretto `crea_tabella_fatture_escluse.sql` (fornitore_id ora bigint).
+
+## 74. Ridisegnata la marcatura fatture — resta visibile invece di sparire
+
+**Correzione di Filippo**: "escludere" era un termine improprio — non voleva che le righe sparissero dall'elenco, ma che restassero visibili con un'etichetta "Non da registrare", così da poterle rivedere quando vuole.
+
+**Ridisegnato**: il pulsante ora si chiama "🏷️ Non da registrare" (non più "🚫 Escludi fattura") — la riga resta nell'elenco, ma con etichetta al posto del motivo, opacità ridotta, e un pulsante "↩ Riconsidera" al posto di Registra/Non da registrare (toglie la marcatura, la riga torna normale). Il riepilogo in cima ora distingue "N righe NON risultano registrate" da "altre M marcate come non da registrare". L'esportazione verso Carica Fatture (sezione 71) ora esclude automaticamente le righe marcate, dato che Filippo ha già deciso di non caricarle.
+
+La tabella `ci_fatture_escluse_verifica` e il pannello di consultazione/rimozione (sezioni 72-73) restano invariati — cambia solo il comportamento nella lista principale.
