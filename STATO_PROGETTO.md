@@ -940,3 +940,28 @@ Il form ora copre, in un solo posto: Fornitore (quale, tramite il menu) + suo No
 **Corretto**: rimosso il filtro dalla query. I calcoli statistici (prezzo minimo/massimo/medio/recente) ora usano solo i prezzi validi (>0) tra quelli disponibili nel gruppo, invece di escludere la riga intera dalla vista — così la riga resta visibile (cercabile, modificabile) anche se il suo prezzo va ancora inserito a mano.
 
 **Verifica per le altre 4 fatture di Filippo**: query `verifica_righe_prezzo_mancante.sql` — trova tutte le righe con prezzo_unitario nullo/zero nell'intero database, per sistemarle tutte insieme (non solo Unipolsai).
+
+## 84. Bug reale trovato — Articoli & Prezzi non scaricava tutte le fatture/righe (limite 1000 righe di Supabase)
+
+**Causa**: le query di `ci_fatture` e `ci_articoli_fattura` in `ArticoliPrezzi.jsx` non avevano paginazione — Supabase per default restituisce al massimo 1000 righe per chiamata. Se il totale supera 1000 (molto probabile su più anni di storico), le righe "in fondo" (senza un ORDER BY esplicito, l'ordine non è nemmeno garantito) sparivano silenziosamente, senza errore — esattamente il sintomo di Unipolsai introvabile, dopo aver escluso RLS, filtri di ricerca, e il filtro prezzo_unitario (sezione 83).
+
+**Corretto**: aggiunta `fetchTutto()`, una utility che scarica a blocchi da 1000 finché non arriva una pagina incompleta, con `order("id")` esplicito per una paginazione stabile. Applicata sia a `ci_fatture` che a `ci_articoli_fattura`.
+
+**Nota per il futuro**: questo stesso pattern (query senza `.range()`/paginazione su tabelle che possono crescere oltre 1000 righe) andrebbe verificato anche nelle altre pagine con query simili (Ricerca, ReportStorico, ecc.) se si presentano sintomi analoghi — non ancora fatto sistematicamente in questa sessione.
+
+## 85. Estesa la correzione paginazione a Ricerca, Dashboard, ReportCosti — unificata su fetchAllPages esistente
+
+**Scoperta durante la correzione di ArticoliPrezzi.jsx (sezione 84)**: esisteva già una utility `fetchAllPages` in `parsingUtils.js`, usata correttamente in molte altre pagine (ConsultazioneAnimali, ControlloAnomalie, DaArmonizzare, ReportAcquistoAnimali, ReportRiproduttori, ReportUba, SchedaAnimale) — ma NON nelle query di `ci_fatture`/`ci_articoli_fattura` in Ricerca.jsx, Dashboard.jsx e ReportCosti.jsx, che soffrivano dello stesso bug (limite 1000 righe di Supabase) mai notato prima perché il totale (1452 righe) ha superato la soglia solo di recente.
+
+**Corretto**: rimossa la `fetchTutto` che avevo creato nella sezione 84 (duplicava `fetchAllPages`) — tutte le query ora usano `fetchAllPages((da, a) => query.range(da, a))`, la stessa convenzione già in uso nel resto del codice:
+- `Ricerca.jsx`: query fatture, articoli (caricamento iniziale), e articoli (refresh dopo modifica riga)
+- `Dashboard.jsx`: query fatture
+- `ReportCosti.jsx`: query fatture e articoli per anno (rischio più basso, filtrate per anno, ma corrette per coerenza e sicurezza futura)
+
+**Non ancora verificato/corretto** (rischio più basso, da controllare se emergono sintomi simili): la query per-fornitore in `VerificaRigheMancanti.jsx` (un fornitore + un anno alla volta, difficilmente supera 1000 righe) e altre query non elencate qui.
+
+## 86. Articoli & Prezzi — ordinamento per variazione prezzo (i peggiori aumenti in cima)
+
+**Richiesto da Filippo**: ordinare mettendo per primi gli articoli con il maggior incremento di prezzo recente.
+
+**Aggiunto** select "Più recenti prima / Aumenti di prezzo peggiori prima / Diminuzioni di prezzo migliori prima" — usa lo `scostamentoPct` già calcolato (prezzo più recente vs. media). Il comportamento di default (per data più recente) resta invariato se non si tocca il nuovo controllo.

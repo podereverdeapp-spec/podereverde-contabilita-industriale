@@ -23,6 +23,7 @@ export default function ArticoliPrezzi() {
   const [cerca, setCerca] = useState("");
   const [filtroControparte, setFiltroControparte] = useState("");
   const [filtroTipo, setFiltroTipo] = useState("tutte"); // "tutte" | "PASSIVA" | "ATTIVA"
+  const [ordinamento, setOrdinamento] = useState("recenti"); // "recenti" | "peggiori" | "migliori"
   const [espanso, setEspanso] = useState(null);
   const [pianoDeiConti, setPianoDeiConti] = useState([]);
   const [modificaClassifica, setModificaClassifica] = useState(null); // chiave gruppo in modifica
@@ -116,8 +117,12 @@ export default function ArticoliPrezzi() {
       const q = filtroControparte.trim().toLowerCase();
       ris = ris.filter(g => g.controparti.some(c => c.toLowerCase().includes(q)));
     }
+    ris = ris.slice();
+    if (ordinamento === "peggiori") ris.sort((a, b) => b.scostamentoPct - a.scostamentoPct);
+    else if (ordinamento === "migliori") ris.sort((a, b) => a.scostamentoPct - b.scostamentoPct);
+    // "recenti" mantiene l'ordinamento già applicato in gruppi (per data più recente)
     return ris;
-  }, [gruppi, cerca, filtroControparte]);
+  }, [gruppi, cerca, filtroControparte, ordinamento]);
 
   function centriPerArea(areaScelta) {
     return pianoDeiConti.filter(p => p.area === areaScelta).map(p => p.centro_costo);
@@ -208,6 +213,12 @@ export default function ArticoliPrezzi() {
           <option value="tutte">Acquisti e vendite</option>
           <option value="PASSIVA">Solo acquisti</option>
           <option value="ATTIVA">Solo vendite</option>
+        </select>
+        <select value={ordinamento} onChange={e => setOrdinamento(e.target.value)}
+          style={{ padding: "8px 12px", borderRadius: 8, border: `1.5px solid ${C.border}`, fontSize: 14 }}>
+          <option value="recenti">Più recenti prima</option>
+          <option value="peggiori">Aumenti di prezzo peggiori prima</option>
+          <option value="migliori">Diminuzioni di prezzo migliori prima</option>
         </select>
       </div>
 
