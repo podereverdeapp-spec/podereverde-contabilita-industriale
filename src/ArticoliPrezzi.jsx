@@ -111,7 +111,7 @@ export default function ArticoliPrezzi() {
     let ris = gruppi;
     if (cerca.trim()) {
       const q = cerca.trim().toLowerCase();
-      ris = ris.filter(g => g.descrizione.toLowerCase().includes(q));
+      ris = ris.filter(g => g.descrizione.toLowerCase().includes(q) || g.controparti.some(c => c.toLowerCase().includes(q)));
     }
     if (filtroControparte.trim()) {
       const q = filtroControparte.trim().toLowerCase();
@@ -200,7 +200,7 @@ export default function ArticoliPrezzi() {
       </p>
 
       <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
-        <input placeholder="Cerca per descrizione articolo..." value={cerca} onChange={e => setCerca(e.target.value)}
+        <input placeholder="Cerca per descrizione o fornitore/cliente..." value={cerca} onChange={e => setCerca(e.target.value)}
           style={{ flex: 2, minWidth: 200, boxSizing: "border-box", padding: "8px 12px", borderRadius: 8, border: `1.5px solid ${C.border}`, fontSize: 14 }} />
         <input placeholder="Filtra per fornitore/cliente..." value={filtroControparte} onChange={e => setFiltroControparte(e.target.value)}
           style={{ flex: 1, minWidth: 160, boxSizing: "border-box", padding: "8px 12px", borderRadius: 8, border: `1.5px solid ${C.border}`, fontSize: 14 }} />

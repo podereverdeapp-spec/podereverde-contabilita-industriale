@@ -900,3 +900,11 @@ Testato con caso mock: media annuale e variazione % calcolate correttamente, col
 **Richiesto da Filippo**: modificare anche l'Unità di Misura di una riga (oltre a tutto il resto già fatto in sezioni 75-76).
 
 **Aggiunto**: campo "U.M." (stessa lista di 10 opzioni usata in Inserimento Manuale Fattura — Unità/Tons/Quintali/Kilogrammi/Litri/Balloni/Rotoballe/Rotoli/Balle/Rotoloni) nel form di modifica riga, tra Quantità e Prezzo unitario.
+
+## 79. Articoli & Prezzi — chiarito: le fatture manuali NON mancavano, era il campo di ricerca sbagliato
+
+**Segnalazione di Filippo**: cercando "Unipol Sai" (la polizza inserita a mano) non la trovava in Articoli & Prezzi — sospettava che le fatture inserite manualmente non comparissero.
+
+**Verificato**: nessun filtro nella query esclude le righe inserite a mano — il problema era che la casella di ricerca principale cerca SOLO nella descrizione dell'articolo, non nel nome del fornitore (esisteva già un campo separato "Filtra per fornitore/cliente..." accanto, probabilmente non notato).
+
+**Migliorato comunque**: la casella di ricerca principale ora cerca ANCHE nel nome del fornitore/cliente, oltre alla descrizione — evita questa confusione in futuro. Placeholder aggiornato di conseguenza.
