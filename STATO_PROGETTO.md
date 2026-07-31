@@ -894,3 +894,9 @@ Campi ancora non modificabili da qui: Tipo (ATTIVA/PASSIVA) e Note della fattura
 **Costruito** `GraficoPrezzoAnnuale` — mostrato subito sotto il grafico esistente (per singolo acquisto) quando si apre il grafico di un prodotto in Articoli & Prezzi. Raggruppa lo storico per anno (media dei prezzi unitari di quell'anno), traccia una linea che unisce i punti, ed etichetta ogni segmento con la variazione % rispetto all'anno precedente (colore C.blue se negativa, C.red se positiva, C.muted se zero). Non mostrato se ci sono meno di 2 anni di dati.
 
 Testato con caso mock: media annuale e variazione % calcolate correttamente, colori coerenti con la direzione della variazione.
+
+## 78. Ricerca — aggiunta Unità di Misura alla modifica riga
+
+**Richiesto da Filippo**: modificare anche l'Unità di Misura di una riga (oltre a tutto il resto già fatto in sezioni 75-76).
+
+**Aggiunto**: campo "U.M." (stessa lista di 10 opzioni usata in Inserimento Manuale Fattura — Unità/Tons/Quintali/Kilogrammi/Litri/Balloni/Rotoballe/Rotoli/Balle/Rotoloni) nel form di modifica riga, tra Quantità e Prezzo unitario.

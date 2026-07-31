@@ -9,6 +9,7 @@ const AREE_ORDINARIE = [
   "Canoni ed Abbonamenti", "Varie", "Oneri Finanziari", "Orto", "Animali non d'allevamento", "Ammortamenti",
 ];
 const DESTINAZIONI = ["Bovini", "Suini", "Ovini", "Bovini e Ovini", "Generali", "Pollame", "Cavalli"];
+const UNITA_OPZIONI = ["", "Unità", "Tons", "Quintali", "Kilogrammi", "Litri", "Balloni", "Rotoballe", "Rotoli", "Balle", "Rotoloni"];
 
 export default function Ricerca() {
   const [fatture, setFatture] = useState([]);
@@ -78,7 +79,7 @@ export default function Ricerca() {
     setModificaRigaId(r.id);
     setFormModificaRiga({
       area: r.area || "", centro_costo: r.centro_costo || "", destinazione: r.destinazione || "", tipo_costo: r.tipo_costo || "",
-      descrizione: r.descrizione || "", quantita: r.quantita ?? "", prezzo_unitario: r.prezzo_unitario ?? "", totale_riga: r.totale_riga ?? "", aliquota_iva: r.aliquota_iva ?? "22",
+      descrizione: r.descrizione || "", quantita: r.quantita ?? "", prezzo_unitario: r.prezzo_unitario ?? "", totale_riga: r.totale_riga ?? "", aliquota_iva: r.aliquota_iva ?? "22", unita_misura: r.unita_misura || "",
     });
   }
 
@@ -90,6 +91,7 @@ export default function Ricerca() {
         destinazione: formModificaRiga.destinazione || null, tipo_costo: formModificaRiga.tipo_costo || null,
         descrizione: formModificaRiga.descrizione, quantita: parseFloat(formModificaRiga.quantita) || 1,
         prezzo_unitario: formModificaRiga.prezzo_unitario !== "" ? parseFloat(formModificaRiga.prezzo_unitario) : null,
+        unita_misura: formModificaRiga.unita_misura || null,
         totale_riga: round2(parseFloat(formModificaRiga.totale_riga) || 0),
         aliquota_iva: parseFloat(formModificaRiga.aliquota_iva) || 0,
         totale_iva: round2((parseFloat(formModificaRiga.totale_riga) || 0) * (parseFloat(formModificaRiga.aliquota_iva) || 0) / 100),
@@ -294,9 +296,10 @@ export default function Ricerca() {
                     <div key={r.id} style={{ padding: "10px 0", borderTop: `1px solid ${C.border}` }}>
                       {modificaRigaId === r.id ? (
                         <div>
-                          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
                             <CampoTesto label="Descrizione" value={formModificaRiga.descrizione} onChange={v => setFormModificaRiga(prev => ({ ...prev, descrizione: v }))} />
                             <CampoTesto label="Quantità" tipo="number" value={formModificaRiga.quantita} onChange={v => setFormModificaRiga(prev => ({ ...prev, quantita: v }))} />
+                            <CampoSelect label="U.M." value={formModificaRiga.unita_misura} options={UNITA_OPZIONI} onChange={v => setFormModificaRiga(prev => ({ ...prev, unita_misura: v }))} />
                             <CampoTesto label="Prezzo unitario" tipo="number" value={formModificaRiga.prezzo_unitario} onChange={v => setFormModificaRiga(prev => ({ ...prev, prezzo_unitario: v }))} />
                             <CampoTesto label="Importo" tipo="number" value={formModificaRiga.totale_riga} onChange={v => setFormModificaRiga(prev => ({ ...prev, totale_riga: v }))} />
                             <CampoTesto label="Aliquota IVA %" tipo="number" value={formModificaRiga.aliquota_iva} onChange={v => setFormModificaRiga(prev => ({ ...prev, aliquota_iva: v }))} />
