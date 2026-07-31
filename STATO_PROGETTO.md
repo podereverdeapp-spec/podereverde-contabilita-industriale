@@ -886,3 +886,11 @@ Numero fattura e Fornitore non sono ancora modificabili da qui (Filippo ha speci
 **Aggiunta Aliquota IVA** alla modifica riga (accanto a Descrizione/Quantità/Prezzo/Importo già fatti in sezione 75) — al salvataggio ricalcola anche `totale_iva` della riga, oltre ai totali della fattura.
 
 Campi ancora non modificabili da qui: Tipo (ATTIVA/PASSIVA) e Note della fattura — non richiesti esplicitamente, da aggiungere se servono.
+
+## 77. Articoli & Prezzi — grafico prezzo medio annuale con variazione %
+
+**Richiesto da Filippo**: oltre allo storico esistente, un grafico con il prezzo medio per anno (un punto per anno) e, sulla linea che unisce due anni consecutivi, la variazione % — blu se il prezzo è diminuito, rosso se è aumentato.
+
+**Costruito** `GraficoPrezzoAnnuale` — mostrato subito sotto il grafico esistente (per singolo acquisto) quando si apre il grafico di un prodotto in Articoli & Prezzi. Raggruppa lo storico per anno (media dei prezzi unitari di quell'anno), traccia una linea che unisce i punti, ed etichetta ogni segmento con la variazione % rispetto all'anno precedente (colore C.blue se negativa, C.red se positiva, C.muted se zero). Non mostrato se ci sono meno di 2 anni di dati.
+
+Testato con caso mock: media annuale e variazione % calcolate correttamente, colori coerenti con la direzione della variazione.

@@ -254,6 +254,7 @@ export default function ArticoliPrezzi() {
                     <tr>
                       <td colSpan={10} style={{ padding: 0, background: "#FAFAF8" }}>
                         <GraficoPrezzo storico={g.storico} prezzoMedio={g.prezzoMedio} />
+                        <GraficoPrezzoAnnuale storico={g.storico} />
                       </td>
                     </tr>
                   )}
@@ -368,6 +369,63 @@ function GraficoPrezzo({ storico, prezzoMedio }) {
             {p.data.slice(5)}
           </text>
         ))}
+      </svg>
+    </div>
+  );
+}
+
+function GraficoPrezzoAnnuale({ storico }) {
+  const perAnno = new Map();
+  storico.forEach(p => {
+    const anno = new Date(p.data).getFullYear();
+    if (!perAnno.has(anno)) perAnno.set(anno, []);
+    perAnno.get(anno).push(p.prezzo_unitario);
+  });
+  const punti = [...perAnno.entries()]
+    .map(([anno, prezzi]) => ({ anno, media: prezzi.reduce((s, x) => s + x, 0) / prezzi.length }))
+    .sort((a, b) => a.anno - b.anno);
+
+  if (punti.length < 2) return null;
+
+  const W = 700, H = 220, PAD = 45;
+  const medie = punti.map(p => p.media);
+  const min = Math.min(...medie), max = Math.max(...medie);
+  const range = max - min || 1;
+  const x = i => PAD + (i / (punti.length - 1)) * (W - 2 * PAD);
+  const y = v => H - PAD - ((v - min) / range) * (H - 2 * PAD);
+
+  const linea = punti.map((p, i) => `${i === 0 ? "M" : "L"} ${x(i)} ${y(p.media)}`).join(" ");
+
+  return (
+    <div style={{ padding: "0 16px 16px" }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: C.muted, marginBottom: 4 }}>Prezzo medio per anno, con variazione % anno su anno</div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", maxWidth: 700, height: "auto" }}>
+        <path d={linea} fill="none" stroke={C.primary} strokeWidth="2" />
+        {punti.map((p, i) => (
+          <circle key={i} cx={x(i)} cy={y(p.media)} r="4" fill={C.primary} />
+        ))}
+        {punti.map((p, i) => (
+          <text key={"v" + i} x={x(i)} y={y(p.media) - 12} fontSize="11" fill={C.primary} fontWeight="700" textAnchor="middle">
+            {formattaEuro(p.media, 4)}
+          </text>
+        ))}
+        {punti.map((p, i) => (
+          <text key={"a" + i} x={x(i)} y={H - PAD + 18} fontSize="11" fill={C.muted} textAnchor="middle">{p.anno}</text>
+        ))}
+        {punti.slice(1).map((p, i) => {
+          const precedente = punti[i];
+          const variazionePct = precedente.media !== 0 ? ((p.media - precedente.media) / precedente.media) * 100 : 0;
+          const xm = (x(i) + x(i + 1)) / 2, ym = (y(precedente.media) + y(p.media)) / 2;
+          const colore = variazionePct < 0 ? C.blue : variazionePct > 0 ? C.red : C.muted;
+          return (
+            <g key={"var" + i}>
+              <rect x={xm - 24} y={ym - 20} width={48} height={16} fill="#fff" opacity="0.85" />
+              <text x={xm} y={ym - 8} fontSize="11" fontWeight="700" fill={colore} textAnchor="middle">
+                {variazionePct > 0 ? "+" : ""}{variazionePct.toFixed(1)}%
+              </text>
+            </g>
+          );
+        })}
       </svg>
     </div>
   );
