@@ -17,13 +17,46 @@ const AREE_ORDINARIE = [
 ];
 const DESTINAZIONI = ["Bovini", "Suini", "Ovini", "Bovini e Ovini", "Generali", "Pollame", "Cavalli"];
 
+function raggruppaRighe(righeInput, chiaveFn) {
+  const mappa = new Map();
+  righeInput.forEach(r => {
+    const chiave = chiaveFn(r);
+    if (!mappa.has(chiave)) mappa.set(chiave, []);
+    mappa.get(chiave).push(r);
+  });
+  return [...mappa.values()].map(righeGruppo => {
+    const ordinate = righeGruppo.slice().sort((a, b) => new Date(b.data) - new Date(a.data));
+    const prezziValidi = ordinate.map(r => r.prezzo_unitario).filter(p => p > 0);
+    const prezzi = prezziValidi.length > 0 ? prezziValidi : [0];
+    const prezzoMedio = round2(prezzi.reduce((s, p) => s + p, 0) / prezzi.length);
+    const prezziPrecedenti = ordinate.slice(1).map(r => r.prezzo_unitario).filter(p => p > 0);
+    const prezzoMassimoPrecedente = prezziPrecedenti.length > 0 ? Math.max(...prezziPrecedenti) : null;
+    const prezzoRecente = ordinate.find(r => r.prezzo_unitario > 0)?.prezzo_unitario ?? 0;
+    const scostamentoPct = prezzoMedio > 0 ? round2((prezzoRecente - prezzoMedio) / prezzoMedio * 100) : 0;
+    const righePassive = ordinate.filter(r => r.tipo === "PASSIVA");
+    const unica = campo => {
+      const valori = [...new Set(righePassive.map(r => r[campo] || null))];
+      return valori.length === 1 ? valori[0] : (valori.length > 1 ? "MISTA" : null);
+    };
+    return {
+      descrizione: ordinate[0].descrizione, unitaMisura: ordinate[0].unita_misura,
+      controparti: [...new Set(ordinate.map(r => r.controparte).filter(Boolean))],
+      fornitoriIdPassivi: [...new Set(righePassive.map(r => r.fornitore_id).filter(Boolean))],
+      idRighePassive: righePassive.map(r => r.id),
+      area: unica("area"), centroCosto: unica("centro_costo"), destinazione: unica("destinazione"), tipoCosto: unica("tipo_costo"),
+      nAcquisti: ordinate.length, prezzoMinimo: Math.min(...prezzi), prezzoMassimo: Math.max(...prezzi), prezzoMedio,
+      prezzoRecente, scostamentoPct, dataRecente: ordinate[0].data, storico: ordinate,
+      prezzoRecenteERecord: prezzoMassimoPrecedente !== null && prezzoRecente >= prezzoMassimoPrecedente,
+    };
+  });
+}
+
 export default function ArticoliPrezzi() {
   const [righe, setRighe] = useState([]);
   const [loading, setLoading] = useState(true);
   const [cerca, setCerca] = useState("");
-  const [filtroControparte, setFiltroControparte] = useState("");
   const [filtroTipo, setFiltroTipo] = useState("tutte"); // "tutte" | "PASSIVA" | "ATTIVA"
-  const [ordinamento, setOrdinamento] = useState("recenti"); // "recenti" | "peggiori" | "migliori"
+  const [ordinamento, setOrdinamento] = useState("recenti"); // "recenti" | "peggiori" | "migliori" | "peggior_fornitore"
   const [espanso, setEspanso] = useState(null);
   const [pianoDeiConti, setPianoDeiConti] = useState([]);
   const [modificaClassifica, setModificaClassifica] = useState(null); // chiave gruppo in modifica
@@ -73,56 +106,30 @@ export default function ArticoliPrezzi() {
   }, [righe, filtroTipo]);
 
   const gruppi = useMemo(() => {
-    const mappa = new Map();
-    righeFiltrateTipo.forEach(r => {
-      const chiave = normalizzaNomeProdotto(r.descrizione);
-      if (!mappa.has(chiave)) mappa.set(chiave, []);
-      mappa.get(chiave).push(r);
-    });
-    return [...mappa.values()].map(righeGruppo => {
-      const ordinate = righeGruppo.slice().sort((a, b) => new Date(b.data) - new Date(a.data));
-      const prezziValidi = ordinate.map(r => r.prezzo_unitario).filter(p => p > 0);
-      const prezzi = prezziValidi.length > 0 ? prezziValidi : [0];
-      const prezzoMedio = round2(prezzi.reduce((s, p) => s + p, 0) / prezzi.length);
-      const prezziPrecedenti = ordinate.slice(1).map(r => r.prezzo_unitario).filter(p => p > 0);
-      const prezzoMassimoPrecedente = prezziPrecedenti.length > 0 ? Math.max(...prezziPrecedenti) : null;
-      const prezzoRecente = ordinate.find(r => r.prezzo_unitario > 0)?.prezzo_unitario ?? 0;
-      const scostamentoPct = prezzoMedio > 0 ? round2((prezzoRecente - prezzoMedio) / prezzoMedio * 100) : 0;
-      // Classificazione attuale: se tutte le righe (solo passive, hanno senso di classificazione) concordano, la mostra; altrimenti "MISTA"
-      const righePassive = ordinate.filter(r => r.tipo === "PASSIVA");
-      const unica = campo => {
-        const valori = [...new Set(righePassive.map(r => r[campo] || null))];
-        return valori.length === 1 ? valori[0] : (valori.length > 1 ? "MISTA" : null);
-      };
-      return {
-        descrizione: ordinate[0].descrizione, unitaMisura: ordinate[0].unita_misura,
-        controparti: [...new Set(ordinate.map(r => r.controparte).filter(Boolean))],
-        fornitoriIdPassivi: [...new Set(righePassive.map(r => r.fornitore_id).filter(Boolean))],
-        idRighePassive: righePassive.map(r => r.id),
-        area: unica("area"), centroCosto: unica("centro_costo"), destinazione: unica("destinazione"), tipoCosto: unica("tipo_costo"),
-        nAcquisti: ordinate.length, prezzoMinimo: Math.min(...prezzi), prezzoMassimo: Math.max(...prezzi), prezzoMedio,
-        prezzoRecente, scostamentoPct, dataRecente: ordinate[0].data, storico: ordinate,
-        prezzoRecenteERecord: prezzoMassimoPrecedente !== null && prezzoRecente >= prezzoMassimoPrecedente,
-      };
-    }).sort((a, b) => new Date(b.dataRecente) - new Date(a.dataRecente));
+    return raggruppaRighe(righeFiltrateTipo, r => normalizzaNomeProdotto(r.descrizione))
+      .sort((a, b) => new Date(b.dataRecente) - new Date(a.dataRecente));
+  }, [righeFiltrateTipo]);
+
+  // Stessa cosa ma raggruppata per fornitore+prodotto insieme, invece che solo prodotto:
+  // isola l'andamento prezzo di UN fornitore specifico su UN prodotto, senza mescolarlo
+  // con gli altri fornitori che vendono lo stesso prodotto — usata dall'ordinamento
+  // "Fornitore con aumento peggiore per prodotto".
+  const gruppiPerFornitore = useMemo(() => {
+    return raggruppaRighe(righeFiltrateTipo, r => `${(r.controparte || "—").toLowerCase()}|||${normalizzaNomeProdotto(r.descrizione)}`);
   }, [righeFiltrateTipo]);
 
   const filtrati = useMemo(() => {
-    let ris = gruppi;
+    let ris = ordinamento === "peggior_fornitore" ? gruppiPerFornitore : gruppi;
     if (cerca.trim()) {
       const q = cerca.trim().toLowerCase();
       ris = ris.filter(g => g.descrizione.toLowerCase().includes(q) || g.controparti.some(c => c.toLowerCase().includes(q)));
     }
-    if (filtroControparte.trim()) {
-      const q = filtroControparte.trim().toLowerCase();
-      ris = ris.filter(g => g.controparti.some(c => c.toLowerCase().includes(q)));
-    }
     ris = ris.slice();
-    if (ordinamento === "peggiori") ris.sort((a, b) => b.scostamentoPct - a.scostamentoPct);
+    if (ordinamento === "peggiori" || ordinamento === "peggior_fornitore") ris.sort((a, b) => b.scostamentoPct - a.scostamentoPct);
     else if (ordinamento === "migliori") ris.sort((a, b) => a.scostamentoPct - b.scostamentoPct);
     // "recenti" mantiene l'ordinamento già applicato in gruppi (per data più recente)
     return ris;
-  }, [gruppi, cerca, filtroControparte, ordinamento]);
+  }, [gruppi, gruppiPerFornitore, cerca, ordinamento]);
 
   function centriPerArea(areaScelta) {
     return pianoDeiConti.filter(p => p.area === areaScelta).map(p => p.centro_costo);
@@ -206,8 +213,6 @@ export default function ArticoliPrezzi() {
       <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
         <input placeholder="Cerca per descrizione o fornitore/cliente..." value={cerca} onChange={e => setCerca(e.target.value)}
           style={{ flex: 2, minWidth: 200, boxSizing: "border-box", padding: "8px 12px", borderRadius: 8, border: `1.5px solid ${C.border}`, fontSize: 14 }} />
-        <input placeholder="Filtra per fornitore/cliente..." value={filtroControparte} onChange={e => setFiltroControparte(e.target.value)}
-          style={{ flex: 1, minWidth: 160, boxSizing: "border-box", padding: "8px 12px", borderRadius: 8, border: `1.5px solid ${C.border}`, fontSize: 14 }} />
         <select value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)}
           style={{ padding: "8px 12px", borderRadius: 8, border: `1.5px solid ${C.border}`, fontSize: 14 }}>
           <option value="tutte">Acquisti e vendite</option>
@@ -219,6 +224,7 @@ export default function ArticoliPrezzi() {
           <option value="recenti">Più recenti prima</option>
           <option value="peggiori">Aumenti di prezzo peggiori prima</option>
           <option value="migliori">Diminuzioni di prezzo migliori prima</option>
+          <option value="peggior_fornitore">Fornitore con aumento peggiore per prodotto</option>
         </select>
       </div>
 

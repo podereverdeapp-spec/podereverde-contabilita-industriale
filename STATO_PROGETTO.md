@@ -965,3 +965,15 @@ Il form ora copre, in un solo posto: Fornitore (quale, tramite il menu) + suo No
 **Richiesto da Filippo**: ordinare mettendo per primi gli articoli con il maggior incremento di prezzo recente.
 
 **Aggiunto** select "Più recenti prima / Aumenti di prezzo peggiori prima / Diminuzioni di prezzo migliori prima" — usa lo `scostamentoPct` già calcolato (prezzo più recente vs. media). Il comportamento di default (per data più recente) resta invariato se non si tocca il nuovo controllo.
+
+## 87. Articoli & Prezzi — nuova modalità "Fornitore con aumento peggiore per prodotto"
+
+**Richiesto da Filippo**: isolare l'andamento prezzo di UN fornitore specifico su UN prodotto specifico, non mescolato con altri fornitori che vendono lo stesso prodotto — integrato come opzione nella stessa tendina di ordinamento (non una tendina separata, come inizialmente proposto e poi corretto da Filippo).
+
+**Ristrutturato**: estratta `raggruppaRighe(righeInput, chiaveFn)` come funzione pura riusabile (fuori dal componente) — la stessa logica di calcolo (media/min/max/scostamento) ora si può applicare con chiavi di raggruppamento diverse. Aggiunta `gruppiPerFornitore`, che raggruppa per `fornitore+prodotto` insieme invece che solo prodotto.
+
+**Nuova opzione nella tendina "ordinamento"**: "Fornitore con aumento peggiore per prodotto" — quando selezionata, la tabella usa `gruppiPerFornitore` invece di `gruppi`, quindi ogni riga rappresenta UN fornitore su UN prodotto (non più un prodotto con più fornitori mescolati), ordinata per scostamento % decrescente.
+
+**Rimossa** la vecchia casella di testo "Filtra per fornitore/cliente..." (ridondante e meno precisa della nuova modalità — filtrava DOPO aver già mescolato le statistiche tra fornitori).
+
+Testato con caso mock: due fornitori con lo stesso prodotto a prezzi/andamenti diversi — raggruppando solo per prodotto la variazione risulta una media poco rappresentativa (31,81%); raggruppando per fornitore+prodotto, ciascuno mostra la propria variazione reale (20% e 2,44%).
