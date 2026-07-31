@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, Fragment } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
-import { numerizzaCampi, formattaEuro, formattaNumero } from "./parsingUtils";
+import { numerizzaCampi, formattaEuro, formattaNumero, fetchAllPages, round2 } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
 
 // Normalizzazione nome prodotto: minuscolo, spazi multipli ridotti a uno, tolti gli spazi
@@ -9,8 +9,6 @@ import { esportaExcel, numeroExcel } from "./esportaExcel";
 function normalizzaNomeProdotto(descrizione) {
   return (descrizione || "").trim().toLowerCase().replace(/\s+/g, " ");
 }
-
-const round2 = n => Math.round((n + Number.EPSILON) * 100) / 100;
 
 const AREE_ORDINARIE = [
   "Allevamento", "Coltivazione", "Lavoro", "Energia Elettrica", "Acqua", "Consulenze",
@@ -35,7 +33,8 @@ export default function ArticoliPrezzi() {
 
   async function carica() {
     setLoading(true);
-    const { data: fatture, error: eF } = await supabase.from("ci_fatture").select("id, numero, data, tipo, fornitore_id, cliente_id");
+    const { data: fatture, error: eF } = await fetchAllPages((da, a) =>
+      supabase.from("ci_fatture").select("id, numero, data, tipo, fornitore_id, cliente_id").order("id").range(da, a));
     if (eF) { alert(`⚠️ Errore nel caricamento fatture:\n\n${eF.message}`); setLoading(false); return; }
     const mappaFatture = new Map((fatture || []).map(f => [f.id, f]));
     const idFatture = (fatture || []).map(f => f.id);
@@ -47,9 +46,9 @@ export default function ArticoliPrezzi() {
 
     let articoli = [];
     if (idFatture.length > 0) {
-      const { data, error } = await supabase
-        .from("ci_articoli_fattura").select("id, descrizione, quantita, unita_misura, prezzo_unitario, totale_riga, fattura_id, area, centro_costo, destinazione, tipo_costo")
-        .in("fattura_id", idFatture);
+      const { data, error } = await fetchAllPages((da, a) =>
+        supabase.from("ci_articoli_fattura").select("id, descrizione, quantita, unita_misura, prezzo_unitario, totale_riga, fattura_id, area, centro_costo, destinazione, tipo_costo")
+          .in("fattura_id", idFatture).order("id").range(da, a));
       if (error) { alert(`⚠️ Errore nel caricamento articoli:\n\n${error.message}`); setLoading(false); return; }
       articoli = numerizzaCampi(data || [], ["quantita", "prezzo_unitario", "totale_riga"]);
     }

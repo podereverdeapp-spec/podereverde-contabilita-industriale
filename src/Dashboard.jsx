@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
-import { numerizzaCampi, formattaEuro } from "./parsingUtils";
+import { numerizzaCampi, formattaEuro, fetchAllPages } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
 
 const MESI = ["Gen","Feb","Mar","Apr","Mag","Giu","Lug","Ago","Set","Ott","Nov","Dic"];
@@ -18,7 +18,7 @@ export default function Dashboard({ onNavigate }) {
   async function carica() {
     setLoading(true);
     const [{ data: f, error: eF }, { data: fo, error: eFo }, { data: ra, error: eRA }] = await Promise.all([
-      supabase.from("ci_fatture").select("*, ci_fornitori(nome), ci_clienti(nome)").order("data", { ascending: false }),
+      fetchAllPages((da, a) => supabase.from("ci_fatture").select("*, ci_fornitori(nome), ci_clienti(nome)").order("data", { ascending: false }).order("id").range(da, a)),
       supabase.from("ci_fornitori").select("*"),
       supabase.from("ci_report_acquisto_animali").select("*").eq("stato", "DA_ELABORARE"),
     ]);

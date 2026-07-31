@@ -43,17 +43,17 @@ export default function ReportCosti({ anno }) {
       }
 
       // Costi ordinari dell'anno (Fisso + Variabile), CON la destinazione (per separare diretti/generali)
-      const { data: fattureAnno, error: eF } = await supabase
+      const { data: fattureAnno, error: eF } = await fetchAllPages((da, a) => supabase
         .from("ci_fatture").select("id, data").eq("tipo", "PASSIVA")
-        .gte("data", `${anno}-01-01`).lte("data", `${anno}-12-31`);
+        .gte("data", `${anno}-01-01`).lte("data", `${anno}-12-31`).order("id").range(da, a));
       if (eF) throw new Error(eF.message);
       const idFattureAnno = (fattureAnno || []).map(f => f.id);
 
       let articoliAnno = [];
       if (idFattureAnno.length > 0) {
-        const { data: articoli, error: eArt } = await supabase
+        const { data: articoli, error: eArt } = await fetchAllPages((da, a) => supabase
           .from("ci_articoli_fattura").select("totale_riga, tipo_costo, destinazione, area")
-          .in("fattura_id", idFattureAnno).in("tipo_costo", ["Fisso", "Variabile"]);
+          .in("fattura_id", idFattureAnno).in("tipo_costo", ["Fisso", "Variabile"]).order("id").range(da, a));
         if (eArt) throw new Error(eArt.message);
         articoliAnno = numerizzaCampi(articoli || [], ["totale_riga"]);
       }

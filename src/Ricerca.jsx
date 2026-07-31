@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "./supabase";
-import { C } from "./style";import { numerizzaCampi, formattaEuro, round2 } from "./parsingUtils";
+import { C } from "./style";import { numerizzaCampi, formattaEuro, round2, fetchAllPages } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
 
 const AREE_ORDINARIE = [
@@ -41,9 +41,11 @@ export default function Ricerca() {
 
   async function carica() {
     setLoading(true);
-    const { data: f, error: eF } = await supabase.from("ci_fatture").select("*, ci_fornitori(nome), ci_clienti(nome)").order("data", { ascending: false });
+    const { data: f, error: eF } = await fetchAllPages((da, a) =>
+      supabase.from("ci_fatture").select("*, ci_fornitori(nome), ci_clienti(nome)").order("data", { ascending: false }).order("id").range(da, a));
     if (eF) { alert(`⚠️ Errore nel caricamento fatture:\n\n${eF.message}`); setLoading(false); return; }
-    const { data: a, error: eA } = await supabase.from("ci_articoli_fattura").select("fattura_id, descrizione, area, centro_costo, destinazione, tipo_costo, totale_riga");
+    const { data: a, error: eA } = await fetchAllPages((da, aa) =>
+      supabase.from("ci_articoli_fattura").select("fattura_id, descrizione, area, centro_costo, destinazione, tipo_costo, totale_riga").order("id").range(da, aa));
     if (eA) { alert(`⚠️ Errore nel caricamento articoli:\n\n${eA.message}`); setLoading(false); return; }
     const { data: pdc } = await supabase.from("ci_piano_dei_conti").select("*").order("area").order("centro_costo");
     setPianoDeiConti(pdc || []);
@@ -114,7 +116,7 @@ export default function Ricerca() {
       // Ricarico solo le righe di questa fattura, e l'elenco leggero usato per i filtri
       const { data } = await supabase.from("ci_articoli_fattura").select("*").eq("fattura_id", fatturaId).order("id");
       setRighePerFattura(prev => ({ ...prev, [fatturaId]: numerizzaCampi(data || [], ["quantita", "prezzo_unitario", "totale_riga", "aliquota_iva", "totale_iva"]) }));
-      const { data: a } = await supabase.from("ci_articoli_fattura").select("fattura_id, descrizione, area, destinazione, totale_riga");
+      const { data: a } = await fetchAllPages((da, aa) => supabase.from("ci_articoli_fattura").select("fattura_id, descrizione, area, destinazione, totale_riga").order("id").range(da, aa));
       setArticoli(numerizzaCampi(a || [], ["totale_riga"]));
       // Ricalcolo i totali della fattura, dato che l'importo della riga può essere cambiato
       const righeFattura = (data || []);
