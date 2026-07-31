@@ -20,8 +20,9 @@ export default function Ricerca() {
   const [modificaRigaId, setModificaRigaId] = useState(null);
   const [formModificaRiga, setFormModificaRiga] = useState({});
   const [salvandoRiga, setSalvandoRiga] = useState(null);
-  const [modificaDataFatturaId, setModificaDataFatturaId] = useState(null);
-  const [nuovaDataFattura, setNuovaDataFattura] = useState("");
+  const [modificaFatturaId, setModificaFatturaId] = useState(null);
+  const [formModificaFattura, setFormModificaFattura] = useState({});
+  const [fornitori, setFornitori] = useState([]);
 
   const [testo, setTesto] = useState("");
   const [tipo, setTipo] = useState("tutte");
@@ -45,6 +46,8 @@ export default function Ricerca() {
     if (eA) { alert(`⚠️ Errore nel caricamento articoli:\n\n${eA.message}`); setLoading(false); return; }
     const { data: pdc } = await supabase.from("ci_piano_dei_conti").select("*").order("area").order("centro_costo");
     setPianoDeiConti(pdc || []);
+    const { data: forn } = await supabase.from("ci_fornitori").select("id, nome").order("nome");
+    setFornitori(forn || []);
 
     setFatture(numerizzaCampi(f || [], ["totale_netto", "totale_iva", "totale_lordo"]));
     setArticoli(numerizzaCampi(a || [], ["totale_riga"]));
@@ -55,12 +58,17 @@ export default function Ricerca() {
     return pianoDeiConti.filter(p => p.area === areaScelta).map(p => p.centro_costo);
   }
 
-  async function salvaDataFattura(fatturaId) {
+  async function salvaFattura(fatturaId) {
     try {
-      const { error } = await supabase.from("ci_fatture").update({ data: nuovaDataFattura }).eq("id", fatturaId);
+      const { error } = await supabase.from("ci_fatture").update({
+        numero: formModificaFattura.numero, data: formModificaFattura.data, fornitore_id: formModificaFattura.fornitore_id || null,
+      }).eq("id", fatturaId);
       if (error) throw new Error(error.message);
-      setFatture(prev => prev.map(f => f.id === fatturaId ? { ...f, data: nuovaDataFattura } : f));
-      setModificaDataFatturaId(null);
+      const nomeFornitore = fornitori.find(fo => fo.id === formModificaFattura.fornitore_id)?.nome;
+      setFatture(prev => prev.map(f => f.id === fatturaId
+        ? { ...f, numero: formModificaFattura.numero, data: formModificaFattura.data, fornitore_id: formModificaFattura.fornitore_id, ci_fornitori: nomeFornitore ? { nome: nomeFornitore } : f.ci_fornitori }
+        : f));
+      setModificaFatturaId(null);
     } catch (err) {
       alert(`⚠️ Errore nel salvataggio:\n\n${err.message}`);
     }
@@ -70,7 +78,7 @@ export default function Ricerca() {
     setModificaRigaId(r.id);
     setFormModificaRiga({
       area: r.area || "", centro_costo: r.centro_costo || "", destinazione: r.destinazione || "", tipo_costo: r.tipo_costo || "",
-      descrizione: r.descrizione || "", quantita: r.quantita ?? "", prezzo_unitario: r.prezzo_unitario ?? "", totale_riga: r.totale_riga ?? "",
+      descrizione: r.descrizione || "", quantita: r.quantita ?? "", prezzo_unitario: r.prezzo_unitario ?? "", totale_riga: r.totale_riga ?? "", aliquota_iva: r.aliquota_iva ?? "22",
     });
   }
 
@@ -83,6 +91,8 @@ export default function Ricerca() {
         descrizione: formModificaRiga.descrizione, quantita: parseFloat(formModificaRiga.quantita) || 1,
         prezzo_unitario: formModificaRiga.prezzo_unitario !== "" ? parseFloat(formModificaRiga.prezzo_unitario) : null,
         totale_riga: round2(parseFloat(formModificaRiga.totale_riga) || 0),
+        aliquota_iva: parseFloat(formModificaRiga.aliquota_iva) || 0,
+        totale_iva: round2((parseFloat(formModificaRiga.totale_riga) || 0) * (parseFloat(formModificaRiga.aliquota_iva) || 0) / 100),
       }).eq("id", rigaId);
       if (error) throw new Error(error.message);
       setModificaRigaId(null);
@@ -246,26 +256,32 @@ export default function Ricerca() {
                   <span style={{ fontSize: 11, fontWeight: 700, color: f.tipo === "ATTIVA" ? C.green : C.blue, marginRight: 8 }}>
                     {f.tipo === "ATTIVA" ? "VENDITA" : "ACQUISTO"}
                   </span>
-                  <strong>{f.ci_fornitori?.nome || f.ci_clienti?.nome || "—"}</strong>
-                  <div style={{ fontSize: 12, color: C.muted, display: "flex", alignItems: "center", gap: 6 }}>
-                    {modificaDataFatturaId === f.id ? (
-                      <span onClick={e => e.stopPropagation()} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        Fatt. {f.numero} del
-                        <input type="date" value={nuovaDataFattura} onChange={e => setNuovaDataFattura(e.target.value)}
-                          style={{ padding: "2px 6px", borderRadius: 5, border: `1.5px solid ${C.border}`, fontSize: 12 }} />
-                        <button onClick={() => salvaDataFattura(f.id)}
-                          style={{ background: C.green, color: "#fff", border: "none", borderRadius: 5, padding: "2px 8px", fontSize: 11, cursor: "pointer" }}>✓</button>
-                        <button onClick={() => setModificaDataFatturaId(null)}
-                          style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 5, padding: "2px 8px", fontSize: 11, cursor: "pointer" }}>✕</button>
-                      </span>
-                    ) : (
-                      <>
+                  {modificaFatturaId === f.id ? (
+                    <div onClick={e => e.stopPropagation()} style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", marginTop: 4 }}>
+                      <select value={formModificaFattura.fornitore_id || ""} onChange={e => setFormModificaFattura(prev => ({ ...prev, fornitore_id: e.target.value }))}
+                        style={{ padding: "3px 6px", borderRadius: 5, border: `1.5px solid ${C.border}`, fontSize: 12 }}>
+                        <option value="">— fornitore —</option>
+                        {fornitori.map(fo => <option key={fo.id} value={fo.id}>{fo.nome}</option>)}
+                      </select>
+                      <input value={formModificaFattura.numero || ""} onChange={e => setFormModificaFattura(prev => ({ ...prev, numero: e.target.value }))}
+                        placeholder="Numero" style={{ width: 90, padding: "3px 6px", borderRadius: 5, border: `1.5px solid ${C.border}`, fontSize: 12 }} />
+                      <input type="date" value={formModificaFattura.data || ""} onChange={e => setFormModificaFattura(prev => ({ ...prev, data: e.target.value }))}
+                        style={{ padding: "3px 6px", borderRadius: 5, border: `1.5px solid ${C.border}`, fontSize: 12 }} />
+                      <button onClick={() => salvaFattura(f.id)}
+                        style={{ background: C.green, color: "#fff", border: "none", borderRadius: 5, padding: "3px 10px", fontSize: 11, cursor: "pointer" }}>✓</button>
+                      <button onClick={() => setModificaFatturaId(null)}
+                        style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 5, padding: "3px 10px", fontSize: 11, cursor: "pointer" }}>✕</button>
+                    </div>
+                  ) : (
+                    <>
+                      <strong>{f.ci_fornitori?.nome || f.ci_clienti?.nome || "—"}</strong>
+                      <div style={{ fontSize: 12, color: C.muted }}>
                         Fatt. {f.numero} del {f.data}{f.note && ` · ${f.note}`}
-                        <span onClick={e => { e.stopPropagation(); setModificaDataFatturaId(f.id); setNuovaDataFattura(f.data); }}
-                          style={{ cursor: "pointer" }} title="Modifica data">✏️</span>
-                      </>
-                    )}
-                  </div>
+                        {" "}<span onClick={e => { e.stopPropagation(); setModificaFatturaId(f.id); setFormModificaFattura({ numero: f.numero, data: f.data, fornitore_id: f.fornitore_id }); }}
+                          style={{ cursor: "pointer" }} title="Modifica fornitore/numero/data">✏️</span>
+                      </div>
+                    </>
+                  )}
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <div style={{ fontWeight: 800, fontSize: 16, color: C.primary }}>{formattaEuro(f.totale_lordo)}</div>
@@ -278,11 +294,12 @@ export default function Ricerca() {
                     <div key={r.id} style={{ padding: "10px 0", borderTop: `1px solid ${C.border}` }}>
                       {modificaRigaId === r.id ? (
                         <div>
-                          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
                             <CampoTesto label="Descrizione" value={formModificaRiga.descrizione} onChange={v => setFormModificaRiga(prev => ({ ...prev, descrizione: v }))} />
                             <CampoTesto label="Quantità" tipo="number" value={formModificaRiga.quantita} onChange={v => setFormModificaRiga(prev => ({ ...prev, quantita: v }))} />
                             <CampoTesto label="Prezzo unitario" tipo="number" value={formModificaRiga.prezzo_unitario} onChange={v => setFormModificaRiga(prev => ({ ...prev, prezzo_unitario: v }))} />
                             <CampoTesto label="Importo" tipo="number" value={formModificaRiga.totale_riga} onChange={v => setFormModificaRiga(prev => ({ ...prev, totale_riga: v }))} />
+                            <CampoTesto label="Aliquota IVA %" tipo="number" value={formModificaRiga.aliquota_iva} onChange={v => setFormModificaRiga(prev => ({ ...prev, aliquota_iva: v }))} />
                           </div>
                           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8 }}>
                             <CampoSelect label="Area" value={formModificaRiga.area} options={AREE_ORDINARIE}

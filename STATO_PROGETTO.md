@@ -876,3 +876,13 @@ La tabella `ci_fatture_escluse_verifica` e il pannello di consultazione/rimozion
 **Aggiunta modifica Data fattura**: icona ✏️ accanto alla data nell'intestazione di ogni fattura (nella vista non espansa) — click apre un campo data inline con ✓/✕ per confermare o annullare, senza dover aprire il dettaglio della fattura.
 
 Numero fattura e Fornitore non sono ancora modificabili da qui (Filippo ha specificato Data, oltre a quanto già discusso su Descrizione/Importo/Quantità) — da estendere se serve anche quello.
+
+## 76. Ricerca — modifica completa: Fornitore/Numero fattura + Aliquota IVA riga
+
+**Richiesto da Filippo**: "vorrei avere la possibilità di modificare tutto".
+
+**Sostituita** la modifica-solo-data (sezione 75) con un form combinato: Fornitore (select da anagrafica), Numero, Data — tutti e tre modificabili insieme dall'icona ✏️ nell'intestazione della fattura.
+
+**Aggiunta Aliquota IVA** alla modifica riga (accanto a Descrizione/Quantità/Prezzo/Importo già fatti in sezione 75) — al salvataggio ricalcola anche `totale_iva` della riga, oltre ai totali della fattura.
+
+Campi ancora non modificabili da qui: Tipo (ATTIVA/PASSIVA) e Note della fattura — non richiesti esplicitamente, da aggiungere se servono.
