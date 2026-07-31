@@ -49,7 +49,7 @@ export default function ArticoliPrezzi() {
     if (idFatture.length > 0) {
       const { data, error } = await supabase
         .from("ci_articoli_fattura").select("id, descrizione, quantita, unita_misura, prezzo_unitario, totale_riga, fattura_id, area, centro_costo, destinazione, tipo_costo")
-        .in("fattura_id", idFatture).gt("prezzo_unitario", 0);
+        .in("fattura_id", idFatture);
       if (error) { alert(`⚠️ Errore nel caricamento articoli:\n\n${error.message}`); setLoading(false); return; }
       articoli = numerizzaCampi(data || [], ["quantita", "prezzo_unitario", "totale_riga"]);
     }
@@ -81,11 +81,12 @@ export default function ArticoliPrezzi() {
     });
     return [...mappa.values()].map(righeGruppo => {
       const ordinate = righeGruppo.slice().sort((a, b) => new Date(b.data) - new Date(a.data));
-      const prezzi = ordinate.map(r => r.prezzo_unitario);
+      const prezziValidi = ordinate.map(r => r.prezzo_unitario).filter(p => p > 0);
+      const prezzi = prezziValidi.length > 0 ? prezziValidi : [0];
       const prezzoMedio = round2(prezzi.reduce((s, p) => s + p, 0) / prezzi.length);
-      const prezziPrecedenti = ordinate.slice(1).map(r => r.prezzo_unitario);
+      const prezziPrecedenti = ordinate.slice(1).map(r => r.prezzo_unitario).filter(p => p > 0);
       const prezzoMassimoPrecedente = prezziPrecedenti.length > 0 ? Math.max(...prezziPrecedenti) : null;
-      const prezzoRecente = ordinate[0].prezzo_unitario;
+      const prezzoRecente = ordinate.find(r => r.prezzo_unitario > 0)?.prezzo_unitario ?? 0;
       const scostamentoPct = prezzoMedio > 0 ? round2((prezzoRecente - prezzoMedio) / prezzoMedio * 100) : 0;
       // Classificazione attuale: se tutte le righe (solo passive, hanno senso di classificazione) concordano, la mostra; altrimenti "MISTA"
       const righePassive = ordinate.filter(r => r.tipo === "PASSIVA");

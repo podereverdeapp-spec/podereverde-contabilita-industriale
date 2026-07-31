@@ -932,3 +932,11 @@ Nota: questa modifica NON era collegata all'indagine in corso sul fornitore Unip
 **Aggiunto**: campo "Nome fornitore" nel form combinato — si popola col nome attuale (o quello del fornitore scelto dal menu), modificabile liberamente, salva su `ci_fornitori.nome` per il fornitore selezionato. Non svuota mai il nome per errore (se lasciato vuoto, il campo non viene inviato all'aggiornamento).
 
 Il form ora copre, in un solo posto: Fornitore (quale, tramite il menu) + suo Nome/P.IVA/Cod.Fiscale, oltre a Numero e Data della fattura — e la modifica riga (sezioni 75-76-78) copre Descrizione/Quantità/U.M./Prezzo/Importo/Aliquota IVA/classificazione. Non ancora modificabili: Tipo (ATTIVA/PASSIVA) e Note della fattura.
+
+## 83. RISOLTO — bug reale trovato: righe con prezzo_unitario nullo sparivano da Articoli & Prezzi
+
+**Indagine "Unipolsai non si trova"**: dopo aver verificato che il fornitore esisteva (3 duplicati "UNIPOL SAI", id 225/226/227 — Filippo ha scelto di tenere il 225) e che le fatture esistevano complete in `ci_fatture` (818/819/821, tutti i campi popolati), il colpevole era la query di caricamento di `ArticoliPrezzi.jsx`: un filtro `.gt("prezzo_unitario", 0)` che esclude silenziosamente qualunque riga con prezzo_unitario nullo o zero — probabile eredità delle fatture inserite manualmente PRIMA delle correzioni v138/v139 (quando quel campo poteva salvarsi nullo).
+
+**Corretto**: rimosso il filtro dalla query. I calcoli statistici (prezzo minimo/massimo/medio/recente) ora usano solo i prezzi validi (>0) tra quelli disponibili nel gruppo, invece di escludere la riga intera dalla vista — così la riga resta visibile (cercabile, modificabile) anche se il suo prezzo va ancora inserito a mano.
+
+**Verifica per le altre 4 fatture di Filippo**: query `verifica_righe_prezzo_mancante.sql` — trova tutte le righe con prezzo_unitario nullo/zero nell'intero database, per sistemarle tutte insieme (non solo Unipolsai).
