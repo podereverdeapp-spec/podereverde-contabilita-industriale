@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "./supabase";
-import { C } from "./style";import { numerizzaCampi, formattaEuro } from "./parsingUtils";
+import { C } from "./style";import { numerizzaCampi, formattaEuro, round2 } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
 
 const AREE_ORDINARIE = [
@@ -20,6 +20,8 @@ export default function Ricerca() {
   const [modificaRigaId, setModificaRigaId] = useState(null);
   const [formModificaRiga, setFormModificaRiga] = useState({});
   const [salvandoRiga, setSalvandoRiga] = useState(null);
+  const [modificaDataFatturaId, setModificaDataFatturaId] = useState(null);
+  const [nuovaDataFattura, setNuovaDataFattura] = useState("");
 
   const [testo, setTesto] = useState("");
   const [tipo, setTipo] = useState("tutte");
@@ -53,9 +55,23 @@ export default function Ricerca() {
     return pianoDeiConti.filter(p => p.area === areaScelta).map(p => p.centro_costo);
   }
 
+  async function salvaDataFattura(fatturaId) {
+    try {
+      const { error } = await supabase.from("ci_fatture").update({ data: nuovaDataFattura }).eq("id", fatturaId);
+      if (error) throw new Error(error.message);
+      setFatture(prev => prev.map(f => f.id === fatturaId ? { ...f, data: nuovaDataFattura } : f));
+      setModificaDataFatturaId(null);
+    } catch (err) {
+      alert(`⚠️ Errore nel salvataggio:\n\n${err.message}`);
+    }
+  }
+
   function iniziaModificaRiga(r) {
     setModificaRigaId(r.id);
-    setFormModificaRiga({ area: r.area || "", centro_costo: r.centro_costo || "", destinazione: r.destinazione || "", tipo_costo: r.tipo_costo || "" });
+    setFormModificaRiga({
+      area: r.area || "", centro_costo: r.centro_costo || "", destinazione: r.destinazione || "", tipo_costo: r.tipo_costo || "",
+      descrizione: r.descrizione || "", quantita: r.quantita ?? "", prezzo_unitario: r.prezzo_unitario ?? "", totale_riga: r.totale_riga ?? "",
+    });
   }
 
   async function salvaModificaRiga(rigaId, fatturaId) {
@@ -64,6 +80,9 @@ export default function Ricerca() {
       const { error } = await supabase.from("ci_articoli_fattura").update({
         area: formModificaRiga.area || null, centro_costo: formModificaRiga.centro_costo || null,
         destinazione: formModificaRiga.destinazione || null, tipo_costo: formModificaRiga.tipo_costo || null,
+        descrizione: formModificaRiga.descrizione, quantita: parseFloat(formModificaRiga.quantita) || 1,
+        prezzo_unitario: formModificaRiga.prezzo_unitario !== "" ? parseFloat(formModificaRiga.prezzo_unitario) : null,
+        totale_riga: round2(parseFloat(formModificaRiga.totale_riga) || 0),
       }).eq("id", rigaId);
       if (error) throw new Error(error.message);
       setModificaRigaId(null);
@@ -73,6 +92,11 @@ export default function Ricerca() {
       setRighePerFattura(prev => ({ ...prev, [fatturaId]: numerizzaCampi(data || [], ["quantita", "prezzo_unitario", "totale_riga", "aliquota_iva", "totale_iva"]) }));
       const { data: a } = await supabase.from("ci_articoli_fattura").select("fattura_id, descrizione, area, destinazione, totale_riga");
       setArticoli(numerizzaCampi(a || [], ["totale_riga"]));
+      // Ricalcolo i totali della fattura, dato che l'importo della riga può essere cambiato
+      const righeFattura = (data || []);
+      const netto = righeFattura.reduce((s, x) => s + (parseFloat(x.totale_riga) || 0), 0);
+      const iva = righeFattura.reduce((s, x) => s + (parseFloat(x.totale_iva) || 0), 0);
+      await supabase.from("ci_fatture").update({ totale_netto: round2(netto), totale_iva: round2(iva), totale_lordo: round2(netto + iva) }).eq("id", fatturaId);
     } catch (err) {
       alert(`⚠️ Errore nel salvataggio:\n\n${err.message}`);
     }
@@ -223,7 +247,25 @@ export default function Ricerca() {
                     {f.tipo === "ATTIVA" ? "VENDITA" : "ACQUISTO"}
                   </span>
                   <strong>{f.ci_fornitori?.nome || f.ci_clienti?.nome || "—"}</strong>
-                  <div style={{ fontSize: 12, color: C.muted }}>Fatt. {f.numero} del {f.data}{f.note && ` · ${f.note}`}</div>
+                  <div style={{ fontSize: 12, color: C.muted, display: "flex", alignItems: "center", gap: 6 }}>
+                    {modificaDataFatturaId === f.id ? (
+                      <span onClick={e => e.stopPropagation()} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        Fatt. {f.numero} del
+                        <input type="date" value={nuovaDataFattura} onChange={e => setNuovaDataFattura(e.target.value)}
+                          style={{ padding: "2px 6px", borderRadius: 5, border: `1.5px solid ${C.border}`, fontSize: 12 }} />
+                        <button onClick={() => salvaDataFattura(f.id)}
+                          style={{ background: C.green, color: "#fff", border: "none", borderRadius: 5, padding: "2px 8px", fontSize: 11, cursor: "pointer" }}>✓</button>
+                        <button onClick={() => setModificaDataFatturaId(null)}
+                          style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 5, padding: "2px 8px", fontSize: 11, cursor: "pointer" }}>✕</button>
+                      </span>
+                    ) : (
+                      <>
+                        Fatt. {f.numero} del {f.data}{f.note && ` · ${f.note}`}
+                        <span onClick={e => { e.stopPropagation(); setModificaDataFatturaId(f.id); setNuovaDataFattura(f.data); }}
+                          style={{ cursor: "pointer" }} title="Modifica data">✏️</span>
+                      </>
+                    )}
+                  </div>
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <div style={{ fontWeight: 800, fontSize: 16, color: C.primary }}>{formattaEuro(f.totale_lordo)}</div>
@@ -236,7 +278,12 @@ export default function Ricerca() {
                     <div key={r.id} style={{ padding: "10px 0", borderTop: `1px solid ${C.border}` }}>
                       {modificaRigaId === r.id ? (
                         <div>
-                          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>{r.descrizione}</div>
+                          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
+                            <CampoTesto label="Descrizione" value={formModificaRiga.descrizione} onChange={v => setFormModificaRiga(prev => ({ ...prev, descrizione: v }))} />
+                            <CampoTesto label="Quantità" tipo="number" value={formModificaRiga.quantita} onChange={v => setFormModificaRiga(prev => ({ ...prev, quantita: v }))} />
+                            <CampoTesto label="Prezzo unitario" tipo="number" value={formModificaRiga.prezzo_unitario} onChange={v => setFormModificaRiga(prev => ({ ...prev, prezzo_unitario: v }))} />
+                            <CampoTesto label="Importo" tipo="number" value={formModificaRiga.totale_riga} onChange={v => setFormModificaRiga(prev => ({ ...prev, totale_riga: v }))} />
+                          </div>
                           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8 }}>
                             <CampoSelect label="Area" value={formModificaRiga.area} options={AREE_ORDINARIE}
                               onChange={v => setFormModificaRiga(prev => ({ ...prev, area: v, centro_costo: "" }))} />
@@ -293,6 +340,16 @@ function Campo({ label, children }) {
       <label style={{ fontSize: 11, color: C.muted, fontWeight: 700, display: "block", marginBottom: 3 }}>{label}</label>
       {children}
     </div>
+  );
+}
+
+function CampoTesto({ label, value, onChange, tipo = "text" }) {
+  return (
+    <label style={{ fontSize: 11, color: C.muted }}>
+      {label}
+      <input type={tipo} step="0.01" value={value} onChange={e => onChange(e.target.value)}
+        style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 13, marginTop: 2 }} />
+    </label>
   );
 }
 

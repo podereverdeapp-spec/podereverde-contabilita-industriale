@@ -866,3 +866,13 @@ Testato con caso mock: la mappatura produce esattamente le colonne e i tipi di d
 **Ridisegnato**: il pulsante ora si chiama "🏷️ Non da registrare" (non più "🚫 Escludi fattura") — la riga resta nell'elenco, ma con etichetta al posto del motivo, opacità ridotta, e un pulsante "↩ Riconsidera" al posto di Registra/Non da registrare (toglie la marcatura, la riga torna normale). Il riepilogo in cima ora distingue "N righe NON risultano registrate" da "altre M marcate come non da registrare". L'esportazione verso Carica Fatture (sezione 71) ora esclude automaticamente le righe marcate, dato che Filippo ha già deciso di non caricarle.
 
 La tabella `ci_fatture_escluse_verifica` e il pannello di consultazione/rimozione (sezioni 72-73) restano invariati — cambia solo il comportamento nella lista principale.
+
+## 75. Ricerca — modifica estesa di riga (Descrizione/Quantità/Prezzo/Importo) e Data fattura
+
+**Richiesto da Filippo**: poter modificare una fattura già registrata — non solo la classificazione (che già c'era), ma anche Descrizione/Importo/Quantità di una riga, e la Data della fattura.
+
+**Estesa la modifica riga** (già esistente in Ricerca): aggiunti campi Descrizione/Quantità/Prezzo unitario/Importo prima dei campi di classificazione — al salvataggio, ricalcola anche i totali della fattura (dato che l'importo di una riga può cambiare).
+
+**Aggiunta modifica Data fattura**: icona ✏️ accanto alla data nell'intestazione di ogni fattura (nella vista non espansa) — click apre un campo data inline con ✓/✕ per confermare o annullare, senza dover aprire il dettaglio della fattura.
+
+Numero fattura e Fornitore non sono ancora modificabili da qui (Filippo ha specificato Data, oltre a quanto già discusso su Descrizione/Importo/Quantità) — da estendere se serve anche quello.
