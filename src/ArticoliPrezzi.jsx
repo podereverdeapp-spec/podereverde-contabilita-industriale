@@ -26,7 +26,6 @@ export default function ArticoliPrezzi() {
   const [filtroControparte, setFiltroControparte] = useState("");
   const [filtroTipo, setFiltroTipo] = useState("tutte"); // "tutte" | "PASSIVA" | "ATTIVA"
   const [espanso, setEspanso] = useState(null);
-  const [grafico, setGrafico] = useState(null); // chiave prodotto per cui mostrare il grafico
   const [pianoDeiConti, setPianoDeiConti] = useState([]);
   const [modificaClassifica, setModificaClassifica] = useState(null); // chiave gruppo in modifica
   const [formClassifica, setFormClassifica] = useState({});
@@ -196,7 +195,7 @@ export default function ArticoliPrezzi() {
         </button>
       </div>
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 20 }}>
-        Storico prezzi per prodotto (acquisti e vendite), confrontabile tra fornitori/clienti diversi. Clicca sullo scostamento % per vedere il grafico dell'andamento nel tempo.
+        Storico prezzi per prodotto (acquisti e vendite), confrontabile tra fornitori/clienti diversi. Clicca su una riga per vedere i grafici dell'andamento e lo storico completo.
       </p>
 
       <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
@@ -243,25 +242,17 @@ export default function ArticoliPrezzi() {
                     <td style={{ ...td, textAlign: "right", fontWeight: 700, color: g.prezzoRecenteERecord ? C.red : C.text }}>
                       {formattaEuro(g.prezzoRecente, 4)}{g.prezzoRecenteERecord && " ⚠️"}
                     </td>
-                    <td style={{ ...td, textAlign: "right", fontWeight: 700, color: g.scostamentoPct > 0 ? C.red : g.scostamentoPct < 0 ? C.green : C.muted, cursor: "pointer", textDecoration: "underline" }}
-                      onClick={e => { e.stopPropagation(); setGrafico(grafico === chiave ? null : chiave); }}>
+                    <td style={{ ...td, textAlign: "right", fontWeight: 700, color: g.scostamentoPct > 0 ? C.red : g.scostamentoPct < 0 ? C.green : C.muted }}>
                       {g.scostamentoPct > 0 ? "▲" : g.scostamentoPct < 0 ? "▼" : ""} {formattaNumero(g.scostamentoPct, 1)}%
                     </td>
                     <td style={td}>{g.dataRecente}</td>
                   </tr>
 
-                  {grafico === chiave && (
+                  {espanso === chiave && (
                     <tr>
                       <td colSpan={10} style={{ padding: 0, background: "#FAFAF8" }}>
                         <GraficoPrezzo storico={g.storico} prezzoMedio={g.prezzoMedio} />
                         <GraficoPrezzoAnnuale storico={g.storico} />
-                      </td>
-                    </tr>
-                  )}
-
-                  {espanso === chiave && (
-                    <tr>
-                      <td colSpan={10} style={{ padding: 0, background: "#FAFAF8" }}>
                         <div style={{ padding: "12px 20px", borderBottom: `1px solid ${C.border}` }}>
                           {modificaClassifica === chiave ? (
                             <div>

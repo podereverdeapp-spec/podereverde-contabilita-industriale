@@ -908,3 +908,9 @@ Testato con caso mock: media annuale e variazione % calcolate correttamente, col
 **Verificato**: nessun filtro nella query esclude le righe inserite a mano — il problema era che la casella di ricerca principale cerca SOLO nella descrizione dell'articolo, non nel nome del fornitore (esisteva già un campo separato "Filtra per fornitore/cliente..." accanto, probabilmente non notato).
 
 **Migliorato comunque**: la casella di ricerca principale ora cerca ANCHE nel nome del fornitore/cliente, oltre alla descrizione — evita questa confusione in futuro. Placeholder aggiornato di conseguenza.
+
+## 80. Articoli & Prezzi — unificati grafici e storico, un solo click sulla riga
+
+**Causa del problema di Filippo**: i grafici (compreso quello nuovo per anno, sezione 77) si attivavano SOLO cliccando sulla piccola cella della percentuale di scostamento (con sottolineatura, poco visibile) — un'interazione diversa da quella che apre lo storico/classificazione (che si apre cliccando sulla riga). Filippo cliccava sulla riga come sempre e non vedeva più comparire i grafici.
+
+**Corretto**: unificato tutto sotto un solo click (sulla riga, `espanso`) — ora cliccando un articolo compaiono insieme, in quest'ordine: grafico per singolo acquisto, grafico prezzo medio annuale, poi lo storico/classificazione come prima. Rimosso lo stato `grafico` separato, ormai inutile. Aggiornato il testo esplicativo in cima alla pagina.
