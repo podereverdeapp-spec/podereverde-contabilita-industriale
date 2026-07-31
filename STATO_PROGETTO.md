@@ -914,3 +914,21 @@ Testato con caso mock: media annuale e variazione % calcolate correttamente, col
 **Causa del problema di Filippo**: i grafici (compreso quello nuovo per anno, sezione 77) si attivavano SOLO cliccando sulla piccola cella della percentuale di scostamento (con sottolineatura, poco visibile) — un'interazione diversa da quella che apre lo storico/classificazione (che si apre cliccando sulla riga). Filippo cliccava sulla riga come sempre e non vedeva più comparire i grafici.
 
 **Corretto**: unificato tutto sotto un solo click (sulla riga, `espanso`) — ora cliccando un articolo compaiono insieme, in quest'ordine: grafico per singolo acquisto, grafico prezzo medio annuale, poi lo storico/classificazione come prima. Rimosso lo stato `grafico` separato, ormai inutile. Aggiornato il testo esplicativo in cima alla pagina.
+
+## 81. Ricerca — modifica/inserimento Partita IVA e Codice Fiscale del fornitore
+
+**Richiesto da Filippo**: poter modificare o inserire Partita IVA e Codice Fiscale del fornitore, dal solito punto in Ricerca.
+
+**Nuova colonna**: `ci_fornitori.codice_fiscale` (non esisteva) — `aggiungi_codice_fiscale_fornitori.sql`.
+
+**Esteso** il form combinato Fornitore/Numero/Data (sezione 76) con due campi in più: P.IVA e Cod. Fiscale — si popolano automaticamente con i valori del fornitore selezionato (cambiano se si sceglie un fornitore diverso dal menu), e al salvataggio aggiornano `ci_fornitori` (non `ci_fatture`, dato che P.IVA/CF appartengono all'anagrafica del fornitore, condivisa tra tutte le sue fatture).
+
+Nota: questa modifica NON era collegata all'indagine in corso sul fornitore Unipolsai (ancora in attesa del risultato della query su `ci_fornitori`) — se dal risultato di quella query risultasse che Unipolsai non è mai stato creato in anagrafica, questa nuova funzione permetterebbe comunque di aggiungere P.IVA/CF una volta creato il fornitore corretto.
+
+## 82. Ricerca — aggiunto anche il Nome del fornitore: ora davvero tutto modificabile
+
+**Chiarimento di Filippo**: "se ho detto tutto è tutto" — anche il nome del fornitore, non solo P.IVA/CF.
+
+**Aggiunto**: campo "Nome fornitore" nel form combinato — si popola col nome attuale (o quello del fornitore scelto dal menu), modificabile liberamente, salva su `ci_fornitori.nome` per il fornitore selezionato. Non svuota mai il nome per errore (se lasciato vuoto, il campo non viene inviato all'aggiornamento).
+
+Il form ora copre, in un solo posto: Fornitore (quale, tramite il menu) + suo Nome/P.IVA/Cod.Fiscale, oltre a Numero e Data della fattura — e la modifica riga (sezioni 75-76-78) copre Descrizione/Quantità/U.M./Prezzo/Importo/Aliquota IVA/classificazione. Non ancora modificabili: Tipo (ATTIVA/PASSIVA) e Note della fattura.

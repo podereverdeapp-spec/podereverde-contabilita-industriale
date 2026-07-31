@@ -47,7 +47,7 @@ export default function Ricerca() {
     if (eA) { alert(`⚠️ Errore nel caricamento articoli:\n\n${eA.message}`); setLoading(false); return; }
     const { data: pdc } = await supabase.from("ci_piano_dei_conti").select("*").order("area").order("centro_costo");
     setPianoDeiConti(pdc || []);
-    const { data: forn } = await supabase.from("ci_fornitori").select("id, nome").order("nome");
+    const { data: forn } = await supabase.from("ci_fornitori").select("id, nome, partita_iva, codice_fiscale").order("nome");
     setFornitori(forn || []);
 
     setFatture(numerizzaCampi(f || [], ["totale_netto", "totale_iva", "totale_lordo"]));
@@ -65,10 +65,22 @@ export default function Ricerca() {
         numero: formModificaFattura.numero, data: formModificaFattura.data, fornitore_id: formModificaFattura.fornitore_id || null,
       }).eq("id", fatturaId);
       if (error) throw new Error(error.message);
-      const nomeFornitore = fornitori.find(fo => fo.id === formModificaFattura.fornitore_id)?.nome;
+
+      if (formModificaFattura.fornitore_id) {
+        const { error: eForn } = await supabase.from("ci_fornitori").update({
+          nome: formModificaFattura.nome_fornitore || undefined,
+          partita_iva: formModificaFattura.partita_iva || null, codice_fiscale: formModificaFattura.codice_fiscale || null,
+        }).eq("id", formModificaFattura.fornitore_id);
+        if (eForn) throw new Error(eForn.message);
+      }
+
+      const nomeFornitore = formModificaFattura.nome_fornitore || fornitori.find(fo => fo.id === formModificaFattura.fornitore_id)?.nome;
       setFatture(prev => prev.map(f => f.id === fatturaId
         ? { ...f, numero: formModificaFattura.numero, data: formModificaFattura.data, fornitore_id: formModificaFattura.fornitore_id, ci_fornitori: nomeFornitore ? { nome: nomeFornitore } : f.ci_fornitori }
         : f));
+      setFornitori(prev => prev.map(fo => fo.id === formModificaFattura.fornitore_id
+        ? { ...fo, nome: formModificaFattura.nome_fornitore || fo.nome, partita_iva: formModificaFattura.partita_iva || null, codice_fiscale: formModificaFattura.codice_fiscale || null }
+        : fo));
       setModificaFatturaId(null);
     } catch (err) {
       alert(`⚠️ Errore nel salvataggio:\n\n${err.message}`);
@@ -260,11 +272,20 @@ export default function Ricerca() {
                   </span>
                   {modificaFatturaId === f.id ? (
                     <div onClick={e => e.stopPropagation()} style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", marginTop: 4 }}>
-                      <select value={formModificaFattura.fornitore_id || ""} onChange={e => setFormModificaFattura(prev => ({ ...prev, fornitore_id: e.target.value }))}
+                      <select value={formModificaFattura.fornitore_id || ""} onChange={e => {
+                        const fo = fornitori.find(x => x.id === e.target.value);
+                        setFormModificaFattura(prev => ({ ...prev, fornitore_id: e.target.value, nome_fornitore: fo?.nome || "", partita_iva: fo?.partita_iva || "", codice_fiscale: fo?.codice_fiscale || "" }));
+                      }}
                         style={{ padding: "3px 6px", borderRadius: 5, border: `1.5px solid ${C.border}`, fontSize: 12 }}>
                         <option value="">— fornitore —</option>
                         {fornitori.map(fo => <option key={fo.id} value={fo.id}>{fo.nome}</option>)}
                       </select>
+                      <input value={formModificaFattura.nome_fornitore || ""} onChange={e => setFormModificaFattura(prev => ({ ...prev, nome_fornitore: e.target.value }))}
+                        placeholder="Nome fornitore" style={{ width: 160, padding: "3px 6px", borderRadius: 5, border: `1.5px solid ${C.border}`, fontSize: 12 }} />
+                      <input value={formModificaFattura.partita_iva || ""} onChange={e => setFormModificaFattura(prev => ({ ...prev, partita_iva: e.target.value }))}
+                        placeholder="P.IVA" style={{ width: 110, padding: "3px 6px", borderRadius: 5, border: `1.5px solid ${C.border}`, fontSize: 12 }} />
+                      <input value={formModificaFattura.codice_fiscale || ""} onChange={e => setFormModificaFattura(prev => ({ ...prev, codice_fiscale: e.target.value }))}
+                        placeholder="Cod. Fiscale" style={{ width: 130, padding: "3px 6px", borderRadius: 5, border: `1.5px solid ${C.border}`, fontSize: 12 }} />
                       <input value={formModificaFattura.numero || ""} onChange={e => setFormModificaFattura(prev => ({ ...prev, numero: e.target.value }))}
                         placeholder="Numero" style={{ width: 90, padding: "3px 6px", borderRadius: 5, border: `1.5px solid ${C.border}`, fontSize: 12 }} />
                       <input type="date" value={formModificaFattura.data || ""} onChange={e => setFormModificaFattura(prev => ({ ...prev, data: e.target.value }))}
@@ -279,7 +300,11 @@ export default function Ricerca() {
                       <strong>{f.ci_fornitori?.nome || f.ci_clienti?.nome || "—"}</strong>
                       <div style={{ fontSize: 12, color: C.muted }}>
                         Fatt. {f.numero} del {f.data}{f.note && ` · ${f.note}`}
-                        {" "}<span onClick={e => { e.stopPropagation(); setModificaFatturaId(f.id); setFormModificaFattura({ numero: f.numero, data: f.data, fornitore_id: f.fornitore_id }); }}
+                        {" "}<span onClick={e => {
+                          e.stopPropagation(); setModificaFatturaId(f.id);
+                          const fo = fornitori.find(x => x.id === f.fornitore_id);
+                          setFormModificaFattura({ numero: f.numero, data: f.data, fornitore_id: f.fornitore_id, nome_fornitore: fo?.nome || "", partita_iva: fo?.partita_iva || "", codice_fiscale: fo?.codice_fiscale || "" });
+                        }}
                           style={{ cursor: "pointer" }} title="Modifica fornitore/numero/data">✏️</span>
                       </div>
                     </>
