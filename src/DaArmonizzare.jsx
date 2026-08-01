@@ -6,7 +6,7 @@ import { RicomposizioneFattura } from "./FatturePassive";
 
 // Centri di costo con quantità tracciate per i report — solo questi generano voci
 // "Da Armonizzare"; gli altri centri di costo non hanno bisogno di unità armonizzate.
-const CENTRI_CON_QUANTITA = ["Foraggio", "Mangimi", "Coltivazione Sementi", "Coltivazione Concimi e Fitosanitari", "Gasolio e lubrificanti"];
+const CENTRI_CON_QUANTITA = ["Foraggio", "Mangimi", "Integratori Alimentari", "Coltivazione Sementi", "Coltivazione Concimi e Fitosanitari", "Gasolio e lubrificanti"];
 
 const UNITA_OPZIONI = ["Kilogrammi", "Tons", "Quintali", "Litri", "Unità", "Rotoballe", "Balle", "Balloni", "Rotoloni"];
 const FATTORE_KG = { Kilogrammi: 1, Tons: 1000, Quintali: 100, Litri: null, Unità: null, Rotoballe: 340, Balle: 340, Balloni: 340, Rotoloni: 340 };

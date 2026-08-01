@@ -977,3 +977,21 @@ Il form ora copre, in un solo posto: Fornitore (quale, tramite il menu) + suo No
 **Rimossa** la vecchia casella di testo "Filtra per fornitore/cliente..." (ridondante e meno precisa della nuova modalità — filtrava DOPO aver già mescolato le statistiche tra fornitori).
 
 Testato con caso mock: due fornitori con lo stesso prodotto a prezzi/andamenti diversi — raggruppando solo per prodotto la variazione risulta una media poco rappresentativa (31,81%); raggruppando per fornitore+prodotto, ciascuno mostra la propria variazione reale (20% e 2,44%).
+
+## 88. Nuova cartella "Alimentaria" — Report "Costi e Quantità"
+
+**Richiesto da Filippo**: nuova cartella "Alimentaria" con un primo report "Costi e Quantità" — tabella con 3 righe (Mangimi/Foraggio/Integratori Alimentari) e 4 coppie di colonne (Totali/Bovini/Suini/Ovini), colori distinti per coppia. Click sulla riga → disaggregazione per prodotto (stessa struttura a colonne), aggregata indipendentemente dal fornitore, con i Mangimi contenenti "ORZO" sempre sommati insieme.
+
+**Prerequisito sistemato**: "Integratori Alimentari" esisteva già come centro di costo nel piano dei conti (confermato da Filippo) ma non era nell'elenco `CENTRI_CON_QUANTITA` (Carica Fatture + Da Armonizzare) — aggiunto, altrimenti le sue righe non avrebbero mai avuto un Kg associato.
+
+**Riuso del motore esistente**: `calcolaDatiQuantitaAnno(anno, centroCosto)` (già generico, usato da Report Quantità Mangimi/Foraggio) fa già tutto il lavoro pesante — aggregazione per prodotto indipendente dal fornitore, e ripartizione dei "Generali"/"Bovini e Ovini" tra le specie tramite `calcolaRigaAggregata` (stesso motore UBA di Report Costi). Nessuna nuova query o calcolo di ripartizione da scrivere da zero.
+
+**Costruito** `ReportCostiQuantitaAlimentare.jsx` (cartella "Alimentaria" → "Costi e Quantità"):
+- Tabella principale: 3 righe (i 3 centri), 8 colonne — Totali (Kg/Costo, grezzi, non ripartiti) + Bovini/Suini/Ovini (Kg/Costo, con quota Generali inclusa), colori dedicati già esistenti nello stile condiviso (`C.bovini`, `C.suini`, `C.ovini`)
+- Click su una riga → righe di dettaglio per prodotto, sotto, con la stessa struttura a colonne
+- `accorpaOrzo()`: per Mangimi, unisce tutti i prodotti con "orzo" nella descrizione (case-insensitive) in un'unica riga sommata, prima di mostrare il dettaglio
+- `aggregaCentro()`: somma tutti i prodotti di un centro per ottenere i totali per specie della riga principale (stesso risultato che si avrebbe sommando manualmente le righe di dettaglio)
+
+Testato con caso mock: due prodotti "orzo" con diciture diverse (fornitori diversi) accorpati correttamente in un'unica riga con costo/kg sommati; un terzo prodotto non-orzo resta separato.
+
+**Non ancora fatto**: export Excel di questo report (gli altri report Quantità/Storico ce l'hanno) — da aggiungere se richiesto.

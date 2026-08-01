@@ -32,6 +32,7 @@ import ConsultazioneAnimali from "./ConsultazioneAnimali";
 import InserimentoManualeFattura from "./InserimentoManualeFattura";
 import VerificaFattureMancanti from "./VerificaFattureMancanti";
 import VerificaRigheMancanti from "./VerificaRigheMancanti";
+import ReportCostiQuantitaAlimentare from "./ReportCostiQuantitaAlimentare";
 import IstruzioniFatture from "./IstruzioniFatture";
 import IstruzioniAnagrafiche from "./IstruzioniAnagrafiche";
 import IstruzioniAnimali from "./IstruzioniAnimali";
@@ -63,6 +64,9 @@ const MENU = [
     { tipo: "voce", id: "istr-anagrafiche", label: "Istruzioni", icon: "📖" },
     { tipo: "voce", id: "fornitori", label: "Fornitori", icon: "🏢" },
     { tipo: "voce", id: "clienti", label: "Clienti", icon: "🤝" },
+  ]},
+  { tipo: "cartella", id: "cart-alimentaria", label: "Alimentaria", icon: "🌾", contenuto: [
+    { tipo: "voce", id: "costi-quantita-alimentare", label: "Costi e Quantità", icon: "📊" },
   ]},
   { tipo: "cartella", id: "cart-animali", label: "Animali", icon: "🐄", contenuto: [
     { tipo: "voce", id: "istr-animali", label: "Istruzioni", icon: "📖" },
@@ -288,6 +292,7 @@ export default function App() {
         {tab === "inserimento-manuale" && <InserimentoManualeFattura />}
         {tab === "verifica-fatture-mancanti" && <VerificaFattureMancanti />}
         {tab === "verifica-righe-mancanti" && <VerificaRigheMancanti />}
+        {tab === "costi-quantita-alimentare" && <ReportCostiQuantitaAlimentare />}
         {tab === "istr-fatture" && <IstruzioniFatture />}
         {tab === "istr-anagrafiche" && <IstruzioniAnagrafiche />}
         {tab === "istr-animali" && <IstruzioniAnimali />}
