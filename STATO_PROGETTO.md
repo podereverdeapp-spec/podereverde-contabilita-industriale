@@ -1011,3 +1011,21 @@ Avevo scritto "Integratori Alimentari" (A maiuscola) sia in `CENTRI_CON_QUANTITA
 **Bug di editing corretto durante la costruzione**: una mia modifica precedente aveva rimosso per errore la riga `export default function ReportCostiQuantitaAlimentare()`, causando un errore di build — corretto prima della consegna.
 
 **Falso allarme chiarito**: Filippo temeva avessi creato un centro di costo duplicato "Integratori Alimentari" nel database — verificato che non è mai successo (l'errore precedente era solo una stringa scritta male nel codice JS, mai un comando SQL). Confermato con `grep` che non resta nessuna occorrenza della dicitura sbagliata nel codice.
+
+## 91. Alimentaria → Costi e Quantità: sintesi visiva + pagina 2 storico con grafici
+
+**Richiesto da Filippo**: sotto le due tabelle di pagina 1, una sintesi visiva con icona per specie (mucca/maiale/pecora), costo totale (Mangimi+Foraggio+Integratori) + % sul totale, e Kg/UBA-gg + €/UBA-gg. Poi una "pagina 2" dello stesso report con le stesse due tabelle ma storiche (anno corrente + 3 precedenti + media), e sotto 3 grafici: andamento costi (4 linee, con variazione % anno su anno), andamento €/UBA-gg per specie, andamento Kg/UBA-gg per specie.
+
+**Costruito**:
+- `IconaMucca`/`IconaMaiale`/`IconaPecora` — sagome SVG semplici, colorabili col colore della specie (non foto realistiche, pensate per essere leggibili anche piccole)
+- `sommaSuiCentri(datiAnno)` — somma Mangimi+Foraggio+Integratori per specie (costo e kg), usata sia dalla sintesi di pagina 1 sia dalle righe delle tabelle storiche di pagina 2
+- `SintesiVisiva` — le 3 card (una per specie), con icona, costo+%, e le due incidenze
+- `GraficoMultiLinea.jsx` (nuovo, riusabile) — grafico SVG puro a più linee con legenda, variazione % opzionale sui segmenti della prima serie (usata solo per il grafico costi, dove la prima serie è il Totale)
+- `PaginaStorico` — orchestratore di pagina 2: calcola 4 anni × 3 centri (12 chiamate a `calcolaDatiQuantitaAnno`), costruisce le righe per anno (via `sommaSuiCentri`) e la media, le due tabelle storiche (righe=anni invece di righe=centri, dato che qui la vista è per specie nel tempo, non per centro di costo), e le 3 serie per i grafici
+- Navigazione "Pagina 1 / Pagina 2" con due pulsanti in cima — pagina 2 calcola lo storico solo al primo accesso (non ricalcola se già fatto)
+
+**Nota di design**: la Pagina 2 aggrega SEMPRE sui 3 centri insieme (Mangimi+Foraggio+Integratori) — non mostra più il dettaglio per singolo centro di costo, perché i grafici richiesti sono per specie nel tempo, non per centro. Il dettaglio per prodotto (drill-down) resta solo in Pagina 1.
+
+Testato con caso mock: somma corretta su 3 centri (170€/1600kg bovini dai tre parziali), incidenza calcolata correttamente sul totale sommato.
+
+**Non ancora fatto**: export Excel di pagina 2 (pagina 1 non ce l'ha nemmeno ancora, vedi nota sezione 88) — da aggiungere se richiesto. La media storica nella pagina 2 non gestisce ancora il caso in cui uno dei 4 anni non abbia dati (es. azienda non ancora attiva) — divide sempre per 4, da correggere se capita un caso reale.
