@@ -49,11 +49,19 @@ function aggregaCentro(perProdotto) {
   return { perCosto: perProdotto.map(p => p.perCosto).reduce(sommaAggregati), perKg: perProdotto.map(p => p.perKg).reduce(sommaAggregati) };
 }
 
+// Ricalcola l'incidenza (valore / UBA-giorni della specie) — va sempre ricalcolata DOPO
+// eventuali somme (aggregazione centro, accorpamento ORZO), mai sommata insieme ai valori
+// stessi, perché è un rapporto: la somma di due rapporti non è il rapporto della somma.
+function incidenza(valoreAllocato, ubaGiorniSp) {
+  return ubaGiorniSp > 0 ? valoreAllocato / ubaGiorniSp : 0;
+}
+
 export default function ReportCostiQuantitaAlimentare() {
   const [anno, setAnno] = useState(new Date().getFullYear());
   const [dati, setDati] = useState(null); // { [centro]: { righe, perProdotto, nonArmonizzate } }
   const [loading, setLoading] = useState(false);
   const [espanso, setEspanso] = useState(null);
+  const [espansoIncidenza, setEspansoIncidenza] = useState(null);
   const [errore, setErrore] = useState(null);
 
   useEffect(() => { calcola(); }, []);
@@ -96,6 +104,16 @@ export default function ReportCostiQuantitaAlimentare() {
       {dati && (
         <div style={{ overflowX: "auto" }}>
           <TabellaCostiQuantita dati={dati} espanso={espanso} setEspanso={setEspanso} />
+        </div>
+      )}
+
+      {dati && (
+        <div style={{ overflowX: "auto", marginTop: 28 }}>
+          <h2 style={{ color: C.primary, fontSize: 18, marginBottom: 4 }}>Incidenza per UBA-giorno</h2>
+          <p style={{ color: C.muted, marginTop: 0, marginBottom: 12, fontSize: 13 }}>
+            Kg e Costo per UBA-giorno di ciascuna specie — indipendente dalla dimensione dell'allevamento, utile per confrontare l'efficienza tra anni o tra prodotti diversi.
+          </p>
+          <TabellaIncidenza dati={dati} espanso={espansoIncidenza} setEspanso={setEspansoIncidenza} />
         </div>
       )}
     </div>
@@ -166,3 +184,57 @@ function TabellaCostiQuantita({ dati, espanso, setEspanso }) {
 const thBase = { padding: "8px 10px", color: "#fff", fontSize: 12, textAlign: "right" };
 const thSub = { padding: "6px 10px", color: "#fff", fontSize: 11, textAlign: "right", background: C.muted };
 const tdBase = { padding: "8px 10px", textAlign: "right", borderBottom: `1px solid ${C.border}` };
+
+function TabellaIncidenza({ dati, espanso, setEspanso }) {
+  return (
+    <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse", minWidth: 900 }}>
+      <thead>
+        <tr>
+          <th rowSpan={2} style={{ ...thBase, background: C.primary, verticalAlign: "bottom" }}>Centro di Costo</th>
+          {SPECIE.map(s => <th key={s.chiave} colSpan={2} style={{ ...thBase, background: s.colore }}>{s.label}</th>)}
+        </tr>
+        <tr>
+          {SPECIE.map(s => (
+            <Fragment key={s.chiave}>
+              <th style={{ ...thSub, background: s.colore + "cc" }}>Kg/UBA-gg</th>
+              <th style={{ ...thSub, background: s.colore + "cc" }}>€/UBA-gg</th>
+            </Fragment>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {CENTRI.map(centro => {
+          const d = dati[centro];
+          const uba = d.ubaGiorniProduttiviPerSpecie || {};
+          const agg = aggregaCentro(d.perProdotto || []);
+          const perProdottoVisualizzato = centro === "Mangimi" ? accorpaOrzo(d.perProdotto || []) : (d.perProdotto || []);
+          return (
+            <Fragment key={centro}>
+              <tr onClick={() => setEspanso(espanso === centro ? null : centro)}
+                style={{ cursor: "pointer", background: espanso === centro ? C.bg : "#fff", borderTop: `2px solid ${C.border}` }}>
+                <td style={{ ...tdBase, fontWeight: 700 }}>{espanso === centro ? "▼" : "▶"} {centro}</td>
+                {SPECIE.map(s => (
+                  <Fragment key={s.chiave}>
+                    <td style={{ ...tdBase, color: s.colore, fontWeight: 700 }}>{formattaNumero(incidenza(agg.perKg.perSpecie[s.chiave].costoAllocato, uba[s.chiave]), 3)}</td>
+                    <td style={{ ...tdBase, color: s.colore, fontWeight: 700 }}>{formattaEuro(incidenza(agg.perCosto.perSpecie[s.chiave].costoAllocato, uba[s.chiave]), 3)}</td>
+                  </Fragment>
+                ))}
+              </tr>
+              {espanso === centro && perProdottoVisualizzato.map((p, i) => (
+                <tr key={i} style={{ background: "#FAFAF8" }}>
+                  <td style={{ ...tdBase, paddingLeft: 32, fontSize: 12, color: C.muted }}>{p.descrizione}</td>
+                  {SPECIE.map(s => (
+                    <Fragment key={s.chiave}>
+                      <td style={{ ...tdBase, fontSize: 12, color: s.colore }}>{formattaNumero(incidenza(p.perKg.perSpecie[s.chiave].costoAllocato, uba[s.chiave]), 3)}</td>
+                      <td style={{ ...tdBase, fontSize: 12, color: s.colore }}>{formattaEuro(incidenza(p.perCosto.perSpecie[s.chiave].costoAllocato, uba[s.chiave]), 3)}</td>
+                    </Fragment>
+                  ))}
+                </tr>
+              ))}
+            </Fragment>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}

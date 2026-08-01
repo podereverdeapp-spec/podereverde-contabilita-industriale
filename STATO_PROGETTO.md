@@ -995,3 +995,19 @@ Testato con caso mock: due fornitori con lo stesso prodotto a prezzi/andamenti d
 Testato con caso mock: due prodotti "orzo" con diciture diverse (fornitori diversi) accorpati correttamente in un'unica riga con costo/kg sommati; un terzo prodotto non-orzo resta separato.
 
 **Non ancora fatto**: export Excel di questo report (gli altri report Quantità/Storico ce l'hanno) — da aggiungere se richiesto.
+
+## 89. Bug corretto — dicitura esatta "Integratori alimentari" (minuscolo), verificata da Filippo sul database reale
+
+Avevo scritto "Integratori Alimentari" (A maiuscola) sia in `CENTRI_CON_QUANTITA` (Carica Fatture, Da Armonizzare) sia nel nuovo report — il nome ESATTO nel database, verificato da Filippo con una query diretta (righe reali con fornitore Martens/Agrilinea/Vitasol/Demas già classificate), è **"Integratori alimentari"** (a minuscola). Corretto in tutti e tre i file. Senza questa correzione, il filtro per centro di costo non avrebbe trovato nessuna riga (confronto esatto case-sensitive).
+
+## 90. Seconda tabella "Incidenza per UBA-giorno" in Alimentaria → Costi e Quantità
+
+**Richiesto da Filippo**: sotto la prima tabella, una seconda che mostri per ciascuna specie Kg/UBA-gg e €/UBA-gg (invece dei totali assoluti) — stesso sistema di frecce per il dettaglio prodotto.
+
+**Punto tecnico importante**: l'incidenza (valore/UBA-giorni) è un rapporto — sommare due incidenze non equivale a ricalcolare il rapporto dopo aver sommato i valori (verificato con caso mock: sommare darebbe 3,67, il ricalcolo corretto dà 1,25). Per questo `calcolaDatiQuantitaAnno` ora espone anche `ubaGiorniProduttiviPerSpecie` nel suo valore di ritorno, e la nuova funzione `incidenza(valoreAllocato, ubaGiorniSp)` viene chiamata sempre DOPO aver aggregato/accorpato i valori assoluti (mai sull'incidenza già calcolata dal motore originale, che diventerebbe sbagliata una volta accorpati più prodotti insieme, es. ORZO).
+
+**Costruito** `TabellaIncidenza` — stessa struttura a frecce della prima tabella (stato di espansione indipendente, `espansoIncidenza`), 3 righe (centri di costo) × 3 specie × 2 colonne (Kg/UBA-gg, €/UBA-gg) — niente colonna "Totali" qui, dato che l'UBA-giorno è per specie per definizione.
+
+**Bug di editing corretto durante la costruzione**: una mia modifica precedente aveva rimosso per errore la riga `export default function ReportCostiQuantitaAlimentare()`, causando un errore di build — corretto prima della consegna.
+
+**Falso allarme chiarito**: Filippo temeva avessi creato un centro di costo duplicato "Integratori Alimentari" nel database — verificato che non è mai successo (l'errore precedente era solo una stringa scritta male nel codice JS, mai un comando SQL). Confermato con `grep` che non resta nessuna occorrenza della dicitura sbagliata nel codice.

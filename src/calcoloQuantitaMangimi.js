@@ -101,7 +101,7 @@ export async function calcolaDatiQuantitaAnno(anno, centroCosto) {
   });
   perProdotto.sort((a, b) => a.descrizione.localeCompare(b.descrizione));
 
-  return { righe, perProdotto, nonArmonizzate: [...senzaRegola.values()] };
+  return { righe, perProdotto, nonArmonizzate: [...senzaRegola.values()], ubaGiorniProduttiviPerSpecie };
 }
 
 // Wrapper per compatibilità con il codice Mangimi esistente (ReportQuantitaMangimi.jsx,
