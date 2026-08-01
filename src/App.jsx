@@ -16,14 +16,10 @@ import ArticoliPrezzi from "./ArticoliPrezzi";
 import CostiDiretti from "./CostiDiretti";
 import ControlloAnomalie from "./ControlloAnomalie";
 import DaArmonizzare from "./DaArmonizzare";
-import ReportQuantitaMangimi from "./ReportQuantitaMangimi";
 import PerformanceEta from "./PerformanceEta";
 import PerformanceEtaMaschi from "./PerformanceEtaMaschi";
 import PerformanceEtaFemmine from "./PerformanceEtaFemmine";
 import StoricoPerformanceEta from "./StoricoPerformanceEta";
-import ReportStoricoMangimi from "./ReportStoricoMangimi";
-import ReportQuantitaForaggio from "./ReportQuantitaForaggio";
-import ReportStoricoForaggio from "./ReportStoricoForaggio";
 import AccrescimentoCostiPagina from "./AccrescimentoCostiPagina";
 import RazioniSuiniComposizione from "./RazioniSuiniComposizione";
 import RazioniSuiniConsumi from "./RazioniSuiniConsumi";
@@ -67,6 +63,10 @@ const MENU = [
   ]},
   { tipo: "cartella", id: "cart-alimentaria", label: "Alimentaria", icon: "🌾", contenuto: [
     { tipo: "voce", id: "costi-quantita-alimentare", label: "Costi e Quantità", icon: "📊" },
+    { tipo: "sottocartella", id: "sub-razioni-suini", label: "Razioni Suini", icon: "🥣", voci: [
+      { id: "razioni-suini-composizione", label: "Composizione Razioni", icon: "📋" },
+      { id: "razioni-suini-consumi", label: "Consumi", icon: "📊" },
+    ]},
   ]},
   { tipo: "cartella", id: "cart-animali", label: "Animali", icon: "🐄", contenuto: [
     { tipo: "voce", id: "istr-animali", label: "Istruzioni", icon: "📖" },
@@ -75,26 +75,6 @@ const MENU = [
     { tipo: "voce", id: "scheda", label: "Scheda Animale", icon: "🔍" },
     { tipo: "voce", id: "riproduttori", label: "Report Riproduttori", icon: "🐄" },
     { tipo: "voce", id: "consultazione-animali", label: "Consultazione Animali per Anno", icon: "📋" },
-  ]},
-  { tipo: "cartella", id: "cart-costi", label: "Costi", icon: "📊", contenuto: [
-    { tipo: "voce", id: "istr-costi", label: "Istruzioni", icon: "📖" },
-    { tipo: "voce", id: "costi", label: "Report Costi", icon: "📊" },
-    { tipo: "voce", id: "cespiti", label: "Cespiti", icon: "🏗️" },
-  ]},
-  { tipo: "cartella", id: "cart-studi", label: "Studi", icon: "🔎", contenuto: [
-    { tipo: "voce", id: "istr-studi", label: "Istruzioni", icon: "📖" },
-    { tipo: "sottocartella", id: "sub-mangimi", label: "Mangimi", icon: "🌾", voci: [
-      { id: "quantitamangimi", label: "Report Quantità Mangimi", icon: "🌾" },
-      { id: "storico-mangimi-bovini", label: "Storico Mangimi — Bovini", icon: "📈" },
-      { id: "storico-mangimi-suini", label: "Storico Mangimi — Suini", icon: "📈" },
-      { id: "storico-mangimi-ovini", label: "Storico Mangimi — Ovini", icon: "📈" },
-    ]},
-    { tipo: "sottocartella", id: "sub-foraggio", label: "Foraggio", icon: "🌱", voci: [
-      { id: "quantitaforaggio", label: "Report Quantità Foraggio", icon: "🌱" },
-      { id: "storico-foraggio-bovini", label: "Storico Foraggio — Bovini", icon: "📈" },
-      { id: "storico-foraggio-suini", label: "Storico Foraggio — Suini", icon: "📈" },
-      { id: "storico-foraggio-ovini", label: "Storico Foraggio — Ovini", icon: "📈" },
-    ]},
     { tipo: "sottocartella", id: "sub-accrescimento-costi", label: "Accrescimento e Costi", icon: "⚖️", voci: [
       { id: "acc-bovini-tutti", label: "Bovini — Tutti gli Alimenti", icon: "🐄" },
       { id: "acc-bovini-mangimi", label: "Bovini — Mangimi", icon: "🌾" },
@@ -106,11 +86,13 @@ const MENU = [
       { id: "storico-performanceeta", label: "Bovini — Storico", icon: "📈" },
     ]},
   ]},
-  { tipo: "cartella", id: "cart-razioni", label: "Razioni", icon: "🥣", contenuto: [
-    { tipo: "sottocartella", id: "sub-razioni-suini", label: "Suini", icon: "🐖", voci: [
-      { id: "razioni-suini-composizione", label: "Composizione Razioni", icon: "📋" },
-      { id: "razioni-suini-consumi", label: "Consumi", icon: "📊" },
-    ]},
+  { tipo: "cartella", id: "cart-costi", label: "Costi", icon: "📊", contenuto: [
+    { tipo: "voce", id: "istr-costi", label: "Istruzioni", icon: "📖" },
+    { tipo: "voce", id: "costi", label: "Report Costi", icon: "📊" },
+    { tipo: "voce", id: "cespiti", label: "Cespiti", icon: "🏗️" },
+  ]},
+  { tipo: "cartella", id: "cart-studi", label: "Studi", icon: "🔎", contenuto: [
+    { tipo: "voce", id: "istr-studi", label: "Istruzioni", icon: "📖" },
   ]},
   { tipo: "voce", id: "parametri", label: "Parametri", icon: "⚙️" },
 ];
@@ -273,14 +255,6 @@ export default function App() {
         {tab === "costidiretti" && <CostiDiretti />}
         {tab === "anomalie" && <ControlloAnomalie />}
         {tab === "armonizza" && <DaArmonizzare />}
-        {tab === "quantitamangimi" && <ReportQuantitaMangimi />}
-        {tab === "storico-mangimi-bovini" && <ReportStoricoMangimi specieFiltro="bovino" titolo="Bovini" />}
-        {tab === "storico-mangimi-suini" && <ReportStoricoMangimi specieFiltro="suino" titolo="Suini" />}
-        {tab === "storico-mangimi-ovini" && <ReportStoricoMangimi specieFiltro="ovino" titolo="Ovini" />}
-        {tab === "quantitaforaggio" && <ReportQuantitaForaggio />}
-        {tab === "storico-foraggio-bovini" && <ReportStoricoForaggio specieFiltro="bovino" titolo="Bovini" />}
-        {tab === "storico-foraggio-suini" && <ReportStoricoForaggio specieFiltro="suino" titolo="Suini" />}
-        {tab === "storico-foraggio-ovini" && <ReportStoricoForaggio specieFiltro="ovino" titolo="Ovini" />}
         {tab === "acc-bovini-tutti" && <AccrescimentoCostiPagina campo="stepVivoTuttiAlimenti" titolo="Tutti gli Alimenti" descrizione="Mangimi + Foraggio insieme (il Pascolo si aggiungerà quando avremo i suoi dati) — il quadro economico completo di quanto costa la crescita, per fascia d'età." />}
         {tab === "acc-bovini-mangimi" && <AccrescimentoCostiPagina campo="stepVivoSoloMangimi" titolo="Mangimi" descrizione="Solo il costo/consumo Mangimi, isolato dal Foraggio — utile per capire il peso specifico di questo centro di costo da solo." />}
         {tab === "acc-bovini-foraggio" && <AccrescimentoCostiPagina campo="stepVivoSoloForaggio" titolo="Foraggio" descrizione="Solo il costo/consumo Foraggio, isolato dai Mangimi — utile per capire il peso specifico di questo centro di costo da solo." />}

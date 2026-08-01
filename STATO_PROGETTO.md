@@ -1029,3 +1029,16 @@ Avevo scritto "Integratori Alimentari" (A maiuscola) sia in `CENTRI_CON_QUANTITA
 Testato con caso mock: somma corretta su 3 centri (170€/1600kg bovini dai tre parziali), incidenza calcolata correttamente sul totale sommato.
 
 **Non ancora fatto**: export Excel di pagina 2 (pagina 1 non ce l'ha nemmeno ancora, vedi nota sezione 88) — da aggiungere se richiesto. La media storica nella pagina 2 non gestisce ancora il caso in cui uno dei 4 anni non abbia dati (es. azienda non ancora attiva) — divide sempre per 4, da correggere se capita un caso reale.
+
+## 92. Riordino menu — Alimentaria assorbe Razioni, Animali assorbe Accrescimento e Costi, eliminate Mangimi/Foraggio da Studi
+
+**Richiesto da Filippo**: ora che Alimentaria → Costi e Quantità copre Mangimi/Foraggio/Integratori, le vecchie sottocartelle "Mangimi" e "Foraggio" in Studi non servono più (eliminate). "Razioni" (cartella di primo livello) spostata come sottocartella dentro "Alimentaria". "Accrescimento e Costi" (sottocartella di Studi) spostata dentro "Animali".
+
+**Vincolo tecnico scoperto**: il menu supporta solo UN livello di sottocartella (cartella → sottocartella → voci semplici) — non sottocartella dentro sottocartella. "Razioni" aveva al suo interno una sottocartella "Suini" — spostandola dentro Alimentaria, il livello "Suini" è stato appiattito nell'etichetta della sottocartella stessa ("Razioni Suini", invece di "Razioni" → "Suini" → voci).
+
+**Struttura risultante**:
+- Alimentaria: Costi e Quantità (voce) + Razioni Suini (sottocartella: Composizione Razioni, Consumi)
+- Animali: le voci di sempre + Accrescimento e Costi (sottocartella, con le sue 8 voci invariate)
+- Studi: solo Istruzioni (Mangimi e Foraggio eliminate)
+
+**Pulizia completa**: rimosse anche le righe di rendering (`{tab === "quantitamangimi" && ...}` ecc.) e i 4 import (`ReportQuantitaMangimi`, `ReportStoricoMangimi`, `ReportQuantitaForaggio`, `ReportStoricoForaggio`) ormai orfani, non più raggiungibili da nessun punto del menu — i relativi 4 file `.jsx` restano nel progetto (non cancellati) ma non più collegati all'app.
