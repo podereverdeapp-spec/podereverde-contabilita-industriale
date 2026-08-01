@@ -693,7 +693,7 @@ function RigaFattura({ riga, aree, centriPerArea, regoleArmonizzazione, onChange
   const isAmmortamento = r.editArea === "Ammortamenti";
   const eraMaschera = r.stato === "MASCHERA"; // solo per queste ha senso proporre di creare una regola
 
-  const CENTRI_CON_QUANTITA = ["Foraggio", "Mangimi", "Integratori Alimentari", "Coltivazione Sementi", "Coltivazione Concimi e Fitosanitari", "Gasolio e lubrificanti"];
+  const CENTRI_CON_QUANTITA = ["Foraggio", "Mangimi", "Integratori alimentari", "Coltivazione Sementi", "Coltivazione Concimi e Fitosanitari", "Gasolio e lubrificanti"];
   const centroCostoAttuale = r.editCentro || null;
   const daArmonizzare = centroCostoAttuale && CENTRI_CON_QUANTITA.includes(centroCostoAttuale) && r.fornitore_obj?.id &&
     !(regoleArmonizzazione || []).some(g => g.fornitore_id === r.fornitore_obj.id && g.descrizione_prodotto.trim().toLowerCase() === r.descrizione.trim().toLowerCase());

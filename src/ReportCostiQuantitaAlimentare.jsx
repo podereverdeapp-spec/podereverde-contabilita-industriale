@@ -3,7 +3,7 @@ import { C } from "./style";
 import { formattaEuro, formattaNumero, round2 } from "./parsingUtils";
 import { calcolaDatiQuantitaAnno } from "./calcoloQuantitaMangimi";
 
-const CENTRI = ["Mangimi", "Foraggio", "Integratori Alimentari"];
+const CENTRI = ["Mangimi", "Foraggio", "Integratori alimentari"];
 const SPECIE = [
   { chiave: "bovino", label: "Bovini", colore: C.bovini },
   { chiave: "suino", label: "Suini", colore: C.suini },
@@ -77,7 +77,7 @@ export default function ReportCostiQuantitaAlimentare() {
     <div style={{ padding: 20, maxWidth: 1300, margin: "0 auto" }}>
       <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Costi e Quantità — Alimentazione</h1>
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 16 }}>
-        Mangimi, Foraggio e Integratori Alimentari: quantità (Kg) e costo d'acquisto, totali e ripartiti tra Bovini/Suini/Ovini (quota propria della specie + quota parte dei consumi "Generali", secondo gli UBA-giorni). Clicca su un centro di costo per vederne il dettaglio per prodotto — i prodotti "ORZO" di Mangimi sono sempre accorpati in una riga unica, indipendentemente dal fornitore.
+        Mangimi, Foraggio e Integratori alimentari: quantità (Kg) e costo d'acquisto, totali e ripartiti tra Bovini/Suini/Ovini (quota propria della specie + quota parte dei consumi "Generali", secondo gli UBA-giorni). Clicca su un centro di costo per vederne il dettaglio per prodotto — i prodotti "ORZO" di Mangimi sono sempre accorpati in una riga unica, indipendentemente dal fornitore.
       </p>
 
       <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 16 }}>
