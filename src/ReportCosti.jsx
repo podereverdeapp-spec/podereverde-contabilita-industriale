@@ -308,6 +308,14 @@ export default function ReportCosti({ anno }) {
                     <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700, color: C.primary }}>{formattaEuro(r.incidenzaUbaGiorno, 4)}</td>
                   </tr>
                 ))}
+                <tr style={{ borderTop: `2px solid ${C.border}`, fontWeight: 700, background: C.bg }}>
+                  <td style={{ padding: "6px 8px" }}>Totale</td>
+                  <td style={{ padding: "6px 8px", textAlign: "right" }}>{formattaNumero(risultato.perSpecie.reduce((s, r) => s + r.percentualeSulTotale, 0), 1)}%</td>
+                  <td style={{ padding: "6px 8px", textAlign: "right" }}>{formattaEuro(risultato.perSpecie.reduce((s, r) => s + r.costoDirettoSpecie, 0))}</td>
+                  <td style={{ padding: "6px 8px", textAlign: "right" }}>{formattaEuro(risultato.perSpecie.reduce((s, r) => s + r.quotaGeneraliSpecie, 0))}</td>
+                  <td style={{ padding: "6px 8px", textAlign: "right" }}>{formattaEuro(risultato.perSpecie.reduce((s, r) => s + r.costoAllocatoTotale, 0))}</td>
+                  <td style={{ padding: "6px 8px", textAlign: "right", color: C.muted, fontWeight: 400, fontSize: 11 }}>— (denominatori diversi per specie)</td>
+                </tr>
               </tbody>
             </table>
           </div>
@@ -333,6 +341,17 @@ export default function ReportCosti({ anno }) {
                       </td>
                     </tr>
                   ))}
+                  <tr style={{ borderTop: `2px solid ${C.red}`, fontWeight: 700, background: "#FDECEC" }}>
+                    <td style={{ padding: "6px 8px", color: C.red }}>Totale</td>
+                    <td style={{ padding: "6px 8px", textAlign: "right", color: C.red }}>
+                      {formattaEuro(["Pollame", "Cavalli", "Orto", "Animali non d'allevamento (non specificato)"].reduce((s, k) => s + (risultato.costiAltreSpecie[k] || 0), 0))}
+                    </td>
+                    <td style={{ padding: "6px 8px", textAlign: "right", color: C.red }}>
+                      {risultato.tasso.ubaGiorniProduttivi > 0
+                        ? formattaEuro(["Pollame", "Cavalli", "Orto", "Animali non d'allevamento (non specificato)"].reduce((s, k) => s + (risultato.costiAltreSpecie[k] || 0), 0) / risultato.tasso.ubaGiorniProduttivi, 4)
+                        : "—"}/UBA-gg
+                    </td>
+                  </tr>
                 </tbody>
               </table>
               <div style={{ fontSize: 11, color: C.text, marginTop: 8 }}>
