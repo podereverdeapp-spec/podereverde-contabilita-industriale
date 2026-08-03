@@ -41,25 +41,30 @@ import { C, FONT } from "./style";
 
 const MENU = [
   { tipo: "voce", id: "dashboard", label: "Dashboard", icon: "📊" },
-  { tipo: "cartella", id: "cart-fatture", label: "Fatture", icon: "📥", contenuto: [
+  { tipo: "cartella", id: "cart-fatture", label: "Carica Fatture", icon: "📥", contenuto: [
     { tipo: "voce", id: "istr-fatture", label: "Istruzioni", icon: "📖" },
-    { tipo: "voce", id: "carica", label: "Carica Fatture", icon: "📥" },
+    { tipo: "voce", id: "carica", label: "Carica Fatture Passive massivamente", icon: "📥" },
     { tipo: "voce", id: "inserimento-manuale", label: "Inserimento Manuale Fattura", icon: "✍️" },
     { tipo: "voce", id: "passive", label: "Fatture Passive", icon: "📄" },
-    { tipo: "voce", id: "attive", label: "Fatture Attive", icon: "💰" },
-    { tipo: "voce", id: "costidiretti", label: "Costi Diretti", icon: "💼" },
-    { tipo: "voce", id: "ricerca", label: "Ricerca", icon: "🔎" },
+    { tipo: "voce", id: "attive", label: "Carica Fatture Attive", icon: "💰" },
+    { tipo: "voce", id: "costidiretti", label: "Carica Costi Diretti", icon: "💼" },
     { tipo: "voce", id: "anomalie", label: "Controllo Anomalie", icon: "🔍" },
-    { tipo: "voce", id: "armonizza", label: "Da Armonizzare", icon: "⚖️" },
-    { tipo: "voce", id: "articoliprezzi", label: "Articoli & Prezzi", icon: "🏷️" },
-    { tipo: "voce", id: "prompt-estrazione-pdf", label: "Prompt Estrazione PDF", icon: "🤖" },
+    { tipo: "voce", id: "armonizza", label: "Armonizzare Unità Misura Fatture", icon: "⚖️" },
+    { tipo: "voce", id: "prompt-estrazione-pdf", label: "Prompt per carico Massivo", icon: "🤖" },
     { tipo: "voce", id: "verifica-fatture-mancanti", label: "Verifica Fatture Mancanti", icon: "🔍" },
     { tipo: "voce", id: "verifica-righe-mancanti", label: "Verifica Righe Mancanti", icon: "🔎" },
   ]},
-  { tipo: "cartella", id: "cart-anagrafiche", label: "Anagrafiche", icon: "🏢", contenuto: [
-    { tipo: "voce", id: "istr-anagrafiche", label: "Istruzioni", icon: "📖" },
+  { tipo: "cartella", id: "cart-ricerca", label: "Ricerca: Fatture, Articoli, Prezzi, Anagrafiche", icon: "🔎", contenuto: [
+    { tipo: "voce", id: "istr-ricerca", label: "Istruzioni", icon: "📖" },
+    { tipo: "voce", id: "ricerca", label: "Ricerca", icon: "🔎" },
+    { tipo: "voce", id: "articoliprezzi", label: "Articoli & Prezzi", icon: "🏷️" },
     { tipo: "voce", id: "fornitori", label: "Fornitori", icon: "🏢" },
     { tipo: "voce", id: "clienti", label: "Clienti", icon: "🤝" },
+  ]},
+  { tipo: "cartella", id: "cart-costi", label: "Analisi Costi", icon: "📊", contenuto: [
+    { tipo: "voce", id: "istr-costi", label: "Istruzioni", icon: "📖" },
+    { tipo: "voce", id: "costi", label: "Report Costi", icon: "📊" },
+    { tipo: "voce", id: "cespiti", label: "Cespiti", icon: "🏗️" },
   ]},
   { tipo: "cartella", id: "cart-alimentaria", label: "Alimentaria", icon: "🌾", contenuto: [
     { tipo: "voce", id: "costi-quantita-alimentare", label: "Costi e Quantità", icon: "📊" },
@@ -85,11 +90,6 @@ const MENU = [
       { id: "performanceeta-femmine", label: "Bovini — Solo Femmine", icon: "♀️" },
       { id: "storico-performanceeta", label: "Bovini — Storico", icon: "📈" },
     ]},
-  ]},
-  { tipo: "cartella", id: "cart-costi", label: "Costi", icon: "📊", contenuto: [
-    { tipo: "voce", id: "istr-costi", label: "Istruzioni", icon: "📖" },
-    { tipo: "voce", id: "costi", label: "Report Costi", icon: "📊" },
-    { tipo: "voce", id: "cespiti", label: "Cespiti", icon: "🏗️" },
   ]},
   { tipo: "cartella", id: "cart-studi", label: "Studi", icon: "🔎", contenuto: [
     { tipo: "voce", id: "istr-studi", label: "Istruzioni", icon: "📖" },
@@ -268,7 +268,7 @@ export default function App() {
         {tab === "verifica-righe-mancanti" && <VerificaRigheMancanti />}
         {tab === "costi-quantita-alimentare" && <ReportCostiQuantitaAlimentare />}
         {tab === "istr-fatture" && <IstruzioniFatture />}
-        {tab === "istr-anagrafiche" && <IstruzioniAnagrafiche />}
+        {tab === "istr-ricerca" && <IstruzioniAnagrafiche />}
         {tab === "istr-animali" && <IstruzioniAnimali />}
         {tab === "istr-costi" && <IstruzioniCosti />}
         {tab === "istr-studi" && <IstruzioniStudi />}

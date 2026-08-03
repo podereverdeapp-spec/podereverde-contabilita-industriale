@@ -1060,10 +1060,6 @@ Testato con caso mock: ripartizione 50/50 con UBA-giorni uguali, e ripartizione 
 
 **Non toccato**: `SPECIE_ACQUISTO` (usato per Acquisto Animali e per la parte "ingresso" di Trasporto Animali) resta invariato — ha già "Piu' specie acquistate insieme" come opzione generica, Filippo non ha chiesto di renderla più specifica lì.
 
-## DA FARE (promemoria aperto)
-
-- **Riscrivere tutte le pagine "Istruzioni"** (una per ogni cartella del menu: Fatture, Anagrafiche, Alimentaria, Animali, Costi, Studi) — sono rimaste indietro rispetto agli sviluppi fatti in questa sessione (nuove pagine, campi, funzionalità aggiunte/spostate/rimosse). Da fare quando il resto si stabilizza, per non doverle riscrivere più volte mentre le cose cambiano ancora.
-
 ## 94. Bug reale trovato — "Costi Diretti" (es. costo del lavoro) mai letti da nessun report
 
 **Segnalazione di Filippo**: costo del lavoro caricato via "Costi Diretti" per il 2025, ma non compare in nessun report.
@@ -1077,3 +1073,32 @@ Testato con caso mock: ripartizione 50/50 con UBA-giorni uguali, e ripartizione 
 **Non toccato, e correttamente escluso**: `calcoloQuantitaMangimi.js` (Report Quantità/Alimentaria) — i Costi Diretti non hanno descrizione prodotto né quantità, quindi non c'entrano con quel flusso (non sono mangimi/foraggio/integratori).
 
 Testato con caso mock: unione corretta, totale_riga mappato da importo, campi di classificazione preservati.
+
+## 95. Costi → Report Costi: righe di totale in fondo alle due tabelle
+
+**Richiesto da Filippo**: totali in fondo alle tabelle di Report Costi.
+
+**Aggiunto**:
+- Tabella "Allocazione per Specie": riga Totale con somma di %/Costi diretti/Quota Generali/Totale allocato — la colonna Incidenza €/UBA-gg mostra un trattino con nota ("denominatori diversi per specie"), dato che sommare rapporti con denominatori diversi (UBA-giorni di specie diverse) non avrebbe un significato corretto
+- Tabella "Altre Specie" (Pollame/Cavalli/Orto): riga Totale con somma del costo diretto E dell'incidenza (qui la somma è corretta, perché tutte le righe condividono lo stesso denominatore — gli UBA-giorni produttivi dell'allevamento)
+
+## 96. Riorganizzazione completa del menu — nuova cartella Ricerca, rinomine, nuovo ordine
+
+**Richiesto da Filippo**: riordino strutturale completo del menu, con nuovi nomi e una nuova cartella dedicata alla ricerca trasversale.
+
+**Struttura risultante**:
+- Dashboard
+- **Carica Fatture** (era "Fatture"): Istruzioni, Carica Fatture Passive massivamente (era "Carica Fatture"), Inserimento Manuale Fattura, Fatture Passive, Carica Fatture Attive (era "Fatture Attive"), Carica Costi Diretti (era "Costi Diretti"), Controllo Anomalie, Armonizzare Unità Misura Fatture (era "Da Armonizzare"), Prompt per carico Massivo (era "Prompt Estrazione PDF"), Verifica Fatture Mancanti, Verifica Righe Mancanti
+- **Ricerca: Fatture, Articoli, Prezzi, Anagrafiche** (nuova): Istruzioni, Ricerca (da Fatture), Articoli & Prezzi (da Fatture), Fornitori (da Anagrafiche), Clienti (da Anagrafiche) — la cartella "Anagrafiche" come tale non esiste più, assorbita qui
+- **Analisi Costi** (era "Costi", spostata qui sotto Ricerca): Istruzioni, Report Costi, Cespiti
+- Alimentaria, Animali, Studi — invariate nella struttura interna
+- Parametri (in fondo, invariato)
+
+**Nessun id interno cambiato** — solo `label` (visibili nel menu) e posizione nell'albero; le righe di rendering (`{tab === "..." && <Componente />}`) non hanno richiesto modifiche, dato che accoppiano per id, non per etichetta o posizione.
+
+**Placeholder temporaneo**: la nuova cartella Ricerca punta provvisoriamente a `IstruzioniAnagrafiche.jsx` per le sue Istruzioni (contenuto solo parzialmente pertinente, dato che la cartella ora mischia Ricerca/Articoli&Prezzi con Fornitori/Clienti) — da riscrivere come parte del prossimo punto.
+
+## DA FARE (promemoria aggiornato)
+
+- **Scrivere Istruzioni Generali** (nuova pagina, sopra Dashboard nel menu) che spieghi le 7 cartelle e cosa contiene ciascuna
+- **Riscrivere le Istruzioni di dettaglio di ogni cartella** (Carica Fatture, Ricerca, Analisi Costi, Alimentaria, Animali, Studi) in base a tutti gli sviluppi fatti in questa sessione — sostituisce e completa il promemoria precedente (sezione "DA FARE" originale, ora assorbito qui)
