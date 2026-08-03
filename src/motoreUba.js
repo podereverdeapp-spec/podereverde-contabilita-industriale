@@ -153,28 +153,36 @@ export function calcolaRigaAggregata(costiDiretti, ubaGiorniProduttiviPerSpecie,
   const round2 = n => Math.round((n + Number.EPSILON) * 100) / 100;
 
   const imponibileComplessivo = round2(
-    (costiDiretti.bovino || 0) + (costiDiretti.suino || 0) + (costiDiretti.ovino || 0) + (costiDiretti.generale || 0) + (costiDiretti.bovinoOvino || 0)
+    (costiDiretti.bovino || 0) + (costiDiretti.suino || 0) + (costiDiretti.ovino || 0) + (costiDiretti.generale || 0)
+    + (costiDiretti.bovinoOvino || 0) + (costiDiretti.bovinoSuino || 0) + (costiDiretti.suinoOvino || 0)
   );
   const tassoArea = ubaGiorniProduttiviAziendali > 0 ? imponibileComplessivo / ubaGiorniProduttiviAziendali : 0;
 
   const tassoGenerali = ubaGiorniProduttiviAziendali > 0 ? (costiDiretti.generale || 0) / ubaGiorniProduttiviAziendali : 0;
 
-  // "Bovini e Ovini" — pool misto (richiesto da Filippo, es. il Foraggio: i suini non
-  // se ne cibano mai) — si ripartisce SOLO tra bovino e ovino, in proporzione ai loro
-  // UBA-giorni; il denominatore esclude del tutto i suini, non solo la quota diretta.
+  // Pool misti a due specie (richiesto da Filippo, es. il Foraggio: i suini non se ne
+  // cibano mai; o il Trasporto Animali quando vengono trasportate solo due specie insieme)
+  // — ciascuno si ripartisce SOLO tra le due specie coinvolte, in proporzione ai loro
+  // UBA-giorni; il denominatore esclude del tutto la terza specie, non solo la sua quota diretta.
   const ubaGiorniBovinoOvino = (ubaGiorniProduttiviPerSpecie.bovino || 0) + (ubaGiorniProduttiviPerSpecie.ovino || 0);
   const tassoBovinoOvino = ubaGiorniBovinoOvino > 0 ? (costiDiretti.bovinoOvino || 0) / ubaGiorniBovinoOvino : 0;
+  const ubaGiorniBovinoSuino = (ubaGiorniProduttiviPerSpecie.bovino || 0) + (ubaGiorniProduttiviPerSpecie.suino || 0);
+  const tassoBovinoSuino = ubaGiorniBovinoSuino > 0 ? (costiDiretti.bovinoSuino || 0) / ubaGiorniBovinoSuino : 0;
+  const ubaGiorniSuinoOvino = (ubaGiorniProduttiviPerSpecie.suino || 0) + (ubaGiorniProduttiviPerSpecie.ovino || 0);
+  const tassoSuinoOvino = ubaGiorniSuinoOvino > 0 ? (costiDiretti.suinoOvino || 0) / ubaGiorniSuinoOvino : 0;
 
   const perSpecie = {};
   for (const sp of ["bovino", "suino", "ovino"]) {
     const ubaGiorniSp = ubaGiorniProduttiviPerSpecie[sp] || 0;
     const quotaGenerali = round2(tassoGenerali * ubaGiorniSp);
     const quotaBovinoOvino = sp !== "suino" ? round2(tassoBovinoOvino * ubaGiorniSp) : 0;
-    const costoAllocato = round2((costiDiretti[sp] || 0) + quotaGenerali + quotaBovinoOvino);
+    const quotaBovinoSuino = sp !== "ovino" ? round2(tassoBovinoSuino * ubaGiorniSp) : 0;
+    const quotaSuinoOvino = sp !== "bovino" ? round2(tassoSuinoOvino * ubaGiorniSp) : 0;
+    const costoAllocato = round2((costiDiretti[sp] || 0) + quotaGenerali + quotaBovinoOvino + quotaBovinoSuino + quotaSuinoOvino);
     const incidenza = ubaGiorniSp > 0 ? costoAllocato / ubaGiorniSp : 0;
     perSpecie[sp] = {
       costoDiretto: round2(costiDiretti[sp] || 0),
-      quotaGenerali, quotaBovinoOvino,
+      quotaGenerali, quotaBovinoOvino, quotaBovinoSuino, quotaSuinoOvino,
       costoAllocato,
       incidenza: Math.round(incidenza * 1000000) / 1000000,
     };

@@ -57,6 +57,14 @@ export default function ReportCosti({ anno }) {
         if (eArt) throw new Error(eArt.message);
         articoliAnno = numerizzaCampi(articoli || [], ["totale_riga"]);
       }
+
+      // Costi Diretti (es. costo del lavoro) — inseriti a mano, senza passare da una fattura,
+      // ma vanno sommati insieme alle righe da fattura per non sparire dal report.
+      const { data: costiDiretti, error: eCD } = await fetchAllPages((da, a) => supabase
+        .from("ci_costi_diretti").select("importo, tipo_costo, destinazione, area")
+        .gte("data", `${anno}-01-01`).lte("data", `${anno}-12-31`).range(da, a));
+      if (eCD) throw new Error(eCD.message);
+      articoliAnno = articoliAnno.concat(numerizzaCampi(costiDiretti || [], ["importo"]).map(c => ({ ...c, totale_riga: c.importo })));
       const costiOrdinari = articoliAnno.reduce((s, r) => s + (r.totale_riga || 0), 0);
 
       // Quote di ammortamento dell'anno, CON la specie di imputazione del cespite
@@ -85,6 +93,8 @@ export default function ReportCosti({ anno }) {
 
       let costiGenerali = 0;
       let costiBovinoOvino = 0;
+      let costiBovinoSuino = 0;
+      let costiSuinoOvino = 0;
       const costiDirettiPerSpecie = { bovino: 0, suino: 0, ovino: 0 };
       const costiAltreSpecie = { Pollame: 0, Cavalli: 0, Orto: 0, "Animali non d'allevamento (non specificato)": 0 };
 
@@ -95,6 +105,8 @@ export default function ReportCosti({ anno }) {
         if (SPECIE_SENZA_UBA.includes(dest)) { costiAltreSpecie[dest] += (r.totale_riga || 0); return; }
         if (area === AREA_ANIMALI_NON_ALLEVAMENTO) { costiAltreSpecie["Animali non d'allevamento (non specificato)"] += (r.totale_riga || 0); return; }
         if (dest === "Bovini e Ovini") { costiBovinoOvino += (r.totale_riga || 0); return; }
+        if (dest === "Bovini e Suini") { costiBovinoSuino += (r.totale_riga || 0); return; }
+        if (dest === "Suini e Ovini") { costiSuinoOvino += (r.totale_riga || 0); return; }
         const specieMatch = Object.entries(MAPPA_SPECIE).find(([, v]) => v === dest);
         if (specieMatch) costiDirettiPerSpecie[specieMatch[0]] += (r.totale_riga || 0);
         else costiGenerali += (r.totale_riga || 0); // Generali, vuoto, o non riconosciuto -> generale
@@ -117,9 +129,14 @@ export default function ReportCosti({ anno }) {
       // si ripartisce SOLO tra bovino e ovino, in proporzione ai loro UBA-giorni produttivi;
       // il denominatore esclude del tutto i suini.
       const ubaGiorniProduttiviBovino = righeUba.filter(r => r.specie === "bovino" && r.categoria_contabile !== "IMPRODUTTIVO_USCITO").reduce((s, r) => s + r.uba_giorni, 0);
+      const ubaGiorniProduttiviSuino = righeUba.filter(r => r.specie === "suino" && r.categoria_contabile !== "IMPRODUTTIVO_USCITO").reduce((s, r) => s + r.uba_giorni, 0);
       const ubaGiorniProduttiviOvino = righeUba.filter(r => r.specie === "ovino" && r.categoria_contabile !== "IMPRODUTTIVO_USCITO").reduce((s, r) => s + r.uba_giorni, 0);
       const ubaGiorniProduttiviBovinoOvino = ubaGiorniProduttiviBovino + ubaGiorniProduttiviOvino;
       const tassoBovinoOvino = ubaGiorniProduttiviBovinoOvino > 0 ? costiBovinoOvino / ubaGiorniProduttiviBovinoOvino : 0;
+      const ubaGiorniProduttiviBovinoSuino = ubaGiorniProduttiviBovino + ubaGiorniProduttiviSuino;
+      const tassoBovinoSuino = ubaGiorniProduttiviBovinoSuino > 0 ? costiBovinoSuino / ubaGiorniProduttiviBovinoSuino : 0;
+      const ubaGiorniProduttiviSuinoOvino = ubaGiorniProduttiviSuino + ubaGiorniProduttiviOvino;
+      const tassoSuinoOvino = ubaGiorniProduttiviSuinoOvino > 0 ? costiSuinoOvino / ubaGiorniProduttiviSuinoOvino : 0;
 
       const perSpecie = ["bovino", "suino", "ovino"].map(sp => {
         const righeSp = righeUba.filter(r => r.specie === sp);
@@ -134,7 +151,9 @@ export default function ReportCosti({ anno }) {
 
         const quotaGeneraliSpecie = round2(tassoGenerali * ubaGiorniSpProduttivi);
         const quotaBovinoOvinoSpecie = sp !== "suino" ? round2(tassoBovinoOvino * ubaGiorniSpProduttivi) : 0;
-        const costoAllocatoTotale = round2(costoDirettoSpecie + quotaGeneraliSpecie + quotaBovinoOvinoSpecie);
+        const quotaBovinoSuinoSpecie = sp !== "ovino" ? round2(tassoBovinoSuino * ubaGiorniSpProduttivi) : 0;
+        const quotaSuinoOvinoSpecie = sp !== "bovino" ? round2(tassoSuinoOvino * ubaGiorniSpProduttivi) : 0;
+        const costoAllocatoTotale = round2(costoDirettoSpecie + quotaGeneraliSpecie + quotaBovinoOvinoSpecie + quotaBovinoSuinoSpecie + quotaSuinoOvinoSpecie);
         const incidenzaUbaGiorno = ubaGiorniSpProduttivi > 0 ? costoAllocatoTotale / ubaGiorniSpProduttivi : 0;
 
         return {

@@ -1042,3 +1042,38 @@ Testato con caso mock: somma corretta su 3 centri (170€/1600kg bovini dai tre 
 - Studi: solo Istruzioni (Mangimi e Foraggio eliminate)
 
 **Pulizia completa**: rimosse anche le righe di rendering (`{tab === "quantitamangimi" && ...}` ecc.) e i 4 import (`ReportQuantitaMangimi`, `ReportStoricoMangimi`, `ReportQuantitaForaggio`, `ReportStoricoForaggio`) ormai orfani, non più raggiungibili da nessun punto del menu — i relativi 4 file `.jsx` restano nel progetto (non cancellati) ma non più collegati all'app.
+
+## 93. Nuove destinazioni "Bovini e Suini" e "Suini e Ovini" — ripartizione a due specie, ovunque nell'app
+
+**Richiesto da Filippo**, partito da Trasporto Animali: oltre a "Bovini e Ovini" (già esistente), vuole poter scegliere anche "Bovini Suini" e "Suini Ovini" come destinazione, con ripartizione del costo tra le due specie coinvolte (UBA-giorni), escludendo sempre la terza.
+
+**Chiarimento importante emerso durante l'indagine**: in Carica Fatture, per le righe di area TRASPORTO ANIMALI, il campo "Destinazione" standard (quello ora esteso) si applica alla parte "trasporto verso il macello" dell'importo; il campo "Specie" separato si applica alla parte "ingresso in allevamento" — sono due campi distinti per due parti diverse della stessa fattura, non un doppione come inizialmente (erroneamente) segnalato da me a Filippo.
+
+**Esteso ovunque, seguendo esattamente lo stesso schema già usato per "Bovini e Ovini"**:
+- `motoreUba.js` → `calcolaRigaAggregata`: aggiunte `quotaBovinoSuino`/`quotaSuinoOvino`, ciascuna ripartita SOLO tra le due specie coinvolte (il denominatore UBA-giorni esclude del tutto la terza)
+- `calcoloReportCosti.js` → `classificaDestinazione` + le 3 inizializzazioni di `costiDiretti`
+- `calcoloQuantitaMangimi.js` → `MAPPA_DESTINAZIONE_SPECIE` + `costiDiretti`/`kgDiretti`
+- `ReportCosti.jsx` → ha una propria logica NON condivisa (formula "aggressiva" per gli improduttivi, diversa da motoreUba.js) — estesa in parallelo con lo stesso pattern (`costiBovinoSuino`/`costiSuinoOvino`, tassi dedicati, quote nel costo allocato finale)
+- Tendine "Destinazione" aggiornate in tutti i 6 file che la usano: ArticoliPrezzi, CaricaFatture, CostiDiretti, InserimentoManualeFattura, Ricerca, VerificaRigheMancanti
+
+Testato con caso mock: ripartizione 50/50 con UBA-giorni uguali, e ripartizione proporzionale 2:1 con UBA-giorni diversi — in entrambi i casi la terza specie riceve sempre zero.
+
+**Non toccato**: `SPECIE_ACQUISTO` (usato per Acquisto Animali e per la parte "ingresso" di Trasporto Animali) resta invariato — ha già "Piu' specie acquistate insieme" come opzione generica, Filippo non ha chiesto di renderla più specifica lì.
+
+## DA FARE (promemoria aperto)
+
+- **Riscrivere tutte le pagine "Istruzioni"** (una per ogni cartella del menu: Fatture, Anagrafiche, Alimentaria, Animali, Costi, Studi) — sono rimaste indietro rispetto agli sviluppi fatti in questa sessione (nuove pagine, campi, funzionalità aggiunte/spostate/rimosse). Da fare quando il resto si stabilizza, per non doverle riscrivere più volte mentre le cose cambiano ancora.
+
+## 94. Bug reale trovato — "Costi Diretti" (es. costo del lavoro) mai letti da nessun report
+
+**Segnalazione di Filippo**: costo del lavoro caricato via "Costi Diretti" per il 2025, ma non compare in nessun report.
+
+**Causa confermata**: `ci_costi_diretti` è una tabella completamente separata da `ci_articoli_fattura` (Costi Diretti non passa da una fattura) — e NESSUNA query di report la leggeva mai. Una funzionalità di inserimento costruita ma mai davvero collegata al resto.
+
+**Corretto in due punti**:
+- `calcoloReportCosti.js` → `caricaDatiGrezziAnno` (la funzione condivisa): aggiunta query su `ci_costi_diretti` per l'anno, mappata (`importo` → `totale_riga`) e unita ad `articoliAnno`. Grazie alla condivisione, questo fix si propaga automaticamente a `calcolaDatiPerArea`/`calcolaDatiPerAreaCentro`, e quindi a Report Per Area, Report Per Area/Centro, e a **tutti e 4** gli Storici (Generale/Bovini/Suini/Ovini) via ReportStorico.jsx — nessuna modifica aggiuntiva necessaria lì.
+- `ReportCosti.jsx` → ha una propria implementazione separata (non passa da `caricaDatiGrezziAnno`) — corretta in parallelo con lo stesso pattern.
+
+**Non toccato, e correttamente escluso**: `calcoloQuantitaMangimi.js` (Report Quantità/Alimentaria) — i Costi Diretti non hanno descrizione prodotto né quantità, quindi non c'entrano con quel flusso (non sono mangimi/foraggio/integratori).
+
+Testato con caso mock: unione corretta, totale_riga mappato da importo, campi di classificazione preservati.

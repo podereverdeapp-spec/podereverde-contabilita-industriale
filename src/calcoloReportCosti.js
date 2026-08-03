@@ -11,6 +11,8 @@ export const MAPPA_SPECIE = { bovino: "Bovini", suino: "Suini", ovino: "Ovini" }
 
 function classificaDestinazione(dest) {
   if (dest === "Bovini e Ovini") return "bovinoOvino";
+  if (dest === "Bovini e Suini") return "bovinoSuino";
+  if (dest === "Suini e Ovini") return "suinoOvino";
   const m = Object.entries(MAPPA_SPECIE).find(([, v]) => v === dest);
   return m ? m[0] : "generale";
 }
@@ -41,12 +43,20 @@ export async function caricaDatiGrezziAnno(anno) {
 
   let articoliAnno = [];
   if (idFattureAnno.length > 0) {
-    const { data: articoli, error: eArt } = await supabase
+    const { data: articoli, error: eArt } = await fetchAllPages((da, a) => supabase
       .from("ci_articoli_fattura").select("totale_riga, tipo_costo, destinazione, area, centro_costo")
-      .in("fattura_id", idFattureAnno).in("tipo_costo", ["Fisso", "Variabile"]);
+      .in("fattura_id", idFattureAnno).in("tipo_costo", ["Fisso", "Variabile"]).range(da, a));
     if (eArt) throw new Error(eArt.message);
     articoliAnno = numerizzaCampi(articoli || [], ["totale_riga"]);
   }
+
+  // Costi Diretti (es. costo del lavoro) — inseriti a mano, senza passare da una fattura,
+  // ma vanno sommati insieme alle righe da fattura per non sparire dai report dei costi.
+  const { data: costiDiretti, error: eCD } = await fetchAllPages((da, a) => supabase
+    .from("ci_costi_diretti").select("importo, tipo_costo, destinazione, area, centro_costo")
+    .gte("data", `${anno}-01-01`).lte("data", `${anno}-12-31`).range(da, a));
+  if (eCD) throw new Error(eCD.message);
+  articoliAnno = articoliAnno.concat(numerizzaCampi(costiDiretti || [], ["importo"]).map(c => ({ ...c, totale_riga: c.importo })));
 
   const { data: cespiti, error: eC } = await supabase.from("ci_cespiti").select("id, specie, categoria");
   if (eC) throw new Error(eC.message);
@@ -81,7 +91,7 @@ export async function calcolaDatiPerArea(anno) {
   const { ubaGiorniProduttiviAziendali, ubaGiorniProduttiviPerSpecie, articoliAnno, quoteAnno, mappaCespiteSpecie } = await caricaDatiGrezziAnno(anno);
 
   const righe = AREE_ORDINARIE.map(area => {
-    const costiDiretti = { bovino: 0, suino: 0, ovino: 0, generale: 0, bovinoOvino: 0 };
+    const costiDiretti = { bovino: 0, suino: 0, ovino: 0, generale: 0, bovinoOvino: 0, bovinoSuino: 0, suinoOvino: 0 };
     articoliAnno.filter(r => (r.area || "").trim() === area).forEach(r => {
       costiDiretti[classificaDestinazione((r.destinazione || "").trim())] += (r.totale_riga || 0);
     });
@@ -113,7 +123,7 @@ export async function calcolaDatiPerAreaCentro(anno) {
   const { ubaGiorniProduttiviAziendali, ubaGiorniProduttiviPerSpecie, articoliAnno, quoteAnno, mappaCespiteSpecie, mappaCespiteCategoria } = await caricaDatiGrezziAnno(anno);
 
   function calcolaPerGruppo(righeFiltrate) {
-    const costiDiretti = { bovino: 0, suino: 0, ovino: 0, generale: 0, bovinoOvino: 0 };
+    const costiDiretti = { bovino: 0, suino: 0, ovino: 0, generale: 0, bovinoOvino: 0, bovinoSuino: 0, suinoOvino: 0 };
     righeFiltrate.forEach(r => { costiDiretti[classificaDestinazione((r.destinazione || "").trim())] += (r.totale_riga || 0); });
     return calcolaRigaAggregata(costiDiretti, ubaGiorniProduttiviPerSpecie, ubaGiorniProduttiviAziendali);
   }
@@ -142,7 +152,7 @@ export async function calcolaDatiPerAreaCentro(anno) {
 
   if (righeAmmortamentoConSpecie.length > 0) {
     function calcolaPerGruppoAmmortamento(righeFiltrate) {
-      const costiDiretti = { bovino: 0, suino: 0, ovino: 0, generale: 0, bovinoOvino: 0 };
+      const costiDiretti = { bovino: 0, suino: 0, ovino: 0, generale: 0, bovinoOvino: 0, bovinoSuino: 0, suinoOvino: 0 };
       righeFiltrate.forEach(r => {
         const specieMatch = Object.entries(MAPPA_SPECIE).find(([, v]) => r.specieCespite.includes(v));
         costiDiretti[specieMatch ? specieMatch[0] : "generale"] += (r.quota || 0);

@@ -4,7 +4,7 @@ import { caricaDatiGrezziAnno } from "./calcoloReportCosti";
 import { calcolaRigaAggregata } from "./motoreUba";
 
 export const CENTRO_COSTO_MANGIMI = "Mangimi";
-const MAPPA_DESTINAZIONE_SPECIE = { "Bovini": "bovino", "Suini": "suino", "Ovini": "ovino", "Generali": "generale", "Bovini e Ovini": "bovinoOvino" };
+const MAPPA_DESTINAZIONE_SPECIE = { "Bovini": "bovino", "Suini": "suino", "Ovini": "ovino", "Generali": "generale", "Bovini e Ovini": "bovinoOvino", "Bovini e Suini": "bovinoSuino", "Suini e Ovini": "suinoOvino" };
 
 // Calcola tutti i dati del Report Quantità per un CENTRO DI COSTO e un anno — usato
 // sia dalla vista ad anno singolo sia, chiamata 4 volte, dalla vista Storico. Generico:
@@ -84,8 +84,8 @@ export async function calcolaDatiQuantitaAnno(anno, centroCosto) {
     if (!prodotti.has(chiaveProd)) {
       prodotti.set(chiaveProd, {
         descrizione: r.descrizione,
-        costiDiretti: { bovino: 0, suino: 0, ovino: 0, generale: 0, bovinoOvino: 0 },
-        kgDiretti: { bovino: 0, suino: 0, ovino: 0, generale: 0, bovinoOvino: 0 },
+        costiDiretti: { bovino: 0, suino: 0, ovino: 0, generale: 0, bovinoOvino: 0, bovinoSuino: 0, suinoOvino: 0 },
+        kgDiretti: { bovino: 0, suino: 0, ovino: 0, generale: 0, bovinoOvino: 0, bovinoSuino: 0, suinoOvino: 0 },
       });
     }
     const p = prodotti.get(chiaveProd);
