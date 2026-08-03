@@ -4,17 +4,28 @@ import { C } from "./style";
 import { numerizzaCampi, round2, formattaEuro, fetchAllPages } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
 import { calcolaResiduoIniziale, calcolaPianoScarico, calcolaValoreRealizzoStimato, calcolaValoreRealizzoReale, calcolaConguaglio } from "./motoreRiproduttori";
+import SchedaRiproduttore from "./SchedaRiproduttore";
 
 export default function ReportRiproduttori() {
   const [anno, setAnno] = useState(new Date().getFullYear());
   const [elaborando, setElaborando] = useState(false);
   const [riproduttori, setRiproduttori] = useState(null);
   const [parametri, setParametri] = useState(null);
+  const [provenienzeEspanse, setProvenienzeEspanse] = useState(new Set());
+  const [specieEspanse, setSpecieEspanse] = useState(new Set());
+  const [animaleSelezionato, setAnimaleSelezionato] = useState(null);
+
+  function toggleProvenienza(p) {
+    setProvenienzeEspanse(prev => { const n = new Set(prev); n.has(p) ? n.delete(p) : n.add(p); return n; });
+  }
+  function toggleSpecie(chiave) {
+    setSpecieEspanse(prev => { const n = new Set(prev); n.has(chiave) ? n.delete(chiave) : n.add(chiave); return n; });
+  }
 
   useEffect(() => { caricaElenco(); }, []);
 
   async function caricaElenco() {
-    const { data } = await supabase.from("ci_residuo_riproduttore").select("*, animali(bdn, nome, specie, stato)").order("updated_at", { ascending: false });
+    const { data } = await supabase.from("ci_residuo_riproduttore").select("*, animali(bdn, nome, specie, stato, provenienza)").order("updated_at", { ascending: false });
     setRiproduttori(numerizzaCampi(data || [], ["costo_acquisto", "costi_crescita_preriproduttiva", "valore_realizzo_stimato", "valore_realizzo_reale", "residuo_totale", "residuo_rimanente", "conto_sospeso"]));
   }
 
@@ -32,7 +43,7 @@ export default function ReportRiproduttori() {
       setParametri(parametriMap);
 
       const { data: tuttiAnimali, error: eA } = await fetchAllPages((da, a) => supabase
-        .from("animali").select("id,bdn,nome,specie,razza,razza_calcolata,riproduttore,costo_iniziale,padre_id,madre_id,nascita,stato,data_uscita,peso_vivo_uscita,peso_carcassa,provenienza").range(da, a));
+        .from("animali").select("id,bdn,nome,specie,razza,razza_calcolata,riproduttore,costo_iniziale,prezzo_acquisto,padre_id,madre_id,nascita,stato,data_uscita,peso_vivo_uscita,peso_carcassa,provenienza").range(da, a));
       if (eA) throw new Error(eA.message);
 
       const { data: tuttiLotti, error: eL } = await fetchAllPages((da, a) => supabase
@@ -102,7 +113,11 @@ export default function ReportRiproduttori() {
           const valoreRealizzoFinale = Number.isFinite(valoreRealizzoStimato) ? valoreRealizzoStimato : 0;
 
           const residuoTotale = calcolaResiduoIniziale({
-            costoAcquisto: rip.costo_iniziale || 0,
+            // Due sole fonti possibili per il costo di partenza, mai mescolate: costo di
+            // acquisto (prezzo_acquisto, per gli "Acquistato") oppure costo di nascita
+            // (costo_iniziale, per i "Nato in azienda" — valorizzato da podereverdeapp.it
+            // alla nascita). Quale delle due si guarda dipende SOLO dalla provenienza.
+            costoAcquisto: rip.provenienza === "Nato in azienda" ? (rip.costo_iniziale || 0) : (rip.prezzo_acquisto || 0),
             costiCrescitaPreRiproduttiva: costiCrescita,
             valoreRealizzoStimato: valoreRealizzoFinale,
           });
@@ -110,7 +125,8 @@ export default function ReportRiproduttori() {
           const vitaAttesa = parametriMap[chiaveVita] || 5;
 
           const { data: nuovo, error: eIns } = await supabase.from("ci_residuo_riproduttore").insert([{
-            animale_id: rip.id, specie: rip.specie, costo_acquisto: rip.costo_iniziale || 0,
+            animale_id: rip.id, specie: rip.specie,
+            costo_acquisto: rip.provenienza === "Nato in azienda" ? (rip.costo_iniziale || 0) : (rip.prezzo_acquisto || 0),
             costi_crescita_preriproduttiva: costiCrescita, valore_realizzo_stimato: valoreRealizzoFinale,
             residuo_totale: residuoTotale, residuo_rimanente: residuoTotale,
             vita_produttiva_attesa_anni: vitaAttesa, anno_inizio_riproduzione: primoAnnoRiproduzione, conto_sospeso: 0,
@@ -121,23 +137,22 @@ export default function ReportRiproduttori() {
 
         if (anno < residuoRecord.anno_inizio_riproduzione) continue; // non ancora riproduttore in quell'anno
 
+        const anniProduttiviResiduiAllInizioAnno = residuoRecord.vita_produttiva_attesa_anni - (anno - residuoRecord.anno_inizio_riproduzione);
         const piano = calcolaPianoScarico({
-          residuoTotaleIniziale: residuoRecord.residuo_totale,
-          vitaProduttivaAttesaAnni: residuoRecord.vita_produttiva_attesa_anni,
-          contoSospesoPrecedente: residuoRecord.conto_sospeso,
-          numeroFigliAnno: numeroFigliTotaleAnno,
           residuoRimanentePrimaDellAnno: residuoRecord.residuo_rimanente,
+          anniProduttiviResiduiAllInizioAnno,
+          numeroFigliAnno: numeroFigliTotaleAnno,
         });
 
         await supabase.from("ci_scarico_riproduttore_annuale").delete().eq("residuo_riproduttore_id", residuoRecord.id).eq("anno", anno);
         await supabase.from("ci_scarico_riproduttore_annuale").insert([{
           residuo_riproduttore_id: residuoRecord.id, anno,
-          quota_annuale_dovuta: piano.quotaAnnualeDovuta, conto_sospeso_utilizzato: residuoRecord.conto_sospeso,
+          quota_annuale_dovuta: piano.quotaAnnualeDovuta, conto_sospeso_utilizzato: 0,
           totale_scaricato_anno: piano.totaleScaricatoAnno, n_figli_anno: numeroFigliTotaleAnno, quota_per_figlio: piano.quotaPerFiglio,
         }]);
 
         await supabase.from("ci_residuo_riproduttore").update({
-          residuo_rimanente: piano.residuoRimanenteDopo, conto_sospeso: piano.contoSospesoNuovo, updated_at: new Date().toISOString(),
+          residuo_rimanente: piano.residuoRimanenteDopo, updated_at: new Date().toISOString(),
         }).eq("id", residuoRecord.id);
 
         // Aggiorno il costo_nascita_ereditato dei figli dell'anno (sommando, per il caso di 2 genitori riproduttori)
@@ -271,7 +286,7 @@ export default function ReportRiproduttori() {
       "BDN/Nome": r.animali?.bdn || r.animali?.nome, "Specie": r.specie, "Stato": r.animali?.stato,
       "Costo acquisto": numeroExcel(r.costo_acquisto), "Costi crescita pre-riproduttiva": numeroExcel(r.costi_crescita_preriproduttiva),
       "Valore realizzo stimato": numeroExcel(r.valore_realizzo_stimato), "Residuo totale": numeroExcel(r.residuo_totale),
-      "Residuo rimanente": numeroExcel(r.residuo_rimanente), "Conto sospeso": numeroExcel(r.conto_sospeso),
+      "Residuo rimanente": numeroExcel(r.residuo_rimanente),
       "Vita produttiva attesa (anni)": r.vita_produttiva_attesa_anni, "Anno inizio riproduzione": r.anno_inizio_riproduzione,
       "Conguaglio applicato": r.conguaglio_applicato ? "Sì" : "No", "Valore realizzo reale": numeroExcel(r.valore_realizzo_reale), "Anno uscita": r.anno_uscita,
     }));
@@ -322,39 +337,87 @@ export default function ReportRiproduttori() {
       )}
 
       {riproduttori && riproduttori.length > 0 && (
-        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
-          <table style={{ width: "100%", fontSize: 13 }}>
-            <thead style={{ background: C.primary, color: "#fff", position: "sticky", top: 0, zIndex: 1 }}>
-              <tr>
-                <th style={th}>Riproduttore</th><th style={th}>Specie</th>
-                <th style={th}>Residuo totale</th><th style={th}>Residuo rimanente</th>
-                <th style={th}>Conto sospeso</th><th style={th}>Vita attesa (anni)</th><th style={th}>Valore realizzo stimato</th><th style={th}>Stato</th>
-              </tr>
-            </thead>
-            <tbody>
-              {riproduttori.map(r => (
-                <tr key={r.id} style={{ borderTop: `1px solid ${C.border}` }}>
-                  <td style={td}>{r.animali?.bdn || r.animali?.nome || "—"}</td>
-                  <td style={td}>{r.specie}</td>
-                  <td style={{ ...td, textAlign: "right" }}>{formattaEuro(r.residuo_totale)}</td>
-                  <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{formattaEuro(r.residuo_rimanente)}</td>
-                  <td style={{ ...td, textAlign: "right", color: r.conto_sospeso > 0 ? C.accent : C.muted }}>{formattaEuro(r.conto_sospeso)}</td>
-                  <td style={{ ...td, textAlign: "right" }}>{r.vita_produttiva_attesa_anni}</td>
-                  <td style={{ ...td, textAlign: "right" }}>{formattaEuro(r.valore_realizzo_stimato)}</td>
-                  <td style={td}>
-                    {r.animali?.stato && r.animali.stato !== "attivo"
-                      ? (r.conguaglio_applicato ? <span style={{ color: C.green, fontWeight: 700 }}>✓ Conguagliato ({r.valore_realizzo_reale != null ? formattaEuro(r.valore_realizzo_reale) : "—"} reale)</span> : <span style={{ color: C.accent, fontWeight: 700 }}>Uscito — da conguagliare</span>)
-                      : <span style={{ color: C.muted }}>Attivo</span>}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <TabellaRiproduttoriRaggruppata riproduttori={riproduttori}
+          provenienzeEspanse={provenienzeEspanse} toggleProvenienza={toggleProvenienza}
+          specieEspanse={specieEspanse} toggleSpecie={toggleSpecie}
+          onSelezionaAnimale={id => setAnimaleSelezionato(id)} />
       )}
       {riproduttori && riproduttori.length === 0 && (
         <p style={{ color: C.muted }}>Nessun riproduttore ancora elaborato — usa "Calcola e scarica sui figli".</p>
       )}
+      {animaleSelezionato && (
+        <SchedaRiproduttore animaleId={animaleSelezionato} onClose={() => setAnimaleSelezionato(null)} onSalvato={caricaElenco} />
+      )}
+    </div>
+  );
+}
+
+const ETICHETTE_SPECIE = { bovino: "Bovini", suino: "Suini", ovino: "Ovini" };
+
+function TabellaRiproduttoriRaggruppata({ riproduttori, provenienzeEspanse, toggleProvenienza, specieEspanse, toggleSpecie, onSelezionaAnimale }) {
+  const gruppiProvenienza = [
+    { chiave: "Acquistato", label: "Acquistati" },
+    { chiave: "Nato in azienda", label: "Nati in azienda" },
+  ];
+
+  return (
+    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
+      {gruppiProvenienza.map(gp => {
+        const righeProvenienza = riproduttori.filter(r => (r.animali?.provenienza || "Acquistato") === gp.chiave);
+        if (righeProvenienza.length === 0) return null;
+        const provenienzaAperta = provenienzeEspanse.has(gp.chiave);
+        return (
+          <div key={gp.chiave}>
+            <div onClick={() => toggleProvenienza(gp.chiave)}
+              style={{ padding: "12px 16px", background: C.primary, color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer", display: "flex", justifyContent: "space-between" }}>
+              <span>{provenienzaAperta ? "▼" : "▶"} {gp.label}</span>
+              <span style={{ fontWeight: 400, fontSize: 12 }}>{righeProvenienza.length} riproduttori</span>
+            </div>
+            {provenienzaAperta && ["bovino", "suino", "ovino"].map(specie => {
+              const righeSpecie = righeProvenienza.filter(r => r.specie === specie);
+              if (righeSpecie.length === 0) return null;
+              const chiaveSpecie = `${gp.chiave}|${specie}`;
+              const specieAperta = specieEspanse.has(chiaveSpecie);
+              return (
+                <div key={specie}>
+                  <div onClick={() => toggleSpecie(chiaveSpecie)}
+                    style={{ padding: "9px 16px 9px 32px", background: C.bg, fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", justifyContent: "space-between", borderTop: `1px solid ${C.border}` }}>
+                    <span>{specieAperta ? "▼" : "▶"} {ETICHETTE_SPECIE[specie]}</span>
+                    <span style={{ fontWeight: 400, fontSize: 12, color: C.muted }}>{righeSpecie.length}</span>
+                  </div>
+                  {specieAperta && (
+                    <table style={{ width: "100%", fontSize: 13 }}>
+                      <thead style={{ background: C.primaryLight, color: "#fff" }}>
+                        <tr>
+                          <th style={th}>Riproduttore</th>
+                          <th style={th}>Residuo totale</th><th style={th}>Residuo rimanente</th>
+                          <th style={th}>Vita attesa (anni)</th><th style={th}>Valore realizzo stimato</th><th style={th}>Stato</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {righeSpecie.map(r => (
+                          <tr key={r.id} onClick={() => onSelezionaAnimale(r.animale_id)} style={{ borderTop: `1px solid ${C.border}`, cursor: "pointer" }}>
+                            <td style={td}>{r.animali?.bdn || r.animali?.nome || "—"}</td>
+                            <td style={{ ...td, textAlign: "right" }}>{formattaEuro(r.residuo_totale)}</td>
+                            <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{formattaEuro(r.residuo_rimanente)}</td>
+                            <td style={{ ...td, textAlign: "right" }}>{r.vita_produttiva_attesa_anni}</td>
+                            <td style={{ ...td, textAlign: "right" }}>{formattaEuro(r.valore_realizzo_stimato)}</td>
+                            <td style={td}>
+                              {r.animali?.stato && r.animali.stato !== "attivo"
+                                ? (r.conguaglio_applicato ? <span style={{ color: C.green, fontWeight: 700 }}>✓ Conguagliato ({r.valore_realizzo_reale != null ? formattaEuro(r.valore_realizzo_reale) : "—"} reale)</span> : <span style={{ color: C.accent, fontWeight: 700 }}>Uscito — da conguagliare</span>)
+                                : <span style={{ color: C.muted }}>Attivo</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
     </div>
   );
 }

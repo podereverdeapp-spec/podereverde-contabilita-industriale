@@ -1102,3 +1102,58 @@ Testato con caso mock: unione corretta, totale_riga mappato da importo, campi di
 
 - **Scrivere Istruzioni Generali** (nuova pagina, sopra Dashboard nel menu) che spieghi le 7 cartelle e cosa contiene ciascuna
 - **Riscrivere le Istruzioni di dettaglio di ogni cartella** (Carica Fatture, Ricerca, Analisi Costi, Alimentaria, Animali, Studi) in base a tutti gli sviluppi fatti in questa sessione — sostituisce e completa il promemoria precedente (sezione "DA FARE" originale, ora assorbito qui)
+
+## 97. Scarico costi riproduttore→figli: nuovo meccanismo "saldo residuo" al posto del conto sospeso
+
+**Contesto**: revisione della logica di `motoreRiproduttori.js`/`ReportRiproduttori.jsx`, costruita in una sessione precedente (non coperta dal riassunto di questa conversazione). Filippo non voleva che l'arretrato di un anno senza figli si scaricasse tutto in un colpo solo sul primo anno con figli successivo — voleva che si spalmasse su più annate future.
+
+**Cambiato** `calcolaPianoScarico`: la quota da scaricare (quando ci sono figli) non è più una frazione fissa del residuo TOTALE iniziale (`residuo_totale / vita_produttiva_attesa_anni`, con un "conto sospeso" che si scaricava tutto insieme alla prima buona occasione) — ora si ricalcola OGNI ANNO come `residuo_rimanente / anni_produttivi_residui_da_qui_in_poi`. Se un anno non ci sono figli, non si scarica nulla (il residuo resta intatto), ma l'anno dopo gli anni residui sono comunque uno in meno — quindi la quota per gli anni restanti aumenta automaticamente da sola, ridistribuendo l'arretrato su tutto quello che resta invece che tutto sul primo anno buono. Stesso principio di un mutuo a saldo residuo: una rata saltata non si accumula da pagare tutta insieme, si ridistribuisce sulle rate rimanenti.
+
+**Rimosso** il concetto di "conto sospeso" (non più necessario col nuovo meccanismo) — dalla funzione, dal punto di chiamata in `ReportRiproduttori.jsx`, dalla tabella a schermo e dall'export Excel. La colonna `conto_sospeso` in `ci_residuo_riproduttore` resta nel database (non cancellata, solo non più aggiornata/mostrata) — nessuna migrazione necessaria dato che non viene più letta.
+
+Testato con scenario mock a 3 anni (2 figli / 0 figli / 2 figli): confermato che l'anno senza figli non scarica nulla e non perde il residuo, e l'anno successivo la quota si ricalcola automaticamente più alta (1333,33€ invece di 1000€) per assorbire l'arretrato sui restanti anni.
+
+## 98. Report Riproduttori — struttura ad albero navigabile (Acquistati/Nati in azienda → specie)
+
+**Richiesto da Filippo**: due categorie in cima (Acquistati / Nati in azienda), ciascuna suddivisa per specie (Bovini/Suini/Ovini), navigabile con le frecce — per facilitare la consultazione su un elenco altrimenti piatto.
+
+**Aggiunto** `provenienza` alla query principale (mancava, serviva per raggruppare). Costruita `TabellaRiproduttoriRaggruppata` — due livelli di espansione indipendenti (`provenienzeEspanse`, `specieEspanse`, entrambi Set per permettere più gruppi aperti insieme): livello 1 = Acquistati/Nati in azienda (intestazione verde scuro, conteggio), livello 2 = specie dentro la provenienza aperta (intestazione più chiara, conteggio), livello 3 = tabella dei riproduttori di quel gruppo, identica a prima (tolta solo la colonna "Specie", ormai ridondante col raggruppamento).
+
+## 99. Nuova "Scheda Riproduttore" — modificabile, cliccando un animale in Report Riproduttori
+
+**Richiesto da Filippo**: scheda dettagliata e modificabile per ogni riproduttore, con dati anagrafici, fatture acquisto/trasporto, vita attesa, figli avuti/potenziali, riepilogo costi, vendita/valore di realizzo, scarico sui figli, e per i nati in azienda il valore di nascita diviso tra madre e padre.
+
+**Nuovo campo**: `ci_residuo_riproduttore.prezzo_vendita_kg_carcassa_reale` — `aggiungi_prezzo_vendita_reale.sql`.
+
+**Costruito `SchedaRiproduttore.jsx`** (modale), collegata cliccando una riga in Report Riproduttori:
+- Dati anagrafici (BDN, specie, razza, anno nascita, anno ingresso) — editabile, scrive su `animali`
+- Fattura acquisto e fattura trasporto ingresso: **riusa dati già esistenti** in `ci_report_acquisto_animali` (collegati per BDN) se già inseriti da Carica Fatture — altrimenti permette di inserirli/correggerli direttamente da qui (crea/aggiorna la riga in quella stessa tabella, crea il fornitore se non esiste)
+- Vita attesa (anni) — editabile
+- Figli avuti/potenziali futuri — usa il nuovo motore di calcolo (sezione precedente): femmine per parti storici + fallback di popolazione, maschi per media annua
+- Riepilogo costi: acquisto, mantenimento anni precedenti, mantenimento anno corrente (da `ci_costo_animale_annuale`)
+- Prezzo vendita €/kg carcassa (editabile) → valore di realizzo calcolato (peso_carcassa dell'animale × prezzo inserito)
+- Valore scaricato per figlio, dall'ultimo anno elaborato in `ci_scarico_riproduttore_annuale`
+- Per i nati in azienda: quota nascita madre/padre, calcolata cercando lo scarico dell'anno di nascita per ciascun genitore in `ci_scarico_riproduttore_annuale` (non richiede nuove colonne — i due valori sommati corrispondono al `costo_nascita_ereditato` già esistente)
+
+**Punti da verificare con dati reali (non testabili da qui)**:
+- Il campo `sesso` (valore `"M"` per maschio, confermato dall'uso in `SchedaAnimale.jsx`) — usato per decidere se applicare il calcolo "femmina" (parti storici) o "maschio" (media annua). Da verificare che TUTTI i riproduttori abbiano questo campo popolato, altrimenti finiscono di default nel ramo femmina.
+- Il calcolo dei figli per un maschio somma `animali` (bovini/ovini, filtrando per padre_id) E `lotti_suini`/`suini_lotto` (per suini) in un'unica espressione che sfrutta il fatto che, per la specie sbagliata, l'altro termine risulta sempre zero — funziona ma è scritto in modo poco leggibile, da ripulire se si presenta occasione.
+- Non testato con dati mock (a differenza del motore di calcolo sottostante, verificato con casi mock nella sezione precedente) — la SCHEDA in sé va provata da Filippo con un animale reale prima di considerarla definitiva.
+
+## 100. Bug reale trovato — Contabilità Industriale leggeva `costo_iniziale` invece di `prezzo_acquisto`
+
+**Scoperta**: Filippo aveva modificato IT058990327628 su podereverdeapp.it aggiungendo data/numero fattura (il prezzo era già presente) — ma il costo continuava a risultare zero nella Contabilità Industriale. Verificato con query diretta (collegato Supabase MCP in questa sessione): il prezzo era correttamente in `prezzo_acquisto` (1300€, con fornitore/data/numero) — **il nostro codice legge invece `costo_iniziale`**, una colonna diversa e distinta, mai sincronizzata da podereverdeapp.it per gli animali acquistati (viene invece popolata solo per i nati in azienda, col costo di nascita).
+
+**Portata**: verificato con query aggregata — **24 riproduttori su 124** hanno un prezzo reale in `prezzo_acquisto` ma zero in `costo_iniziale` — quindi la maggior parte dei "senza prezzo" segnalati nell'export Excel della sezione precedente in realtà UN prezzo ce l'hanno, solo nella colonna sbagliata.
+
+**Corretto**: `ReportRiproduttori.jsx` e `SchedaRiproduttore.jsx` ora usano `costo_iniziale || prezzo_acquisto || 0` (preferisce costo_iniziale se presente — es. il costo di nascita per i nati in azienda — altrimenti usa prezzo_acquisto). Nessun'altra parte dell'app (motori di calcolo condivisi) legge `costo_iniziale`, quindi la correzione è contenuta a questi due file.
+
+**Da rifare**: l'export Excel dei "riproduttori senza prezzo" (sezione precedente) è ora **superato** — la maggior parte di quegli animali ha in realtà il prezzo, solo in `prezzo_acquisto`. Da rigenerare con la query corretta se serve ancora un elenco di chi è VERAMENTE senza prezzo in nessuna delle due colonne.
+
+**Nota di processo**: in questa sessione è stato collegato un connettore MCP Supabase, che ha permesso di interrogare direttamente il database invece di chiedere a Filippo di lanciare query manualmente — molto più rapido per verifiche di questo tipo.
+
+## 101. Precisazione — due sole fonti di costo iniziale, mai mescolate, scelta esplicita per provenienza
+
+**Confermato da Filippo**: il costo di partenza di un riproduttore può venire da una delle due fonti soltanto — costo di acquisto (per gli "Acquistato") oppure costo di nascita (per i "Nato in azienda") — mai un mix o un fallback generico.
+
+**Corretto**: sostituito il fallback generico (`costo_iniziale || prezzo_acquisto`) con una scelta esplicita basata sulla provenienza: `rip.provenienza === "Nato in azienda" ? rip.costo_iniziale : rip.prezzo_acquisto` — così anche nel caso raro in cui un animale avesse (per errore) valori in entrambi i campi, si usa sempre e solo quello corretto per la sua provenienza, mai un mix ambiguo.
