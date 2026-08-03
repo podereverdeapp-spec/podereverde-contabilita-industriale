@@ -1157,3 +1157,13 @@ Testato con scenario mock a 3 anni (2 figli / 0 figli / 2 figli): confermato che
 **Confermato da Filippo**: il costo di partenza di un riproduttore può venire da una delle due fonti soltanto — costo di acquisto (per gli "Acquistato") oppure costo di nascita (per i "Nato in azienda") — mai un mix o un fallback generico.
 
 **Corretto**: sostituito il fallback generico (`costo_iniziale || prezzo_acquisto`) con una scelta esplicita basata sulla provenienza: `rip.provenienza === "Nato in azienda" ? rip.costo_iniziale : rip.prezzo_acquisto` — così anche nel caso raro in cui un animale avesse (per errore) valori in entrambi i campi, si usa sempre e solo quello corretto per la sua provenienza, mai un mix ambiguo.
+
+## 102. Scheda Riproduttore — corretti i figli futuri per gli animali usciti
+
+**Segnalato da Filippo**: per gli animali già usciti (macellati/venduti/deceduti), la scheda continuava a proiettare "figli futuri stimati" come se fossero ancora attivi — sbagliato, dato che un animale uscito non può più avere figli.
+
+**Corretto**: se `animale.stato !== "attivo"`, gli anni produttivi residui vengono azzerati — "figli avuti" resta il conteggio reale (dalla sua storia), "figli futuri stimati" diventa sempre 0.
+
+**Verificato e confermato corretto** (nessuna modifica necessaria): il costo di mantenimento è già separato correttamente tra "anni precedenti" (somma di tutti gli anni strettamente prima di quello corrente) e "anno in corso" (solo l'anno corrente) — Filippo probabilmente riconfermava questo punto piuttosto che segnalare un problema nuovo.
+
+**Non ancora verificato**: se lo stesso problema (proiezione futura per animali usciti) si presenta anche nel calcolo dello scarico annuale in `ReportRiproduttori.jsx` (elabora()), non solo nella Scheda — da controllare se emergono sintomi simili lì.

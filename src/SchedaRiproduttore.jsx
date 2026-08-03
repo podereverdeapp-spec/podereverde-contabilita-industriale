@@ -86,7 +86,11 @@ export default function SchedaRiproduttore({ animaleId, onClose, onSalvato }) {
           supabase.from("ci_residuo_riproduttore").select("animale_id").eq("specie", a.specie),
         ]);
 
-        const anniProduttiviResidui = res.vita_produttiva_attesa_anni - (new Date().getFullYear() - res.anno_inizio_riproduzione);
+        // Per un animale già uscito (macellato/venduto/deceduto) non ha senso proiettare
+        // figli futuri — non è più produttivo, quindi gli anni residui sono azzerati:
+        // "figli avuti" resterà il conteggio reale, "figli futuri stimati" sarà sempre 0.
+        const isUscito = a.stato && a.stato !== "attivo";
+        const anniProduttiviResidui = isUscito ? 0 : res.vita_produttiva_attesa_anni - (new Date().getFullYear() - res.anno_inizio_riproduzione);
         const sesso = a.sesso;
 
         if (sesso === "M") {
