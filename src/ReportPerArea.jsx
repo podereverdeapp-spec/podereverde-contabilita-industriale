@@ -94,6 +94,17 @@ export default function ReportPerArea({ anno }) {
                   <td style={{ ...td, textAlign: "right" }}>{formattaEuro(r.perSpecie.ovino.incidenza, 4)}</td>
                 </tr>
               ))}
+              <tr style={{ borderTop: `2px solid ${C.border}`, fontWeight: 700, background: C.bg }}>
+                <td style={td}>Totale</td>
+                <td style={{ ...td, textAlign: "right" }}>{formattaEuro(righe.reduce((s, r) => s + r.imponibileComplessivo, 0))}</td>
+                <td style={{ ...td, textAlign: "right", color: C.muted, fontWeight: 400, fontSize: 11 }}>—</td>
+                <td style={{ ...td, textAlign: "right", borderLeft: `1px solid ${C.border}` }}>{formattaEuro(righe.reduce((s, r) => s + r.perSpecie.bovino.costoAllocato, 0))}</td>
+                <td style={{ ...td, textAlign: "right", color: C.muted, fontWeight: 400, fontSize: 11 }}>—</td>
+                <td style={{ ...td, textAlign: "right", borderLeft: `1px solid ${C.border}` }}>{formattaEuro(righe.reduce((s, r) => s + r.perSpecie.suino.costoAllocato, 0))}</td>
+                <td style={{ ...td, textAlign: "right", color: C.muted, fontWeight: 400, fontSize: 11 }}>—</td>
+                <td style={{ ...td, textAlign: "right", borderLeft: `1px solid ${C.border}` }}>{formattaEuro(righe.reduce((s, r) => s + r.perSpecie.ovino.costoAllocato, 0))}</td>
+                <td style={{ ...td, textAlign: "right", color: C.muted, fontWeight: 400, fontSize: 11 }}>—</td>
+              </tr>
             </tbody>
           </table>
         </div>

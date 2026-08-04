@@ -244,6 +244,12 @@ export default function ReportAcquistoAnimali() {
             </div>
           ))}
           {filtrate.length === 0 && <p style={{ color: C.muted }}>Nessuna riga in questo stato.</p>}
+          {filtrate.length > 0 && (
+            <div style={{ background: C.bg, border: `2px solid ${C.border}`, borderRadius: 10, padding: "10px 16px", display: "flex", justifyContent: "space-between", fontWeight: 700 }}>
+              <span>Totale ({filtrate.length} righe)</span>
+              <span>{formattaEuro(filtrate.reduce((s, r) => s + (parseFloat(r.importo) || 0), 0))}</span>
+            </div>
+          )}
         </div>
       )}
     </div>

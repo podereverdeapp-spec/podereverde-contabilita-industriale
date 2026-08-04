@@ -1253,3 +1253,15 @@ Testato con caso mock: rilanciare il calcolo per lo stesso genitore/anno non rad
 **Corretto**: sostituita la singola cifra con una **tabella di tutti gli anni** scaricati (anno, figli nell'anno, totale scaricato, quota per figlio) — gli anni senza figli sono mostrati in grigio con "(in sospeso)", invece di dare l'impressione fuorviante che lo scarico sia "zero" in generale.
 
 **Conguaglio mai aggiunto alla scheda**: la funzione `calcolaConguaglio` esisteva già nel motore (usata altrove) ma non era mai stata collegata alla Scheda Riproduttore. Aggiunta una sezione dedicata (solo per animali usciti, con valore reale calcolabile) — valore stimato, valore reale, conguaglio totale, conguaglio per figlio (o nota "resta un dato aziendale" se l'anno di uscita non ha avuto figli). Il numero di figli dell'anno di uscita viene letto dalla stessa tabella scarichi sopra, non ricalcolato da capo.
+
+## 112. Righe di totale aggiunte a tutti i report costi rimasti
+
+**Richiesto da Filippo**: totali in fondo a tutte le pagine di report costi (Report Costi ce li aveva già, sezione 95).
+
+**Aggiunti**:
+- `ReportPerArea.jsx`: riga Totale (Imponibile complessivo + Costo allocato per specie sommati; le colonne €/UBA-gg restano un trattino, stesso motivo di sezione 95 — denominatori diversi per area)
+- `ReportPerAreaCentro.jsx`: stessa riga Totale, sommando i valori già aggregati per area (`g.riga`)
+- `ReportCostiQuantitaAlimentare.jsx` (Alimentaria → Costi e Quantità, pagina 1): entrambe le tabelle ora hanno una riga Totale sui 3 centri insieme (Mangimi+Foraggio+Integratori) — riusa `sommaSuiCentri` già esistente. Per la tabella Incidenza, qui la somma delle incidenze **è corretta** (a differenza di Report Costi): tutti i centri condividono lo stesso denominatore (UBA-giorni per specie), quindi sommare i valori assoluti e ricalcolare l'incidenza sul totale è equivalente e già fatto così.
+- `ReportAcquistoAnimali.jsx`: essendo un elenco a schede (non una tabella), aggiunta una card "Totale" in fondo alla lista filtrata, con conteggio righe e somma importi.
+
+**Bug di editing corretto durante il lavoro**: un mio errore ha rimosso temporaneamente la costante di stile `thBase` da `ReportCostiQuantitaAlimentare.jsx` — trovato e ripristinato subito, verificato che non ci fossero duplicati.

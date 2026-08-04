@@ -122,6 +122,17 @@ export default function ReportPerAreaCentro({ anno }) {
                   ))}
                 </Fragment>
               ))}
+              <tr style={{ borderTop: `2px solid ${C.border}`, fontWeight: 700, background: C.bg }}>
+                <td style={td}>Totale</td>
+                <td style={{ ...td, textAlign: "right" }}>{formattaEuro(gruppi.reduce((s, g) => s + g.riga.imponibileComplessivo, 0))}</td>
+                <td style={{ ...td, textAlign: "right", color: C.muted, fontWeight: 400, fontSize: 11 }}>—</td>
+                <td style={{ ...td, textAlign: "right", borderLeft: `1px solid ${C.border}` }}>{formattaEuro(gruppi.reduce((s, g) => s + g.riga.perSpecie.bovino.costoAllocato, 0))}</td>
+                <td style={{ ...td, textAlign: "right", color: C.muted, fontWeight: 400, fontSize: 11 }}>—</td>
+                <td style={{ ...td, textAlign: "right", borderLeft: `1px solid ${C.border}` }}>{formattaEuro(gruppi.reduce((s, g) => s + g.riga.perSpecie.suino.costoAllocato, 0))}</td>
+                <td style={{ ...td, textAlign: "right", color: C.muted, fontWeight: 400, fontSize: 11 }}>—</td>
+                <td style={{ ...td, textAlign: "right", borderLeft: `1px solid ${C.border}` }}>{formattaEuro(gruppi.reduce((s, g) => s + g.riga.perSpecie.ovino.costoAllocato, 0))}</td>
+                <td style={{ ...td, textAlign: "right", color: C.muted, fontWeight: 400, fontSize: 11 }}>—</td>
+              </tr>
             </tbody>
           </table>
         </div>

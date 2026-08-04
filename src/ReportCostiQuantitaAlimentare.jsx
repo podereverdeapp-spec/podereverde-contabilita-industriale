@@ -474,11 +474,30 @@ function TabellaCostiQuantita({ dati, espanso, setEspanso }) {
             </Fragment>
           );
         })}
+        <tr style={{ borderTop: `2px solid ${C.primary}`, fontWeight: 700, background: C.bg }}>
+          {(() => {
+            const totale = sommaSuiCentri(dati);
+            const totaleKgTutti = CENTRI.reduce((s, c) => s + (dati[c].righe || []).reduce((s2, r) => s2 + r.quantitaKg, 0), 0);
+            const totaleCostoTutti = CENTRI.reduce((s, c) => s + (dati[c].righe || []).reduce((s2, r) => s2 + r.costoAnno, 0), 0);
+            return (
+              <>
+                <td style={tdBase}>Totale</td>
+                <td style={tdBase}>{formattaNumero(totaleKgTutti, 0)}</td>
+                <td style={tdBase}>{formattaEuro(totaleCostoTutti)}</td>
+                {SPECIE.map(s => (
+                  <Fragment key={s.chiave}>
+                    <td style={{ ...tdBase, color: s.colore }}>{formattaNumero(totale.perKg.perSpecie[s.chiave].costoAllocato, 0)}</td>
+                    <td style={{ ...tdBase, color: s.colore }}>{formattaEuro(totale.perCosto.perSpecie[s.chiave].costoAllocato)}</td>
+                  </Fragment>
+                ))}
+              </>
+            );
+          })()}
+        </tr>
       </tbody>
     </table>
   );
 }
-
 const thBase = { padding: "8px 10px", color: "#fff", fontSize: 12, textAlign: "right" };
 const thSub = { padding: "6px 10px", color: "#fff", fontSize: 11, textAlign: "right", background: C.muted };
 const tdBase = { padding: "8px 10px", textAlign: "right", borderBottom: `1px solid ${C.border}` };
@@ -532,6 +551,22 @@ function TabellaIncidenza({ dati, espanso, setEspanso }) {
             </Fragment>
           );
         })}
+        <tr style={{ borderTop: `2px solid ${C.primary}`, fontWeight: 700, background: C.bg }}>
+          {(() => {
+            const totale = sommaSuiCentri(dati);
+            return (
+              <>
+                <td style={tdBase}>Totale</td>
+                {SPECIE.map(s => (
+                  <Fragment key={s.chiave}>
+                    <td style={{ ...tdBase, color: s.colore }}>{formattaNumero(incidenza(totale.perKg.perSpecie[s.chiave].costoAllocato, totale.ubaGiorniProduttiviPerSpecie[s.chiave]), 3)}</td>
+                    <td style={{ ...tdBase, color: s.colore }}>{formattaEuro(incidenza(totale.perCosto.perSpecie[s.chiave].costoAllocato, totale.ubaGiorniProduttiviPerSpecie[s.chiave]), 3)}</td>
+                  </Fragment>
+                ))}
+              </>
+            );
+          })()}
+        </tr>
       </tbody>
     </table>
   );
