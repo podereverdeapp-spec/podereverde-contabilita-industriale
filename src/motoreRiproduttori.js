@@ -27,15 +27,16 @@ export function calcolaConguaglio({ valoreRealizzoReale, valoreRealizzoStimato, 
 // "etaMinimaAnni" anni di vita, moltiplicato per i due prezzi di mercato separati
 // (prezzo_kg_vivo e prezzo_kg_carcassa da prezzi_riforma — due campi indipendenti,
 // non uno derivato dall'altro tramite la resa%, altrimenti collasserebbero allo stesso numero).
-export function calcolaValoreRealizzoStimato({ specie, razza, animaliUsciti, prezziRiforma, etaMinimaAnni }) {
+export function calcolaValoreRealizzoStimato({ specie, razza, sesso, animaliUsciti, prezziRiforma, etaMinimaAnni }) {
   const oggi = new Date();
   const etaAnni = a => {
     if (!a.nascita || !a.data_uscita) return null;
     return (new Date(a.data_uscita) - new Date(a.nascita)) / (365.25 * 86400000);
   };
 
-  // Prima provo per specie+razza esatta; se il campione è troppo piccolo (<3), allargo alla sola specie
-  const filtroBase = a => a.specie === specie && a.stato !== "attivo" && etaAnni(a) !== null && etaAnni(a) >= etaMinimaAnni;
+  // Sesso: filtro fisso a ogni livello (mai mescolato — pesi medi diversi tra maschi e
+  // femmine), razza invece si allarga se il campione è troppo piccolo, come già faceva.
+  const filtroBase = a => a.specie === specie && a.sesso === sesso && a.stato !== "attivo" && etaAnni(a) !== null && etaAnni(a) >= etaMinimaAnni;
   let campione = animaliUsciti.filter(a => filtroBase(a) && (a.razza_calcolata || a.razza) === razza);
   if (campione.length < 3) campione = animaliUsciti.filter(filtroBase);
 
@@ -58,7 +59,45 @@ export function calcolaValoreRealizzoStimato({ specie, razza, animaliUsciti, pre
   };
 }
 
-// Calcola il residuo totale da recuperare per un riproduttore:
+// Stima il peso carcassa di UN animale ancora in vita, basandosi sui pesi REALI di animali
+// della stessa specie/razza/SESSO già usciti per macellazione — guardando specificamente
+// quelli macellati a un'età SIMILE alla sua (non solo la media generale degli adulti, come
+// fa calcolaValoreRealizzoStimato) — richiesto da Filippo perché il peso di un animale
+// dipende molto dall'età, E dal sesso (mai mescolati: maschi e femmine hanno pesi medi
+// diversi, quindi il sesso resta un filtro fisso a ogni livello del fallback).
+export function stimaPesoCarcassaPerEta({ specie, razza, sesso, etaAnniAnimale, animaliUsciti }) {
+  const etaAnni = a => {
+    if (!a.nascita || !a.data_uscita) return null;
+    return (new Date(a.data_uscita) - new Date(a.nascita)) / (365.25 * 86400000);
+  };
+  const conPeso = a => a.peso_carcassa != null && a.peso_carcassa > 0;
+  const finestraEta = 0.20; // ±20% dell'età dell'animale, come prima finestra di ricerca
+
+  // Sesso: filtro fisso, applicato SEMPRE (mai rilassato, a differenza di razza/età che
+  // si allargano progressivamente se il campione è insufficiente) — se manca il sesso su
+  // un animale storico, non entra mai nel campione (dato mancante, non un "qualunque sesso").
+  const candidati = animaliUsciti.filter(a => a.specie === specie && a.sesso === sesso && conPeso(a) && etaAnni(a) !== null);
+
+  // 1° tentativo: stessa specie+razza+sesso, età entro ±20% di quella dell'animale
+  let campione = candidati.filter(a => (a.razza_calcolata || a.razza) === razza
+    && Math.abs(etaAnni(a) - etaAnniAnimale) <= etaAnniAnimale * finestraEta);
+  let fonteStima = "stessa razza e sesso, età simile";
+
+  // 2° tentativo: stessa specie+razza+sesso, qualunque età (se il campione età-simile è troppo piccolo)
+  if (campione.length < 3) {
+    campione = candidati.filter(a => (a.razza_calcolata || a.razza) === razza);
+    fonteStima = "stessa razza e sesso, tutte le età";
+  }
+  // 3° tentativo: stessa specie+sesso, qualunque razza/età
+  if (campione.length < 3) {
+    campione = candidati;
+    fonteStima = "stesso sesso, tutte le razze/età";
+  }
+
+  if (campione.length === 0) return { pesoStimato: null, campioneUsato: 0, fonteStima: "nessun dato storico disponibile per questo sesso" };
+  const pesoStimato = round2(campione.reduce((s, a) => s + a.peso_carcassa, 0) / campione.length);
+  return { pesoStimato, campioneUsato: campione.length, fonteStima };
+}
 // (costo acquisto + costi di crescita pre-riproduttiva) - valore di realizzo stimato.
 // Semplificazione dichiarata (come in Report Costi): valore di realizzo stimato = 0 per ora,
 // finché non costruiamo il meccanismo di stima (peso medio storico × prezzi di mercato).

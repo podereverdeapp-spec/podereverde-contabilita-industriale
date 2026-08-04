@@ -43,7 +43,7 @@ export default function ReportRiproduttori() {
       setParametri(parametriMap);
 
       const { data: tuttiAnimali, error: eA } = await fetchAllPages((da, a) => supabase
-        .from("animali").select("id,bdn,nome,specie,razza,razza_calcolata,riproduttore,costo_iniziale,prezzo_acquisto,padre_id,madre_id,nascita,stato,data_uscita,peso_vivo_uscita,peso_carcassa,provenienza").range(da, a));
+        .from("animali").select("id,bdn,nome,specie,razza,razza_calcolata,riproduttore,costo_iniziale,prezzo_acquisto,padre_id,madre_id,nascita,stato,data_uscita,peso_vivo_uscita,peso_carcassa,provenienza,sesso").range(da, a));
       if (eA) throw new Error(eA.message);
 
       const { data: tuttiLotti, error: eL } = await fetchAllPages((da, a) => supabase
@@ -101,7 +101,7 @@ export default function ReportRiproduttori() {
         if (!residuoRecord) {
           const razzaRip = rip.razza_calcolata || rip.razza;
           const realizzo = calcolaValoreRealizzoStimato({
-            specie: rip.specie, razza: razzaRip, animaliUsciti: tuttiAnimali || [],
+            specie: rip.specie, razza: razzaRip, sesso: rip.sesso, animaliUsciti: tuttiAnimali || [],
             prezziRiforma: prezziRiforma || [], etaMinimaAnni,
           });
           // Uso la valutazione "vivo" come stima prudenziale di default (di norma la più bassa

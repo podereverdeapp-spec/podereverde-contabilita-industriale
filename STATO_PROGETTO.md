@@ -1167,3 +1167,29 @@ Testato con scenario mock a 3 anni (2 figli / 0 figli / 2 figli): confermato che
 **Verificato e confermato corretto** (nessuna modifica necessaria): il costo di mantenimento è già separato correttamente tra "anni precedenti" (somma di tutti gli anni strettamente prima di quello corrente) e "anno in corso" (solo l'anno corrente) — Filippo probabilmente riconfermava questo punto piuttosto che segnalare un problema nuovo.
 
 **Non ancora verificato**: se lo stesso problema (proiezione futura per animali usciti) si presenta anche nel calcolo dello scarico annuale in `ReportRiproduttori.jsx` (elabora()), non solo nella Scheda — da controllare se emergono sintomi simili lì.
+
+## 103. Nuova pagina "Import Massivo Riproduttori" — export/import Excel
+
+**Richiesto da Filippo**: caricare massivamente i dati dei riproduttori tramite un file Excel — pre-compilato con i dati già noti (da podereverdeapp.it e dalla Contabilità Industriale), da completare solo dove mancante. Include animali usciti (con peso carcassa reale) e attivi (con peso carcassa stimato per età), più la fattura di trasporto ingresso.
+
+**Nuova funzione** `stimaPesoCarcassaPerEta` (motoreRiproduttori.js): stima il peso carcassa di un animale ancora in vita usando i pesi REALI di animali della stessa specie/razza già macellati **a un'età simile** (±20%, non solo la media generale degli adulti) — con fallback progressivo (stessa razza tutte le età → stessa specie tutte le razze) se il campione età-simile è troppo piccolo (<3).
+
+**Costruita** `ImportMassivoRiproduttori.jsx` (Animali → Import Massivo Riproduttori):
+- **Export**: genera un Excel con tutti i riproduttori — dati anagrafici e costo noto (informativi), Vita Attesa/Prezzo Vendita/Peso Carcassa Reale (per usciti)/Fattura Trasporto (modificabili, pre-compilati se già presenti)
+- **Import**: rilegge il file compilato, per ogni riga trovata per BDN aggiorna `ci_residuo_riproduttore` (vita attesa, prezzo vendita), `animali.peso_carcassa` (solo se compilato, tipicamente per gli usciti), crea/aggiorna la fattura trasporto in `ci_report_acquisto_animali` (crea il fornitore se non esiste) — riepilogo finale con contatori e BDN non trovati
+
+**Nota di design importante**: il "Peso Carcassa Stimato" per gli animali attivi è mostrato nel file **solo a titolo informativo** — non viene mai scritto da nessuna parte in automatico (né su `animali.peso_carcassa`, che resta vuoto finché l'animale non esce davvero, né altrove) — evita di inquinare l'anagrafica con un dato stimato spacciato per reale.
+
+Testato `stimaPesoCarcassaPerEta` con caso mock: un animale di 3 anni usa correttamente solo i macellati a età simile (esclude uno molto più vecchio dal campione), un animale di 8 anni (campione età-simile insufficiente) ricade correttamente sul fallback a tutte le età della stessa razza.
+
+## 104. Corretto — il sesso mancava dal calcolo del peso stimato (mai mescolare maschi e femmine)
+
+**Segnalato da Filippo**: la stima del peso per età non teneva conto del sesso — un buco reale, dato che maschi e femmine della stessa specie/razza hanno pesi medi molto diversi.
+
+**Corretto in entrambe le funzioni di stima**:
+- `stimaPesoCarcassaPerEta` (nuova, sezione precedente): il sesso è ora un filtro **fisso**, applicato a OGNI livello del fallback (mai rilassato come razza/età, che si allargano progressivamente se il campione è insufficiente) — un maschio non entra mai nel campione di una femmina, a nessun livello.
+- `calcolaValoreRealizzoStimato` (funzione originale, usata per il residuo iniziale in `ReportRiproduttori.jsx`): stesso principio applicato — prima non filtrava affatto per sesso.
+
+Aggiornate le chiamate in `ReportRiproduttori.jsx` e `ImportMassivoRiproduttori.jsx` per passare `sesso`, e aggiunto `sesso` alle rispettive query `animali` dove mancava.
+
+Testato con caso mock: femmine (pesi 260-270) e maschi (pesi 420-430) della stessa specie/razza/età — la stima per una femmina resta sempre nel range femminile (265), mai contaminata dai pesi maschili, anche quando il campione a età simile è insufficiente e scatta il fallback.
