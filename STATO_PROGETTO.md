@@ -1207,3 +1207,19 @@ Testato con caso mock: femmine (pesi 260-270) e maschi (pesi 420-430) della stes
 **Corretto**: aggiunto `ci_fornitori(nome)` alla query, e il form ora si popola con `acq.ci_fornitori?.nome` / `tra.ci_fornitori?.nome` invece di una stringa vuota fissa. Verificato che `ImportMassivoRiproduttori.jsx` non avesse lo stesso problema — costruito correttamente fin dall'inizio con il join già presente.
 
 **Registrate in sessione**: tutte le 86 fatture di acquisto compilate da Filippo nel file Excel (molte di più delle 25 originariamente estratte da podereverdeapp.it) — inclusi 4 nuovi fornitori creati (Az agricola Eugenii, Dominici Riccardo, Gianni Giannini, azienda agricola Tolentino Bozo). Segnalato a Filippo: possibile duplicato "SOCIETA' AGRICOLA AURELIA" vs "SOCIETA' AGRICOLA AURELIA SRL" (da verificare se sono la stessa azienda), oltre ai duplicati fornitori già noti da ripulire.
+
+## 107. Scheda Riproduttore — peso carcassa stimato completato (mancava per gli animali attivi)
+
+**Chiarito da Filippo**: il campo "Peso carcassa (kg)" nella scheda esisteva già, ma mostrava solo il peso REALE (quindi "—" per tutti gli animali ancora attivi) — mancava la stima statistica.
+
+**Completato**: usa `stimaPesoCarcassaPerEta` (stesso motore di Import Massivo Riproduttori, età+sesso, mai mescolando maschi e femmine) per gli animali ancora attivi — mostra "(reale)" quando il peso è noto, "stimato (fonte, n=...)" quando è calcolato. Il "Valore di realizzo" ora usa il peso stimato come riserva quando manca quello reale, segnalando "(su peso stimato)" nel valore mostrato per chiarezza.
+
+## 108. "Elabora" ora ricalcola il residuo esistente, non solo alla prima creazione
+
+**Richiesto da Filippo**: deve poter inserire costi di mantenimento per anni passati, e vedere il residuo/scarico dei riproduttori aggiornarsi di conseguenza — non restare congelato a quando è stato elaborato la prima volta.
+
+**Corretto**: `costi_crescita_preriproduttiva` era già ricalcolato ad ogni click di "Elabora" (query fresca ogni volta), ma veniva **scartato** se un residuo esisteva già — il valore restava congelato. Ora, se il residuo totale ricalcolato è diverso da quello registrato, si aggiorna `costo_acquisto`/`costi_crescita_preriproduttiva`/`valore_realizzo_stimato`/`residuo_totale`, e il `residuo_rimanente` si ricalcola preservando quanto è **già stato scaricato** sui figli finora (non lo riscrive né lo cancella — sposta solo il residuo rimanente in coerenza col nuovo totale, mai sotto zero).
+
+**Limite del workflow, da tenere presente**: "Elabora" processa un anno alla volta (quello selezionato nel menu). Se Filippo inserisce costi per anni passati, per far propagare correttamente l'aggiornamento serve **ri-cliccare "Elabora" per ciascun anno interessato, in ordine cronologico** — non è (ancora) un ricalcolo a cascata automatico su tutti gli anni insieme.
+
+Testato con caso mock: residuo che sale (4000 rimanenti invece di aggiungere l'intera differenza) e caso limite di residuo che scende sotto quanto già scaricato (mai negativo).

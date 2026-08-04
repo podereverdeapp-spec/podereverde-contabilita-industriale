@@ -98,41 +98,58 @@ export default function ReportRiproduttori() {
 
         let residuoRecord = esistente ? numerizzaCampi([esistente], ["costo_acquisto", "costi_crescita_preriproduttiva", "valore_realizzo_stimato", "residuo_totale", "residuo_rimanente", "conto_sospeso"])[0] : null;
 
-        if (!residuoRecord) {
-          const razzaRip = rip.razza_calcolata || rip.razza;
-          const realizzo = calcolaValoreRealizzoStimato({
-            specie: rip.specie, razza: razzaRip, sesso: rip.sesso, animaliUsciti: tuttiAnimali || [],
-            prezziRiforma: prezziRiforma || [], etaMinimaAnni,
-          });
-          // Uso la valutazione "vivo" come stima prudenziale di default (di norma la più bassa
-          // delle due) — quando il riproduttore uscirà davvero, si userà il valore reale.
-          const valoreRealizzoStimato = Math.min(
-            realizzo.valutazioneVivo || Infinity,
-            realizzo.valutazioneCarcassa || Infinity
-          );
-          const valoreRealizzoFinale = Number.isFinite(valoreRealizzoStimato) ? valoreRealizzoStimato : 0;
+        // Uso la valutazione "vivo" come stima prudenziale di default (di norma la più bassa
+        // delle due) — quando il riproduttore uscirà davvero, si userà il valore reale.
+        // Ricalcolato SEMPRE (non solo alla prima elaborazione), così se in futuro cambiano
+        // i dati storici dei macellati, la stima si aggiorna anche per un residuo già esistente.
+        const razzaRip = rip.razza_calcolata || rip.razza;
+        const realizzo = calcolaValoreRealizzoStimato({
+          specie: rip.specie, razza: razzaRip, sesso: rip.sesso, animaliUsciti: tuttiAnimali || [],
+          prezziRiforma: prezziRiforma || [], etaMinimaAnni,
+        });
+        const valoreRealizzoStimato = Math.min(
+          realizzo.valutazioneVivo || Infinity,
+          realizzo.valutazioneCarcassa || Infinity
+        );
+        const valoreRealizzoFinale = Number.isFinite(valoreRealizzoStimato) ? valoreRealizzoStimato : 0;
 
-          const residuoTotale = calcolaResiduoIniziale({
-            // Due sole fonti possibili per il costo di partenza, mai mescolate: costo di
-            // acquisto (prezzo_acquisto, per gli "Acquistato") oppure costo di nascita
-            // (costo_iniziale, per i "Nato in azienda" — valorizzato da podereverdeapp.it
-            // alla nascita). Quale delle due si guarda dipende SOLO dalla provenienza.
-            costoAcquisto: rip.provenienza === "Nato in azienda" ? (rip.costo_iniziale || 0) : (rip.prezzo_acquisto || 0),
-            costiCrescitaPreRiproduttiva: costiCrescita,
-            valoreRealizzoStimato: valoreRealizzoFinale,
-          });
+        const costoAcquistoAttuale = rip.provenienza === "Nato in azienda" ? (rip.costo_iniziale || 0) : (rip.prezzo_acquisto || 0);
+        const residuoTotaleAttuale = calcolaResiduoIniziale({
+          // Due sole fonti possibili per il costo di partenza, mai mescolate: costo di
+          // acquisto (prezzo_acquisto, per gli "Acquistato") oppure costo di nascita
+          // (costo_iniziale, per i "Nato in azienda" — valorizzato da podereverdeapp.it
+          // alla nascita). Quale delle due si guarda dipende SOLO dalla provenienza.
+          costoAcquisto: costoAcquistoAttuale,
+          costiCrescitaPreRiproduttiva: costiCrescita,
+          valoreRealizzoStimato: valoreRealizzoFinale,
+        });
+
+        if (!residuoRecord) {
           const chiaveVita = `vita_produttiva_attesa_${rip.specie === "bovino" ? "bovini" : rip.specie === "suino" ? "suini" : "ovini"}`;
           const vitaAttesa = parametriMap[chiaveVita] || 5;
 
           const { data: nuovo, error: eIns } = await supabase.from("ci_residuo_riproduttore").insert([{
             animale_id: rip.id, specie: rip.specie,
-            costo_acquisto: rip.provenienza === "Nato in azienda" ? (rip.costo_iniziale || 0) : (rip.prezzo_acquisto || 0),
+            costo_acquisto: costoAcquistoAttuale,
             costi_crescita_preriproduttiva: costiCrescita, valore_realizzo_stimato: valoreRealizzoFinale,
-            residuo_totale: residuoTotale, residuo_rimanente: residuoTotale,
+            residuo_totale: residuoTotaleAttuale, residuo_rimanente: residuoTotaleAttuale,
             vita_produttiva_attesa_anni: vitaAttesa, anno_inizio_riproduzione: primoAnnoRiproduzione, conto_sospeso: 0,
           }]).select().single();
           if (eIns) throw new Error(`Errore creando residuo per ${rip.bdn}: ${eIns.message}`);
           residuoRecord = numerizzaCampi([nuovo], ["costo_acquisto", "costi_crescita_preriproduttiva", "valore_realizzo_stimato", "residuo_totale", "residuo_rimanente", "conto_sospeso"])[0];
+        } else if (residuoTotaleAttuale !== residuoRecord.residuo_totale) {
+          // Il residuo esisteva già, ma i dati di partenza sono cambiati (es. nuovi costi di
+          // mantenimento inseriti per anni passati) — ricalcolo, preservando quanto è già
+          // stato scaricato sui figli finora (non lo si riscrive, si aggiusta solo il residuo
+          // rimanente per riflettere il nuovo totale).
+          const giaScaricato = round2(residuoRecord.residuo_totale - residuoRecord.residuo_rimanente);
+          const nuovoRimanente = round2(Math.max(0, residuoTotaleAttuale - giaScaricato));
+          await supabase.from("ci_residuo_riproduttore").update({
+            costo_acquisto: costoAcquistoAttuale, costi_crescita_preriproduttiva: costiCrescita,
+            valore_realizzo_stimato: valoreRealizzoFinale, residuo_totale: residuoTotaleAttuale, residuo_rimanente: nuovoRimanente,
+          }).eq("id", residuoRecord.id);
+          residuoRecord = { ...residuoRecord, costo_acquisto: costoAcquistoAttuale, costi_crescita_preriproduttiva: costiCrescita,
+            valore_realizzo_stimato: valoreRealizzoFinale, residuo_totale: residuoTotaleAttuale, residuo_rimanente: nuovoRimanente };
         }
 
         if (anno < residuoRecord.anno_inizio_riproduzione) continue; // non ancora riproduttore in quell'anno
