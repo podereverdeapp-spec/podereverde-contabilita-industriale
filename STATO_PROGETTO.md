@@ -1235,3 +1235,21 @@ Testato con caso mock: residuo che sale (4000 rimanenti invece di aggiungere l'i
 **Ristrutturato "Elabora" per processare tutti gli anni automaticamente**: prima il pulsante elaborava solo l'anno selezionato nel menu (richiedendo un click per ogni anno, in ordine). Ora c'è un ciclo interno che processa TUTTI gli anni dal primo anno di riproduzione di ciascun animale fino all'anno scelto nel campo (rinominato "Fino all'anno (incluso)") — un solo click aggiorna l'intera storia in cascata, propagando correttamente residuo/scarico/costo di nascita anno per anno.
 
 Testato con caso mock: rilanciare il calcolo per lo stesso genitore/anno non raddoppia più il costo (resta 500€, non diventa 1000€); l'arrivo del secondo genitore si somma correttamente (500+300=800) senza alterare la quota del primo.
+
+## 110. Nuova pagina "Import Fatture Acquisto Animali" — copre TUTTI gli acquistati, non solo riproduttori
+
+**Richiesto da Filippo**: aggiornare le fatture di acquisto anche per gli animali (inclusi quelli nei lotti suini) che non sono riproduttori — il lavoro fatto finora copriva solo i 124 riproduttori.
+
+**Scoperta durante l'indagine**: `lotti_suini` ha già le stesse colonne fattura di `animali` (fornitore/data_fattura/numero_fattura/prezzo_acquisto) — 5 lotti con `tipo_provenienza='acquistato'`, di cui solo 2 con dati fattura completi. Trovati anche 61 animali (non riproduttori) con provenienza Acquistato, alcuni già con fattura, molti no.
+
+**Costruita** `ImportFattureAcquistoAnimali.jsx` (Animali → Import Fatture Acquisto Animali): export/import Excel più snello di quello Riproduttori (solo Tipo/BDN o Codice Lotto/Nome/Specie/Razza/Prezzo noto/Fornitore/Data/Numero) — copre insieme animali E lotti suini acquistati, qualunque sia il loro stato di riproduttore. All'import, sincronizza anche `ci_report_acquisto_animali` per gli animali con BDN (stesso meccanismo già validato per i riproduttori) — non per i lotti, che non hanno un BDN individuale da collegare.
+
+## 111. Scheda Riproduttore — corretti "importo scaricato a zero" e conguaglio mancante
+
+**Segnalato da Filippo**: "non conguaglia, è pari a zero" e l'importo scaricato sui figli non si vedeva nella scheda.
+
+**Causa dell'importo a zero**: la scheda mostrava solo l'anno **più recente** processato (`order by anno desc limit 1`) — se quell'anno (es. l'anno corrente, appena iniziato) non ha ancora figli, mostra 0€, anche se anni precedenti hanno avuto uno scarico reale. Peggiorato dal fatto che "Elabora" ora processa automaticamente tutti gli anni fino a quello scelto (sezione 109) — quindi l'ultimo anno è quasi sempre quello corrente, spesso senza figli ancora.
+
+**Corretto**: sostituita la singola cifra con una **tabella di tutti gli anni** scaricati (anno, figli nell'anno, totale scaricato, quota per figlio) — gli anni senza figli sono mostrati in grigio con "(in sospeso)", invece di dare l'impressione fuorviante che lo scarico sia "zero" in generale.
+
+**Conguaglio mai aggiunto alla scheda**: la funzione `calcolaConguaglio` esisteva già nel motore (usata altrove) ma non era mai stata collegata alla Scheda Riproduttore. Aggiunta una sezione dedicata (solo per animali usciti, con valore reale calcolabile) — valore stimato, valore reale, conguaglio totale, conguaglio per figlio (o nota "resta un dato aziendale" se l'anno di uscita non ha avuto figli). Il numero di figli dell'anno di uscita viene letto dalla stessa tabella scarichi sopra, non ricalcolato da capo.

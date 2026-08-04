@@ -4,7 +4,7 @@ import { C } from "./style";
 import { formattaEuro, formattaNumero, round2, fetchAllPages } from "./parsingUtils";
 import {
   calcolaPartiStorici, calcolaFigliFemmina, calcolaFigliMaschio,
-  calcolaFallbackPopolazioneFemmine, stimaPesoCarcassaPerEta,
+  calcolaFallbackPopolazioneFemmine, stimaPesoCarcassaPerEta, calcolaConguaglio,
 } from "./motoreRiproduttori";
 
 export default function SchedaRiproduttore({ animaleId, onClose, onSalvato }) {
@@ -17,7 +17,7 @@ export default function SchedaRiproduttore({ animaleId, onClose, onSalvato }) {
   const [fatturaAcquisto, setFatturaAcquisto] = useState(null);
   const [fatturaTrasporto, setFatturaTrasporto] = useState(null);
   const [costiAnnuali, setCostiAnnuali] = useState([]);
-  const [ultimoScarico, setUltimoScarico] = useState(null);
+  const [tuttiScarichi, setTuttiScarichi] = useState([]);
   const [quotaNascitaMadre, setQuotaNascitaMadre] = useState(null);
   const [quotaNascitaPadre, setQuotaNascitaPadre] = useState(null);
   const [figliInfo, setFigliInfo] = useState(null);
@@ -62,8 +62,8 @@ export default function SchedaRiproduttore({ animaleId, onClose, onSalvato }) {
       setCostiAnnuali(costi || []);
 
       if (res) {
-        const { data: scarichi } = await supabase.from("ci_scarico_riproduttore_annuale").select("*").eq("residuo_riproduttore_id", res.id).order("anno", { ascending: false }).limit(1);
-        setUltimoScarico(scarichi?.[0] || null);
+        const { data: scarichi } = await supabase.from("ci_scarico_riproduttore_annuale").select("*").eq("residuo_riproduttore_id", res.id).order("anno", { ascending: false });
+        setTuttiScarichi(scarichi || []);
       }
 
       // Se nato in azienda: quota nascita madre/padre, cercando lo scarico dell'anno di nascita dei genitori
@@ -185,6 +185,18 @@ export default function SchedaRiproduttore({ animaleId, onClose, onSalvato }) {
   const valoreRealizzoReale = pesoPerRealizzo && form.prezzo_vendita_kg_carcassa_reale
     ? round2(pesoPerRealizzo * parseFloat(form.prezzo_vendita_kg_carcassa_reale)) : null;
 
+  // Conguaglio: solo per animali già usciti, con residuo elaborato e valore reale calcolabile.
+  // Il numero di figli dell'anno di uscita è già disponibile in tuttiScarichi (stessa fonte
+  // usata per la tabella sopra), non va ricalcolato da capo.
+  const annoUscita = animale.data_uscita ? new Date(animale.data_uscita).getFullYear() : null;
+  const scaricoAnnoUscita = annoUscita ? tuttiScarichi.find(s => s.anno === annoUscita) : null;
+  const conguaglioInfo = (residuo && valoreRealizzoReale != null && annoUscita)
+    ? calcolaConguaglio({
+        valoreRealizzoReale, valoreRealizzoStimato: residuo.valore_realizzo_stimato,
+        numeroFigliAnnoUscita: scaricoAnnoUscita?.n_figli_anno ?? 0,
+      })
+    : null;
+
   return (
     <ModaleSfondo onClose={onClose}>
       <h2 style={{ color: C.primary, fontSize: 20, marginTop: 0 }}>Scheda Riproduttore</h2>
@@ -261,11 +273,44 @@ export default function SchedaRiproduttore({ animaleId, onClose, onSalvato }) {
             </Griglia>
           </Sezione>
 
-          <Sezione titolo="Scarico sui figli">
-            <Griglia>
-              <CampoSoloLettura label={`Valore scaricato per figlio (anno ${ultimoScarico?.anno ?? "—"})`} value={ultimoScarico ? formattaEuro(ultimoScarico.quota_per_figlio) : "— (non ancora elaborato)"} />
-            </Griglia>
+          <Sezione titolo="Scarico sui figli, per anno">
+            {tuttiScarichi.length === 0 ? (
+              <p style={{ fontSize: 13, color: C.muted, margin: 0 }}>— Non ancora elaborato (usa "Calcola e scarica sui figli" in Report Riproduttori).</p>
+            ) : (
+              <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ background: C.bg }}>
+                    <th style={{ padding: "4px 8px", textAlign: "left" }}>Anno</th>
+                    <th style={{ padding: "4px 8px", textAlign: "right" }}>Figli nell'anno</th>
+                    <th style={{ padding: "4px 8px", textAlign: "right" }}>Totale scaricato</th>
+                    <th style={{ padding: "4px 8px", textAlign: "right" }}>Quota per figlio</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tuttiScarichi.map(s => (
+                    <tr key={s.anno} style={{ borderTop: `1px solid ${C.border}`, color: s.n_figli_anno === 0 ? C.muted : C.text }}>
+                      <td style={{ padding: "4px 8px" }}>{s.anno}</td>
+                      <td style={{ padding: "4px 8px", textAlign: "right" }}>{s.n_figli_anno}</td>
+                      <td style={{ padding: "4px 8px", textAlign: "right" }}>{s.n_figli_anno > 0 ? formattaEuro(s.totale_scaricato_anno) : "— (in sospeso)"}</td>
+                      <td style={{ padding: "4px 8px", textAlign: "right", fontWeight: 700 }}>{s.n_figli_anno > 0 ? formattaEuro(s.quota_per_figlio) : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </Sezione>
+
+          {animale.stato && animale.stato !== "attivo" && conguaglioInfo && (
+            <Sezione titolo="Conguaglio alla vendita/macellazione reale">
+              <Griglia>
+                <CampoSoloLettura label="Valore stimato (a suo tempo)" value={formattaEuro(residuo.valore_realizzo_stimato)} />
+                <CampoSoloLettura label="Valore reale (peso reale × prezzo vendita)" value={valoreRealizzoReale != null ? formattaEuro(valoreRealizzoReale) : "— (serve peso reale e prezzo)"} />
+                <CampoSoloLettura label="Conguaglio totale" value={formattaEuro(conguaglioInfo.conguaglioTotale)} />
+                <CampoSoloLettura label="Conguaglio per figlio (anno di uscita)"
+                  value={conguaglioInfo.applicatoAiFigli ? formattaEuro(conguaglioInfo.conguaglioPerFiglio) : "— (nessun figlio quell'anno, resta un dato aziendale)"} />
+              </Griglia>
+            </Sezione>
+          )}
         </>
       )}
 
