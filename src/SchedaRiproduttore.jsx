@@ -4,7 +4,7 @@ import { C } from "./style";
 import { formattaEuro, formattaNumero, round2, fetchAllPages } from "./parsingUtils";
 import {
   calcolaPartiStorici, calcolaFigliFemmina, calcolaFigliMaschio,
-  calcolaFallbackPopolazioneFemmine,
+  calcolaFallbackPopolazioneFemmine, stimaPesoCarcassaPerEta,
 } from "./motoreRiproduttori";
 
 export default function SchedaRiproduttore({ animaleId, onClose, onSalvato }) {
@@ -21,6 +21,7 @@ export default function SchedaRiproduttore({ animaleId, onClose, onSalvato }) {
   const [quotaNascitaMadre, setQuotaNascitaMadre] = useState(null);
   const [quotaNascitaPadre, setQuotaNascitaPadre] = useState(null);
   const [figliInfo, setFigliInfo] = useState(null);
+  const [pesoStimatoInfo, setPesoStimatoInfo] = useState(null);
 
   const [form, setForm] = useState({});
   const [formAcquisto, setFormAcquisto] = useState({});
@@ -80,11 +81,20 @@ export default function SchedaRiproduttore({ animaleId, onClose, onSalvato }) {
       // Figli avuti/potenziali (solo se è un riproduttore con residuo calcolato)
       if (res) {
         const [{ data: tuttiAnimali }, { data: tuttiLotti }, { data: tutteUnita }, { data: altriRiproduttori }] = await Promise.all([
-          fetchAllPages((da, r) => supabase.from("animali").select("id,padre_id,madre_id,nascita").range(da, r)),
+          fetchAllPages((da, r) => supabase.from("animali").select("id,padre_id,madre_id,nascita,specie,razza,razza_calcolata,sesso,stato,data_uscita,peso_carcassa").range(da, r)),
           fetchAllPages((da, r) => supabase.from("lotti_suini").select("id,padre_id,madre_id,data_parto").range(da, r)),
           fetchAllPages((da, r) => supabase.from("suini_lotto").select("id,lotto_id").range(da, r)),
           supabase.from("ci_residuo_riproduttore").select("animale_id").eq("specie", a.specie),
         ]);
+
+        // Peso carcassa: se già uscito mostriamo il reale (gestito altrove), se ancora
+        // attivo stimiamo statisticamente dai macellati storici della stessa specie/razza/
+        // sesso, a un'età simile alla sua — stesso motore usato nell'Import Massivo.
+        if ((!a.stato || a.stato === "attivo") && a.nascita) {
+          const etaAnni = (new Date() - new Date(a.nascita)) / (365.25 * 86400000);
+          const stima = stimaPesoCarcassaPerEta({ specie: a.specie, razza: a.razza_calcolata || a.razza, sesso: a.sesso, etaAnniAnimale: etaAnni, animaliUsciti: tuttiAnimali || [] });
+          setPesoStimatoInfo(stima.pesoStimato != null ? stima : null);
+        }
 
         // Per un animale già uscito (macellato/venduto/deceduto) non ha senso proiettare
         // figli futuri — non è più produttivo, quindi gli anni residui sono azzerati:
@@ -171,8 +181,9 @@ export default function SchedaRiproduttore({ animaleId, onClose, onSalvato }) {
 
   const costoMantenimentoAnniPrecedenti = costiAnnuali.filter(c => c.anno < new Date().getFullYear()).reduce((s, c) => s + (parseFloat(c.costo_mantenimento) || 0), 0);
   const costoMantenimentoAnnoCorrente = costiAnnuali.find(c => c.anno === new Date().getFullYear())?.costo_mantenimento || 0;
-  const valoreRealizzoReale = animale.peso_carcassa && form.prezzo_vendita_kg_carcassa_reale
-    ? round2(animale.peso_carcassa * parseFloat(form.prezzo_vendita_kg_carcassa_reale)) : null;
+  const pesoPerRealizzo = animale.peso_carcassa || pesoStimatoInfo?.pesoStimato || null;
+  const valoreRealizzoReale = pesoPerRealizzo && form.prezzo_vendita_kg_carcassa_reale
+    ? round2(pesoPerRealizzo * parseFloat(form.prezzo_vendita_kg_carcassa_reale)) : null;
 
   return (
     <ModaleSfondo onClose={onClose}>
@@ -241,9 +252,12 @@ export default function SchedaRiproduttore({ animaleId, onClose, onSalvato }) {
 
           <Sezione titolo="Vendita e valore di realizzo">
             <Griglia>
-              <CampoSoloLettura label="Peso carcassa (kg)" value={animale.peso_carcassa || "—"} />
+              <CampoSoloLettura label="Peso carcassa (kg)"
+                value={animale.peso_carcassa
+                  ? `${animale.peso_carcassa} (reale)`
+                  : pesoStimatoInfo ? `${pesoStimatoInfo.pesoStimato} stimato (${pesoStimatoInfo.fonteStima}, n=${pesoStimatoInfo.campioneUsato})` : "—"} />
               <Campo label="Prezzo vendita €/kg carcassa" tipo="number" value={form.prezzo_vendita_kg_carcassa_reale} onChange={v => setForm(p => ({ ...p, prezzo_vendita_kg_carcassa_reale: v }))} />
-              <CampoSoloLettura label="Valore di realizzo" value={valoreRealizzoReale != null ? formattaEuro(valoreRealizzoReale) : "— (serve peso carcassa e prezzo)"} />
+              <CampoSoloLettura label="Valore di realizzo" value={valoreRealizzoReale != null ? `${formattaEuro(valoreRealizzoReale)}${!animale.peso_carcassa ? " (su peso stimato)" : ""}` : "— (serve peso carcassa e prezzo)"} />
             </Griglia>
           </Sezione>
 
