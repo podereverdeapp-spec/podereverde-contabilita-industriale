@@ -1193,3 +1193,9 @@ Testato `stimaPesoCarcassaPerEta` con caso mock: un animale di 3 anni usa corret
 Aggiornate le chiamate in `ReportRiproduttori.jsx` e `ImportMassivoRiproduttori.jsx` per passare `sesso`, e aggiunto `sesso` alle rispettive query `animali` dove mancava.
 
 Testato con caso mock: femmine (pesi 260-270) e maschi (pesi 420-430) della stessa specie/razza/età — la stima per una femmina resta sempre nel range femminile (265), mai contaminata dai pesi maschili, anche quando il campione a età simile è insufficiente e scatta il fallback.
+
+## 105. Import Massivo Riproduttori — aggiunta anche la Fattura di Acquisto
+
+**Segnalato da Filippo**: mancava la possibilità di registrare la fattura di acquisto (fornitore/data/numero/importo) nel file — solo il trasporto era coperto.
+
+**Aggiunto**: 4 nuove colonne "Fattura Acquisto" (Fornitore/Data/Numero/Importo), stesso meccanismo già usato per il trasporto — pre-compilate se già presenti in `ci_report_acquisto_animali` (fonte ACQUISTO_DIRETTO, collegate per BDN), editabili, create/aggiornate all'import (crea il fornitore se non esiste). Riepilogo finale aggiornato con il nuovo contatore.

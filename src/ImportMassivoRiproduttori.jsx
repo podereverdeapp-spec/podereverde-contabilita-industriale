@@ -26,19 +26,24 @@ export default function ImportMassivoRiproduttori() {
       const idRiproduttori = riproduttori.map(r => r.id);
       const bdnRiproduttori = riproduttori.map(r => r.bdn).filter(Boolean);
 
-      const [{ data: residui }, { data: fattureTrasporto }] = await Promise.all([
+      const [{ data: residui }, { data: fattureTrasporto }, { data: fattureAcquisto }] = await Promise.all([
         supabase.from("ci_residuo_riproduttore").select("*").in("animale_id", idRiproduttori),
         bdnRiproduttori.length > 0
           ? supabase.from("ci_report_acquisto_animali").select("*, ci_fornitori(nome)").in("bdn", bdnRiproduttori).eq("fonte", "TRASPORTO_INGRESSO")
           : Promise.resolve({ data: [] }),
+        bdnRiproduttori.length > 0
+          ? supabase.from("ci_report_acquisto_animali").select("*, ci_fornitori(nome)").in("bdn", bdnRiproduttori).eq("fonte", "ACQUISTO_DIRETTO")
+          : Promise.resolve({ data: [] }),
       ]);
       const mappaResidui = new Map((residui || []).map(r => [r.animale_id, r]));
       const mappaTrasporto = new Map((fattureTrasporto || []).map(f => [f.bdn, f]));
+      const mappaAcquisto = new Map((fattureAcquisto || []).map(f => [f.bdn, f]));
 
       const oggi = new Date();
       const righe = riproduttori.map(r => {
         const residuo = mappaResidui.get(r.id);
         const trasporto = mappaTrasporto.get(r.bdn);
+        const acquisto = mappaAcquisto.get(r.bdn);
         const costoNoto = r.provenienza === "Nato in azienda" ? (r.costo_iniziale || 0) : (r.prezzo_acquisto || 0);
         const isUscito = r.stato && r.stato !== "attivo";
 
@@ -54,6 +59,10 @@ export default function ImportMassivoRiproduttori() {
           "Provenienza": r.provenienza || "", "Stato": r.stato || "",
           "Nascita": r.nascita || "", "Data Ingresso": r.data_ingresso || "",
           "Costo (acquisto o nascita)": costoNoto,
+          "Fattura Acquisto — Fornitore — MODIFICABILE (solo se Acquistato)": acquisto?.ci_fornitori?.nome || "",
+          "Fattura Acquisto — Data Fattura — MODIFICABILE (solo se Acquistato)": acquisto?.data_fattura || "",
+          "Fattura Acquisto — Numero Fattura — MODIFICABILE (solo se Acquistato)": acquisto?.numero_fattura || "",
+          "Fattura Acquisto — Importo (€) — MODIFICABILE (solo se Acquistato)": acquisto?.importo ?? "",
           "Vita Attesa (anni) — MODIFICABILE": residuo?.vita_produttiva_attesa_anni ?? "",
           "Peso Carcassa REALE (kg) — solo se uscito, MODIFICABILE": isUscito ? (r.peso_carcassa ?? "") : "",
           "Peso Carcassa Stimato (kg) — solo informativo, se ancora attivo": pesoCarcassaStimato,
@@ -97,7 +106,7 @@ export default function ImportMassivoRiproduttori() {
     const { data: tuttiAnimali } = await fetchAllPages((da, a) => supabase.from("animali").select("id,bdn").range(da, a));
     const mappaBdn = new Map((tuttiAnimali || []).map(x => [x.bdn, x.id]));
 
-    let aggiornatiResiduo = 0, aggiornatiPeso = 0, fattureTrasporto = 0, righeSenzaMatch = [];
+    let aggiornatiResiduo = 0, aggiornatiPeso = 0, fattureTrasporto = 0, fattureAcquisto = 0, righeSenzaMatch = [];
 
     for (const r of righe) {
       const bdn = r["BDN"];
@@ -123,6 +132,28 @@ export default function ImportMassivoRiproduttori() {
         aggiornatiPeso++;
       }
 
+      const fAcquistoFornitore = r["Fattura Acquisto — Fornitore — MODIFICABILE (solo se Acquistato)"];
+      const fAcquistoData = r["Fattura Acquisto — Data Fattura — MODIFICABILE (solo se Acquistato)"];
+      const fAcquistoNumero = r["Fattura Acquisto — Numero Fattura — MODIFICABILE (solo se Acquistato)"];
+      const fAcquistoImporto = r["Fattura Acquisto — Importo (€) — MODIFICABILE (solo se Acquistato)"];
+      if (fAcquistoData && fAcquistoNumero && fAcquistoImporto !== "") {
+        let fornitoreId = null;
+        if (fAcquistoFornitore) {
+          const { data: fEsistente } = await supabase.from("ci_fornitori").select("id").eq("nome", fAcquistoFornitore).maybeSingle();
+          fornitoreId = fEsistente?.id;
+          if (!fornitoreId) {
+            const { data: fNuovo } = await supabase.from("ci_fornitori").insert([{ nome: fAcquistoFornitore }]).select().single();
+            fornitoreId = fNuovo?.id;
+          }
+        }
+        const dataAcquistoStr = fAcquistoData instanceof Date ? fAcquistoData.toISOString().slice(0, 10) : String(fAcquistoData).slice(0, 10);
+        const { data: esistenteAcq } = await supabase.from("ci_report_acquisto_animali").select("id").eq("bdn", bdn).eq("fonte", "ACQUISTO_DIRETTO").maybeSingle();
+        const payloadAcq = { fonte: "ACQUISTO_DIRETTO", fornitore_id: fornitoreId, data_fattura: dataAcquistoStr, numero_fattura: String(fAcquistoNumero), importo: round2(parseFloat(fAcquistoImporto)), bdn };
+        if (esistenteAcq) await supabase.from("ci_report_acquisto_animali").update(payloadAcq).eq("id", esistenteAcq.id);
+        else await supabase.from("ci_report_acquisto_animali").insert([payloadAcq]);
+        fattureAcquisto++;
+      }
+
       const fTrasportoFornitore = r["Trasporto — Fornitore — MODIFICABILE"];
       const fTrasportoData = r["Trasporto — Data Fattura — MODIFICABILE"];
       const fTrasportoNumero = r["Trasporto — Numero Fattura — MODIFICABILE"];
@@ -146,14 +177,14 @@ export default function ImportMassivoRiproduttori() {
       }
     }
 
-    setRisultatoImport({ totaleRighe: righe.length, aggiornatiResiduo, aggiornatiPeso, fattureTrasporto, righeSenzaMatch });
+    setRisultatoImport({ totaleRighe: righe.length, aggiornatiResiduo, aggiornatiPeso, fattureTrasporto, fattureAcquisto, righeSenzaMatch });
   }
 
   return (
     <div style={{ padding: 20, maxWidth: 900, margin: "0 auto" }}>
       <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Import Massivo Riproduttori</h1>
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 20 }}>
-        Scarica il file con tutti i riproduttori e i dati già noti (da podereverdeapp.it e dalla Contabilità Industriale), compila le colonne mancanti, poi ricaricalo — aggiorna vita attesa, prezzo di vendita, peso carcassa reale (per gli usciti), e la fattura di trasporto ingresso.
+        Scarica il file con tutti i riproduttori e i dati già noti (da podereverdeapp.it e dalla Contabilità Industriale), compila le colonne mancanti, poi ricaricalo — aggiorna vita attesa, prezzo di vendita, peso carcassa reale (per gli usciti), fattura di acquisto (per gli "Acquistato") e fattura di trasporto ingresso.
       </p>
 
       {errore && <p style={{ color: C.red }}>⚠️ {errore}</p>}
@@ -178,6 +209,7 @@ export default function ImportMassivoRiproduttori() {
             <div>✓ {risultatoImport.totaleRighe} righe lette</div>
             <div>✓ {risultatoImport.aggiornatiResiduo} riproduttori con vita attesa/prezzo vendita aggiornati</div>
             <div>✓ {risultatoImport.aggiornatiPeso} pesi carcassa reali aggiornati</div>
+            <div>✓ {risultatoImport.fattureAcquisto} fatture acquisto create/aggiornate</div>
             <div>✓ {risultatoImport.fattureTrasporto} fatture trasporto create/aggiornate</div>
             {risultatoImport.righeSenzaMatch.length > 0 && (
               <div style={{ color: C.red, marginTop: 6 }}>⚠️ BDN non trovati in anagrafica: {risultatoImport.righeSenzaMatch.join(", ")}</div>
