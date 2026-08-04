@@ -31,6 +31,7 @@ import VerificaRigheMancanti from "./VerificaRigheMancanti";
 import ReportCostiQuantitaAlimentare from "./ReportCostiQuantitaAlimentare";
 import ImportMassivoRiproduttori from "./ImportMassivoRiproduttori";
 import ImportFattureAcquistoAnimali from "./ImportFattureAcquistoAnimali";
+import ReportIngrasso from "./ReportIngrasso";
 import IstruzioniFatture from "./IstruzioniFatture";
 import IstruzioniAnagrafiche from "./IstruzioniAnagrafiche";
 import IstruzioniAnimali from "./IstruzioniAnimali";
@@ -81,6 +82,7 @@ const MENU = [
     { tipo: "voce", id: "uba", label: "Report UBA", icon: "🐮" },
     { tipo: "voce", id: "scheda", label: "Scheda Animale", icon: "🔍" },
     { tipo: "voce", id: "riproduttori", label: "Report Riproduttori", icon: "🐄" },
+    { tipo: "voce", id: "ingrasso", label: "Report Accrescimento/Ingrasso", icon: "🐖" },
     { tipo: "voce", id: "import-massivo-riproduttori", label: "Import Massivo Riproduttori", icon: "📥" },
     { tipo: "voce", id: "import-fatture-acquisto-animali", label: "Import Fatture Acquisto Animali", icon: "📥" },
     { tipo: "voce", id: "consultazione-animali", label: "Consultazione Animali per Anno", icon: "📋" },
@@ -273,6 +275,7 @@ export default function App() {
         {tab === "costi-quantita-alimentare" && <ReportCostiQuantitaAlimentare />}
         {tab === "import-massivo-riproduttori" && <ImportMassivoRiproduttori />}
         {tab === "import-fatture-acquisto-animali" && <ImportFattureAcquistoAnimali />}
+        {tab === "ingrasso" && <ReportIngrasso />}
         {tab === "istr-fatture" && <IstruzioniFatture />}
         {tab === "istr-ricerca" && <IstruzioniAnagrafiche />}
         {tab === "istr-animali" && <IstruzioniAnimali />}

@@ -92,7 +92,7 @@ export default function ReportRiproduttori() {
         // Trovo o creo il record di residuo per questo riproduttore
         const { data: esistente } = await supabase.from("ci_residuo_riproduttore").select("*").eq("animale_id", rip.id).maybeSingle();
 
-        let residuoRecord = esistente ? numerizzaCampi([esistente], ["costo_acquisto", "costi_crescita_preriproduttiva", "valore_realizzo_stimato", "residuo_totale", "residuo_rimanente", "conto_sospeso"])[0] : null;
+        let residuoRecord = esistente ? numerizzaCampi([esistente], ["costo_acquisto", "costi_crescita_preriproduttiva", "valore_realizzo_stimato", "residuo_totale", "residuo_rimanente", "conto_sospeso", "mantenimento_sospeso"])[0] : null;
 
         // Uso la valutazione "vivo" come stima prudenziale di default (di norma la più bassa
         // delle due) — quando il riproduttore uscirà davvero, si userà il valore reale.
@@ -129,10 +129,10 @@ export default function ReportRiproduttori() {
             costo_acquisto: costoAcquistoAttuale,
             costi_crescita_preriproduttiva: costiCrescita, valore_realizzo_stimato: valoreRealizzoFinale,
             residuo_totale: residuoTotaleAttuale, residuo_rimanente: residuoTotaleAttuale,
-            vita_produttiva_attesa_anni: vitaAttesa, anno_inizio_riproduzione: primoAnnoRiproduzione, conto_sospeso: 0,
+            vita_produttiva_attesa_anni: vitaAttesa, anno_inizio_riproduzione: primoAnnoRiproduzione, conto_sospeso: 0, mantenimento_sospeso: 0,
           }]).select().single();
           if (eIns) throw new Error(`Errore creando residuo per ${rip.bdn}: ${eIns.message}`);
-          residuoRecord = numerizzaCampi([nuovo], ["costo_acquisto", "costi_crescita_preriproduttiva", "valore_realizzo_stimato", "residuo_totale", "residuo_rimanente", "conto_sospeso"])[0];
+          residuoRecord = numerizzaCampi([nuovo], ["costo_acquisto", "costi_crescita_preriproduttiva", "valore_realizzo_stimato", "residuo_totale", "residuo_rimanente", "conto_sospeso", "mantenimento_sospeso"])[0];
         } else if (residuoTotaleAttuale !== residuoRecord.residuo_totale) {
           // Il residuo esisteva già, ma i dati di partenza sono cambiati (es. nuovi costi di
           // mantenimento inseriti per anni passati) — ricalcolo, preservando quanto è già
@@ -157,10 +157,18 @@ export default function ReportRiproduttori() {
           const numeroFigliTotaleAnno = figliDellAnno.length + unitaFiglieDellAnno.length;
 
           const anniProduttiviResiduiAllInizioAnno = residuoRecord.vita_produttiva_attesa_anni - (annoCorrente - residuoRecord.anno_inizio_riproduzione);
+
+          // Mantenimento DEL RIPRODUTTORE STESSO in questo specifico anno (non dei figli) —
+          // va scaricato per intero sui figli di quest'anno, non ammortizzato come il residuo.
+          const { data: costoMantenimentoRip } = await supabase.from("ci_costo_animale_annuale")
+            .select("costo_mantenimento").eq("animale_id", rip.id).eq("anno", annoCorrente).maybeSingle();
+
           const piano = calcolaPianoScarico({
             residuoRimanentePrimaDellAnno: residuoRecord.residuo_rimanente,
             anniProduttiviResiduiAllInizioAnno,
             numeroFigliAnno: numeroFigliTotaleAnno,
+            costoMantenimentoAnno: parseFloat(costoMantenimentoRip?.costo_mantenimento) || 0,
+            mantenimentoSospesoPrecedente: residuoRecord.mantenimento_sospeso || 0,
           });
 
           await supabase.from("ci_scarico_riproduttore_annuale").delete().eq("residuo_riproduttore_id", residuoRecord.id).eq("anno", annoCorrente);
@@ -171,9 +179,9 @@ export default function ReportRiproduttori() {
           }]);
 
           await supabase.from("ci_residuo_riproduttore").update({
-            residuo_rimanente: piano.residuoRimanenteDopo, updated_at: new Date().toISOString(),
+            residuo_rimanente: piano.residuoRimanenteDopo, mantenimento_sospeso: piano.mantenimentoSospesoNuovo, updated_at: new Date().toISOString(),
           }).eq("id", residuoRecord.id);
-          residuoRecord = { ...residuoRecord, residuo_rimanente: piano.residuoRimanenteDopo }; // per l'anno successivo del ciclo
+          residuoRecord = { ...residuoRecord, residuo_rimanente: piano.residuoRimanenteDopo, mantenimento_sospeso: piano.mantenimentoSospesoNuovo }; // per l'anno successivo del ciclo
 
           // Aggiorno il costo_nascita_ereditato dei figli dell'anno — SET (non somma) sulla
           // quota di QUESTO genitore specifico (madre o padre, tracciate separatamente),

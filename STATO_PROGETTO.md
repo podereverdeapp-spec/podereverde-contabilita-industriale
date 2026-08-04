@@ -1265,3 +1265,41 @@ Testato con caso mock: rilanciare il calcolo per lo stesso genitore/anno non rad
 - `ReportAcquistoAnimali.jsx`: essendo un elenco a schede (non una tabella), aggiunta una card "Totale" in fondo alla lista filtrata, con conteggio righe e somma importi.
 
 **Bug di editing corretto durante il lavoro**: un mio errore ha rimosso temporaneamente la costante di stile `thBase` da `ReportCostiQuantitaAlimentare.jsx` — trovato e ripristinato subito, verificato che non ci fossero duplicati.
+
+## 113. Nuovo "Report Accrescimento/Ingrasso" — animali NON destinati alla riproduzione, incluso i suinetti nei lotti
+
+**Richiesto da Filippo**: report analogo a Report Riproduttori, ma per tutti gli animali (e suinetti nei lotti) che NON sono riproduttori — con costo di partenza, mantenimento accumulato, costo totale, e margine (valore vendita - costo totale) per chi è già uscito.
+
+**Nuova tabella** `ci_dati_vendita_ingrasso` (animale_id O lotto_id+unita_nr, mai entrambi — vincolo CHECK, indici univoci) — traccia solo il prezzo di vendita al kg: tutto il resto (costo di partenza, mantenimento, peso) si calcola al volo da `animali`/`lotti_suini`/`ci_costo_animale_annuale`, senza duplicare dati. Applicata direttamente via Supabase in sessione.
+
+**Costruito `ReportIngrasso.jsx`** (Animali → Report Accrescimento/Ingrasso): elenco raggruppato per specie (stesso stile a frecce di Report Riproduttori), unisce animali individuali (`riproduttore = false/null`) E suinetti nei lotti (`suini_lotto`, di lotti non-riproduttore) in un'unica lista — colonne: costo totale, valore vendita, margine (verde se positivo, rosso se negativo), stato.
+
+**Costruita `SchedaIngrasso.jsx`**: dettaglio/modifica per singolo animale o unità di lotto — dati anagrafici, costo di partenza (acquisto o nascita, stessa logica di provenienza dei riproduttori), mantenimento accumulato, costo totale, peso (reale se uscito, stimato per età/sesso se attivo — riusa `stimaPesoCarcassaPerEta` di motoreRiproduttori.js), prezzo vendita editabile → valore di vendita e margine calcolati.
+
+**Non ancora fatto/testato con dati reali**: non ho potuto verificare il comportamento con animali/lotti reali del database (a differenza del motore sottostante, testato con caso mock) — da provare con Filippo prima di considerarla definitiva. Il flag "riproduttore" sull'unità di lotto (per escludere eventuali suinetti che diventano riproduttori) non è verificato — attualmente il filtro esclude solo i LOTTI interi con provenienza riproduttore, non singole unità.
+
+## 114. Corretto — sommate anche le colonne €/UBA-gg dove è matematicamente valido
+
+**Richiesto da Filippo**: anche le somme di €/UBA-gg e Kg/UBA-gg nelle righe di totale.
+
+**Verificato caso per caso, prima di correggere alla cieca**: la somma di un rapporto è valida SOLO se tutte le righe condividono lo stesso denominatore.
+- `ReportPerArea.jsx` e `ReportPerAreaCentro.jsx`: qui le righe sono le AREE, e sia `tassoArea` (diviso per gli UBA-giorni **aziendali**, costanti) sia l'incidenza per specie (divisa per gli UBA-giorni di **quella specie**, costanti tra le aree) hanno denominatore fisso lungo le righe — la somma **è corretta**. Tolti i trattini messi per prudenza nella sezione 112, sostituiti con la somma reale.
+- `ReportCosti.jsx`, tabella "Allocazione per Specie" (sezione 95): qui le righe sono le SPECIE, quindi il denominatore CAMBIA da riga a riga — la somma resta non valida, il trattino lì è corretto e resta invariato.
+
+Testato con caso mock: sommare le incidenze riga per riga dà esattamente lo stesso risultato di sommare i valori assoluti e dividere una volta sola per il denominatore comune (3,4 in entrambi i casi) — confermando che il metodo è equivalente, non solo "simile".
+
+## 115. Gap importante corretto — il mantenimento annuale del riproduttore ora si scarica sui figli dell'anno
+
+**Segnalato da Filippo**: il costo di nascita risultava basso perché lo scarico includeva solo la quota del residuo iniziale (acquisto/nascita + crescita pre-riproduttiva) — non il costo di mantenimento del riproduttore **durante** gli anni in cui è già riproduttivo. Confermato: quel mantenimento deve andare per intero sui figli DI QUELL'ANNO, e se un anno non ha figli si accumula (mai spalmato sui figli passati) fino al primo anno buono.
+
+**Nuovo campo** `ci_residuo_riproduttore.mantenimento_sospeso` (migrazione `aggiungi_mantenimento_sospeso.sql`, applicata anche via Supabase in sessione).
+
+**Corretto `calcolaPianoScarico`**: ora scarica DUE componenti separate ogni anno:
+1. La quota del residuo iniziale — stesso meccanismo a saldo residuo di prima (si azzera da sola se l'animale supera la vita produttiva attesa e continua ad avere figli — nessun errore, gestito correttamente)
+2. Il mantenimento di QUEST'anno (dell'animale stesso, non ammortizzato) — se ci sono figli, si scarica per intero insieme a qualunque mantenimento rimasto sospeso da anni precedenti senza figli; se non ci sono figli, si accumula nel sospeso
+
+**Gestisce correttamente le gravidanze a cavallo di due anni** (es. cop­erta a fine 2024, parto nel 2025): il mantenimento 2024 non si perde — finisce nel sospeso e si scarica insieme a quello 2025 sui figli che nascono nel 2025.
+
+Aggiornato il punto di chiamata in `ReportRiproduttori.jsx`: recupera il costo di mantenimento del riproduttore per l'anno corrente da `ci_costo_animale_annuale`, lo passa al motore, salva il nuovo sospeso sul residuo.
+
+Testato con caso mock a 2 anni (2024 senza figli con mantenimento 200€, 2025 con 2 figli e mantenimento 220€): confermato che il 2024 non scarica nulla e accumula 200€ in sospeso, e il 2025 scarica correttamente residuo+mantenimento combinati (750+420=1170€, quota per figlio 585€).
