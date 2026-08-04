@@ -1199,3 +1199,11 @@ Testato con caso mock: femmine (pesi 260-270) e maschi (pesi 420-430) della stes
 **Segnalato da Filippo**: mancava la possibilità di registrare la fattura di acquisto (fornitore/data/numero/importo) nel file — solo il trasporto era coperto.
 
 **Aggiunto**: 4 nuove colonne "Fattura Acquisto" (Fornitore/Data/Numero/Importo), stesso meccanismo già usato per il trasporto — pre-compilate se già presenti in `ci_report_acquisto_animali` (fonte ACQUISTO_DIRETTO, collegate per BDN), editabili, create/aggiornate all'import (crea il fornitore se non esiste). Riepilogo finale aggiornato con il nuovo contatore.
+
+## 106. Bug corretto — Scheda Riproduttore non mostrava mai il nome fornitore
+
+**Segnalato da Filippo**: "manca il fornitore" — verificato prima sul database (tutte le 86 righe avevano `fornitore_id` correttamente collegato, nessun dato mancante), poi trovato nel codice: `SchedaRiproduttore.jsx` inizializzava sempre `fornitore_nome: ""` nel form, anche quando una fattura esisteva già — mai recuperava il nome del fornitore dal database (la query non faceva il join con `ci_fornitori`).
+
+**Corretto**: aggiunto `ci_fornitori(nome)` alla query, e il form ora si popola con `acq.ci_fornitori?.nome` / `tra.ci_fornitori?.nome` invece di una stringa vuota fissa. Verificato che `ImportMassivoRiproduttori.jsx` non avesse lo stesso problema — costruito correttamente fin dall'inizio con il join già presente.
+
+**Registrate in sessione**: tutte le 86 fatture di acquisto compilate da Filippo nel file Excel (molte di più delle 25 originariamente estratte da podereverdeapp.it) — inclusi 4 nuovi fornitori creati (Az agricola Eugenii, Dominici Riccardo, Gianni Giannini, azienda agricola Tolentino Bozo). Segnalato a Filippo: possibile duplicato "SOCIETA' AGRICOLA AURELIA" vs "SOCIETA' AGRICOLA AURELIA SRL" (da verificare se sono la stessa azienda), oltre ai duplicati fornitori già noti da ripulire.

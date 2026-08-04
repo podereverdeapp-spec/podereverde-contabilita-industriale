@@ -48,13 +48,13 @@ export default function SchedaRiproduttore({ animaleId, onClose, onSalvato }) {
 
       if (a.bdn) {
         const { data: fatture } = await supabase.from("ci_report_acquisto_animali")
-          .select("*").eq("bdn", a.bdn).in("fonte", ["ACQUISTO_DIRETTO", "TRASPORTO_INGRESSO"]);
+          .select("*, ci_fornitori(nome)").eq("bdn", a.bdn).in("fonte", ["ACQUISTO_DIRETTO", "TRASPORTO_INGRESSO"]);
         const acq = (fatture || []).find(f => f.fonte === "ACQUISTO_DIRETTO");
         const tra = (fatture || []).find(f => f.fonte === "TRASPORTO_INGRESSO");
         setFatturaAcquisto(acq || null);
         setFatturaTrasporto(tra || null);
-        setFormAcquisto(acq ? { fornitore_nome: "", data: acq.data_fattura, numero: acq.numero_fattura, importo: acq.importo } : { fornitore_nome: "", data: "", numero: "", importo: "" });
-        setFormTrasporto(tra ? { fornitore_nome: "", data: tra.data_fattura, numero: tra.numero_fattura, importo: tra.importo } : { fornitore_nome: "", data: "", numero: "", importo: "" });
+        setFormAcquisto(acq ? { fornitore_nome: acq.ci_fornitori?.nome || "", data: acq.data_fattura, numero: acq.numero_fattura, importo: acq.importo } : { fornitore_nome: "", data: "", numero: "", importo: "" });
+        setFormTrasporto(tra ? { fornitore_nome: tra.ci_fornitori?.nome || "", data: tra.data_fattura, numero: tra.numero_fattura, importo: tra.importo } : { fornitore_nome: "", data: "", numero: "", importo: "" });
       }
 
       const { data: costi } = await supabase.from("ci_costo_animale_annuale").select("anno, costo_mantenimento, costo_nascita_ereditato, costo_totale_anno").eq("animale_id", animaleId).order("anno");
