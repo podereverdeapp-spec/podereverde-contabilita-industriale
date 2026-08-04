@@ -1223,3 +1223,15 @@ Testato con caso mock: femmine (pesi 260-270) e maschi (pesi 420-430) della stes
 **Limite del workflow, da tenere presente**: "Elabora" processa un anno alla volta (quello selezionato nel menu). Se Filippo inserisce costi per anni passati, per far propagare correttamente l'aggiornamento serve **ri-cliccare "Elabora" per ciascun anno interessato, in ordine cronologico** — non è (ancora) un ricalcolo a cascata automatico su tutti gli anni insieme.
 
 Testato con caso mock: residuo che sale (4000 rimanenti invece di aggiungere l'intera differenza) e caso limite di residuo che scende sotto quanto già scaricato (mai negativo).
+
+## 109. "Elabora" ora processa tutti gli anni in un click, e corretto un bug di raddoppio del costo di nascita
+
+**Richiesto da Filippo**: l'aggiornamento deve essere automatico — un solo click deve coprire tutta la storia, non un anno alla volta manualmente.
+
+**Bug critico trovato PRIMA di procedere**: il codice esistente sommava `piano.quotaPerFiglio` a `costo_nascita_ereditato` **senza mai azzerarlo prima** — pensato per il caso di 2 genitori riproduttori (madre+padre, due chiamate diverse), ma se si rilanciava "Elabora" più volte per lo STESSO genitore/anno (esattamente il caso d'uso richiesto da Filippo), il costo di nascita del figlio si sarebbe raddoppiato ad ogni rilancio.
+
+**Corretto strutturalmente**: nuove colonne `ci_costo_animale_annuale.costo_nascita_da_madre` / `costo_nascita_da_padre` (migrazione `aggiungi_quota_nascita_genitori.sql`, applicata anche direttamente via Supabase in sessione) — ciascuna viene sempre **impostata** (mai sommata) alla quota calcolata per QUEL genitore in QUELL'anno, poi `costo_nascita_ereditato` si ricalcola sempre come somma delle due. Rilanciare "Elabora" tante volte quante si vuole ora è sicuro (idempotente).
+
+**Ristrutturato "Elabora" per processare tutti gli anni automaticamente**: prima il pulsante elaborava solo l'anno selezionato nel menu (richiedendo un click per ogni anno, in ordine). Ora c'è un ciclo interno che processa TUTTI gli anni dal primo anno di riproduzione di ciascun animale fino all'anno scelto nel campo (rinominato "Fino all'anno (incluso)") — un solo click aggiorna l'intera storia in cascata, propagando correttamente residuo/scarico/costo di nascita anno per anno.
+
+Testato con caso mock: rilanciare il calcolo per lo stesso genitore/anno non raddoppia più il costo (resta 500€, non diventa 1000€); l'arrivo del secondo genitore si somma correttamente (500+300=800) senza alterare la quota del primo.
