@@ -101,6 +101,9 @@ export default function ReportIngrasso() {
           {["bovino", "suino", "ovino"].map(specie => {
             const righeSpecie = righe.filter(r => r.specie === specie);
             if (righeSpecie.length === 0) return null;
+            const isAttivo = r => !(r.stato && r.stato !== "attivo" && r.stato !== "vivo");
+            const attivi = righeSpecie.filter(isAttivo).sort((a, b) => b.costoTotale - a.costoTotale);
+            const usciti = righeSpecie.filter(r => !isAttivo(r)).sort((a, b) => (b.valoreVendita ?? -Infinity) - (a.valoreVendita ?? -Infinity));
             const aperta = specieEspanse.has(specie);
             return (
               <div key={specie}>
@@ -118,24 +121,17 @@ export default function ReportIngrasso() {
                       </tr>
                     </thead>
                     <tbody>
-                      {righeSpecie.map(r => (
-                        <tr key={r.tipo === "animale" ? `a${r.animaleId}` : `u${r.lottoId}_${r.unitaNr}`}
-                          onClick={() => setSelezionato(r.tipo === "animale" ? { animaleId: r.animaleId } : { lottoId: r.lottoId, unitaNr: r.unitaNr })}
-                          style={{ borderTop: `1px solid ${C.border}`, cursor: "pointer" }}>
-                          <td style={td}>{r.bdn || r.nome || "—"}</td>
-                          <td style={td}>{r.razza || "—"}</td>
-                          <td style={td}>{r.provenienza}</td>
-                          <td style={{ ...td, textAlign: "right" }}>{formattaEuro(r.costoTotale)}</td>
-                          <td style={{ ...td, textAlign: "right" }}>{r.valoreVendita != null ? formattaEuro(r.valoreVendita) : "—"}</td>
-                          <td style={{ ...td, textAlign: "right", fontWeight: 700, color: r.margine == null ? C.muted : r.margine >= 0 ? C.green : C.red }}>
-                            {r.margine != null ? formattaEuro(r.margine) : "—"}
-                          </td>
-                          <td style={td}>
-                            {r.stato && r.stato !== "attivo" && r.stato !== "vivo"
-                              ? <span style={{ color: r.valoreVendita != null ? C.green : C.accent, fontWeight: 700 }}>{r.valoreVendita != null ? "✓ Venduto" : "Uscito — da valorizzare"}</span>
-                              : <span style={{ color: C.muted }}>Attivo</span>}
-                          </td>
-                        </tr>
+                      {attivi.length > 0 && (
+                        <tr><td colSpan={7} style={{ padding: "6px 10px", background: C.bg, fontWeight: 700, fontSize: 11, color: C.muted }}>ATTIVI ({attivi.length}) — ordinati per costo totale</td></tr>
+                      )}
+                      {attivi.map(r => (
+                        <RigaIngrasso key={r.tipo === "animale" ? `a${r.animaleId}` : `u${r.lottoId}_${r.unitaNr}`} r={r} onClick={() => setSelezionato(r.tipo === "animale" ? { animaleId: r.animaleId } : { lottoId: r.lottoId, unitaNr: r.unitaNr })} />
+                      ))}
+                      {usciti.length > 0 && (
+                        <tr><td colSpan={7} style={{ padding: "6px 10px", background: C.bg, fontWeight: 700, fontSize: 11, color: C.muted }}>USCITI ({usciti.length}) — ordinati per valore di vendita</td></tr>
+                      )}
+                      {usciti.map(r => (
+                        <RigaIngrasso key={r.tipo === "animale" ? `a${r.animaleId}` : `u${r.lottoId}_${r.unitaNr}`} r={r} onClick={() => setSelezionato(r.tipo === "animale" ? { animaleId: r.animaleId } : { lottoId: r.lottoId, unitaNr: r.unitaNr })} />
                       ))}
                     </tbody>
                   </table>
@@ -155,3 +151,23 @@ export default function ReportIngrasso() {
 
 const th = { padding: "8px 10px", textAlign: "left", fontSize: 11 };
 const td = { padding: "8px 10px" };
+
+function RigaIngrasso({ r, onClick }) {
+  return (
+    <tr onClick={onClick} style={{ borderTop: `1px solid ${C.border}`, cursor: "pointer" }}>
+      <td style={td}>{r.bdn || r.nome || "—"}</td>
+      <td style={td}>{r.razza || "—"}</td>
+      <td style={td}>{r.provenienza}</td>
+      <td style={{ ...td, textAlign: "right" }}>{formattaEuro(r.costoTotale)}</td>
+      <td style={{ ...td, textAlign: "right" }}>{r.valoreVendita != null ? formattaEuro(r.valoreVendita) : "—"}</td>
+      <td style={{ ...td, textAlign: "right", fontWeight: 700, color: r.margine == null ? C.muted : r.margine >= 0 ? C.green : C.red }}>
+        {r.margine != null ? formattaEuro(r.margine) : "—"}
+      </td>
+      <td style={td}>
+        {r.stato && r.stato !== "attivo" && r.stato !== "vivo"
+          ? <span style={{ color: r.valoreVendita != null ? C.green : C.accent, fontWeight: 700 }}>{r.valoreVendita != null ? "✓ Venduto" : "Uscito — da valorizzare"}</span>
+          : <span style={{ color: C.muted }}>Attivo</span>}
+      </td>
+    </tr>
+  );
+}

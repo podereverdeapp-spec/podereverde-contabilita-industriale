@@ -1335,3 +1335,11 @@ Testato con caso mock a 2 anni (2024 senza figli con mantenimento 200€, 2025 c
 **Corretto**: tutte le query ora controllano esplicitamente l'errore e lo mostrano a schermo se presente, invece di fallire in silenzio. Aggiunto anche un contatore diagnostico nella pagina ("N animali individuali, M suinetti nei lotti") per capire subito, al primo colpo d'occhio, se il problema persiste e da che parte.
 
 **Da verificare con Filippo**: non essendo riproducibile da qui (i dati e la query risultano corretti quando testati direttamente), serve che riprovi con il prossimo deploy — se il problema persiste, ora dovrebbe comparire un messaggio di errore esplicito invece di una sezione vuota, che aiuterà a isolare la causa reale.
+
+## 119. Report Ingrasso: attivi/usciti separati e ordinati; Scheda: data uscita e periodo in azienda
+
+**Richiesto da Filippo**: nel report, dentro ogni specie, attivi in alto (ordinati per costo totale decrescente) e usciti in basso (ordinati per valore vendita decrescente) — separati da un'intestazione. Nella scheda individuale: data di uscita (per gli usciti) e periodo trascorso in azienda in giorni e mesi equivalenti (dalla data di ingresso, non di nascita — utile anche per gli attivi, non solo per chi è uscito).
+
+**Corretto in `ReportIngrasso.jsx`**: righe divise in `attivi` (ordinate per `costoTotale` decrescente) e `usciti` (ordinate per `valoreVendita` decrescente, chi non ha ancora un valore va in fondo al suo gruppo) — estratto un componente `RigaIngrasso` per non duplicare il markup tra i due gruppi, con una riga di intestazione separatrice tra i due blocchi.
+
+**Aggiunto in `SchedaIngrasso.jsx`**: "Data di uscita" (solo se uscito), e "Periodo in azienda" (giorni e mesi, calcolato da `data_ingresso` — distinto dall'età, che parte dalla nascita) — mostrato sia per gli attivi (fino ad oggi) sia per gli usciti (fino alla data di uscita).

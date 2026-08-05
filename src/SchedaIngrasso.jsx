@@ -108,6 +108,10 @@ export default function SchedaIngrasso({ animaleId, lottoId, unitaNr, onClose, o
   const dataRiferimentoEta = isUscito && soggetto.data_uscita ? new Date(soggetto.data_uscita) : new Date();
   const giorniVita = soggetto.nascita ? Math.round((dataRiferimentoEta - new Date(soggetto.nascita)) / 86400000) : null;
   const anniVita = giorniVita != null ? round2(giorniVita / 365.25) : null;
+
+  // Periodo in azienda: dalla data di INGRESSO (non nascita) a oggi (attivi) o all'uscita (usciti)
+  const giorniInAzienda = soggetto.data_ingresso ? Math.round((dataRiferimentoEta - new Date(soggetto.data_ingresso)) / 86400000) : null;
+  const mesiInAzienda = giorniInAzienda != null ? round2(giorniInAzienda / 30.44) : null;
   const costoAlGiorno = giorniVita > 0 ? round2(costoTotale / giorniVita) : null;
 
   const pesoVivo = soggetto.peso_vivo_uscita || null; // non c'è un "peso vivo attuale" tracciato per gli animali ancora in vita
@@ -135,7 +139,10 @@ export default function SchedaIngrasso({ animaleId, lottoId, unitaNr, onClose, o
           <CampoSoloLettura label="Stato" value={soggetto.stato || "—"} />
           <CampoSoloLettura label="Data di nascita" value={soggetto.nascita || "—"} />
           <CampoSoloLettura label="Data di ingresso in azienda" value={soggetto.data_ingresso || "—"} />
+          {isUscito && <CampoSoloLettura label="Data di uscita" value={soggetto.data_uscita || "—"} />}
           <CampoSoloLettura label={isUscito ? "Età alla uscita" : "Età attuale"} value={anniVita != null ? `${anniVita} anni (${giorniVita} giorni)` : "—"} />
+          <CampoSoloLettura label={isUscito ? "Periodo in azienda (fino all'uscita)" : "Periodo in azienda (ad oggi)"}
+            value={giorniInAzienda != null ? `${giorniInAzienda} giorni (${mesiInAzienda} mesi)` : "—"} />
         </Griglia>
       </Sezione>
 
