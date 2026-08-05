@@ -1351,3 +1351,13 @@ Testato con caso mock a 2 anni (2024 senza figli con mantenimento 200€, 2025 c
 **Causa reale, trovata rileggendo tutto il file con attenzione**: `fetchAllPages` restituisce `{data, error}`, non l'array direttamente — ma nell'assegnazione dopo il `Promise.all` mancava `.data` per 3 delle 5 query (`animali`, `unita`, `costiAnnuali`), che restituivano quindi l'intero oggetto `{data, error}` invece dell'array. Il primo ciclo `for (const a of animali)` provava a iterare su un oggetto non iterabile e lanciava un'eccezione — che PRIMA (prima della sezione 118) non era mai catturata da un try/catch, quindi falliva silenziosamente lasciando la pagina bloccata su "Caricamento...". Questo spiega perché anche i suinetti nei lotti sembravano mancare (sezione 118): probabilmente l'intero report non aveva mai finito di caricare nulla, non solo quella parte.
 
 **Corretto**: aggiunte le `.data` mancanti, aggiunto un try/catch attorno a **tutta** la funzione `carica()` (non solo alle due query già controllate nella sezione 118), e controllo esplicito dell'errore anche sulle altre 3 query che usano `fetchAllPages` — qualunque fallimento futuro ora mostra un messaggio a schermo invece di bloccare la pagina indefinitamente.
+
+## 121. Bug grave corretto — costo di acquisto del lotto NON diviso tra i suinetti
+
+**Segnalato da Filippo**: anomalie nei costi di acquisto nel Report Ingrasso. Causa: `ReportIngrasso.jsx` e `SchedaIngrasso.jsx` usavano `lotto.prezzo_acquisto` (l'intero importo del lotto, registrato una volta su podereverdeapp.it) come costo di partenza di **ciascun** suinetto — invece di dividerlo per il numero di suinetti nel lotto. Stesso principio già corretto altrove per il costo di nascita (diviso tra i figli), qui mancava.
+
+**Portata reale del bug**, verificata sui 5 lotti acquistati: il lotto 2111AQ (7000€, 30 suinetti) mostrava **7000€ su ciascuno dei 30** invece di 233,33€ a capo — un fattore di errore ×30 su quel lotto. Stesso problema, in proporzione, sugli altri 4 lotti (891796: ×40, 2007AQ: ×20, 2606AQ: ×12, 2504AQ: ×47).
+
+**Corretto**: in entrambi i file, il costo unitario di acquisto ora si calcola come `prezzo_acquisto_lotto / numero_unità_nel_lotto`. In `SchedaIngrasso.jsx` aggiunta anche una nota esplicita di trasparenza ("Prezzo lotto: X ÷ N suinetti = Y a capo") per rendere visibile il calcolo, non solo il risultato.
+
+**Da fare, promemoria**: rilanciare "Elabora" su Report Riproduttori (se qualcuno di questi suinetti è nel frattempo diventato riproduttore) e ricontrollare margini/costi già visualizzati altrove che potrebbero essere stati influenzati dallo stesso dato sbagliato.

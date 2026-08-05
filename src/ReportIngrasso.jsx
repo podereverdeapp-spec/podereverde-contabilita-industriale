@@ -37,6 +37,15 @@ export default function ReportIngrasso() {
       const mappaVenditeAnimale = new Map((venditeIngrasso || []).filter(v => v.animale_id).map(v => [v.animale_id, v]));
       const mappaVenditeUnita = new Map((venditeIngrasso || []).filter(v => v.lotto_id).map(v => [`${v.lotto_id}|${v.unita_nr}`, v]));
 
+      // Numero di unità per lotto — serve per dividere il prezzo di acquisto del LOTTO
+      // (unico, registrato una volta su podereverdeapp.it) tra i singoli suinetti, così da
+      // ottenere il costo di acquisto UNITARIO — esattamente come il costo di nascita si
+      // divide tra i figli, non si duplica per intero su ciascuno.
+      const conteggioUnitaPerLotto = new Map();
+      for (const u of (unita || [])) {
+        conteggioUnitaPerLotto.set(u.lotto_id, (conteggioUnitaPerLotto.get(u.lotto_id) || 0) + 1);
+      }
+
       const risultati = [];
 
       // Animali individuali NON riproduttori
@@ -67,7 +76,8 @@ export default function ReportIngrasso() {
         if (!lotto) continue;
         const costiSuoi = (costiAnnuali || []).filter(c => c.lotto_id === u.lotto_id && c.unita_nr === u.nr);
         const costoNascita = costiSuoi.reduce((s, c) => s + (parseFloat(c.costo_nascita_ereditato) || 0), 0);
-        const costoPartenza = lotto.tipo_provenienza === "acquistato" ? (lotto.prezzo_acquisto || 0) : costoNascita;
+        const numeroUnitaLotto = conteggioUnitaPerLotto.get(u.lotto_id) || 1;
+        const costoPartenza = lotto.tipo_provenienza === "acquistato" ? round2((lotto.prezzo_acquisto || 0) / numeroUnitaLotto) : costoNascita;
         const mantenimentoTotale = round2(costiSuoi.reduce((s, c) => s + (parseFloat(c.costo_mantenimento) || 0), 0));
         const costoTotale = round2(costoPartenza + mantenimentoTotale);
         const vendita = mappaVenditeUnita.get(`${u.lotto_id}|${u.nr}`);

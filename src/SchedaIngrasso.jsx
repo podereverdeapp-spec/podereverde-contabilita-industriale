@@ -35,9 +35,12 @@ export default function SchedaIngrasso({ animaleId, lottoId, unitaNr, onClose, o
           .eq("lotto_id", lottoId).eq("nr", unitaNr).single();
         if (error) throw new Error(error.message);
         const { data: lotto } = await supabase.from("lotti_suini").select("*").eq("id", lottoId).single();
+        const { count: numeroUnitaLotto } = await supabase.from("suini_lotto").select("id", { count: "exact", head: true }).eq("lotto_id", lottoId);
+        const prezzoAcquistoUnitario = lotto?.prezzo_acquisto ? round2(lotto.prezzo_acquisto / (numeroUnitaLotto || 1)) : null;
         s = { ...u, specie: lotto?.specie || "suino", razzaFinale: lotto?.razza_madre, provenienza: lotto?.tipo_provenienza === "acquistato" ? "Acquistato" : "Nato in azienda",
           nascita: lotto?.data_parto, identificativo: u.bdn || `${lotto?.codice_lotto || lotto?.codice}#${u.nr}`,
-          costo_iniziale: null, prezzo_acquisto: lotto?.prezzo_acquisto, fornitore: lotto?.fornitore, data_fattura: lotto?.data_fattura, numero_fattura: lotto?.numero_fattura };
+          costo_iniziale: null, prezzo_acquisto: prezzoAcquistoUnitario, prezzoAcquistoLottoTotale: lotto?.prezzo_acquisto, numeroUnitaLotto,
+          fornitore: lotto?.fornitore, data_fattura: lotto?.data_fattura, numero_fattura: lotto?.numero_fattura };
       }
       setSoggetto(s);
 
@@ -148,10 +151,15 @@ export default function SchedaIngrasso({ animaleId, lottoId, unitaNr, onClose, o
 
       <Sezione titolo="Costo di partenza e mantenimento">
         <Griglia>
-          <CampoSoloLettura label={soggetto.provenienza === "Nato in azienda" ? "Costo di nascita" : "Costo di acquisto"} value={formattaEuro(costoPartenza)} />
+          <CampoSoloLettura label={soggetto.provenienza === "Nato in azienda" ? "Costo di nascita" : "Costo di acquisto (unitario)"} value={formattaEuro(costoPartenza)} />
           <CampoSoloLettura label="Costo totale ad oggi" value={formattaEuro(costoTotale)} />
           <CampoSoloLettura label="Costo al giorno" value={costoAlGiorno != null ? formattaEuro(costoAlGiorno, 3) : "—"} />
         </Griglia>
+        {soggetto.prezzoAcquistoLottoTotale != null && (
+          <p style={{ fontSize: 11, color: C.muted, marginTop: 6, marginBottom: 0 }}>
+            Prezzo lotto: {formattaEuro(soggetto.prezzoAcquistoLottoTotale)} ÷ {soggetto.numeroUnitaLotto} suinetti = {formattaEuro(costoPartenza)} a capo — mai l'intero importo del lotto ripetuto su ciascuno.
+          </p>
+        )}
         <div style={{ marginTop: 10, marginBottom: 6 }}>
           <label style={{ fontSize: 11, color: C.muted }}>Anno di consultazione (per lo spacchettamento sotto)
             <input type="number" value={annoConsultazione} onChange={e => setAnnoConsultazione(parseInt(e.target.value) || new Date().getFullYear())}
