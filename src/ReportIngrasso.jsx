@@ -8,6 +8,7 @@ const ETICHETTE_SPECIE = { bovino: "Bovini", suino: "Suini", ovino: "Ovini" };
 
 export default function ReportIngrasso() {
   const [caricando, setCaricando] = useState(true);
+  const [errore, setErrore] = useState(null);
   const [righe, setRighe] = useState([]);
   const [specieEspanse, setSpecieEspanse] = useState(new Set());
   const [selezionato, setSelezionato] = useState(null); // { animaleId } o { lottoId, unitaNr }
@@ -16,13 +17,17 @@ export default function ReportIngrasso() {
 
   async function carica() {
     setCaricando(true);
-    const [{ data: animali }, { data: lotti }, { data: unita }, { data: costiAnnuali }, { data: venditeIngrasso }] = await Promise.all([
+    setErrore(null);
+    const [rAnimali, rLotti, rUnita, rCosti, rVendite] = await Promise.all([
       fetchAllPages((da, a) => supabase.from("animali").select("id,bdn,nome,specie,razza,razza_calcolata,sesso,riproduttore,provenienza,costo_iniziale,prezzo_acquisto,nascita,stato,data_uscita,peso_vivo_uscita,peso_carcassa").range(da, a)),
-      supabase.from("lotti_suini").select("id,codice_lotto,codice,tipo_provenienza,prezzo_acquisto,razza_madre,specie").then(r => r.data),
+      supabase.from("lotti_suini").select("id,codice_lotto,codice,tipo_provenienza,prezzo_acquisto,razza_madre,specie"),
       fetchAllPages((da, a) => supabase.from("suini_lotto").select("id,lotto_id,nr,sesso,stato,data_uscita,peso_carcassa,peso_vivo_uscita").range(da, a)),
       fetchAllPages((da, a) => supabase.from("ci_costo_animale_annuale").select("animale_id,lotto_id,unita_nr,anno,costo_mantenimento,costo_nascita_ereditato").range(da, a)),
-      supabase.from("ci_dati_vendita_ingrasso").select("*").then(r => r.data),
+      supabase.from("ci_dati_vendita_ingrasso").select("*"),
     ]);
+    if (rLotti.error) { setErrore(`Errore caricando i lotti suini: ${rLotti.error.message}`); setCaricando(false); return; }
+    if (rVendite.error) { setErrore(`Errore caricando i dati di vendita: ${rVendite.error.message}`); setCaricando(false); return; }
+    const animali = rAnimali, lotti = rLotti.data, unita = rUnita, costiAnnuali = rCosti, venditeIngrasso = rVendite.data;
 
     const mappaLotti = new Map((lotti || []).map(l => [l.id, l]));
     const mappaVenditeAnimale = new Map((venditeIngrasso || []).filter(v => v.animale_id).map(v => [v.animale_id, v]));
@@ -87,8 +92,10 @@ export default function ReportIngrasso() {
       <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Report Accrescimento / Ingrasso</h1>
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 20 }}>
         Tutti gli animali (e i suinetti nei lotti) non destinati alla riproduzione — costo di partenza (acquisto o nascita) + mantenimento accumulato, e per chi è già uscito il margine sulla vendita. Clicca un animale per la scheda di dettaglio.
+        {!caricando && <> — {righe.filter(r => r.tipo === "animale").length} animali individuali, {righe.filter(r => r.tipo === "unita").length} suinetti nei lotti.</>}
       </p>
 
+      {errore && <p style={{ color: C.red }}>⚠️ {errore}</p>}
       {caricando ? <p style={{ color: C.muted }}>Caricamento...</p> : (
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
           {["bovino", "suino", "ovino"].map(specie => {

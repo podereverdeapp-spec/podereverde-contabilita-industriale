@@ -168,6 +168,7 @@ export default function ReportStorico({ specieFiltro, titolo }) {
             righeArea={risultato.righeArea} righeCentro={risultato.righeCentro}
             espansi={espansi} toggleEspanso={toggleEspanso}
             anni={anni} campo1={campo1} campo2={campo2} labelCampo1={labelCampo1} labelCampo2={labelCampo2}
+            totaliPerAnno={risultato.totaliPerAnno}
           />
 
           {risultato.rigaRossa.length > 0 && (
@@ -182,7 +183,7 @@ export default function ReportStorico({ specieFiltro, titolo }) {
   );
 }
 
-function TabellaConfrontoAccordion({ righeArea, righeCentro, espansi, toggleEspanso, anni, campo1, campo2, labelCampo1, labelCampo2 }) {
+function TabellaConfrontoAccordion({ righeArea, righeCentro, espansi, toggleEspanso, anni, campo1, campo2, labelCampo1, labelCampo2, totaliPerAnno }) {
   if (righeArea.length === 0) return <p style={{ color: C.muted, fontSize: 13 }}>Nessun dato.</p>;
   return (
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "auto", marginBottom: 8 }}>
@@ -254,6 +255,19 @@ function TabellaConfrontoAccordion({ righeArea, righeCentro, espansi, toggleEspa
               </Fragment>
             );
           })}
+          {totaliPerAnno && (
+            <tr style={{ borderTop: `2px solid ${C.primary}`, fontWeight: 800, background: C.bg }}>
+              <td style={td}>Totale</td>
+              {totaliPerAnno.map((t, i) => (
+                <Fragment key={i}>
+                  <td style={{ ...td, textAlign: "right" }}>{formattaEuro(t.valoreAssoluto)}</td>
+                  <td style={{ ...td, textAlign: "right" }}>{formattaEuro(t.tasso, 4)}</td>
+                </Fragment>
+              ))}
+              <td style={{ ...td, textAlign: "right" }}>{formattaEuro(round2(totaliPerAnno.reduce((s, t) => s + t.valoreAssoluto, 0) / totaliPerAnno.length))}</td>
+              <td style={{ ...td, textAlign: "right" }}>{formattaEuro(round2(totaliPerAnno.reduce((s, t) => s + t.tasso, 0) / totaliPerAnno.length), 4)}</td>
+            </tr>
+          )}
         </tbody>
       </table>
     </div>

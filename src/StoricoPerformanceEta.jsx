@@ -138,6 +138,33 @@ export default function StoricoPerformanceEta() {
                           <td style={{ ...td, background: COLORE_COPPIA, fontWeight: 700 }}>{r.media.kg != null ? formattaNumero(r.media.kg, 2) : "—"}</td>
                         </tr>
                       ))}
+                      <tr style={{ borderTop: `2px solid ${C.primary}`, fontWeight: 800, background: C.bg }}>
+                        <td style={{ ...td, textAlign: "left" }}>Media tra le fasce</td>
+                        {anni.map((a, i) => {
+                          const costiValidi = d.righe.map(r => r.perAnno[i]?.costo).filter(v => v != null);
+                          const kgValidi = d.righe.map(r => r.perAnno[i]?.kg).filter(v => v != null);
+                          const mediaCosto = costiValidi.length > 0 ? costiValidi.reduce((s, v) => s + v, 0) / costiValidi.length : null;
+                          const mediaKg = kgValidi.length > 0 ? kgValidi.reduce((s, v) => s + v, 0) / kgValidi.length : null;
+                          return (
+                            <Fragment key={i}>
+                              <td style={td}>{mediaCosto != null ? formattaEuro(mediaCosto, 2) : "—"}</td>
+                              <td style={td}>{mediaKg != null ? formattaNumero(mediaKg, 2) : "—"}</td>
+                            </Fragment>
+                          );
+                        })}
+                        {(() => {
+                          const costiValidi = d.righe.map(r => r.media.costo).filter(v => v != null);
+                          const kgValidi = d.righe.map(r => r.media.kg).filter(v => v != null);
+                          const mediaCosto = costiValidi.length > 0 ? costiValidi.reduce((s, v) => s + v, 0) / costiValidi.length : null;
+                          const mediaKg = kgValidi.length > 0 ? kgValidi.reduce((s, v) => s + v, 0) / kgValidi.length : null;
+                          return (
+                            <>
+                              <td style={td}>{mediaCosto != null ? formattaEuro(mediaCosto, 2) : "—"}</td>
+                              <td style={td}>{mediaKg != null ? formattaNumero(mediaKg, 2) : "—"}</td>
+                            </>
+                          );
+                        })()}
+                      </tr>
                     </tbody>
                   </table>
                 </div>

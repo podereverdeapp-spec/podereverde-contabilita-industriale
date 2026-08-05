@@ -1303,3 +1303,35 @@ Testato con caso mock: sommare le incidenze riga per riga dà esattamente lo ste
 Aggiornato il punto di chiamata in `ReportRiproduttori.jsx`: recupera il costo di mantenimento del riproduttore per l'anno corrente da `ci_costo_animale_annuale`, lo passa al motore, salva il nuovo sospeso sul residuo.
 
 Testato con caso mock a 2 anni (2024 senza figli con mantenimento 200€, 2025 con 2 figli e mantenimento 220€): confermato che il 2024 non scarica nulla e accumula 200€ in sospeso, e il 2025 scarica correttamente residuo+mantenimento combinati (750+420=1170€, quota per figlio 585€).
+
+## 116. Totali aggiunti anche ai report Storici
+
+**Richiesto da Filippo**: anche nei report storici vanno sommate le colonne (2 file lo erano già: ReportStoricoForaggio.jsx e ReportStoricoMangimi.jsx; 2 ancora no).
+
+**`ReportStorico.jsx`**: aggiunta riga Totale in fondo alla tabella accordion Area/Centro — riusa `totaliPerAnno`, già calcolato correttamente in precedenza (il commento nel codice stesso confermava che la somma di tasso/incidenza tra le Aree è valida, stesso UBA-giorni aziendale come divisore) — bastava mostrarlo, non ricalcolarlo. Aggiunta anche la colonna "Media 4 anni" del totale.
+
+**`StoricoPerformanceEta.jsx`**: qui le colonne "Costo/kg" e "Kg alim./kg" sono entrambe RAPPORTI (con denominatore diverso — l'IPG — per ogni fascia d'età), quindi sommarle sarebbe stato scorretto. Confermato con Filippo: per ora **media semplice** tra le fasce (coerente con la colonna "Media 4 anni" già esistente, che fa lo stesso) — una vera media ponderata richiederebbe estendere `calcolaPerformanceEta` per esporre il peso reale (kg di accrescimento assoluto per fascia), non ancora disponibile nella struttura dati attuale. Annotato come possibile miglioramento futuro se servisse la precisione ponderata.
+
+## 117. Scheda Ingrasso — corretto bug salvataggio (RLS) e aggiunti tutti i campi richiesti
+
+**Bug del salvataggio, trovato e risolto**: il prezzo di vendita non si salvava mai — causa doppia:
+1. Il codice non controllava mai l'errore restituito da Supabase su update/insert (silenziosamente ignorato)
+2. La causa REALE: la tabella `ci_dati_vendita_ingrasso` aveva **RLS attiva** nonostante la migrazione dicesse esplicitamente di disattivarla (probabilmente un default di Supabase che riattiva RLS sulle tabelle nuove, sovrascrivendo il comando nella stessa migrazione) — senza policy, blocca in silenzio ogni scrittura dal client dell'app. Disattivata di nuovo via Supabase direttamente in sessione e verificata (`relrowsecurity: false`). Corretto anche il codice per controllare sempre l'errore da qui in avanti, così un problema simile in futuro darebbe un messaggio visibile invece di fallire in silenzio.
+
+**Aggiunti alla Scheda Ingrasso**:
+- Data di nascita e data di ingresso in azienda (mancavano dalla query oltre che dalla vista)
+- Età attuale (o età alla uscita, se uscito) — anni e giorni
+- Costo al giorno (costo totale / giorni di vita)
+- Costo al kg di peso vivo (solo per gli usciti, unico caso in cui il peso vivo è noto — per gli attivi non c'è un "peso vivo attuale" tracciato in anagrafica)
+- Costo al kg di carcassa (peso reale se uscito, altrimenti stimato)
+- Nuovo campo "Anno di consultazione" (editabile, default anno corrente) con relativo spacchettamento "costi accumulati prima di quell'anno" / "costi accumulati in quell'anno" — stessa logica già usata nella Scheda Riproduttore
+
+## 118. Report Ingrasso — indagine su suinetti nei lotti mancanti, resa robusta la gestione errori
+
+**Segnalato da Filippo**: i suinetti nei lotti non comparivano nel report, nonostante fossero già previsti nella logica fin dalla costruzione iniziale (sezione 113).
+
+**Indagine**: verificato via Supabase che i dati esistono (706 unità in `suini_lotto`, 123 lotti, tutti con `specie='suino'` coerente) — nessun problema nei dati né un bug logico evidente nel codice di filtro. `lotti_suini`/`suini_lotto` hanno RLS attiva (normale, dominio podereverdeapp.it — Report Riproduttori le legge già correttamente con la stessa connessione), ma **la query di ReportIngrasso.jsx non controllava mai un eventuale errore** (usava `.then(r => r.data)`, che ignora silenziosamente `r.error`) — se per qualunque motivo la query falliva a runtime nel browser (RLS, permessi, o altro non riproducibile da qui), la sezione restava semplicemente vuota senza nessun segnale.
+
+**Corretto**: tutte le query ora controllano esplicitamente l'errore e lo mostrano a schermo se presente, invece di fallire in silenzio. Aggiunto anche un contatore diagnostico nella pagina ("N animali individuali, M suinetti nei lotti") per capire subito, al primo colpo d'occhio, se il problema persiste e da che parte.
+
+**Da verificare con Filippo**: non essendo riproducibile da qui (i dati e la query risultano corretti quando testati direttamente), serve che riprovi con il prossimo deploy — se il problema persiste, ora dovrebbe comparire un messaggio di errore esplicito invece di una sezione vuota, che aiuterà a isolare la causa reale.

@@ -13,6 +13,7 @@ export default function SchedaIngrasso({ animaleId, lottoId, unitaNr, onClose, o
   const [costiAnnuali, setCostiAnnuali] = useState([]);
   const [vendita, setVendita] = useState(null);
   const [pesoStimatoInfo, setPesoStimatoInfo] = useState(null);
+  const [annoConsultazione, setAnnoConsultazione] = useState(new Date().getFullYear());
   const [form, setForm] = useState({});
 
   useEffect(() => { carica(); }, [animaleId, lottoId, unitaNr]);
@@ -24,7 +25,7 @@ export default function SchedaIngrasso({ animaleId, lottoId, unitaNr, onClose, o
       let s;
       if (animaleId) {
         const { data: a, error } = await supabase.from("animali")
-          .select("id,bdn,nome,specie,razza,razza_calcolata,sesso,provenienza,stato,nascita,data_uscita,peso_carcassa,peso_vivo_uscita,costo_iniziale,prezzo_acquisto")
+          .select("id,bdn,nome,specie,razza,razza_calcolata,sesso,provenienza,stato,nascita,data_ingresso,data_uscita,peso_carcassa,peso_vivo_uscita,costo_iniziale,prezzo_acquisto")
           .eq("id", animaleId).single();
         if (error) throw new Error(error.message);
         s = { ...a, identificativo: a.bdn || a.nome, razzaFinale: a.razza_calcolata || a.razza };
@@ -74,8 +75,13 @@ export default function SchedaIngrasso({ animaleId, lottoId, unitaNr, onClose, o
         ? { animale_id: animaleId, lotto_id: null, unita_nr: null, prezzo_vendita_kg_reale: form.prezzo_vendita_kg_reale !== "" ? round2(parseFloat(form.prezzo_vendita_kg_reale)) : null, updated_at: new Date().toISOString() }
         : { animale_id: null, lotto_id: lottoId, unita_nr: unitaNr, prezzo_vendita_kg_reale: form.prezzo_vendita_kg_reale !== "" ? round2(parseFloat(form.prezzo_vendita_kg_reale)) : null, updated_at: new Date().toISOString() };
 
-      if (vendita) await supabase.from("ci_dati_vendita_ingrasso").update(payload).eq("id", vendita.id);
-      else await supabase.from("ci_dati_vendita_ingrasso").insert([payload]);
+      if (vendita) {
+        const { error: eUpd } = await supabase.from("ci_dati_vendita_ingrasso").update(payload).eq("id", vendita.id);
+        if (eUpd) throw new Error(`Salvataggio non riuscito: ${eUpd.message}`);
+      } else {
+        const { error: eIns } = await supabase.from("ci_dati_vendita_ingrasso").insert([payload]);
+        if (eIns) throw new Error(`Salvataggio non riuscito: ${eIns.message}`);
+      }
 
       onSalvato?.();
       await carica();
@@ -94,11 +100,25 @@ export default function SchedaIngrasso({ animaleId, lottoId, unitaNr, onClose, o
   const mantenimentoTotale = round2(costiAnnuali.reduce((s, c) => s + (parseFloat(c.costo_mantenimento) || 0), 0));
   const costoTotale = round2(costoPartenza + mantenimentoTotale);
 
+  // Costi accumulati prima dell'anno di consultazione, e in quello specifico anno
+  const costoPrimaDellAnno = round2(costiAnnuali.filter(c => c.anno < annoConsultazione).reduce((s, c) => s + (parseFloat(c.costo_totale_anno) || 0), 0));
+  const costoNellAnno = round2(costiAnnuali.filter(c => c.anno === annoConsultazione).reduce((s, c) => s + (parseFloat(c.costo_totale_anno) || 0), 0));
+
+  // Giorni ed età: dalla nascita a oggi (se attivo) o alla data di uscita (se uscito)
+  const dataRiferimentoEta = isUscito && soggetto.data_uscita ? new Date(soggetto.data_uscita) : new Date();
+  const giorniVita = soggetto.nascita ? Math.round((dataRiferimentoEta - new Date(soggetto.nascita)) / 86400000) : null;
+  const anniVita = giorniVita != null ? round2(giorniVita / 365.25) : null;
+  const costoAlGiorno = giorniVita > 0 ? round2(costoTotale / giorniVita) : null;
+
+  const pesoVivo = soggetto.peso_vivo_uscita || null; // non c'è un "peso vivo attuale" tracciato per gli animali ancora in vita
+  const costoAlKgVivo = pesoVivo ? round2(costoTotale / pesoVivo) : null;
+
   const pesoReale = soggetto.peso_carcassa;
   const pesoPerValore = pesoReale || pesoStimatoInfo?.pesoStimato || null;
   const valoreVendita = pesoPerValore && form.prezzo_vendita_kg_reale
     ? round2(pesoPerValore * parseFloat(form.prezzo_vendita_kg_reale)) : null;
   const margine = valoreVendita != null ? round2(valoreVendita - costoTotale) : null;
+  const costoAlKgCarcassa = pesoPerValore ? round2(costoTotale / pesoPerValore) : null;
 
   return (
     <ModaleSfondo onClose={onClose}>
@@ -113,14 +133,34 @@ export default function SchedaIngrasso({ animaleId, lottoId, unitaNr, onClose, o
           <CampoSoloLettura label="Sesso" value={soggetto.sesso || "—"} />
           <CampoSoloLettura label="Provenienza" value={soggetto.provenienza || "—"} />
           <CampoSoloLettura label="Stato" value={soggetto.stato || "—"} />
+          <CampoSoloLettura label="Data di nascita" value={soggetto.nascita || "—"} />
+          <CampoSoloLettura label="Data di ingresso in azienda" value={soggetto.data_ingresso || "—"} />
+          <CampoSoloLettura label={isUscito ? "Età alla uscita" : "Età attuale"} value={anniVita != null ? `${anniVita} anni (${giorniVita} giorni)` : "—"} />
         </Griglia>
       </Sezione>
 
       <Sezione titolo="Costo di partenza e mantenimento">
         <Griglia>
           <CampoSoloLettura label={soggetto.provenienza === "Nato in azienda" ? "Costo di nascita" : "Costo di acquisto"} value={formattaEuro(costoPartenza)} />
-          <CampoSoloLettura label="Mantenimento accumulato" value={formattaEuro(mantenimentoTotale)} />
           <CampoSoloLettura label="Costo totale ad oggi" value={formattaEuro(costoTotale)} />
+          <CampoSoloLettura label="Costo al giorno" value={costoAlGiorno != null ? formattaEuro(costoAlGiorno, 3) : "—"} />
+        </Griglia>
+        <div style={{ marginTop: 10, marginBottom: 6 }}>
+          <label style={{ fontSize: 11, color: C.muted }}>Anno di consultazione (per lo spacchettamento sotto)
+            <input type="number" value={annoConsultazione} onChange={e => setAnnoConsultazione(parseInt(e.target.value) || new Date().getFullYear())}
+              style={{ width: 100, marginLeft: 8, padding: "4px 8px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 13 }} />
+          </label>
+        </div>
+        <Griglia>
+          <CampoSoloLettura label={`Costi accumulati prima del ${annoConsultazione}`} value={formattaEuro(costoPrimaDellAnno)} />
+          <CampoSoloLettura label={`Costi accumulati nel ${annoConsultazione}`} value={formattaEuro(costoNellAnno)} />
+        </Griglia>
+      </Sezione>
+
+      <Sezione titolo="Costo per unità">
+        <Griglia>
+          <CampoSoloLettura label="Costo al kg peso vivo" value={costoAlKgVivo != null ? formattaEuro(costoAlKgVivo, 3) : "— (serve peso vivo, disponibile solo per gli usciti)"} />
+          <CampoSoloLettura label="Costo al kg carcassa" value={costoAlKgCarcassa != null ? formattaEuro(costoAlKgCarcassa, 3) : "— (serve peso carcassa reale o stimato)"} />
         </Griglia>
       </Sezione>
 
