@@ -18,68 +18,75 @@ export default function ReportIngrasso() {
   async function carica() {
     setCaricando(true);
     setErrore(null);
-    const [rAnimali, rLotti, rUnita, rCosti, rVendite] = await Promise.all([
-      fetchAllPages((da, a) => supabase.from("animali").select("id,bdn,nome,specie,razza,razza_calcolata,sesso,riproduttore,provenienza,costo_iniziale,prezzo_acquisto,nascita,stato,data_uscita,peso_vivo_uscita,peso_carcassa").range(da, a)),
-      supabase.from("lotti_suini").select("id,codice_lotto,codice,tipo_provenienza,prezzo_acquisto,razza_madre,specie"),
-      fetchAllPages((da, a) => supabase.from("suini_lotto").select("id,lotto_id,nr,sesso,stato,data_uscita,peso_carcassa,peso_vivo_uscita").range(da, a)),
-      fetchAllPages((da, a) => supabase.from("ci_costo_animale_annuale").select("animale_id,lotto_id,unita_nr,anno,costo_mantenimento,costo_nascita_ereditato").range(da, a)),
-      supabase.from("ci_dati_vendita_ingrasso").select("*"),
-    ]);
-    if (rLotti.error) { setErrore(`Errore caricando i lotti suini: ${rLotti.error.message}`); setCaricando(false); return; }
-    if (rVendite.error) { setErrore(`Errore caricando i dati di vendita: ${rVendite.error.message}`); setCaricando(false); return; }
-    const animali = rAnimali, lotti = rLotti.data, unita = rUnita, costiAnnuali = rCosti, venditeIngrasso = rVendite.data;
+    try {
+      const [rAnimali, rLotti, rUnita, rCosti, rVendite] = await Promise.all([
+        fetchAllPages((da, a) => supabase.from("animali").select("id,bdn,nome,specie,razza,razza_calcolata,sesso,riproduttore,provenienza,costo_iniziale,prezzo_acquisto,nascita,stato,data_uscita,peso_vivo_uscita,peso_carcassa").range(da, a)),
+        supabase.from("lotti_suini").select("id,codice_lotto,codice,tipo_provenienza,prezzo_acquisto,razza_madre,specie"),
+        fetchAllPages((da, a) => supabase.from("suini_lotto").select("id,lotto_id,nr,sesso,stato,data_uscita,peso_carcassa,peso_vivo_uscita").range(da, a)),
+        fetchAllPages((da, a) => supabase.from("ci_costo_animale_annuale").select("animale_id,lotto_id,unita_nr,anno,costo_mantenimento,costo_nascita_ereditato").range(da, a)),
+        supabase.from("ci_dati_vendita_ingrasso").select("*"),
+      ]);
+      if (rLotti.error) throw new Error(`Errore caricando i lotti suini: ${rLotti.error.message}`);
+      if (rVendite.error) throw new Error(`Errore caricando i dati di vendita: ${rVendite.error.message}`);
+      if (rAnimali.error) throw new Error(`Errore caricando gli animali: ${rAnimali.error.message}`);
+      if (rUnita.error) throw new Error(`Errore caricando le unità dei lotti: ${rUnita.error.message}`);
+      if (rCosti.error) throw new Error(`Errore caricando i costi annuali: ${rCosti.error.message}`);
+      const animali = rAnimali.data, lotti = rLotti.data, unita = rUnita.data, costiAnnuali = rCosti.data, venditeIngrasso = rVendite.data;
 
-    const mappaLotti = new Map((lotti || []).map(l => [l.id, l]));
-    const mappaVenditeAnimale = new Map((venditeIngrasso || []).filter(v => v.animale_id).map(v => [v.animale_id, v]));
-    const mappaVenditeUnita = new Map((venditeIngrasso || []).filter(v => v.lotto_id).map(v => [`${v.lotto_id}|${v.unita_nr}`, v]));
+      const mappaLotti = new Map((lotti || []).map(l => [l.id, l]));
+      const mappaVenditeAnimale = new Map((venditeIngrasso || []).filter(v => v.animale_id).map(v => [v.animale_id, v]));
+      const mappaVenditeUnita = new Map((venditeIngrasso || []).filter(v => v.lotto_id).map(v => [`${v.lotto_id}|${v.unita_nr}`, v]));
 
-    const risultati = [];
+      const risultati = [];
 
-    // Animali individuali NON riproduttori
-    for (const a of (animali || [])) {
-      if (a.riproduttore) continue;
-      const costiSuoi = (costiAnnuali || []).filter(c => c.animale_id === a.id);
-      const costoNascita = costiSuoi.reduce((s, c) => s + (parseFloat(c.costo_nascita_ereditato) || 0), 0);
-      const costoPartenza = a.provenienza === "Nato in azienda" ? costoNascita : (a.prezzo_acquisto || 0);
-      const mantenimentoTotale = round2(costiSuoi.reduce((s, c) => s + (parseFloat(c.costo_mantenimento) || 0), 0));
-      const costoTotale = round2(costoPartenza + mantenimentoTotale);
-      const vendita = mappaVenditeAnimale.get(a.id);
-      const isUscito = a.stato && a.stato !== "attivo";
-      const valoreVendita = isUscito && a.peso_carcassa && vendita?.prezzo_vendita_kg_reale
-        ? round2(a.peso_carcassa * vendita.prezzo_vendita_kg_reale) : null;
-      risultati.push({
-        tipo: "animale", animaleId: a.id, bdn: a.bdn, nome: a.nome, specie: a.specie,
-        razza: a.razza_calcolata || a.razza, sesso: a.sesso, provenienza: a.provenienza, stato: a.stato,
-        costoPartenza, mantenimentoTotale, costoTotale, valoreVendita,
-        margine: valoreVendita != null ? round2(valoreVendita - costoTotale) : null,
-      });
+      // Animali individuali NON riproduttori
+      for (const a of (animali || [])) {
+        if (a.riproduttore) continue;
+        const costiSuoi = (costiAnnuali || []).filter(c => c.animale_id === a.id);
+        const costoNascita = costiSuoi.reduce((s, c) => s + (parseFloat(c.costo_nascita_ereditato) || 0), 0);
+        const costoPartenza = a.provenienza === "Nato in azienda" ? costoNascita : (a.prezzo_acquisto || 0);
+        const mantenimentoTotale = round2(costiSuoi.reduce((s, c) => s + (parseFloat(c.costo_mantenimento) || 0), 0));
+        const costoTotale = round2(costoPartenza + mantenimentoTotale);
+        const vendita = mappaVenditeAnimale.get(a.id);
+        const isUscito = a.stato && a.stato !== "attivo";
+        const valoreVendita = isUscito && a.peso_carcassa && vendita?.prezzo_vendita_kg_reale
+          ? round2(a.peso_carcassa * vendita.prezzo_vendita_kg_reale) : null;
+        risultati.push({
+          tipo: "animale", animaleId: a.id, bdn: a.bdn, nome: a.nome, specie: a.specie,
+          razza: a.razza_calcolata || a.razza, sesso: a.sesso, provenienza: a.provenienza, stato: a.stato,
+          costoPartenza, mantenimentoTotale, costoTotale, valoreVendita,
+          margine: valoreVendita != null ? round2(valoreVendita - costoTotale) : null,
+        });
+      }
+
+      // Suinetti nei lotti NON riproduttori (i riproduttori suini nati in lotto hanno comunque
+      // un proprio record in animali una volta identificati come tali — qui si escludono i
+      // lotti "riproduttore" a livello di singola unità, se il flag esiste sull'unità)
+      for (const u of (unita || [])) {
+        const lotto = mappaLotti.get(u.lotto_id);
+        if (!lotto) continue;
+        const costiSuoi = (costiAnnuali || []).filter(c => c.lotto_id === u.lotto_id && c.unita_nr === u.nr);
+        const costoNascita = costiSuoi.reduce((s, c) => s + (parseFloat(c.costo_nascita_ereditato) || 0), 0);
+        const costoPartenza = lotto.tipo_provenienza === "acquistato" ? (lotto.prezzo_acquisto || 0) : costoNascita;
+        const mantenimentoTotale = round2(costiSuoi.reduce((s, c) => s + (parseFloat(c.costo_mantenimento) || 0), 0));
+        const costoTotale = round2(costoPartenza + mantenimentoTotale);
+        const vendita = mappaVenditeUnita.get(`${u.lotto_id}|${u.nr}`);
+        const isUscito = u.stato && u.stato !== "attivo" && u.stato !== "vivo";
+        const valoreVendita = isUscito && u.peso_carcassa && vendita?.prezzo_vendita_kg_reale
+          ? round2(u.peso_carcassa * vendita.prezzo_vendita_kg_reale) : null;
+        risultati.push({
+          tipo: "unita", lottoId: u.lotto_id, unitaNr: u.nr, bdn: u.bdn || `${lotto.codice_lotto || lotto.codice}#${u.nr}`,
+          nome: null, specie: lotto.specie || "suino", razza: lotto.razza_madre, sesso: u.sesso,
+          provenienza: lotto.tipo_provenienza === "acquistato" ? "Acquistato" : "Nato in azienda", stato: u.stato,
+          costoPartenza, mantenimentoTotale, costoTotale, valoreVendita,
+          margine: valoreVendita != null ? round2(valoreVendita - costoTotale) : null,
+        });
+      }
+
+      setRighe(risultati);
+    } catch (err) {
+      setErrore(err.message || String(err));
     }
-
-    // Suinetti nei lotti NON riproduttori (i riproduttori suini nati in lotto hanno comunque
-    // un proprio record in animali una volta identificati come tali — qui si escludono i
-    // lotti "riproduttore" a livello di singola unità, se il flag esiste sull'unità)
-    for (const u of (unita || [])) {
-      const lotto = mappaLotti.get(u.lotto_id);
-      if (!lotto) continue;
-      const costiSuoi = (costiAnnuali || []).filter(c => c.lotto_id === u.lotto_id && c.unita_nr === u.nr);
-      const costoNascita = costiSuoi.reduce((s, c) => s + (parseFloat(c.costo_nascita_ereditato) || 0), 0);
-      const costoPartenza = lotto.tipo_provenienza === "acquistato" ? (lotto.prezzo_acquisto || 0) : costoNascita;
-      const mantenimentoTotale = round2(costiSuoi.reduce((s, c) => s + (parseFloat(c.costo_mantenimento) || 0), 0));
-      const costoTotale = round2(costoPartenza + mantenimentoTotale);
-      const vendita = mappaVenditeUnita.get(`${u.lotto_id}|${u.nr}`);
-      const isUscito = u.stato && u.stato !== "attivo" && u.stato !== "vivo";
-      const valoreVendita = isUscito && u.peso_carcassa && vendita?.prezzo_vendita_kg_reale
-        ? round2(u.peso_carcassa * vendita.prezzo_vendita_kg_reale) : null;
-      risultati.push({
-        tipo: "unita", lottoId: u.lotto_id, unitaNr: u.nr, bdn: u.bdn || `${lotto.codice_lotto || lotto.codice}#${u.nr}`,
-        nome: null, specie: lotto.specie || "suino", razza: lotto.razza_madre, sesso: u.sesso,
-        provenienza: lotto.tipo_provenienza === "acquistato" ? "Acquistato" : "Nato in azienda", stato: u.stato,
-        costoPartenza, mantenimentoTotale, costoTotale, valoreVendita,
-        margine: valoreVendita != null ? round2(valoreVendita - costoTotale) : null,
-      });
-    }
-
-    setRighe(risultati);
     setCaricando(false);
   }
 

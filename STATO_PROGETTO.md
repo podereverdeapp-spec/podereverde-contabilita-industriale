@@ -1343,3 +1343,11 @@ Testato con caso mock a 2 anni (2024 senza figli con mantenimento 200€, 2025 c
 **Corretto in `ReportIngrasso.jsx`**: righe divise in `attivi` (ordinate per `costoTotale` decrescente) e `usciti` (ordinate per `valoreVendita` decrescente, chi non ha ancora un valore va in fondo al suo gruppo) — estratto un componente `RigaIngrasso` per non duplicare il markup tra i due gruppi, con una riga di intestazione separatrice tra i due blocchi.
 
 **Aggiunto in `SchedaIngrasso.jsx`**: "Data di uscita" (solo se uscito), e "Periodo in azienda" (giorni e mesi, calcolato da `data_ingresso` — distinto dall'età, che parte dalla nascita) — mostrato sia per gli attivi (fino ad oggi) sia per gli usciti (fino alla data di uscita).
+
+## 120. Bug reale trovato — Report Ingrasso non caricava affatto (non solo i suinetti)
+
+**Segnalato da Filippo**: "il report non si riesce a caricare".
+
+**Causa reale, trovata rileggendo tutto il file con attenzione**: `fetchAllPages` restituisce `{data, error}`, non l'array direttamente — ma nell'assegnazione dopo il `Promise.all` mancava `.data` per 3 delle 5 query (`animali`, `unita`, `costiAnnuali`), che restituivano quindi l'intero oggetto `{data, error}` invece dell'array. Il primo ciclo `for (const a of animali)` provava a iterare su un oggetto non iterabile e lanciava un'eccezione — che PRIMA (prima della sezione 118) non era mai catturata da un try/catch, quindi falliva silenziosamente lasciando la pagina bloccata su "Caricamento...". Questo spiega perché anche i suinetti nei lotti sembravano mancare (sezione 118): probabilmente l'intero report non aveva mai finito di caricare nulla, non solo quella parte.
+
+**Corretto**: aggiunte le `.data` mancanti, aggiunto un try/catch attorno a **tutta** la funzione `carica()` (non solo alle due query già controllate nella sezione 118), e controllo esplicito dell'errore anche sulle altre 3 query che usano `fetchAllPages` — qualunque fallimento futuro ora mostra un messaggio a schermo invece di bloccare la pagina indefinitamente.
