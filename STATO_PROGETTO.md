@@ -1361,3 +1361,9 @@ Testato con caso mock a 2 anni (2024 senza figli con mantenimento 200€, 2025 c
 **Corretto**: in entrambi i file, il costo unitario di acquisto ora si calcola come `prezzo_acquisto_lotto / numero_unità_nel_lotto`. In `SchedaIngrasso.jsx` aggiunta anche una nota esplicita di trasparenza ("Prezzo lotto: X ÷ N suinetti = Y a capo") per rendere visibile il calcolo, non solo il risultato.
 
 **Da fare, promemoria**: rilanciare "Elabora" su Report Riproduttori (se qualcuno di questi suinetti è nel frattempo diventato riproduttore) e ricontrollare margini/costi già visualizzati altrove che potrebbero essere stati influenzati dallo stesso dato sbagliato.
+
+## 122. Report Ingrasso — aggiunte colonne Età e Costo/kg, Provenienza abbreviata
+
+**Richiesto da Filippo**: due colonne in più (età, costo al kg) e Provenienza abbreviata (N.A./ACQ) con legenda, per risparmiare spazio.
+
+**Aggiunto**: colonna Età (anni, alla data odierna se attivo o all'uscita se uscito) e Costo/kg (usa il peso carcassa reale se uscito, altrimenti stimato per età+sesso con lo stesso motore già usato altrove — costruito un pool storico di riferimento una sola volta per tutte le righe, non ricalcolato per ciascuna). Provenienza ora mostra "N.A."/"ACQ" nella tabella, con una legenda sotto il titolo della pagina che spiega le sigle.

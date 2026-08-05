@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
-import { formattaEuro, round2, fetchAllPages } from "./parsingUtils";
+import { formattaEuro, formattaNumero, round2, fetchAllPages } from "./parsingUtils";
 import SchedaIngrasso from "./SchedaIngrasso";
+import { stimaPesoCarcassaPerEta } from "./motoreRiproduttori";
 
 const ETICHETTE_SPECIE = { bovino: "Bovini", suino: "Suini", ovino: "Ovini" };
 
@@ -21,7 +22,7 @@ export default function ReportIngrasso() {
     try {
       const [rAnimali, rLotti, rUnita, rCosti, rVendite] = await Promise.all([
         fetchAllPages((da, a) => supabase.from("animali").select("id,bdn,nome,specie,razza,razza_calcolata,sesso,riproduttore,provenienza,costo_iniziale,prezzo_acquisto,nascita,stato,data_uscita,peso_vivo_uscita,peso_carcassa").range(da, a)),
-        supabase.from("lotti_suini").select("id,codice_lotto,codice,tipo_provenienza,prezzo_acquisto,razza_madre,specie"),
+        supabase.from("lotti_suini").select("id,codice_lotto,codice,tipo_provenienza,prezzo_acquisto,razza_madre,specie,data_parto"),
         fetchAllPages((da, a) => supabase.from("suini_lotto").select("id,lotto_id,nr,sesso,stato,data_uscita,peso_carcassa,peso_vivo_uscita").range(da, a)),
         fetchAllPages((da, a) => supabase.from("ci_costo_animale_annuale").select("animale_id,lotto_id,unita_nr,anno,costo_mantenimento,costo_nascita_ereditato").range(da, a)),
         supabase.from("ci_dati_vendita_ingrasso").select("*"),
@@ -48,6 +49,30 @@ export default function ReportIngrasso() {
 
       const risultati = [];
 
+      // Pool storico per la stima del peso (età+sesso) degli animali ancora attivi — costruito
+      // una sola volta, combinando animali individuali e unità di lotto già usciti con un peso noto.
+      const poolPesoStorico = [
+        ...(animali || []).filter(a => a.peso_carcassa > 0 && a.nascita && a.data_uscita).map(a => ({ specie: a.specie, razza: a.razza_calcolata || a.razza, sesso: a.sesso, nascita: a.nascita, data_uscita: a.data_uscita, peso_carcassa: a.peso_carcassa })),
+        ...(unita || []).filter(u => u.peso_carcassa > 0 && u.data_uscita).map(u => {
+          const lotto = mappaLotti.get(u.lotto_id);
+          return { specie: lotto?.specie || "suino", razza: lotto?.razza_madre, sesso: u.sesso, nascita: lotto?.data_parto, data_uscita: u.data_uscita, peso_carcassa: u.peso_carcassa };
+        }).filter(x => x.nascita),
+      ];
+
+      const oggi = new Date();
+      function calcolaEtaEPesoCosto(specie, razza, sesso, nascitaStr, isUscito, dataUscitaStr, pesoCarcassaReale, costoTotale) {
+        if (!nascitaStr) return { eta: null, costoAlKg: null };
+        const dataRif = isUscito && dataUscitaStr ? new Date(dataUscitaStr) : oggi;
+        const eta = round2((dataRif - new Date(nascitaStr)) / (365.25 * 86400000));
+        let peso = pesoCarcassaReale || null;
+        if (!peso && !isUscito) {
+          const stima = stimaPesoCarcassaPerEta({ specie, razza, sesso, etaAnniAnimale: eta, animaliUsciti: poolPesoStorico });
+          peso = stima.pesoStimato;
+        }
+        const costoAlKg = peso ? round2(costoTotale / peso) : null;
+        return { eta, costoAlKg };
+      }
+
       // Animali individuali NON riproduttori
       for (const a of (animali || [])) {
         if (a.riproduttore) continue;
@@ -60,10 +85,11 @@ export default function ReportIngrasso() {
         const isUscito = a.stato && a.stato !== "attivo";
         const valoreVendita = isUscito && a.peso_carcassa && vendita?.prezzo_vendita_kg_reale
           ? round2(a.peso_carcassa * vendita.prezzo_vendita_kg_reale) : null;
+        const { eta, costoAlKg } = calcolaEtaEPesoCosto(a.specie, a.razza_calcolata || a.razza, a.sesso, a.nascita, isUscito, a.data_uscita, a.peso_carcassa, costoTotale);
         risultati.push({
           tipo: "animale", animaleId: a.id, bdn: a.bdn, nome: a.nome, specie: a.specie,
           razza: a.razza_calcolata || a.razza, sesso: a.sesso, provenienza: a.provenienza, stato: a.stato,
-          costoPartenza, mantenimentoTotale, costoTotale, valoreVendita,
+          costoPartenza, mantenimentoTotale, costoTotale, valoreVendita, eta, costoAlKg,
           margine: valoreVendita != null ? round2(valoreVendita - costoTotale) : null,
         });
       }
@@ -84,11 +110,12 @@ export default function ReportIngrasso() {
         const isUscito = u.stato && u.stato !== "attivo" && u.stato !== "vivo";
         const valoreVendita = isUscito && u.peso_carcassa && vendita?.prezzo_vendita_kg_reale
           ? round2(u.peso_carcassa * vendita.prezzo_vendita_kg_reale) : null;
+        const { eta, costoAlKg } = calcolaEtaEPesoCosto(lotto.specie || "suino", lotto.razza_madre, u.sesso, lotto.data_parto, isUscito, u.data_uscita, u.peso_carcassa, costoTotale);
         risultati.push({
           tipo: "unita", lottoId: u.lotto_id, unitaNr: u.nr, bdn: u.bdn || `${lotto.codice_lotto || lotto.codice}#${u.nr}`,
           nome: null, specie: lotto.specie || "suino", razza: lotto.razza_madre, sesso: u.sesso,
           provenienza: lotto.tipo_provenienza === "acquistato" ? "Acquistato" : "Nato in azienda", stato: u.stato,
-          costoPartenza, mantenimentoTotale, costoTotale, valoreVendita,
+          costoPartenza, mantenimentoTotale, costoTotale, valoreVendita, eta, costoAlKg,
           margine: valoreVendita != null ? round2(valoreVendita - costoTotale) : null,
         });
       }
@@ -110,6 +137,9 @@ export default function ReportIngrasso() {
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 20 }}>
         Tutti gli animali (e i suinetti nei lotti) non destinati alla riproduzione — costo di partenza (acquisto o nascita) + mantenimento accumulato, e per chi è già uscito il margine sulla vendita. Clicca un animale per la scheda di dettaglio.
         {!caricando && <> — {righe.filter(r => r.tipo === "animale").length} animali individuali, {righe.filter(r => r.tipo === "unita").length} suinetti nei lotti.</>}
+      </p>
+      <p style={{ color: C.muted, marginTop: 0, marginBottom: 20, fontSize: 12 }}>
+        <strong>N.A.</strong> = Nato in Azienda · <strong>ACQ</strong> = Acquistato
       </p>
 
       {errore && <p style={{ color: C.red }}>⚠️ {errore}</p>}
@@ -133,8 +163,8 @@ export default function ReportIngrasso() {
                   <table style={{ width: "100%", fontSize: 13 }}>
                     <thead style={{ background: C.primaryLight, color: "#fff" }}>
                       <tr>
-                        <th style={th}>Animale</th><th style={th}>Razza</th><th style={th}>Provenienza</th>
-                        <th style={th}>Costo totale</th><th style={th}>Valore vendita</th><th style={th}>Margine</th><th style={th}>Stato</th>
+                        <th style={th}>Animale</th><th style={th}>Razza</th><th style={th}>Prov.</th><th style={th}>Età</th>
+                        <th style={th}>Costo totale</th><th style={th}>Costo/kg</th><th style={th}>Valore vendita</th><th style={th}>Margine</th><th style={th}>Stato</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -174,8 +204,10 @@ function RigaIngrasso({ r, onClick }) {
     <tr onClick={onClick} style={{ borderTop: `1px solid ${C.border}`, cursor: "pointer" }}>
       <td style={td}>{r.bdn || r.nome || "—"}</td>
       <td style={td}>{r.razza || "—"}</td>
-      <td style={td}>{r.provenienza}</td>
+      <td style={td}>{r.provenienza === "Nato in azienda" ? "N.A." : r.provenienza === "Acquistato" ? "ACQ" : r.provenienza}</td>
+      <td style={{ ...td, textAlign: "right" }}>{r.eta != null ? `${formattaNumero(r.eta, 1)}a` : "—"}</td>
       <td style={{ ...td, textAlign: "right" }}>{formattaEuro(r.costoTotale)}</td>
+      <td style={{ ...td, textAlign: "right" }}>{r.costoAlKg != null ? formattaEuro(r.costoAlKg, 2) : "—"}</td>
       <td style={{ ...td, textAlign: "right" }}>{r.valoreVendita != null ? formattaEuro(r.valoreVendita) : "—"}</td>
       <td style={{ ...td, textAlign: "right", fontWeight: 700, color: r.margine == null ? C.muted : r.margine >= 0 ? C.green : C.red }}>
         {r.margine != null ? formattaEuro(r.margine) : "—"}
