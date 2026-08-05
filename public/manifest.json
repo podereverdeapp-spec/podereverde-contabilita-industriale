@@ -1,0 +1,20 @@
+{
+  "short_name": "Allevamento",
+  "name": "App Allevamento",
+  "icons": [
+    {
+      "src": "logo192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "logo512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#5C3D1E",
+  "background_color": "#F5F0E8"
+}
