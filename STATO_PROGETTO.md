@@ -136,3 +136,23 @@ Verificato nel codice il 24/07: il bug è ancora presente, non è mai stato corr
 Testato con caso mock (costi fissi 50.000€, variabili 30.000€/8.000 UBA-gg, peso 350kg, prezzo 6€/kg): punto di pareggio corretto a 69 capi, verificato che 69×margine copra effettivamente i costi fissi.
 
 **Nota per Filippo, durante la costruzione**: inizialmente avevo detto che gli ammortamenti (Cespiti) fossero completamente scollegati da Report Costi — sbagliavo, dopo un controllo più attento ho trovato che erano già integrati correttamente (cespiti taggati per specie → 100% a quella specie; "Generale" → spalmato via UBA-giorni). Corretto l'errore prima di procedere.
+
+## 127. Break Even — riferimento "bovino adulto" (12-24 mesi)
+
+**Richiesto da Filippo**: per i bovini, usare come peso di riferimento quello dei capi macellati tra 12 e 24 mesi di età (non tutti gli usciti dell'anno, che mischiano vitelli giovani e animali tenuti a lungo) — peso medio maschi+femmine insieme, su tutti gli anni disponibili (campione più ampio, non solo l'anno selezionato).
+
+**Aggiunto**: nuovo riquadro informativo nella scheda Bovini che mostra questo gruppo (numero di capi, peso medio, costo totale medio, costo di nascita medio) come riferimento — il peso di questo gruppo **sostituisce** quello "tutti gli usciti nell'anno" usato per calcolare ricavo/margine/punto di pareggio, specificamente per i bovini (suini e ovini restano sulla logica precedente, non richiesta qui).
+
+## 128. Break Even — riferimento "suino campione" (oltre 130kg peso vivo)
+
+**Richiesto da Filippo**: stessa logica dei bovini adulti, ma per i suini — "campione" = uscito con **peso vivo** oltre 130kg (non un'età, come per i bovini). Include sia gli animali suini individuali sia i suinetti nei lotti (`suini_lotto`), che sono la maggioranza.
+
+**Aggiunto**: stesso riquadro informativo dei bovini, ora anche per i suini — numero di capi nel campione, peso carcassa medio, costo totale medio. Entrambi i riquadri (bovino e suino) spiegano esplicitamente in pagina come è stato scelto il campione, così chi legge il report capisce subito il criterio senza doverlo chiedere.
+
+Corretta anche una sintassi Supabase non standard (`.not("stato","eq","attivo")` → `.neq("stato","attivo")`) trovata mentre scrivevo la query dei suinetti nei lotti.
+
+## 129. Break Even — esclusi dal "suino campione" i riproduttori mai diventati genitori
+
+**Richiesto da Filippo**: nel campione suini (>130kg peso vivo), non contare i riproduttori che non hanno mai avuto figli — la loro storia di costo non è rappresentativa di un normale capo da ingrasso.
+
+**Corretto**: verificato se un suino riproduttore compare come padre/madre in **entrambe** le fonti possibili (`animali.padre_id/madre_id` per i figli individuali, `lotti_suini.padre_id/madre_id` per i figli nati in lotto — un riproduttore suino può comparire in entrambe) — se non ha figli in nessuna delle due, viene escluso dal campione. Aggiornata anche la descrizione visibile in pagina per rendere esplicito questo criterio.

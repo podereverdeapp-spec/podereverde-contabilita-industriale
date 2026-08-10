@@ -82,6 +82,80 @@ export default function BreakEven() {
         prezzoMedioPerSpecie[sp] = prezziNoti.length > 0 ? round2(prezziNoti.reduce((s, p) => s + p, 0) / prezziNoti.length) : null;
       });
 
+      // Per i bovini specificamente: "bovino adulto" = macellato tra 12 e 24 mesi di età —
+      // presi su TUTTI gli anni (non solo quello selezionato, campione più robusto), peso
+      // medio maschi+femmine insieme. Sostituisce il peso/anno per il solo bovino, e aggiunge
+      // il costo di nascita medio e il costo totale medio di questo stesso gruppo, come
+      // riferimento — richiesto da Filippo per rendere la break even più realistica.
+      const { data: tuttiBoviniUsciti, error: eB } = await fetchAllPages((da, a) => supabase.from("animali")
+        .select("id,nascita,data_uscita,peso_carcassa").eq("specie", "bovino").neq("stato", "attivo")
+        .not("peso_carcassa", "is", null).not("nascita", "is", null).not("data_uscita", "is", null).range(da, a));
+      if (eB) throw new Error(`Errore bovini storici: ${eB.message}`);
+
+      const { data: tuttiCostiAnimale } = await fetchAllPages((da, a) => supabase.from("ci_costo_animale_annuale")
+        .select("animale_id,lotto_id,unita_nr,costo_totale_anno,costo_nascita_ereditato").range(da, a));
+      const costiBovini = tuttiCostiAnimale; // stesso dataset, riusato anche per i suini più sotto
+      const costoTotalePerAnimale = new Map(), costoNascitaPerAnimale = new Map();
+      (costiBovini || []).forEach(c => {
+        costoTotalePerAnimale.set(c.animale_id, (costoTotalePerAnimale.get(c.animale_id) || 0) + (parseFloat(c.costo_totale_anno) || 0));
+        const nascitaVal = parseFloat(c.costo_nascita_ereditato) || 0;
+        if (nascitaVal > 0) costoNascitaPerAnimale.set(c.animale_id, nascitaVal);
+      });
+
+      const boviniAdulti = (tuttiBoviniUsciti || []).filter(a => {
+        const etaMesi = (new Date(a.data_uscita) - new Date(a.nascita)) / (30.44 * 86400000);
+        return etaMesi >= 12 && etaMesi <= 24 && a.peso_carcassa > 0;
+      });
+      const pesoMedioBovinoAdulto = boviniAdulti.length > 0 ? round2(boviniAdulti.reduce((s, a) => s + a.peso_carcassa, 0) / boviniAdulti.length) : null;
+      const costiTotaliNoti = boviniAdulti.map(a => costoTotalePerAnimale.get(a.id)).filter(c => c != null && c > 0);
+      const costoTotaleMedioBovinoAdulto = costiTotaliNoti.length > 0 ? round2(costiTotaliNoti.reduce((s, c) => s + c, 0) / costiTotaliNoti.length) : null;
+      const costiNascitaNoti = boviniAdulti.map(a => costoNascitaPerAnimale.get(a.id)).filter(c => c != null && c > 0);
+      const costoNascitaMedioBovinoAdulto = costiNascitaNoti.length > 0 ? round2(costiNascitaNoti.reduce((s, c) => s + c, 0) / costiNascitaNoti.length) : null;
+      if (pesoMedioBovinoAdulto != null) pesoMedioPerSpecie.bovino = pesoMedioBovinoAdulto;
+
+      // Stesso principio per i suini, ma sul PESO VIVO (non l'età): "suino campione" = uscito
+      // con peso vivo oltre 130kg — includendo sia gli animali individuali sia i suinetti nei
+      // lotti (suini_lotto), che sono la maggioranza dei suini dell'azienda.
+      const { data: suiniIndividuali, error: eSI } = await fetchAllPages((da, a) => supabase.from("animali")
+        .select("id,peso_carcassa,peso_vivo_uscita,riproduttore").eq("specie", "suino").neq("stato", "attivo")
+        .not("peso_carcassa", "is", null).not("peso_vivo_uscita", "is", null).range(da, a));
+      if (eSI) throw new Error(`Errore suini individuali: ${eSI.message}`);
+
+      // Per capire quali riproduttori suini non hanno mai avuto figli — servono sia i figli
+      // registrati come "animali" (padre_id/madre_id) sia quelli nati in un lotto
+      // (lotti_suini.padre_id/madre_id) — un riproduttore suino può comparire in entrambi.
+      const { data: tuttiSuiniConGenitori } = await fetchAllPages((da, a) => supabase.from("animali")
+        .select("padre_id,madre_id").eq("specie", "suino").range(da, a));
+      const { data: lottiConGenitori } = await supabase.from("lotti_suini").select("padre_id,madre_id");
+      const idConFigli = new Set();
+      (tuttiSuiniConGenitori || []).forEach(f => { if (f.padre_id) idConFigli.add(f.padre_id); if (f.madre_id) idConFigli.add(f.madre_id); });
+      (lottiConGenitori || []).forEach(l => { if (l.padre_id) idConFigli.add(l.padre_id); if (l.madre_id) idConFigli.add(l.madre_id); });
+      const { data: unitaLotto, error: eUL } = await fetchAllPages((da, a) => supabase.from("suini_lotto")
+        .select("id,lotto_id,nr,peso_carcassa,peso_vivo_uscita").neq("stato", "attivo")
+        .not("peso_carcassa", "is", null).not("peso_vivo_uscita", "is", null).range(da, a));
+      if (eUL) throw new Error(`Errore suinetti lotto: ${eUL.message}`);
+
+      const costoTotalePerUnita = new Map();
+      (costiBovini || []).forEach(c => {
+        if (c.lotto_id != null && c.unita_nr != null) {
+          costoTotalePerUnita.set(`${c.lotto_id}|${c.unita_nr}`, (costoTotalePerUnita.get(`${c.lotto_id}|${c.unita_nr}`) || 0) + (parseFloat(c.costo_totale_anno) || 0));
+        }
+      });
+
+      const suiniCampioneIndividuali = (suiniIndividuali || []).filter(a =>
+        a.peso_vivo_uscita > 130 && a.peso_carcassa > 0 && !(a.riproduttore && !idConFigli.has(a.id))
+      );
+      const suiniCampioneLotto = (unitaLotto || []).filter(u => u.peso_vivo_uscita > 130 && u.peso_carcassa > 0);
+      const pesiCampioneSuino = [...suiniCampioneIndividuali.map(a => a.peso_carcassa), ...suiniCampioneLotto.map(u => u.peso_carcassa)];
+      const pesoMedioSuinoCampione = pesiCampioneSuino.length > 0 ? round2(pesiCampioneSuino.reduce((s, p) => s + p, 0) / pesiCampioneSuino.length) : null;
+      const costiCampioneSuino = [
+        ...suiniCampioneIndividuali.map(a => costoTotalePerAnimale.get(a.id)).filter(c => c != null && c > 0),
+        ...suiniCampioneLotto.map(u => costoTotalePerUnita.get(`${u.lotto_id}|${u.nr}`)).filter(c => c != null && c > 0),
+      ];
+      const costoTotaleMedioSuinoCampione = costiCampioneSuino.length > 0 ? round2(costiCampioneSuino.reduce((s, c) => s + c, 0) / costiCampioneSuino.length) : null;
+      const numeroSuiniCampione = pesiCampioneSuino.length;
+      if (pesoMedioSuinoCampione != null) pesoMedioPerSpecie.suino = pesoMedioSuinoCampione;
+
       const risultato = {};
       ["bovino", "suino", "ovino"].forEach(sp => {
         const numeroCapiAnno = (usciti || []).filter(a => a.specie === sp).length;
@@ -97,6 +171,15 @@ export default function BreakEven() {
           pesoMedioCarcassa: pesoMedioPerSpecie[sp],
           prezzoVenditaMedioReale: prezzoMedioPerSpecie[sp],
           numeroCapiUscitiAnno: numeroCapiAnno,
+          ...(sp === "bovino" ? {
+            numeroBoviniAdulti: boviniAdulti.length,
+            costoTotaleMedioBovinoAdulto,
+            costoNascitaMedioBovinoAdulto,
+          } : {}),
+          ...(sp === "suino" ? {
+            numeroSuiniCampione,
+            costoTotaleMedioSuinoCampione,
+          } : {}),
         };
       });
 
@@ -143,6 +226,21 @@ export default function BreakEven() {
             return (
               <div key={sp} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20 }}>
                 <h2 style={{ fontSize: 18, color: C.primary, marginTop: 0, marginBottom: 12 }}>{ETICHETTE[sp]}</h2>
+                {sp === "bovino" && d.numeroBoviniAdulti > 0 && (
+                  <div style={{ background: C.primaryLight + "18", border: `1px solid ${C.primaryLight}`, borderRadius: 8, padding: 10, marginBottom: 14, fontSize: 12 }}>
+                    <strong>Riferimento "bovino adulto"</strong> (macellati tra 12 e 24 mesi, tutti gli anni, M+F insieme — {d.numeroBoviniAdulti} capi):
+                    {" "}peso {formattaNumero(d.pesoMedioCarcassa, 1)} kg
+                    {d.costoTotaleMedioBovinoAdulto != null && ` · costo totale medio ${formattaEuro(d.costoTotaleMedioBovinoAdulto)}`}
+                    {d.costoNascitaMedioBovinoAdulto != null && ` · costo di nascita medio ${formattaEuro(d.costoNascitaMedioBovinoAdulto)}`}
+                  </div>
+                )}
+                {sp === "suino" && d.numeroSuiniCampione > 0 && (
+                  <div style={{ background: C.primaryLight + "18", border: `1px solid ${C.primaryLight}`, borderRadius: 8, padding: 10, marginBottom: 14, fontSize: 12 }}>
+                    <strong>Riferimento "suino campione"</strong> (usciti con peso vivo oltre 130 kg, tutti gli anni, animali e suinetti nei lotti insieme, esclusi i riproduttori mai diventati genitori — {d.numeroSuiniCampione} capi):
+                    {" "}peso carcassa {formattaNumero(d.pesoMedioCarcassa, 1)} kg
+                    {d.costoTotaleMedioSuinoCampione != null && ` · costo totale medio ${formattaEuro(d.costoTotaleMedioSuinoCampione)}`}
+                  </div>
+                )}
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12, marginBottom: 16 }}>
                   <CampoInfo label="Costi fissi totali (incl. ammortamenti)" value={formattaEuro(d.costiFissiTotali)} />
                   <CampoInfo label="Costi variabili totali" value={formattaEuro(d.costiVariabiliTotali)} />
