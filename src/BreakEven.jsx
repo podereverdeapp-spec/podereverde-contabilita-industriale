@@ -64,12 +64,21 @@ export default function BreakEven() {
       const perSpecieFissi = allocaCostiPerSpecie(tuttiFissi, righeUba || []);
       const perSpecieVariabili = allocaCostiPerSpecie(tuttiVariabili, righeUba || []);
 
-      // Peso carcassa medio e prezzo di vendita medio REALE, per specie, dagli animali usciti
-      // quest'anno con dati completi — usati come default modificabile.
+      // Peso carcassa medio e prezzo di vendita medio REALE, per specie, dagli animali
+      // MACELLATI (non venduti/deceduti/altro) quest'anno con dati completi — usati come
+      // default modificabile.
       const { data: usciti, error: eU } = await fetchAllPages((da, a) => supabase.from("animali")
-        .select("specie,peso_carcassa,id").neq("stato", "attivo").not("peso_carcassa", "is", null)
+        .select("specie,peso_carcassa,id").eq("stato", "macellato").not("peso_carcassa", "is", null)
         .gte("data_uscita", `${anno}-01-01`).lte("data_uscita", `${anno}-12-31`).range(da, a));
       if (eU) throw new Error(`Errore animali usciti: ${eU.message}`);
+
+      // Suinetti nei lotti macellati quest'anno — mancavano dal conteggio "capi usciti",
+      // che guardava solo la tabella animali (segnalato da Filippo: il numero sembrava troppo
+      // basso per i suini, dove la maggior parte sono in lotti, non animali individuali).
+      const { data: unitaLottoAnno } = await fetchAllPages((da, a) => supabase.from("suini_lotto")
+        .select("id").eq("stato", "macellato")
+        .gte("data_uscita", `${anno}-01-01`).lte("data_uscita", `${anno}-12-31`).range(da, a));
+      const numeroSuiniLottoMacellatiAnno = (unitaLottoAnno || []).length;
 
       const { data: venditeIngrasso } = await supabase.from("ci_dati_vendita_ingrasso").select("animale_id,prezzo_vendita_kg_reale");
       const mappaVendite = new Map((venditeIngrasso || []).filter(v => v.animale_id).map(v => [v.animale_id, parseFloat(v.prezzo_vendita_kg_reale) || null]));
@@ -88,7 +97,7 @@ export default function BreakEven() {
       // il costo di nascita medio e il costo totale medio di questo stesso gruppo, come
       // riferimento — richiesto da Filippo per rendere la break even più realistica.
       const { data: tuttiBoviniUsciti, error: eB } = await fetchAllPages((da, a) => supabase.from("animali")
-        .select("id,nascita,data_uscita,peso_carcassa").eq("specie", "bovino").neq("stato", "attivo")
+        .select("id,nascita,data_uscita,peso_carcassa").eq("specie", "bovino").eq("stato", "macellato")
         .not("peso_carcassa", "is", null).not("nascita", "is", null).not("data_uscita", "is", null).range(da, a));
       if (eB) throw new Error(`Errore bovini storici: ${eB.message}`);
 
@@ -117,7 +126,7 @@ export default function BreakEven() {
       // con peso vivo oltre 130kg — includendo sia gli animali individuali sia i suinetti nei
       // lotti (suini_lotto), che sono la maggioranza dei suini dell'azienda.
       const { data: suiniIndividuali, error: eSI } = await fetchAllPages((da, a) => supabase.from("animali")
-        .select("id,peso_carcassa,peso_vivo_uscita,riproduttore").eq("specie", "suino").neq("stato", "attivo")
+        .select("id,peso_carcassa,peso_vivo_uscita,riproduttore").eq("specie", "suino").eq("stato", "macellato")
         .not("peso_carcassa", "is", null).not("peso_vivo_uscita", "is", null).range(da, a));
       if (eSI) throw new Error(`Errore suini individuali: ${eSI.message}`);
 
@@ -131,7 +140,7 @@ export default function BreakEven() {
       (tuttiSuiniConGenitori || []).forEach(f => { if (f.padre_id) idConFigli.add(f.padre_id); if (f.madre_id) idConFigli.add(f.madre_id); });
       (lottiConGenitori || []).forEach(l => { if (l.padre_id) idConFigli.add(l.padre_id); if (l.madre_id) idConFigli.add(l.madre_id); });
       const { data: unitaLotto, error: eUL } = await fetchAllPages((da, a) => supabase.from("suini_lotto")
-        .select("id,lotto_id,nr,peso_carcassa,peso_vivo_uscita").neq("stato", "attivo")
+        .select("id,lotto_id,nr,peso_carcassa,peso_vivo_uscita").eq("stato", "macellato")
         .not("peso_carcassa", "is", null).not("peso_vivo_uscita", "is", null).range(da, a));
       if (eUL) throw new Error(`Errore suinetti lotto: ${eUL.message}`);
 
@@ -158,7 +167,7 @@ export default function BreakEven() {
 
       const risultato = {};
       ["bovino", "suino", "ovino"].forEach(sp => {
-        const numeroCapiAnno = (usciti || []).filter(a => a.specie === sp).length;
+        const numeroCapiAnno = (usciti || []).filter(a => a.specie === sp).length + (sp === "suino" ? numeroSuiniLottoMacellatiAnno : 0);
         const ubaGiorniProduttivi = perSpecieVariabili[sp].ubaGiorniProduttivi;
         // UBA-giorni medio per capo in un anno intero (365) — usato per "annualizzare" il
         // costo variabile per UBA-giorno in un costo variabile medio per capo.
@@ -247,7 +256,7 @@ export default function BreakEven() {
                   <CampoInfo label="UBA-giorni produttivi" value={formattaNumero(d.ubaGiorniProduttivi, 0)} />
                   <CampoInfo label="Costo variabile medio/capo (annuo)" value={formattaEuro(d.costoVariabilePerCapoAnnuo)} />
                   <CampoInfo label="Peso carcassa medio (usciti quest'anno)" value={pesoMedio ? `${formattaNumero(pesoMedio, 1)} kg` : "— nessun dato"} />
-                  <CampoInfo label="Capi usciti quest'anno" value={d.numeroCapiUscitiAnno} />
+                  <CampoInfo label="Capi macellati quest'anno" value={d.numeroCapiUscitiAnno} />
                 </div>
 
                 <div style={{ background: C.bg, borderRadius: 10, padding: 16 }}>

@@ -156,3 +156,14 @@ Corretta anche una sintassi Supabase non standard (`.not("stato","eq","attivo")`
 **Richiesto da Filippo**: nel campione suini (>130kg peso vivo), non contare i riproduttori che non hanno mai avuto figli — la loro storia di costo non è rappresentativa di un normale capo da ingrasso.
 
 **Corretto**: verificato se un suino riproduttore compare come padre/madre in **entrambe** le fonti possibili (`animali.padre_id/madre_id` per i figli individuali, `lotti_suini.padre_id/madre_id` per i figli nati in lotto — un riproduttore suino può comparire in entrambe) — se non ha figli in nessuna delle due, viene escluso dal campione. Aggiornata anche la descrizione visibile in pagina per rendere esplicito questo criterio.
+
+## 130. Bug reale trovato — "Capi usciti quest'anno" contava solo la tabella animali, mai i lotti
+
+**Segnalato da Filippo con screenshot**: "Capi usciti quest'anno" per i suini mostrava 5 — troppo pochi. Aveva ragione: verificato che nel 2025 ci sono **146 suinetti macellati nei lotti** contro i 5 soli individuali contati — il conteggio doveva essere 151, non 5. La query di questo specifico contatore guardava solo `animali`, mai `suini_lotto` — diversamente dal calcolo del "campione", che invece già includeva entrambe le fonti correttamente.
+
+**Segnalato anche**: il dato deve riferirsi ai soli animali **macellati**, non a "qualunque uscita" (venduto/deceduto/altro).
+
+**Corretto**:
+- Aggiunta una query separata per contare i suinetti nei lotti macellati nell'anno, sommata al conteggio per i soli suini
+- Tutte le query della pagina (capi macellati dell'anno, campione bovino adulto, campione suino) ora filtrano `stato = 'macellato'` esplicitamente, non più "qualunque stato diverso da attivo" — coerente in tutta la pagina
+- Etichetta aggiornata da "Capi usciti quest'anno" a "Capi macellati quest'anno"
