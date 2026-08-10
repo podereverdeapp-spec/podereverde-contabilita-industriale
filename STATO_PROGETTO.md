@@ -119,3 +119,20 @@ Verificato nel codice il 24/07: il bug è ancora presente, non è mai stato corr
 **Trovata ANCHE una seconda ondata di contaminazione** durante l'impacchettamento (il file era sospettosamente da 3.3MB anziché i soliti ~250KB): una cartella build/ intera di react-scripts (7.7MB tra JS e sourcemap) e le immagini generiche di boilerplate CRA (logo192.png, logo512.png, favicon.ico duplicato, public/index.html, manifest.json) — rimosse anche quelle. Verificata anche la cartella api/ (leggi-fattura-pdf.js): quella è legittima, propria di Contabilità Industriale, non toccata.
 
 **IMPORTANTE — verificare su GitHub**: la prossima volta che fai push, questo pulisce definitivamente il repository remoto. Ti consiglio di controllare tu stesso, una volta fatto il push, che la cartella del repository su GitHub non contenga più questi file — giusto per stare tranquilli che la pulizia sia arrivata fino in fondo.
+
+## 126. Nuova "Break Even Analysis" — punto di pareggio per specie, con ammortamenti inclusi
+
+**Costruita insieme a Filippo**, discutendo il modello prima di scriverlo:
+- Prezzo di vendita carcassa: **parametro modificabile** dall'utente, precompilato con la media reale registrata (se disponibile) — così si possono provare scenari diversi
+- Costi fissi totali per specie: stessa allocazione Area/Destinazione→UBA-giorni già usata in Report Costi, **ma applicata separatamente** ai soli costi `tipo_costo='Fisso'` — **includendo gli ammortamenti** (quote Cespiti dell'anno, già correttamente integrate — vedi indagine sezione precedente, si è scoperto che erano già agganciate)
+- Costi variabili totali per specie: stessa logica, sui soli `tipo_costo='Variabile'`
+- Costo variabile per capo: tasso variabile per UBA-giorno della specie × 365 (un anno intero di UBA-giorni per un capo tipo)
+- Punto di pareggio (numero di capi) = Costi fissi totali ÷ (Ricavo per capo − Costo variabile per capo)
+
+**Nuovo modulo condiviso** `calcoloAllocazioneSpecie.js`: estratta la logica di allocazione Area/Destinazione→UBA-giorni già presente (duplicata) in ReportCosti.jsx, in una funzione parametrica riutilizzabile — permette di far girare la stessa allocazione due volte sugli stessi dati (una per Fisso, una per Variabile) senza duplicare 80 righe di codice a mano.
+
+**Nuova pagina `BreakEven.jsx`** (Analisi Costi → Break Even Analysis): un riquadro per specie con tutti i dati di supporto (costi fissi/variabili totali, UBA-giorni, peso carcassa medio degli usciti nell'anno) e il calcolo interattivo — cambiando il prezzo di vendita, punto di pareggio e margine si aggiornano subito.
+
+Testato con caso mock (costi fissi 50.000€, variabili 30.000€/8.000 UBA-gg, peso 350kg, prezzo 6€/kg): punto di pareggio corretto a 69 capi, verificato che 69×margine copra effettivamente i costi fissi.
+
+**Nota per Filippo, durante la costruzione**: inizialmente avevo detto che gli ammortamenti (Cespiti) fossero completamente scollegati da Report Costi — sbagliavo, dopo un controllo più attento ho trovato che erano già integrati correttamente (cespiti taggati per specie → 100% a quella specie; "Generale" → spalmato via UBA-giorni). Corretto l'errore prima di procedere.
