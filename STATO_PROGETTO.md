@@ -105,3 +105,17 @@ Verificato nel codice il 24/07: il bug è ancora presente, non è mai stato corr
 - Prima di ogni modifica: `cd allevamento && npm install && CI=true npm run build` per verificare che l'app compili, poi ripacchettare con `tar -czf allevamento_vNN.tar.gz --exclude=.git .`
 - Le versioni sono numerate progressivamente (v66...v94 al momento di scrivere) — usare il numero successivo per ogni nuovo pacchetto, mai sovrascrivere
 - Repo GitHub e deploy Vercel separati da quelli della Contabilità Industriale, ma stesso account/proprietario (Filippo) per entrambi i progetti — l'accesso condiviso è a livello di **database** (stesso Supabase), non di codice sorgente: ogni sessione di chat vede solo i file che vengono caricati o che restano nell'ambiente di lavoro di quella sessione specifica.
+
+## 125. PROBLEMA GRAVE TROVATO E RISOLTO — repository contaminato con file di podereverdeapp.it
+
+**Scoperto per caso**, mentre costruivo il nuovo "Grafico per le Macellazioni": ricompilando il progetto dopo un mio riavvio d'ambiente, ho dovuto riscaricare i due repository da GitHub — e ho trovato che il repository **podereverde-contabilita-industriale** aveva il `package.json` **sbagliato**: nome "allevamento", basato su `react-scripts` (Create React App) invece di **Vite**. Controllando meglio, **20 file sorgente di podereverdeapp.it** (allevamento_app.jsx, Auth.jsx, lotti_suini.jsx, pedigree.jsx, selezione_genetica.jsx, registro_uscite.jsx, UBAReport.jsx, ExportManager.jsx, Guida.jsx, costi_allevamento.jsx, costi_complessivi.jsx, costi_generali.jsx, costo_origine.jsx, destinatari.jsx, exportExcel.js + boilerplate CRA come App.js/index.js/setupTests.js) erano finiti **dentro** questo repository — insieme a due file .tar residui.
+
+**Causa probabile**: in qualche momento precedente (prima di questa sessione, o durante un deploy da parte tua), è stato estratto/committato il pacchetto sbagliato nella cartella sbagliata, mescolando i due progetti nello stesso repository Contabilità Industriale su GitHub.
+
+**Impatto reale**: non so con certezza se questo abbia mai causato un deploy rotto su Vercel per Contabilità Industriale — dipende da come Vercel ha configurato la build (se ha rilevato Vite comunque, o se ha provato a usare `react-scripts` fallendo). Ma è un rischio concreto da quando si è verificato.
+
+**Corretto**: ricostruito `package.json` corretto (Vite, dipendenze reali usate nel codice: supabase-js, react, xlsx, xlsx-js-style, jszip — verificate cercando ogni `import` nei sorgenti, non a memoria). Rimossi tutti i 20 file estranei e i due archivi .tar residui. Ricompilato da zero: **147 moduli, build pulita**.
+
+**Trovata ANCHE una seconda ondata di contaminazione** durante l'impacchettamento (il file era sospettosamente da 3.3MB anziché i soliti ~250KB): una cartella build/ intera di react-scripts (7.7MB tra JS e sourcemap) e le immagini generiche di boilerplate CRA (logo192.png, logo512.png, favicon.ico duplicato, public/index.html, manifest.json) — rimosse anche quelle. Verificata anche la cartella api/ (leggi-fattura-pdf.js): quella è legittima, propria di Contabilità Industriale, non toccata.
+
+**IMPORTANTE — verificare su GitHub**: la prossima volta che fai push, questo pulisce definitivamente il repository remoto. Ti consiglio di controllare tu stesso, una volta fatto il push, che la cartella del repository su GitHub non contenga più questi file — giusto per stare tranquilli che la pulizia sia arrivata fino in fondo.

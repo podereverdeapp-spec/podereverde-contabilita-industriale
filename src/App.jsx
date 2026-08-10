@@ -10,6 +10,7 @@ import CaricaFattureAttive from "./CaricaFattureAttive";
 import SezioneCespiti from "./SezioneCespiti";
 import ReportUba from "./ReportUba";
 import SezioneReportCosti from "./SezioneReportCosti";
+import GraficoMacellazioni from "./GraficoMacellazioni";
 import SchedaAnimale from "./SchedaAnimale";
 import ReportRiproduttori from "./ReportRiproduttori";
 import ArticoliPrezzi from "./ArticoliPrezzi";
@@ -67,6 +68,7 @@ const MENU = [
   { tipo: "cartella", id: "cart-costi", label: "Analisi Costi", icon: "📊", contenuto: [
     { tipo: "voce", id: "istr-costi", label: "Istruzioni", icon: "📖" },
     { tipo: "voce", id: "costi", label: "Report Costi", icon: "📊" },
+    { tipo: "voce", id: "grafico-macellazioni", label: "Grafico per le Macellazioni", icon: "📈" },
     { tipo: "voce", id: "cespiti", label: "Cespiti", icon: "🏗️" },
   ]},
   { tipo: "cartella", id: "cart-alimentaria", label: "Alimentaria", icon: "🌾", contenuto: [
@@ -251,6 +253,7 @@ export default function App() {
         {tab === "cespiti" && <SezioneCespiti />}
         {tab === "uba" && <ReportUba onVediScheda={vaiAllaSchedaAnimale} />}
         {tab === "costi" && <SezioneReportCosti />}
+        {tab === "grafico-macellazioni" && <GraficoMacellazioni />}
         {tab === "scheda" && <SchedaAnimale ricercaIniziale={ricercaSchedaAnimale} onRicercaConsumata={() => setRicercaSchedaAnimale(null)} />}
         {tab === "riproduttori" && <ReportRiproduttori />}
         {tab === "performanceeta" && <PerformanceEta onNavigate={vaiA} />}
