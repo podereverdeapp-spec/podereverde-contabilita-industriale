@@ -12,6 +12,7 @@ import ReportUba from "./ReportUba";
 import SezioneReportCosti from "./SezioneReportCosti";
 import GraficoMacellazioni from "./GraficoMacellazioni";
 import BreakEven from "./BreakEven";
+import RiepilogoCostiBreakEven from "./RiepilogoCostiBreakEven";
 import SchedaAnimale from "./SchedaAnimale";
 import ReportRiproduttori from "./ReportRiproduttori";
 import ArticoliPrezzi from "./ArticoliPrezzi";
@@ -71,6 +72,7 @@ const MENU = [
     { tipo: "voce", id: "costi", label: "Report Costi", icon: "📊" },
     { tipo: "voce", id: "grafico-macellazioni", label: "Grafico per le Macellazioni", icon: "📈" },
     { tipo: "voce", id: "break-even", label: "Break Even Analysis", icon: "⚖️" },
+    { tipo: "voce", id: "riepilogo-costi-breakeven", label: "Riepilogo Costi (Break Even)", icon: "📋" },
     { tipo: "voce", id: "cespiti", label: "Cespiti", icon: "🏗️" },
   ]},
   { tipo: "cartella", id: "cart-alimentaria", label: "Alimentaria", icon: "🌾", contenuto: [
@@ -257,6 +259,7 @@ export default function App() {
         {tab === "costi" && <SezioneReportCosti />}
         {tab === "grafico-macellazioni" && <GraficoMacellazioni />}
         {tab === "break-even" && <BreakEven />}
+        {tab === "riepilogo-costi-breakeven" && <RiepilogoCostiBreakEven />}
         {tab === "scheda" && <SchedaAnimale ricercaIniziale={ricercaSchedaAnimale} onRicercaConsumata={() => setRicercaSchedaAnimale(null)} />}
         {tab === "riproduttori" && <ReportRiproduttori />}
         {tab === "performanceeta" && <PerformanceEta onNavigate={vaiA} />}

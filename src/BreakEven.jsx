@@ -97,7 +97,7 @@ export default function BreakEven() {
       // il costo di nascita medio e il costo totale medio di questo stesso gruppo, come
       // riferimento — richiesto da Filippo per rendere la break even più realistica.
       const { data: tuttiBoviniUsciti, error: eB } = await fetchAllPages((da, a) => supabase.from("animali")
-        .select("id,nascita,data_uscita,peso_carcassa").eq("specie", "bovino").eq("stato", "macellato")
+        .select("id,nascita,data_uscita,peso_carcassa,riproduttore").eq("specie", "bovino").eq("stato", "macellato")
         .not("peso_carcassa", "is", null).not("nascita", "is", null).not("data_uscita", "is", null).range(da, a));
       if (eB) throw new Error(`Errore bovini storici: ${eB.message}`);
 
@@ -111,9 +111,20 @@ export default function BreakEven() {
         if (nascitaVal > 0) costoNascitaPerAnimale.set(c.animale_id, nascitaVal);
       });
 
+      // Chi ha avuto almeno un figlio (tutte le specie insieme, serve sia per i bovini sia
+      // più sotto per i suini) — un riproduttore bovino/suino mai diventato genitore non è
+      // rappresentativo del costo di un capo normale, va escluso dal campione.
+      const { data: tuttiConGenitori } = await fetchAllPages((da, a) => supabase.from("animali")
+        .select("padre_id,madre_id").range(da, a));
+      const { data: lottiConGenitori } = await supabase.from("lotti_suini").select("padre_id,madre_id");
+      const idConFigli = new Set();
+      (tuttiConGenitori || []).forEach(f => { if (f.padre_id) idConFigli.add(f.padre_id); if (f.madre_id) idConFigli.add(f.madre_id); });
+      (lottiConGenitori || []).forEach(l => { if (l.padre_id) idConFigli.add(l.padre_id); if (l.madre_id) idConFigli.add(l.madre_id); });
+
       const boviniAdulti = (tuttiBoviniUsciti || []).filter(a => {
         const etaMesi = (new Date(a.data_uscita) - new Date(a.nascita)) / (30.44 * 86400000);
-        return etaMesi >= 12 && etaMesi <= 24 && a.peso_carcassa > 0;
+        const riproduttoreSenzaFigli = a.riproduttore && !idConFigli.has(a.id);
+        return etaMesi >= 12 && etaMesi <= 24 && a.peso_carcassa > 0 && !riproduttoreSenzaFigli;
       });
       const pesoMedioBovinoAdulto = boviniAdulti.length > 0 ? round2(boviniAdulti.reduce((s, a) => s + a.peso_carcassa, 0) / boviniAdulti.length) : null;
       const costiTotaliNoti = boviniAdulti.map(a => costoTotalePerAnimale.get(a.id)).filter(c => c != null && c > 0);
@@ -130,15 +141,6 @@ export default function BreakEven() {
         .not("peso_carcassa", "is", null).not("peso_vivo_uscita", "is", null).range(da, a));
       if (eSI) throw new Error(`Errore suini individuali: ${eSI.message}`);
 
-      // Per capire quali riproduttori suini non hanno mai avuto figli — servono sia i figli
-      // registrati come "animali" (padre_id/madre_id) sia quelli nati in un lotto
-      // (lotti_suini.padre_id/madre_id) — un riproduttore suino può comparire in entrambi.
-      const { data: tuttiSuiniConGenitori } = await fetchAllPages((da, a) => supabase.from("animali")
-        .select("padre_id,madre_id").eq("specie", "suino").range(da, a));
-      const { data: lottiConGenitori } = await supabase.from("lotti_suini").select("padre_id,madre_id");
-      const idConFigli = new Set();
-      (tuttiSuiniConGenitori || []).forEach(f => { if (f.padre_id) idConFigli.add(f.padre_id); if (f.madre_id) idConFigli.add(f.madre_id); });
-      (lottiConGenitori || []).forEach(l => { if (l.padre_id) idConFigli.add(l.padre_id); if (l.madre_id) idConFigli.add(l.madre_id); });
       const { data: unitaLotto, error: eUL } = await fetchAllPages((da, a) => supabase.from("suini_lotto")
         .select("id,lotto_id,nr,peso_carcassa,peso_vivo_uscita").eq("stato", "macellato")
         .not("peso_carcassa", "is", null).not("peso_vivo_uscita", "is", null).range(da, a));
@@ -237,7 +239,7 @@ export default function BreakEven() {
                 <h2 style={{ fontSize: 18, color: C.primary, marginTop: 0, marginBottom: 12 }}>{ETICHETTE[sp]}</h2>
                 {sp === "bovino" && d.numeroBoviniAdulti > 0 && (
                   <div style={{ background: C.primaryLight + "18", border: `1px solid ${C.primaryLight}`, borderRadius: 8, padding: 10, marginBottom: 14, fontSize: 12 }}>
-                    <strong>Riferimento "bovino adulto"</strong> (macellati tra 12 e 24 mesi, tutti gli anni, M+F insieme — {d.numeroBoviniAdulti} capi):
+                    <strong>Riferimento "bovino adulto"</strong> (macellati tra 12 e 24 mesi, tutti gli anni, M+F insieme, esclusi i riproduttori mai diventati genitori — {d.numeroBoviniAdulti} capi):
                     {" "}peso {formattaNumero(d.pesoMedioCarcassa, 1)} kg
                     {d.costoTotaleMedioBovinoAdulto != null && ` · costo totale medio ${formattaEuro(d.costoTotaleMedioBovinoAdulto)}`}
                     {d.costoNascitaMedioBovinoAdulto != null && ` · costo di nascita medio ${formattaEuro(d.costoNascitaMedioBovinoAdulto)}`}

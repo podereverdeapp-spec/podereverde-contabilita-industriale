@@ -167,3 +167,19 @@ Corretta anche una sintassi Supabase non standard (`.not("stato","eq","attivo")`
 - Aggiunta una query separata per contare i suinetti nei lotti macellati nell'anno, sommata al conteggio per i soli suini
 - Tutte le query della pagina (capi macellati dell'anno, campione bovino adulto, campione suino) ora filtrano `stato = 'macellato'` esplicitamente, non più "qualunque stato diverso da attivo" — coerente in tutta la pagina
 - Etichetta aggiornata da "Capi usciti quest'anno" a "Capi macellati quest'anno"
+
+## 131. Break Even — esclusi anche dal campione bovini i riproduttori mai diventati genitori
+
+**Segnalato da Filippo**: la stessa esclusione applicata ai suini (sezione 129) mancava per i bovini.
+
+**Corretto**: stessa logica ora anche sul campione "bovino adulto" — un riproduttore mai diventato genitore (controllato sia via `animali.padre_id/madre_id` sia via `lotti_suini.padre_id/madre_id`, utile anche per eventuali riproduttori bovini con figli tracciati diversamente) viene escluso. **Unificato** il calcolo di "chi ha avuto figli" in un unico blocco condiviso all'inizio della funzione (prima era duplicato — lo stesso identificatore `idConFigli` veniva dichiarato due volte nello stesso scope, un errore che avrebbe rotto la build se non l'avessi notato ricompilando).
+
+## 132. Nuova pagina "Riepilogo Costi (Break Even)" — Variabili/Fissi/Ammortamenti con dettaglio per area, esportabile
+
+**Richiesto da Filippo**: nella cartella Break Even, un riepilogo separato in tre blocchi (Variabili, Fissi, Quote di Ammortamento), con le frecce per espandere ogni voce e vedere la composizione per specie (come già in Report Per Area) — tutto scaricabile in Excel.
+
+**Riuso di codice esistente, non duplicato**: esportata `classificaDestinazione` da `calcoloReportCosti.js` (prima privata) e riusate `caricaDatiGrezziAnno`, `AREE_ORDINARIE`, `calcolaRigaAggregata` (da `motoreUba.js`) — la stessa macchina già usata da Report Per Area, applicata due volte (una sui soli costi `tipo_costo='Fisso'`, una sui soli `Variabile`) per tenerli sempre separati.
+
+**Ammortamenti raggruppati per Categoria cespite** (non per Area, che i cespiti non hanno) — le categorie sono quelle fiscali reali già in Cespiti (es. "5 - Macchinari, apparecchi e attrezzature varie", "15 - Autovetture..."). Stessa logica di allocazione per specie del resto del sistema (specie-specifico → 100% a quella specie; "Generale" → via UBA-giorni; "Nessuno"/Orto/Cavalli/Pollame → esclusi, coerente col resto).
+
+**Nuova pagina `RiepilogoCostiBreakEven.jsx`** (Analisi Costi → Riepilogo Costi Break Even): tre sezioni con frecce di espansione, e un pulsante "Scarica Excel" che esporta un foglio per sezione (Costi Variabili, Costi Fissi, Quote Ammortamento), ciascuno con la stessa struttura vista in pagina (imponibile + incidenza per specie).

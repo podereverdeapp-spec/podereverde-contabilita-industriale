@@ -9,7 +9,7 @@ export const AREE_ORDINARIE = [
 ];
 export const MAPPA_SPECIE = { bovino: "Bovini", suino: "Suini", ovino: "Ovini" };
 
-function classificaDestinazione(dest) {
+export function classificaDestinazione(dest) {
   if (dest === "Bovini e Ovini") return "bovinoOvino";
   if (dest === "Bovini e Suini") return "bovinoSuino";
   if (dest === "Suini e Ovini") return "suinoOvino";
