@@ -214,12 +214,47 @@ function SezioneCosti({ titolo, colore, righe, totale, prefissoChiave, espansi, 
               </Fragment>
             );
           })}
-          <tr style={{ borderTop: `2px solid ${colore}`, fontWeight: 700, background: C.bg }}>
-            <td style={td}></td>
-            <td style={td}>Totale</td>
-            <td style={{ ...td, textAlign: "right" }}>{formattaEuro(totale)}</td>
-            <td colSpan={5} style={{ ...td, textAlign: "right", color: C.muted, fontWeight: 400, fontSize: 11 }}>—</td>
-          </tr>
+          {(() => {
+            const chiaveTotale = `${prefissoChiave}-totale`;
+            const apertaTotale = espansi.has(chiaveTotale);
+            const totalePerSpecie = { bovino: 0, suino: 0, ovino: 0 };
+            const incidenzaTotalePerSpecie = { bovino: 0, suino: 0, ovino: 0 };
+            righe.forEach(r => ["bovino", "suino", "ovino"].forEach(sp => {
+              totalePerSpecie[sp] += r.perSpecie[sp].costoAllocato;
+              incidenzaTotalePerSpecie[sp] += r.perSpecie[sp].incidenza;
+            }));
+            return (
+              <Fragment key={chiaveTotale}>
+                <tr onClick={() => toggleEspanso(chiaveTotale)} style={{ borderTop: `2px solid ${colore}`, fontWeight: 700, background: C.bg, cursor: "pointer" }}>
+                  <td style={{ ...td, width: 24 }}>{apertaTotale ? "▼" : "▶"}</td>
+                  <td style={td}>Totale</td>
+                  <td style={{ ...td, textAlign: "right" }}>{formattaEuro(totale)}</td>
+                  <td colSpan={5} style={{ ...td, textAlign: "right", color: C.muted, fontWeight: 400, fontSize: 11 }}>
+                    {apertaTotale ? "" : "clicca per la somma per specie →"}
+                  </td>
+                </tr>
+                {apertaTotale && ["bovino", "suino", "ovino"].map(sp => {
+                  const capi = numeroCapi[sp];
+                  const imponibileSpecie = round2(totalePerSpecie[sp]);
+                  const costoPerCapo = capi > 0 ? round2(imponibileSpecie / capi) : null;
+                  const pesoSpecie = parseFloat(pesi[sp]) || null;
+                  const costoAlKg = costoPerCapo != null && pesoSpecie ? round2(costoPerCapo / pesoSpecie) : null;
+                  return (
+                    <tr key={`${chiaveTotale}-${sp}`} style={{ background: C.bg, fontSize: 12, fontWeight: 700 }}>
+                      <td style={td}></td>
+                      <td style={{ ...td, paddingLeft: 24, color: C.muted }}>{sp === "bovino" ? "Bovini" : sp === "suino" ? "Suini" : "Ovini"}</td>
+                      <td style={{ ...td, textAlign: "right" }}>{formattaEuro(imponibileSpecie)}</td>
+                      <td style={{ ...td, textAlign: "right" }}>{formattaEuro(incidenzaTotalePerSpecie[sp], 4)}</td>
+                      <td style={{ ...td, textAlign: "right", color: C.muted }}>{capi} capi</td>
+                      <td style={{ ...td, textAlign: "right" }}>{costoPerCapo != null ? formattaEuro(costoPerCapo, 2) : "—"}</td>
+                      <td style={{ ...td, textAlign: "right", color: C.muted }}>{pesoSpecie ? `${formattaNumero(pesoSpecie, 0)} kg` : "—"}</td>
+                      <td style={{ ...td, textAlign: "right" }}>{costoAlKg != null ? formattaEuro(costoAlKg, 3) : "—"}</td>
+                    </tr>
+                  );
+                })}
+              </Fragment>
+            );
+          })()}
         </tbody>
       </table>
     </div>

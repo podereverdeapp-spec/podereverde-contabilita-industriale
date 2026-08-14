@@ -209,3 +209,9 @@ Corretta anche una sintassi Supabase non standard (`.not("stato","eq","attivo")`
 **Aggiunto**: un peso **per specie** (non per singola riga — altrimenti andrebbe reinserito decine di volte), mostrato in un pannello in cima alla pagina insieme al numero di capi attualmente attivi. Le 4 nuove colonne (Capi, €/capo, Peso, €/kg) compaiono nelle righe di dettaglio per specie (quelle che si aprono con la freccetta) — coerente col fatto che "numero capi" e "peso" sono per specie, non per singola area/categoria. Anche l'export Excel aggiornato con le stesse colonne per ciascuna specie.
 
 Numero capi = animali con `stato='attivo'` al momento del caricamento (non filtrato per anno — è una fotografia di "quanti ce ne sono adesso in azienda", non storica).
+
+## 134. Riepilogo Costi Break Even — riga Totale espandibile con somma per specie
+
+**Richiesto da Filippo**: nel riepilogo, la somma dei costi variabili (e fissi, ammortamenti) per specie — non solo il totale complessivo, ma il riepilogo di tutte le aree sommate per Bovini/Suini/Ovini separatamente.
+
+**Corretto**: la riga "Totale" di ogni sezione ora si apre con la stessa freccetta delle altre righe, mostrando la somma per specie di imponibile, €/UBA-gg (somma valida qui, stesso principio già confermato altrove — denominatore costante), capi, €/capo, peso e €/kg — stessa struttura a 8 colonne di ogni riga di dettaglio, applicata al totale della sezione.
