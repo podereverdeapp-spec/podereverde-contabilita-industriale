@@ -183,3 +183,29 @@ Corretta anche una sintassi Supabase non standard (`.not("stato","eq","attivo")`
 **Ammortamenti raggruppati per Categoria cespite** (non per Area, che i cespiti non hanno) — le categorie sono quelle fiscali reali già in Cespiti (es. "5 - Macchinari, apparecchi e attrezzature varie", "15 - Autovetture..."). Stessa logica di allocazione per specie del resto del sistema (specie-specifico → 100% a quella specie; "Generale" → via UBA-giorni; "Nessuno"/Orto/Cavalli/Pollame → esclusi, coerente col resto).
 
 **Nuova pagina `RiepilogoCostiBreakEven.jsx`** (Analisi Costi → Riepilogo Costi Break Even): tre sezioni con frecce di espansione, e un pulsante "Scarica Excel" che esporta un foglio per sezione (Costi Variabili, Costi Fissi, Quote Ammortamento), ciascuno con la stessa struttura vista in pagina (imponibile + incidenza per specie).
+
+## 133. EMERGENZA — trovato e corretto: perché "il costo di nascita non compare"
+
+**Segnalato da Filippo**: "AIUTO, non mi compare il costo di nascita nel Report Riproduttori".
+
+**Prima scoperta, grave**: le correzioni delle sezioni 123-124 (idempotenza di Elabora, pool unificato residuo+mantenimento) risultavano **assenti dal codice attuale**, nonostante fossero state consegnate come v193/v194 — probabilmente perse in un passaggio precedente (mai arrivate su GitHub prima del ripristino v195). Riapplicate integralmente entrambe.
+
+**Causa reale del problema specifico segnalato**: un bug nuovo, mai notato prima. `anno_inizio_riproduzione` viene calcolato correttamente ogni volta che "Elabora" gira, ma **solo per i riproduttori nuovi** — per quelli già esistenti, il valore salvato al **primo** utilizzo non viene mai più aggiornato. Quando in questa sessione abbiamo corretto delle parentele scoprendo figli **più vecchi** di quanto risultasse (es. Filippo, figlio di Angelica, nato nel 2019 — ma Angelica aveva "anno inizio riproduzione" fermo al 2020 da prima), "Elabora" salta silenziosamente tutti gli anni precedenti a quello salvato — quel figlio non riceve mai il costo di nascita.
+
+**Portata reale, controllata su tutto il database**: non solo Angelica — **23 riproduttori** interessati (molti suini: le femmine Large White, IT392011, IT392019, ecc. — probabilmente per lo stesso motivo strutturale, non solo per le correzioni di questa sessione).
+
+**Corretto**:
+1. Riapplicato il pool unificato residuo+mantenimento (motoreRiproduttori.js) — mai arrivato su GitHub prima d'ora
+2. Riapplicato il reset di idempotenza (residuo_rimanente sempre ripristinato al totale prima di ogni rilancio)
+3. **Nuovo fix**: prima di ripercorrere la storia, `anno_inizio_riproduzione` viene sempre riallineato al valore più aggiornato (se emerge un figlio più vecchio di quanto risultasse, lo cattura)
+4. **Corretti direttamente nel database tutti e 23 i riproduttori interessati** — così anche PRIMA del prossimo deploy, rilanciando "Elabora" i costi di nascita mancanti dovrebbero comparire
+
+**AZIONE NECESSARIA PER FILIPPO**: deployare questa versione, poi rilanciare "Elabora" su Report Riproduttori — un solo rilancio finale sistema tutti i 23 casi insieme.
+
+## 133. Riepilogo Costi Break Even — aggiunte colonne Capi/Costo per capo/Peso/Costo al kg
+
+**Richiesto da Filippo**: dopo l'imponibile, aggiungere numero di capi presenti in azienda per specie (suini: animali individuali + suinetti nei lotti), imponibile diviso capi, un campo peso modificabile, e il costo al kg risultante.
+
+**Aggiunto**: un peso **per specie** (non per singola riga — altrimenti andrebbe reinserito decine di volte), mostrato in un pannello in cima alla pagina insieme al numero di capi attualmente attivi. Le 4 nuove colonne (Capi, €/capo, Peso, €/kg) compaiono nelle righe di dettaglio per specie (quelle che si aprono con la freccetta) — coerente col fatto che "numero capi" e "peso" sono per specie, non per singola area/categoria. Anche l'export Excel aggiornato con le stesse colonne per ciascuna specie.
+
+Numero capi = animali con `stato='attivo'` al momento del caricamento (non filtrato per anno — è una fotografia di "quanti ce ne sono adesso in azienda", non storica).

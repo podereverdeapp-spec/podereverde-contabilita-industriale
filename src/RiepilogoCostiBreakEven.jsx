@@ -1,6 +1,7 @@
 import { useState, useEffect, Fragment } from "react";
+import { supabase } from "./supabase";
 import { C } from "./style";
-import { formattaEuro, formattaNumero } from "./parsingUtils";
+import { formattaEuro, formattaNumero, round2 } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
 import { caricaDatiGrezziAnno, AREE_ORDINARIE, classificaDestinazione, MAPPA_SPECIE } from "./calcoloReportCosti";
 import { calcolaRigaAggregata } from "./motoreUba";
@@ -13,6 +14,8 @@ export default function RiepilogoCostiBreakEven() {
   const [errore, setErrore] = useState(null);
   const [dati, setDati] = useState(null); // { variabili, fissi, ammortamenti, totali }
   const [espansi, setEspansi] = useState(new Set());
+  const [numeroCapi, setNumeroCapi] = useState({ bovino: 0, suino: 0, ovino: 0 });
+  const [pesi, setPesi] = useState({ bovino: "", suino: "", ovino: "" });
 
   useEffect(() => { carica(); }, [anno]);
 
@@ -59,6 +62,17 @@ export default function RiepilogoCostiBreakEven() {
       };
 
       setDati({ variabili, fissi, ammortamenti, totali });
+
+      // Numero di capi attualmente presenti in azienda, per specie — per i suini include sia
+      // gli animali individuali sia i suinetti nei lotti (dove sta la maggior parte).
+      const { data: bovOvi } = await supabase.from("animali").select("specie").in("specie", ["bovino", "ovino"]).eq("stato", "attivo");
+      const { data: suiniIndiv } = await supabase.from("animali").select("id").eq("specie", "suino").eq("stato", "attivo");
+      const { data: suiniLottoAttivi } = await supabase.from("suini_lotto").select("id").eq("stato", "attivo");
+      setNumeroCapi({
+        bovino: (bovOvi || []).filter(a => a.specie === "bovino").length,
+        ovino: (bovOvi || []).filter(a => a.specie === "ovino").length,
+        suino: (suiniIndiv || []).length + (suiniLottoAttivi || []).length,
+      });
     } catch (err) {
       setErrore(err.message);
     }
@@ -70,17 +84,28 @@ export default function RiepilogoCostiBreakEven() {
   }
 
   function scarica() {
-    const righeSezione = righe => righe.map(r => ({
-      "Voce": r.etichetta,
-      "Imponibile complessivo": numeroExcel(r.imponibileComplessivo),
-      "€/UBA-gg azienda": numeroExcel(r.tassoArea),
-      "Bovini €": numeroExcel(r.perSpecie.bovino.costoAllocato),
-      "Bovini €/UBA-gg": numeroExcel(r.perSpecie.bovino.incidenza),
-      "Suini €": numeroExcel(r.perSpecie.suino.costoAllocato),
-      "Suini €/UBA-gg": numeroExcel(r.perSpecie.suino.incidenza),
-      "Ovini €": numeroExcel(r.perSpecie.ovino.costoAllocato),
-      "Ovini €/UBA-gg": numeroExcel(r.perSpecie.ovino.incidenza),
-    }));
+    const righeSezione = righe => righe.map(r => {
+      const riga = {
+        "Voce": r.etichetta,
+        "Imponibile complessivo": numeroExcel(r.imponibileComplessivo),
+        "€/UBA-gg azienda": numeroExcel(r.tassoArea),
+      };
+      ["bovino", "suino", "ovino"].forEach(sp => {
+        const etichetta = sp === "bovino" ? "Bovini" : sp === "suino" ? "Suini" : "Ovini";
+        const capi = numeroCapi[sp];
+        const imponibileSpecie = r.perSpecie[sp].costoAllocato;
+        const costoPerCapo = capi > 0 ? round2(imponibileSpecie / capi) : null;
+        const pesoSpecie = parseFloat(pesi[sp]) || null;
+        const costoAlKg = costoPerCapo != null && pesoSpecie ? round2(costoPerCapo / pesoSpecie) : null;
+        riga[`${etichetta} €`] = numeroExcel(imponibileSpecie);
+        riga[`${etichetta} €/UBA-gg`] = numeroExcel(r.perSpecie[sp].incidenza);
+        riga[`${etichetta} Capi`] = capi;
+        riga[`${etichetta} €/capo`] = costoPerCapo != null ? numeroExcel(costoPerCapo) : "";
+        riga[`${etichetta} Peso (kg)`] = pesoSpecie || "";
+        riga[`${etichetta} €/kg`] = costoAlKg != null ? numeroExcel(costoAlKg) : "";
+      });
+      return riga;
+    });
     esportaExcel(`riepilogo_costi_breakeven_${anno}`, [
       { nome: "Costi Variabili", righe: righeSezione(dati.variabili) },
       { nome: "Costi Fissi", righe: righeSezione(dati.fissi) },
@@ -111,19 +136,29 @@ export default function RiepilogoCostiBreakEven() {
       {errore && <p style={{ color: C.red }}>⚠️ {errore}</p>}
       {caricando ? <p style={{ color: C.muted }}>Caricamento...</p> : dati && (
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: 14, display: "flex", gap: 24, flexWrap: "wrap" }}>
+            {["bovino", "suino", "ovino"].map(sp => (
+              <label key={sp} style={{ fontSize: 12, fontWeight: 700, color: C.muted }}>
+                Peso {sp === "bovino" ? "bovini" : sp === "suino" ? "suini" : "ovini"} (kg) — {numeroCapi[sp]} capi presenti
+                <input type="number" value={pesi[sp]} onChange={e => setPesi(prev => ({ ...prev, [sp]: e.target.value }))}
+                  placeholder="inserisci peso"
+                  style={{ display: "block", marginTop: 4, width: 110, padding: "5px 8px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 13, fontWeight: 700 }} />
+              </label>
+            ))}
+          </div>
           <SezioneCosti titolo="Costi Variabili" colore={C.blue} righe={dati.variabili} totale={dati.totali.variabili}
-            prefissoChiave="var" espansi={espansi} toggleEspanso={toggleEspanso} />
+            prefissoChiave="var" espansi={espansi} toggleEspanso={toggleEspanso} numeroCapi={numeroCapi} pesi={pesi} />
           <SezioneCosti titolo="Costi Fissi" colore={C.accent} righe={dati.fissi} totale={dati.totali.fissi}
-            prefissoChiave="fis" espansi={espansi} toggleEspanso={toggleEspanso} />
+            prefissoChiave="fis" espansi={espansi} toggleEspanso={toggleEspanso} numeroCapi={numeroCapi} pesi={pesi} />
           <SezioneCosti titolo="Quote di Ammortamento" colore={C.green} righe={dati.ammortamenti} totale={dati.totali.ammortamenti}
-            prefissoChiave="amm" espansi={espansi} toggleEspanso={toggleEspanso} etichettaColonna="Categoria cespite" />
+            prefissoChiave="amm" espansi={espansi} toggleEspanso={toggleEspanso} etichettaColonna="Categoria cespite" numeroCapi={numeroCapi} pesi={pesi} />
         </div>
       )}
     </div>
   );
 }
 
-function SezioneCosti({ titolo, colore, righe, totale, prefissoChiave, espansi, toggleEspanso, etichettaColonna = "Area" }) {
+function SezioneCosti({ titolo, colore, righe, totale, prefissoChiave, espansi, toggleEspanso, etichettaColonna = "Area", numeroCapi, pesi }) {
   if (righe.length === 0) return null;
   return (
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
@@ -138,6 +173,10 @@ function SezioneCosti({ titolo, colore, righe, totale, prefissoChiave, espansi, 
             <th style={th}>{etichettaColonna}</th>
             <th style={{ ...th, textAlign: "right" }}>Imponibile</th>
             <th style={{ ...th, textAlign: "right" }}>€/UBA-gg</th>
+            <th style={{ ...th, textAlign: "right" }}>Capi</th>
+            <th style={{ ...th, textAlign: "right" }}>€/capo</th>
+            <th style={{ ...th, textAlign: "right" }}>Peso</th>
+            <th style={{ ...th, textAlign: "right" }}>€/kg</th>
           </tr>
         </thead>
         <tbody>
@@ -151,15 +190,27 @@ function SezioneCosti({ titolo, colore, righe, totale, prefissoChiave, espansi, 
                   <td style={{ ...td, fontWeight: 700 }}>{r.etichetta}</td>
                   <td style={{ ...td, textAlign: "right" }}>{formattaEuro(r.imponibileComplessivo)}</td>
                   <td style={{ ...td, textAlign: "right" }}>{formattaEuro(r.tassoArea, 4)}</td>
+                  <td colSpan={4} style={{ ...td, textAlign: "right", color: C.muted, fontSize: 11 }}>clicca per il dettaglio per specie →</td>
                 </tr>
-                {aperta && ["bovino", "suino", "ovino"].map(sp => (
-                  <tr key={`${chiave}-${sp}`} style={{ background: C.bg, fontSize: 12 }}>
-                    <td style={td}></td>
-                    <td style={{ ...td, paddingLeft: 24, color: C.muted }}>{sp === "bovino" ? "Bovini" : sp === "suino" ? "Suini" : "Ovini"}</td>
-                    <td style={{ ...td, textAlign: "right" }}>{formattaEuro(r.perSpecie[sp].costoAllocato)}</td>
-                    <td style={{ ...td, textAlign: "right" }}>{formattaEuro(r.perSpecie[sp].incidenza, 4)}</td>
-                  </tr>
-                ))}
+                {aperta && ["bovino", "suino", "ovino"].map(sp => {
+                  const capi = numeroCapi[sp];
+                  const imponibileSpecie = r.perSpecie[sp].costoAllocato;
+                  const costoPerCapo = capi > 0 ? round2(imponibileSpecie / capi) : null;
+                  const pesoSpecie = parseFloat(pesi[sp]) || null;
+                  const costoAlKg = costoPerCapo != null && pesoSpecie ? round2(costoPerCapo / pesoSpecie) : null;
+                  return (
+                    <tr key={`${chiave}-${sp}`} style={{ background: C.bg, fontSize: 12 }}>
+                      <td style={td}></td>
+                      <td style={{ ...td, paddingLeft: 24, color: C.muted }}>{sp === "bovino" ? "Bovini" : sp === "suino" ? "Suini" : "Ovini"}</td>
+                      <td style={{ ...td, textAlign: "right" }}>{formattaEuro(imponibileSpecie)}</td>
+                      <td style={{ ...td, textAlign: "right" }}>{formattaEuro(r.perSpecie[sp].incidenza, 4)}</td>
+                      <td style={{ ...td, textAlign: "right", color: C.muted }}>{capi} capi</td>
+                      <td style={{ ...td, textAlign: "right" }}>{costoPerCapo != null ? formattaEuro(costoPerCapo, 2) : "—"}</td>
+                      <td style={{ ...td, textAlign: "right", color: C.muted }}>{pesoSpecie ? `${formattaNumero(pesoSpecie, 0)} kg` : "— inserisci peso sopra"}</td>
+                      <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{costoAlKg != null ? formattaEuro(costoAlKg, 3) : "—"}</td>
+                    </tr>
+                  );
+                })}
               </Fragment>
             );
           })}
@@ -167,7 +218,7 @@ function SezioneCosti({ titolo, colore, righe, totale, prefissoChiave, espansi, 
             <td style={td}></td>
             <td style={td}>Totale</td>
             <td style={{ ...td, textAlign: "right" }}>{formattaEuro(totale)}</td>
-            <td style={{ ...td, textAlign: "right", color: C.muted, fontWeight: 400, fontSize: 11 }}>—</td>
+            <td colSpan={5} style={{ ...td, textAlign: "right", color: C.muted, fontWeight: 400, fontSize: 11 }}>—</td>
           </tr>
         </tbody>
       </table>

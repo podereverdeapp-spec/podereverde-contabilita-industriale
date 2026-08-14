@@ -192,28 +192,32 @@ export function calcolaFigliMaschio({ figliTotaliAvuti, anniAttivoComeRiprodutto
 //    va per intero sui figli di QUESTO stesso anno; se non ci sono figli, si accumula in un
 //    "mantenimento sospeso" che si scarica per intero (con quello dell'anno corrente) sul primo
 //    anno successivo che ha figli — mai spalmato all'indietro sui figli passati.
-export function calcolaPianoScarico({ residuoRimanentePrimaDellAnno, anniProduttiviResiduiAllInizioAnno, numeroFigliAnno, costoMantenimentoAnno = 0, mantenimentoSospesoPrecedente = 0 }) {
+// Calcola lo scarico di un anno per un riproduttore. UN SOLO pool da recuperare (non più
+// due componenti separate) — ogni anno il mantenimento DI QUELL'ANNO si aggiunge al pool
+// PRIMA di calcolare la quota, poi tutto (residuo iniziale + mantenimento accumulato) si
+// smorza allo stesso modo con il meccanismo del "saldo residuo": quota = pool / anni residui,
+// ricalcolata ogni anno. Se un anno non ha figli, il pool cresce ma non si scarica nulla —
+// niente si perde, e non si scarica mai tutto insieme sul primo figlio buono: si spalma su
+// TUTTI gli anni futuri restanti, sia che si tratti del residuo iniziale sia del mantenimento
+// di un anno saltato (prima erano gestiti in modo incoerente: il residuo si smorzava così,
+// il mantenimento invece si scaricava tutto insieme sulla prima occasione buona).
+export function calcolaPianoScarico({ residuoRimanentePrimaDellAnno, anniProduttiviResiduiAllInizioAnno, numeroFigliAnno, costoMantenimentoAnno = 0 }) {
   const anniResidui = Math.max(anniProduttiviResiduiAllInizioAnno, 1); // almeno 1, per non dividere per zero o numeri negativi
-  const quotaResiduoTeorica = round2(residuoRimanentePrimaDellAnno / anniResidui);
-  const poolMantenimento = round2((mantenimentoSospesoPrecedente || 0) + (costoMantenimentoAnno || 0));
+  const poolConMantenimento = round2((residuoRimanentePrimaDellAnno || 0) + (costoMantenimentoAnno || 0));
+  const quotaTeorica = round2(poolConMantenimento / anniResidui);
 
   if (numeroFigliAnno === 0) {
     return {
-      quotaAnnualeDovuta: 0,
       totaleScaricatoAnno: 0,
-      residuoRimanenteDopo: residuoRimanentePrimaDellAnno, // invariato: nessuno scarico avvenuto
-      mantenimentoSospesoNuovo: poolMantenimento, // si accumula, non si perde
+      residuoRimanenteDopo: poolConMantenimento, // il mantenimento dell'anno resta nel pool, non si perde
       quotaPerFiglio: 0,
     };
   }
 
-  const scaricoResiduo = Math.min(quotaResiduoTeorica, residuoRimanentePrimaDellAnno);
-  const totaleScaricatoAnno = round2(scaricoResiduo + poolMantenimento);
+  const totaleScaricatoAnno = Math.min(quotaTeorica, poolConMantenimento);
   return {
-    quotaAnnualeDovuta: scaricoResiduo,
     totaleScaricatoAnno,
-    residuoRimanenteDopo: round2(Math.max(0, residuoRimanentePrimaDellAnno - scaricoResiduo)),
-    mantenimentoSospesoNuovo: 0, // scaricato per intero, non resta nulla in sospeso
+    residuoRimanenteDopo: round2(Math.max(0, poolConMantenimento - totaleScaricatoAnno)),
     quotaPerFiglio: round2(totaleScaricatoAnno / numeroFigliAnno),
   };
 }

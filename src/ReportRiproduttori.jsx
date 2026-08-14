@@ -148,6 +148,23 @@ export default function ReportRiproduttori() {
             valore_realizzo_stimato: valoreRealizzoFinale, residuo_totale: residuoTotaleAttuale, residuo_rimanente: nuovoRimanente };
         }
 
+        // IMPORTANTE: prima di riprocessare la storia, riporto SEMPRE il residuo rimanente
+        // al residuo totale — altrimenti ogni rilancio di "Elabora" ripartirebbe dal residuo
+        // GIÀ eroso dal rilancio precedente, consumandolo di nuovo per gli stessi anni già
+        // elaborati (bug reale trovato in passato: dopo diversi rilanci, la quota residuo
+        // finiva quasi a zero). "Elabora" deve essere idempotente: stesso risultato al primo
+        // click come al decimo.
+        residuoRecord.residuo_rimanente = residuoRecord.residuo_totale;
+
+        // Se dopo l'ultima elaborazione è comparso un figlio PIÙ VECCHIO di quello che allora
+        // risultava il primo (es. un genitore corretto a mano su un animale già registrato),
+        // l'anno di inizio riproduzione salvato sul residuo resta quello vecchio per sempre,
+        // e "Elabora" salta silenziosamente tutti gli anni precedenti — quel figlio non riceve
+        // mai il suo costo di nascita. Lo riallineo sempre al valore corretto più aggiornato.
+        if (primoAnnoRiproduzione < residuoRecord.anno_inizio_riproduzione) {
+          residuoRecord.anno_inizio_riproduzione = primoAnnoRiproduzione;
+        }
+
         // Elabora TUTTI gli anni dal primo di riproduzione fino a quello scelto, non solo
         // quello selezionato — così un solo click aggiorna l'intera storia in automatico
         // (richiesto da Filippo: se cambia un dato a monte, tutto si deve ripropagare).
@@ -168,20 +185,19 @@ export default function ReportRiproduttori() {
             anniProduttiviResiduiAllInizioAnno,
             numeroFigliAnno: numeroFigliTotaleAnno,
             costoMantenimentoAnno: parseFloat(costoMantenimentoRip?.costo_mantenimento) || 0,
-            mantenimentoSospesoPrecedente: residuoRecord.mantenimento_sospeso || 0,
           });
 
           await supabase.from("ci_scarico_riproduttore_annuale").delete().eq("residuo_riproduttore_id", residuoRecord.id).eq("anno", annoCorrente);
           await supabase.from("ci_scarico_riproduttore_annuale").insert([{
             residuo_riproduttore_id: residuoRecord.id, anno: annoCorrente,
-            quota_annuale_dovuta: piano.quotaAnnualeDovuta, conto_sospeso_utilizzato: 0,
+            quota_annuale_dovuta: piano.totaleScaricatoAnno, conto_sospeso_utilizzato: 0,
             totale_scaricato_anno: piano.totaleScaricatoAnno, n_figli_anno: numeroFigliTotaleAnno, quota_per_figlio: piano.quotaPerFiglio,
           }]);
 
           await supabase.from("ci_residuo_riproduttore").update({
-            residuo_rimanente: piano.residuoRimanenteDopo, mantenimento_sospeso: piano.mantenimentoSospesoNuovo, updated_at: new Date().toISOString(),
+            residuo_rimanente: piano.residuoRimanenteDopo, anno_inizio_riproduzione: residuoRecord.anno_inizio_riproduzione, updated_at: new Date().toISOString(),
           }).eq("id", residuoRecord.id);
-          residuoRecord = { ...residuoRecord, residuo_rimanente: piano.residuoRimanenteDopo, mantenimento_sospeso: piano.mantenimentoSospesoNuovo }; // per l'anno successivo del ciclo
+          residuoRecord = { ...residuoRecord, residuo_rimanente: piano.residuoRimanenteDopo }; // per l'anno successivo del ciclo
 
           // Aggiorno il costo_nascita_ereditato dei figli dell'anno — SET (non somma) sulla
           // quota di QUESTO genitore specifico (madre o padre, tracciate separatamente),
