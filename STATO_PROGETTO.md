@@ -242,3 +242,33 @@ Testato il raggruppamento fatture con caso mock (2 righe stesso numero/data/forn
 **Pulito di nuovo**: stessi 20 file estranei + i 2 archivi .tar residui + la cartella build/ + le immagini generiche CRA. Verificato che il package.json sia rimasto corretto questa volta (solo i sorgenti erano tornati, non la configurazione). Ricompilato, 266KB, nessun residuo.
 
 **Raccomandazione per evitare che succeda una terza volta**: prima di ogni `git add .` in uno dei due progetti, vale la pena controllare con `pwd` o `ls` di essere davvero nella cartella giusta — i due progetti si assomigliano abbastanza (entrambi React/Supabase) da confondersi facilmente estraendo l'archivio sbagliato sopra la cartella sbagliata.
+
+## 137. Carico Massivo Muratella — allineato alle stesse Aree di Podere Verde
+
+**Richiesto da Filippo**: usare lo stesso schema di Podere Verde per Area/Centro di Costo/Tipo. Le tre colonne erano già presenti (verificato); quello che mancava era garantire che i **valori** inseriti corrispondano esattamente a quelli standard usati in Podere Verde.
+
+**Aggiunto**: il modello Excel ora include un secondo foglio "Aree valide" con l'elenco esatto di `AREE_ORDINARIE` (le stesse 12 aree usate in Report Costi). In fase di importazione, se un'area inserita non corrisponde a nessuna di quelle standard, viene importata comunque (non blocco il caricamento) ma segnalata chiaramente nel riepilogo finale — così Filippo può correggerla se è un refuso, invece di scoprirlo solo più avanti quando i report non tornano.
+
+## 137. Carico Massivo Muratella — modello ora con il vero Piano dei Conti di Podere Verde come riferimento
+
+**Richiesto da Filippo**: il carico massivo Muratella deve usare "lo stesso schema" di Podere Verde per Area/Centro di Costo/Tipo — le 3 colonne c'erano già dalla sezione 135, ma il foglio di riferimento mostrava solo l'elenco delle Aree, non le combinazioni Area+Centro di Costo effettivamente valide.
+
+**Corretto**: il modello Excel ora include un secondo foglio "Piano dei Conti (riferimento)" con tutte le 71 combinazioni reali Area+Centro di Costo prese da `ci_piano_dei_conti` — lo stesso vocabolario usato per classificare le fatture di Podere Verde. Le due contabilità restano su tabelle dati separate, ma condividono la stessa terminologia di classificazione, come richiesto.
+
+## 137. Carico Massivo Muratella — schema colonne allineato a quello di Podere Verde
+
+**Richiesto da Filippo**: usare lo stesso schema colonne del "Prompt per carico Massivo" già usato per Podere Verde (`PromptEstrazionePDF.jsx`), con in più Area/Centro di Costo/Tipo.
+
+**Riscritto `CaricoMassivoMuratella.jsx`**: modello Excel ora con le stesse colonne del prompt di estrazione PDF di Podere Verde — Fornitore, P.IVA, Numero, Data, Descrizione, Quantità, U.M., Prezzo unitario, Imponibile, Aliquota IVA, Tipo documento — più le 3 colonne aggiuntive richieste (Area, Centro di Costo, Tipo Fisso/Variabile), da compilare a mano riga per riga (per la Muratella non c'è un motore di classificazione automatica come per Podere Verde).
+
+**Foglio di riferimento incluso**: un secondo foglio nel modello elenca tutte le combinazioni Area/Centro di Costo valide, prese dallo stesso `ci_piano_dei_conti` già usato per classificare le fatture di Podere Verde — stesso vocabolario tra le due contabilità, pur restando su tabelle dati separate. In fase di import, le combinazioni Area/Centro non presenti nel piano dei conti vengono segnalate (non bloccate) come avviso.
+
+Testato il raggruppamento con il nuovo schema colonne (2 righe stesso Numero+Data+Fornitore): confermato che si uniscono in 1 sola fattura.
+
+## 138. Muratella — Riepilogo Costi: terzo livello, cliccando il centro di costo si vedono le singole voci
+
+**Richiesto da Filippo**: cliccando su un centro di costo, vedere le voci di dettaglio che lo compongono.
+
+**Corretto**: aggiunto un terzo livello di espansione — Area → Centro di Costo → singole voci (descrizione, fornitore, numero e data fattura, importo). Ogni voce mostra da quale fattura viene, per risalire facilmente all'origine. Aggiornato anche l'export Excel per includere tutte e tre i livelli.
+
+**Caricate 71 fatture / 242 righe** (75.834,15€) dal primo file compilato da Filippo — 3 righe senza centro di costo segnalate a parte, da completare.

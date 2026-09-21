@@ -22,9 +22,10 @@ export default function ContabilitaMuratella() {
     setCaricando(true);
     setErrore(null);
     try {
-      const { data: fattureAnno, error: eF } = await supabase.from("muratella_fatture").select("id")
+      const { data: fattureAnno, error: eF } = await supabase.from("muratella_fatture").select("id,numero,data,fornitore_nome")
         .gte("data", `${anno}-01-01`).lte("data", `${anno}-12-31`);
       if (eF) throw new Error(eF.message);
+      const mappaFatture = new Map((fattureAnno || []).map(f => [f.id, f]));
       const idFatture = (fattureAnno || []).map(f => f.id);
       let articoli = [];
       if (idFatture.length > 0) {
@@ -41,7 +42,14 @@ export default function ContabilitaMuratella() {
         const rigaArea = perArea.get(area);
         rigaArea.totale += a.totale_riga || 0;
         const centro = a.centro_costo || "(senza centro di costo)";
-        rigaArea.perCentro.set(centro, (rigaArea.perCentro.get(centro) || 0) + (a.totale_riga || 0));
+        if (!rigaArea.perCentro.has(centro)) rigaArea.perCentro.set(centro, { totale: 0, voci: [] });
+        const rigaCentro = rigaArea.perCentro.get(centro);
+        rigaCentro.totale += a.totale_riga || 0;
+        const fattura = mappaFatture.get(a.fattura_id);
+        rigaCentro.voci.push({
+          descrizione: a.descrizione, importo: a.totale_riga || 0,
+          fatturaNumero: fattura?.numero, fatturaData: fattura?.data, fornitore: fattura?.fornitore_nome,
+        });
       });
 
       const righe = [...perArea.values()].sort((a, b) => b.totale - a.totale);
@@ -60,9 +68,16 @@ export default function ContabilitaMuratella() {
   function scarica() {
     const righe = [];
     righeArea.forEach(r => {
-      righe.push({ "Area": r.area, "Centro di Costo": "— TOTALE AREA —", "Importo (€)": numeroExcel(r.totale) });
-      [...r.perCentro.entries()].forEach(([centro, importo]) => {
-        righe.push({ "Area": r.area, "Centro di Costo": centro, "Importo (€)": numeroExcel(importo) });
+      righe.push({ "Area": r.area, "Centro di Costo": "— TOTALE AREA —", "Descrizione": "", "Fornitore": "", "Fattura": "", "Importo (€)": numeroExcel(r.totale) });
+      [...r.perCentro.entries()].forEach(([centro, datiCentro]) => {
+        righe.push({ "Area": r.area, "Centro di Costo": centro, "Descrizione": "— totale centro —", "Fornitore": "", "Fattura": "", "Importo (€)": numeroExcel(datiCentro.totale) });
+        datiCentro.voci.forEach(v => {
+          righe.push({
+            "Area": r.area, "Centro di Costo": centro, "Descrizione": v.descrizione || "",
+            "Fornitore": v.fornitore || "", "Fattura": v.fatturaNumero ? `${v.fatturaNumero} del ${v.fatturaData || ""}` : "",
+            "Importo (€)": numeroExcel(v.importo),
+          });
+        });
       });
     });
     esportaExcel(`MURATELLA_riepilogo_costi_${anno}`, [{ nome: "Muratella - Riepilogo Costi", righe }]);
@@ -126,13 +141,31 @@ export default function ContabilitaMuratella() {
                               <td style={{ ...td, fontWeight: 700 }}>{r.area}</td>
                               <td style={{ ...td, textAlign: "right" }}>{formattaEuro(r.totale)}</td>
                             </tr>
-                            {aperta && [...r.perCentro.entries()].map(([centro, importo]) => (
-                              <tr key={centro} style={{ background: C.bg, fontSize: 12 }}>
-                                <td style={td}></td>
-                                <td style={{ ...td, paddingLeft: 24, color: C.muted }}>{centro}</td>
-                                <td style={{ ...td, textAlign: "right" }}>{formattaEuro(importo)}</td>
-                              </tr>
-                            ))}
+                            {aperta && [...r.perCentro.entries()].map(([centro, datiCentro]) => {
+                              const chiaveCentro = `${r.area}||${centro}`;
+                              const centroAperto = espansi.has(chiaveCentro);
+                              return (
+                                <Fragment key={centro}>
+                                  <tr onClick={() => toggleEspanso(chiaveCentro)} style={{ background: C.bg, fontSize: 12, cursor: "pointer" }}>
+                                    <td style={{ ...td, paddingLeft: 12 }}>{centroAperto ? "▼" : "▶"}</td>
+                                    <td style={{ ...td, paddingLeft: 12, color: C.muted }}>{centro}</td>
+                                    <td style={{ ...td, textAlign: "right" }}>{formattaEuro(datiCentro.totale)}</td>
+                                  </tr>
+                                  {centroAperto && datiCentro.voci.map((v, i) => (
+                                    <tr key={i} style={{ fontSize: 11, borderTop: i === 0 ? `1px dashed ${C.border}` : "none" }}>
+                                      <td style={td}></td>
+                                      <td style={{ ...td, paddingLeft: 36, color: C.text }}>
+                                        {v.descrizione || "(senza descrizione)"}
+                                        <div style={{ color: C.muted, fontSize: 10, marginTop: 1 }}>
+                                          {v.fornitore || "—"} · fatt. {v.fatturaNumero || "—"} del {v.fatturaData || "—"}
+                                        </div>
+                                      </td>
+                                      <td style={{ ...td, textAlign: "right" }}>{formattaEuro(v.importo)}</td>
+                                    </tr>
+                                  ))}
+                                </Fragment>
+                              );
+                            })}
                           </Fragment>
                         );
                       })}
