@@ -4,6 +4,7 @@ import { C } from "./style";
 import { formattaEuro } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
 import CaricoMassivoMuratella from "./CaricoMassivoMuratella";
+import StoricoMuratella from "./StoricoMuratella";
 
 const COLORE_MURATELLA = "#B03A2E"; // rosso mattone, deliberatamente diverso dal verde di Podere Verde
 
@@ -103,7 +104,14 @@ export default function ContabilitaMuratella() {
             border: `1.5px solid ${COLORE_MURATELLA}`, borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
           📥 Carico Massivo
         </button>
+        <button onClick={() => setTab("storico")}
+          style={{ background: tab === "storico" ? COLORE_MURATELLA : C.card, color: tab === "storico" ? "#fff" : C.text,
+            border: `1.5px solid ${COLORE_MURATELLA}`, borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+          📅 Storico per Centro di Costo
+        </button>
       </div>
+
+      {tab === "storico" && <StoricoMuratella coloreMuratella={COLORE_MURATELLA} />}
 
       {tab === "carico" && <CaricoMassivoMuratella coloreMuratella={COLORE_MURATELLA} />}
 

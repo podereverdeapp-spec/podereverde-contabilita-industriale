@@ -272,3 +272,11 @@ Testato il raggruppamento con il nuovo schema colonne (2 righe stesso Numero+Dat
 **Corretto**: aggiunto un terzo livello di espansione — Area → Centro di Costo → singole voci (descrizione, fornitore, numero e data fattura, importo). Ogni voce mostra da quale fattura viene, per risalire facilmente all'origine. Aggiornato anche l'export Excel per includere tutte e tre i livelli.
 
 **Caricate 71 fatture / 242 righe** (75.834,15€) dal primo file compilato da Filippo — 3 righe senza centro di costo segnalate a parte, da completare.
+
+## 139. Muratella — Nuova scheda "Storico per Centro di Costo", tutti gli anni
+
+**Richiesto da Filippo**: un report che copre tutti gli anni insieme, mostrando per ogni centro di costo il totale anno per anno.
+
+**Costruito `StoricoMuratella.jsx`**: tabella con Area+Centro di Costo in riga e ogni anno presente nei dati in colonna (calcolati dinamicamente, non fissi) — con riga Totale in fondo che somma ogni colonna. Export Excel con la stessa struttura. Aggiunta come terza scheda della sezione Muratella.
+
+**Bug di sintassi trovato e corretto durante la costruzione**: una parentesi graffa di chiusura mancante nel JSX (`{tab === "storico" && <StoricoMuratella .../>` senza la `}` finale) — la build ha subito segnalato l'errore, corretto prima di procedere.
