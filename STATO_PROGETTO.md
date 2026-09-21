@@ -215,3 +215,30 @@ Numero capi = animali con `stato='attivo'` al momento del caricamento (non filtr
 **Richiesto da Filippo**: nel riepilogo, la somma dei costi variabili (e fissi, ammortamenti) per specie — non solo il totale complessivo, ma il riepilogo di tutte le aree sommate per Bovini/Suini/Ovini separatamente.
 
 **Corretto**: la riga "Totale" di ogni sezione ora si apre con la stessa freccetta delle altre righe, mostrando la somma per specie di imponibile, €/UBA-gg (somma valida qui, stesso principio già confermato altrove — denominatore costante), capi, €/capo, peso e €/kg — stessa struttura a 8 colonne di ogni riga di dettaglio, applicata al totale della sezione.
+
+## 135. Nuova sezione "Muratella S.r.l." — contabilità separata dentro Contabilità Industriale
+
+**Richiesto da Filippo**: la Società Agricola Muratella S.r.l. ha sostenuto costi per Podere Verde — serve una sezione dedicata, con contabilità **nettamente separata** da quella di Podere Verde, che segua gli stessi principi (Area, Centro di Costo, Tipo Costo) ma con carico massivo e ben evidenziata ovunque come "Muratella", per non confondersi col resto.
+
+**Due nuove tabelle**, mai condivise con quelle di Podere Verde (`ci_fatture`/`ci_articoli_fattura`): `muratella_fatture` e `muratella_articoli_fattura` — stessa struttura concettuale (numero, data, fornitore, area, centro di costo, tipo di costo, importo), ma completamente separate. Applicate direttamente via Supabase in sessione.
+
+**Nuova cartella di menu "Muratella S.r.l."** (icona 🏛️, distinta dalle altre), con due pagine:
+- **`ContabilitaMuratella.jsx`**: riepilogo costi per Area (espandibile per Centro di Costo, stessa logica ad accordion del resto del sistema, ma senza allocazione per specie — qui non ha senso, non è bestiame di Podere Verde), banner rosso "🏛️ SOCIETÀ AGRICOLA MURATELLA S.R.L." sempre visibile in cima, export Excel con "MURATELLA" nel nome del file e dei fogli
+- **`CaricoMassivoMuratella.jsx`**: modello Excel scaricabile + import — righe con lo stesso numero+data+fornitore si raggruppano automaticamente nella stessa fattura (stesso principio già usato per Podere Verde)
+
+**Colore distintivo**: rosso mattone (`#B03A2E`), deliberatamente diverso dal verde di Podere Verde, usato in banner, pulsanti e intestazioni di questa sezione — per rendere impossibile confondere a colpo d'occhio le due contabilità.
+
+**Nota tecnica**: durante questa sessione il mio ambiente di lavoro si è resettato una seconda volta (già successo prima, sezione 125) — riscaricato il repository da GitHub e reintegrati i 2 file appena creati prima del reset, senza perdite.
+
+Testato il raggruppamento fatture con caso mock (2 righe stesso numero/data/fornitore + 1 riga diversa): raggruppamento corretto, 2 fatture invece di 3 righe separate.
+
+
+## 136. Contaminazione ricorrente — successa di nuovo, causa identificata con certezza
+
+**Trovato mentre preparavo il pacchetto v205**: il file pesava 2MB invece dei soliti ~250KB — stessa identica contaminazione della sezione 125 (file di podereverdeapp.it dentro il repository Contabilità Industriale), tornata indietro.
+
+**Causa identificata con certezza questa volta**: il commit `22d29d1` ("Filtro maschi riproduttori anche nella scheda di modifica animale...") — che è un lavoro fatto su **podereverdeapp.it**, non su questo progetto — è stato pushato nel repository sbagliato (Contabilità Industriale invece di allevamento), probabilmente perché il pacchetto podereverdeapp è stato estratto nella cartella locale sbagliata prima di un `git add .`.
+
+**Pulito di nuovo**: stessi 20 file estranei + i 2 archivi .tar residui + la cartella build/ + le immagini generiche CRA. Verificato che il package.json sia rimasto corretto questa volta (solo i sorgenti erano tornati, non la configurazione). Ricompilato, 266KB, nessun residuo.
+
+**Raccomandazione per evitare che succeda una terza volta**: prima di ogni `git add .` in uno dei due progetti, vale la pena controllare con `pwd` o `ls` di essere davvero nella cartella giusta — i due progetti si assomigliano abbastanza (entrambi React/Supabase) da confondersi facilmente estraendo l'archivio sbagliato sopra la cartella sbagliata.

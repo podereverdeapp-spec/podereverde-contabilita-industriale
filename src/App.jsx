@@ -12,6 +12,7 @@ import ReportUba from "./ReportUba";
 import SezioneReportCosti from "./SezioneReportCosti";
 import GraficoMacellazioni from "./GraficoMacellazioni";
 import BreakEven from "./BreakEven";
+import ContabilitaMuratella from "./ContabilitaMuratella";
 import RiepilogoCostiBreakEven from "./RiepilogoCostiBreakEven";
 import SchedaAnimale from "./SchedaAnimale";
 import ReportRiproduttori from "./ReportRiproduttori";
@@ -105,6 +106,9 @@ const MENU = [
   ]},
   { tipo: "cartella", id: "cart-studi", label: "Studi", icon: "🔎", contenuto: [
     { tipo: "voce", id: "istr-studi", label: "Istruzioni", icon: "📖" },
+  ]},
+  { tipo: "cartella", id: "cart-muratella", label: "Muratella S.r.l.", icon: "🏛️", contenuto: [
+    { tipo: "voce", id: "muratella-costi", label: "Contabilità Muratella", icon: "🏛️" },
   ]},
   { tipo: "voce", id: "parametri", label: "Parametri", icon: "⚙️" },
 ];
@@ -259,6 +263,7 @@ export default function App() {
         {tab === "costi" && <SezioneReportCosti />}
         {tab === "grafico-macellazioni" && <GraficoMacellazioni />}
         {tab === "break-even" && <BreakEven />}
+        {tab === "muratella-costi" && <ContabilitaMuratella />}
         {tab === "riepilogo-costi-breakeven" && <RiepilogoCostiBreakEven />}
         {tab === "scheda" && <SchedaAnimale ricercaIniziale={ricercaSchedaAnimale} onRicercaConsumata={() => setRicercaSchedaAnimale(null)} />}
         {tab === "riproduttori" && <ReportRiproduttori />}
