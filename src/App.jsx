@@ -110,9 +110,9 @@ const MENU = [
   ]},
   { tipo: "cartella", id: "cart-coltivazioni", label: "Coltivazioni", icon: "🚜", contenuto: [
     { tipo: "voce", id: "istr-coltivazioni", label: "Istruzioni", icon: "📖" },
-  ]},
-  { tipo: "cartella", id: "cart-muratella", label: "Muratella S.r.l.", icon: "🏛️", contenuto: [
-    { tipo: "voce", id: "muratella-costi", label: "Contabilità Muratella", icon: "🏛️" },
+    { tipo: "sottocartella", id: "sub-muratella", label: "Muratella S.r.l.", icon: "🏛️", voci: [
+      { id: "muratella-costi", label: "Contabilità Muratella", icon: "🏛️" },
+    ]},
   ]},
   { tipo: "voce", id: "parametri", label: "Parametri", icon: "⚙️" },
 ];

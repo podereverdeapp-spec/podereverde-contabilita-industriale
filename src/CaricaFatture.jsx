@@ -350,6 +350,45 @@ export default function CaricaFatture() {
     return null;
   }
 
+  // Trova il fornitore già presente nel database, oppure lo crea UNA SOLA VOLTA.
+  // Prima si creava una scheda nuova per ogni riga salvata di un fornitore nuovo: le righe
+  // della stessa fattura finivano su schede diverse e quindi su fatture diverse (fattura
+  // "spezzata"). Ora si cerca nel database al momento del salvataggio, prima per partita IVA
+  // (scritta sempre allo stesso modo: senza spazi, con o senza "IT"), poi per nome.
+  // La classificazione di ogni riga resta esattamente quella di prima.
+  async function trovaOCreaFornitore(riga) {
+    if (riga.fornitore_obj?.id) return riga.fornitore_obj.id;
+    if (!riga.fornitore && !riga.piva) return null;
+
+    const pivaPulita = (riga.piva || "").replace(/\s+/g, "").toUpperCase().replace(/^IT/, "");
+    if (pivaPulita) {
+      const { data: perPiva, error } = await supabase.from("ci_fornitori").select("*")
+        .in("partita_iva", [pivaPulita, `IT${pivaPulita}`, (riga.piva || "").trim()])
+        .order("id").limit(1);
+      if (error) throw new Error(`Errore cercando il fornitore: ${error.message}`);
+      if (perPiva && perPiva.length > 0) return perPiva[0].id;
+    }
+
+    const nomePulito = (riga.fornitore || "").trim().toLowerCase();
+    if (nomePulito) {
+      const { data: perNome, error } = await supabase.from("ci_fornitori").select("*").order("id");
+      if (error) throw new Error(`Errore cercando il fornitore: ${error.message}`);
+      // Stesso nome: lo riuso solo se non ha una partita IVA diversa da quella della fattura
+      const trovato = (perNome || []).find(f => (f.nome || "").trim().toLowerCase() === nomePulito &&
+        (!pivaPulita || !f.partita_iva || f.partita_iva.replace(/\s+/g, "").toUpperCase().replace(/^IT/, "") === pivaPulita));
+      if (trovato) return trovato.id;
+    }
+
+    // Come prima: senza nome del fornitore non si crea nessuna scheda nuova
+    if (!riga.fornitore) return null;
+    const { data: nuovo, error } = await supabase.from("ci_fornitori")
+      .insert([{ nome: riga.fornitore, partita_iva: riga.piva || null, gruppo_classificazione: "FRO" }])
+      .select().single();
+    if (error) throw new Error(`Errore creando fornitore: ${error.message}`);
+    setFornitori(prev => [...prev, nuovo]);
+    return nuovo.id;
+  }
+
   async function trovaOCreaFattura(fornitoreId, numero, data) {
     const { data: esistente } = await supabase
       .from("ci_fatture").select("id").eq("fornitore_id", fornitoreId).eq("numero", numero).eq("data", data).maybeSingle();
@@ -376,14 +415,7 @@ export default function CaricaFatture() {
 
     aggiornaRiga(riga.id, { salvataggioInCorso: true });
     try {
-      let fornitoreId = riga.fornitore_obj?.id;
-      if (!fornitoreId && riga.fornitore) {
-        const { data: nuovo, error } = await supabase.from("ci_fornitori")
-          .insert([{ nome: riga.fornitore, partita_iva: riga.piva || null, gruppo_classificazione: "FRO" }])
-          .select().single();
-        if (error) throw new Error(`Errore creando fornitore: ${error.message}`);
-        fornitoreId = nuovo.id;
-      }
+      const fornitoreId = await trovaOCreaFornitore(riga);
 
       const idsSalvati = {};
 
@@ -515,13 +547,7 @@ export default function CaricaFatture() {
       return;
     let fornitoreId = riga.fornitore_obj?.id;
     try {
-      if (!fornitoreId && riga.fornitore) {
-        const { data: nuovo, error } = await supabase.from("ci_fornitori")
-          .insert([{ nome: riga.fornitore, partita_iva: riga.piva || null, gruppo_classificazione: "FRO" }])
-          .select().single();
-        if (error) throw new Error(`Errore creando fornitore: ${error.message}`);
-        fornitoreId = nuovo.id;
-      }
+      fornitoreId = await trovaOCreaFornitore(riga);
       if (fornitoreId) {
         const { error } = await supabase.from("ci_righe_scartate")
           .upsert([{ fornitore_id: fornitoreId, descrizione: riga.descrizione.trim() }], { onConflict: "fornitore_id,descrizione" });
