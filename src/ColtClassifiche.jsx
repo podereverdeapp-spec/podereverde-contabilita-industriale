@@ -18,6 +18,9 @@ const PRINCIPALE = { "Orzo": ["Granella di orzo"], "Erba medica": ["Fieno di erb
   "Avena": ["Semente di avena", "Granella di avena"], "Trifoglio": ["Fieno di trifoglio"], "Sulla": ["Fieno di sulla", "Semente di sulla"],
   "Favino": ["Granella di favino"] };
 const COLTURE_ORDINE = ["Erba medica", "Erbaio misto", "Orzo", "Trifoglio", "Avena", "Favino", "Sulla"];
+// colture nuove registrate nell'app: colore di riserva, sempre lo stesso per la stessa coltura
+const RISERVA = ["#D0E4F5", "#FCE4D6", "#E4DFEC", "#FFF2CC", "#DDEBDD", "#F2DCDB", "#E7E6E6"];
+const coloreColtura = (k, tutte) => COL_COLTURA[k] || RISERVA[Math.max(0, tutte.indexOf(k)) % RISERVA.length];
 
 const normColtura = s => { if (!s) return s; const t = s.trim().toLowerCase(); if (t.startsWith("sorgo")) return "Sorgo"; return t.charAt(0).toUpperCase() + t.slice(1); };
 const nomeCampo = s => (s || "").split(" — ")[0];
@@ -60,17 +63,29 @@ function costruisci(righe, parametri) {
   const attivi = Object.keys(campi).map(Number).filter(n => colture.some(c => c.n === n && c.campagna >= campagnaMenoTre(ultima))).sort((a, b) => a - b);
   const tutte = [];
   if (caricate.length) { const a0 = Number(caricate[0].slice(0, 4)), a1 = Number(ultima.slice(0, 4)); for (let a = a1; a >= a0; a--) tutte.push(`${a}/${a + 1}`); }
-  return { colture, caricate, stagioni: tutte, campi, attivi };
+  // prodotto principale: quello dell'app per le colture note; per le colture nuove
+  // il prodotto con il valore di mercato più alto, ricavato dai dati (così compaiono da sole)
+  const principale = { ...PRINCIPALE };
+  const valorePerProdotto = {};
+  colture.forEach(c => c.prodotti.forEach(p => { const m = (valorePerProdotto[c.coltura] ||= {}); m[p.prodotto] = (m[p.prodotto] || 0) + p.valore; }));
+  Object.entries(valorePerProdotto).forEach(([k, m]) => {
+    if (principale[k]) return;
+    const pr = Object.entries(m).filter(([n]) => !/^paglia/i.test(n)).sort((a, b) => b[1] - a[1])[0] || Object.entries(m).sort((a, b) => b[1] - a[1])[0];
+    if (pr) principale[k] = [pr[0]];
+  });
+  const altre = Object.keys(principale).filter(k => !COLTURE_ORDINE.includes(k) && colture.some(c => c.coltura === k)).sort();
+  const ordine = [...COLTURE_ORDINE, ...altre];
+  return { colture, caricate, stagioni: tutte, campi, attivi, principale, ordine };
 }
 
 function rankingStagione(d, cp) {
   const out = [];
   [...new Set(d.colture.filter(c => c.campagna === cp).map(c => c.n))].forEach(n => {
-    const cs = d.colture.filter(c => c.campagna === cp && c.n === n && PRINCIPALE[c.coltura]);
+    const cs = d.colture.filter(c => c.campagna === cp && c.n === n && d.principale[c.coltura]);
     const ps = cs.flatMap(c => c.prodotti.map(p => ({ ...p, coltura: c.coltura })));
     const val = ps.reduce((s, p) => s + p.valore, 0); if (!cs.length || !val) return;
     const cl = [...new Set(cs.map(c => c.coltura))];
-    let mp = ps.filter(p => p.coltura === cl[0] && PRINCIPALE[cl[0]].includes(p.prodotto));
+    let mp = ps.filter(p => p.coltura === cl[0] && d.principale[cl[0]].includes(p.prodotto));
     if (!mp.length) mp = [...ps].sort((a, b) => b.valore - a.valore).slice(0, 1);
     mp = mp.filter(p => p.prodotto === mp[0].prodotto && p.unita === mp[0].unita);
     const q = mp.reduce((s, p) => s + p.q, 0);
@@ -80,10 +95,10 @@ function rankingStagione(d, cp) {
   return out.sort((a, b) => a.rapporto - b.rapporto);
 }
 
-function righeResa(colture) {
+function righeResa(colture, principale) {
   const R = [];
   colture.forEach(c => {
-    const pn = PRINCIPALE[c.coltura]; if (!pn) return;
+    const pn = principale[c.coltura]; if (!pn) return;
     let mp = c.prodotti.filter(p => pn.includes(p.prodotto));
     if (c.coltura === "Sulla") mp = mp.filter(p => p.prodotto === "Fieno di sulla");
     if (!mp.length || !c.ettari) return;
@@ -100,7 +115,7 @@ function righeResa(colture) {
   return R;
 }
 function rankingResa(d) {
-  const R = righeResa(d.colture).filter(x => !x.solo);
+  const R = righeResa(d.colture, d.principale).filter(x => !x.solo);
   return d.attivi.map(n => {
     const xs = R.filter(x => x.n === n); if (!xs.length) return null;
     const h = xs.reduce((s, x) => s + x.ha, 0);
@@ -116,7 +131,7 @@ function rankingColtura(d, col) {
   [...new Set(cs.map(c => c.n))].forEach(n => {
     const xs = cs.filter(c => c.n === n), ps = xs.flatMap(c => c.prodotti);
     const val = ps.reduce((s, p) => s + p.valore, 0); if (!val) return;
-    const mp = ps.filter(p => (PRINCIPALE[col] || []).includes(p.prodotto)), qq = mp.reduce((s, p) => s + p.qq, 0);
+    const mp = ps.filter(p => (d.principale[col] || []).includes(p.prodotto)), qq = mp.reduce((s, p) => s + p.qq, 0);
     out.push({ n, rapporto: ps.reduce((s, p) => s + p.costo, 0) / val, cu: qq ? mp.reduce((s, p) => s + p.costo, 0) / qq : null,
       pm: qq ? mp.reduce((s, p) => s + p.valore, 0) / qq : null, stagioni: [...new Set(xs.map(c => c.campagna))].sort() });
   });
@@ -167,7 +182,7 @@ export default function ColtClassifiche() {
       if (r.error || p.error) { setErrore((r.error || p.error).message); return; }
       const d = costruisci(r.data || [], p.data || []);
       setDati(d); setCp(d.caricate[d.caricate.length - 1]);
-      setCol(COLTURE_ORDINE.find(k => d.colture.some(c => c.coltura === k && c.prodotti.length)));
+      setCol(d.ordine.find(k => d.colture.some(c => c.coltura === k && c.prodotti.length)));
     })();
   }, []);
 
@@ -181,7 +196,7 @@ export default function ColtClassifiche() {
   if (errore) return <div style={{ padding: 20, color: C.red }}>⚠️ {errore}</div>;
   if (!dati) return <div style={{ padding: 20, color: C.muted }}>Preparazione delle classifiche...</div>;
 
-  const presenti = COLTURE_ORDINE.filter(k => dati.colture.some(c => c.coltura === k && c.prodotti.length));
+  const presenti = dati.ordine.filter(k => dati.colture.some(c => c.coltura === k && c.prodotti.length));
   const breve = s => s.slice(2, 4) + "/" + s.slice(7, 9);
 
   function esporta() {
@@ -223,7 +238,7 @@ export default function ColtClassifiche() {
         <Nota><b>Classifica della stagione</b> · I campi dal migliore al peggiore per costo del raccolto rapportato al suo valore di mercato (i prodotti sono diversi, così si confrontano). Il colore del campo è la coltura; la casella del costo va dal verde al rosso; numero rosso = sopra il mercato. Costo e mercato sono del prodotto principale; la posizione tiene conto di tutti i prodotti del campo, paglia e seme compresi. Esclusi i pascoli.</Nota>
         <Chips voci={dati.caricate.slice().reverse()} valore={cp} onScegli={setCp} />
         {lista.map((x, i) => (
-          <Riga key={x.n} pos={i + 1} n={x.n} nome={dati.campi[x.n]} sotto={x.colture.join(" + ").toLowerCase()} colore={COL_COLTURA[x.colture[0]]} grigio={!dati.attivi.includes(x.n)}
+          <Riga key={x.n} pos={i + 1} n={x.n} nome={dati.campi[x.n]} sotto={x.colture.join(" + ").toLowerCase()} colore={coloreColtura(x.colture[0], dati.ordine)} grigio={!dati.attivi.includes(x.n)}
             box={<div style={{ width: 150, padding: "6px 8px", textAlign: "center", display: "flex", flexDirection: "column", justifyContent: "center", borderLeft: `1px solid ${C.border}` }}>
               <div style={{ fontSize: 10.5, color: C.muted }}>costo per 1 € di mercato</div><div style={{ fontSize: 14, fontWeight: 800 }}>{x.rapporto.toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €</div></div>}
             boxColore={gradazione(i, lista.length)}
@@ -244,7 +259,7 @@ export default function ColtClassifiche() {
             </div>
             <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 8, paddingLeft: 46 }}>
               {dati.stagioni.slice().reverse().filter(s => x.per[s]).map(s => (
-                <div key={s} style={{ background: COL_COLTURA[x.per[s].c[0]] || "#EEE", borderRadius: 8, padding: "3px 9px", textAlign: "center" }}>
+                <div key={s} style={{ background: coloreColtura(x.per[s].c[0], dati.ordine), borderRadius: 8, padding: "3px 9px", textAlign: "center" }}>
                   <div style={{ fontSize: 10.5 }}>{s}</div>
                   <div style={{ fontSize: 14, fontWeight: 800, color: x.per[s].i >= 100 ? C.green : C.red }}>{n0(x.per[s].i)}</div>
                   <div style={{ fontSize: 10 }}>{x.per[s].c.join(" + ").toLowerCase()}{x.per[s].c.includes("Sulla") ? " (contro la medica)" : ""} · {n1(x.per[s].resa)} q/ha</div>
@@ -256,9 +271,9 @@ export default function ColtClassifiche() {
 
       {vista === "coltura" && <>
         <Nota><b>Classifica per coltura</b> · Scegliere una coltura: i campi che l'hanno avuta, dal migliore al peggiore, sommando tutte le stagioni. Conta quanto è costato il raccolto rispetto al suo valore di mercato; costo e mercato sono al quintale del prodotto principale. Numero rosso = sopra il mercato. I campi in grigio non sono più coltivati. Esclusi i pascoli.</Nota>
-        <Chips voci={presenti} valore={col} onScegli={setCol} colori={COL_COLTURA} />
+        <Chips voci={presenti} valore={col} onScegli={setCol} colori={Object.fromEntries(presenti.map(k => [k, coloreColtura(k, dati.ordine)]))} />
         {lista.map((x, i) => (
-          <Riga key={x.n} pos={i + 1} n={x.n} nome={dati.campi[x.n]} colore={COL_COLTURA[col]} grigio={!dati.attivi.includes(x.n)}
+          <Riga key={x.n} pos={i + 1} n={x.n} nome={dati.campi[x.n]} colore={coloreColtura(col, dati.ordine)} grigio={!dati.attivi.includes(x.n)}
             sotto={`${x.stagioni.length === 1 ? "1 stagione" : x.stagioni.length + " stagioni"}: ${x.stagioni.map(breve).join(" · ")}`}
             boxColore={gradazione(i, lista.length)}
             destra={<><div style={{ fontSize: 13.5, fontWeight: 800, color: x.cu != null && x.cu > x.pm ? "#9C0006" : "#10381F" }}>{x.cu != null ? formattaEuro(x.cu) : "—"}</div>

@@ -55,10 +55,20 @@ export default function IstruzioniColtivazioni() {
           comeSiUsa: [
             "Scegliere la campagna; si può cercare un campo, una coltura o un prodotto.",
             "In alto i totali della campagna: costo totale, seme, concimi e fitosanitari, lavorazioni e altro.",
-            "Cliccare su una riga per vedere i lavori e l'elenco delle voci di costo della coltura: tipo, descrizione, fornitore, documento, data, quantità, prezzo e importo.",
+            "Cliccare su una riga per vedere, come registrati nell'app: le lavorazioni eseguite (data, ettari lavorati, giornate di lavoro, azienda o conto terzi, concimi e diserbi usati), le semine (seme, quantità, dose per ettaro, provenienza), le raccolte (quantità, quintali, resa per ettaro) e l'elenco delle voci di costo.",
             "Quando un campo è diviso tra due colture, gli ettari sono quelli della coltura; sotto, in piccolo, quelli del campo.",
             "La resa è nell'unità del raccolto (balloni, rotoballe o quintali) per ettaro.",
             "«Esporta Excel» scarica le schede della campagna e le voci di costo.",
+          ],
+        },
+        {
+          pagina: "Campi e Stagioni → Registro dei Lavori", icon: "🚜",
+          aCosaServe: "Tutto quello che è stato registrato nell'app Podere Verde per una campagna: lavorazioni eseguite, semine, concimazioni e raccolte, con i totali. Si aggiorna da solo a ogni lavoro registrato nell'app.",
+          comeSiUsa: [
+            "Scegliere la campagna; se serve filtrare per campo o per tipo di lavoro (lavorazione, semina, raccolta o una sola lavorazione, per esempio Sfalcio).",
+            "In alto i totali: per ogni lavorazione i passaggi, gli ettari lavorati, le giornate di lavoro e i passaggi in conto terzi; il raccolto per prodotto con la resa per ettaro; le quantità seminate per seme; i concimi distribuiti.",
+            "Sotto, l'elenco di tutti i lavori dal più recente. I lavori caricati dalle schede storiche non hanno la data e sono in fondo.",
+            "«Esporta Excel» scarica i totali e l'elenco completo (lavorazioni, semine, raccolte).",
           ],
         },
         {

@@ -26,6 +26,14 @@ const FAMIGLIE = [
   { nome: "Altri prodotti", test: () => true },
 ];
 
+// colore di una coltura: fisso per le colture note, poi i colori successivi per quelle nuove
+const coloreDi = (n, tutte) => {
+  const i = ORDINE_COLTURE.indexOf(n);
+  if (i >= 0) return PALETTE[i];
+  const nuove = tutte.filter(x => !ORDINE_COLTURE.includes(x));
+  return RISERVA[Math.max(0, nuove.indexOf(n)) % RISERVA.length];
+};
+const RISERVA = ["#6b7280", "#0e7490", "#a16207", "#be185d", "#4d7c0f"];
 const nomeColtura = s => { const t = String(s || "").trim().toLowerCase(); return t.charAt(0).toUpperCase() + t.slice(1); };
 const n0 = v => Math.round(v).toLocaleString("it-IT");
 const n2 = v => Number(v).toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -261,7 +269,7 @@ export default function ColtGrafici() {
       return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
     });
     const serieColture = nomiColture.map((n, i) => ({
-      nome: n, colore: PALETTE[Math.min(ORDINE_COLTURE.indexOf(n) >= 0 ? ORDINE_COLTURE.indexOf(n) : i, PALETTE.length - 1)],
+      nome: n, colore: coloreDi(n, nomiColture),
       valori: Object.fromEntries(Object.entries(agg[n]).map(([cp, a]) => [cp, { v: a.costo / a.ettari,
         dettaglio: [`${formattaEuro(a.costo / a.ettari)} per ettaro`, `${n2(a.ettari)} ettari · ${a.campi} ${a.campi === 1 ? "campo" : "campi"}`, `costo ${formattaEuro(a.costo)}`] }])),
     }));
@@ -301,7 +309,13 @@ export default function ColtGrafici() {
     });
 
     // 5 — resa per ettaro contro la resa di riferimento (solo i prodotti principali con un riferimento)
-    const RESE = [["Orzo", "#2a78d6", ["Granella di orzo"]], ["Avena", "#e87ba4", ["Granella di avena", "Semente di avena"]], ["Favino", "#8B6F47", ["Granella di favino"]]];
+    // colture e prodotti con una resa di riferimento, ricavati dai dati dell'app (una resa nuova compare da sola)
+    const conRif = {};
+    dati.prodotti.filter(p => p.prodotto && p.resaRiferimento != null).forEach(p => { (conRif[nomeColtura(p.coltura)] ||= new Set()).add(p.prodotto); });
+    const RESE = Object.keys(conRif).sort((a, b) => {
+      const ia = ORDINE_COLTURE.indexOf(a), ib = ORDINE_COLTURE.indexOf(b);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
+    }).map(k => [k, coloreDi(k, nomiColture), [...conRif[k]].sort()]);
     const serieRese = RESE.map(([nome, colore, prodotti]) => {
       const perCp = {};
       const perColtura = {};
