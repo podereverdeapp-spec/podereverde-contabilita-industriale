@@ -74,6 +74,17 @@ export default function IstruzioniColtivazioni() {
           note: "Prezzi di mercato e rese di riferimento si gestiscono nell'app Podere Verde: qui si consultano soltanto.",
         },
         {
+          pagina: "Campi e Stagioni → Grafici", icon: "📊",
+          aCosaServe: "I costi delle coltivazioni in grafico, campagna per campagna, con gli stessi dati di «Rese e Costi per Stagione»: il costo per ettaro dell'azienda diviso per voce, il costo per ettaro di ogni coltura e il costo unitario dei prodotti contro il prezzo di mercato.",
+          comeSiUsa: [
+            "Grafico 1: una colonna per campagna, divisa tra semi, concimi e fitosanitari, lavorazioni e altro; sopra, il totale per ettaro.",
+            "Grafico 2: per ogni campagna una barra per coltura, ogni coltura sempre con lo stesso colore. Cliccando su un nome della legenda la coltura si nasconde o si mostra.",
+            "Costo unitario dei prodotti: la barra è il costo al quintale del prodotto fatto in azienda, il trattino nero il prezzo di mercato al quintale. Numero rosso = produrre è costato più che comprare; verde = meno. I prodotti sono divisi per famiglia (fieni e paglia, granelle, sementi, altri).",
+            "Passare il mouse su una barra per leggere i dettagli (ettari, quintali, costo per ballone). Sotto ogni grafico, «Tabella dei numeri».",
+            "La campagna 2022/2023 compare vuota finché non viene caricata; la campagna in corso non compare finché non ha costi.",
+          ],
+        },
+        {
           pagina: "Campi e Stagioni → Piano della Campagna", icon: "🗓️",
           aCosaServe: "Il programma di semina e concimazione approvato nell'app: per ogni campo la coltura prevista, i semi e i concimi con la dose per ettaro, la quantità e il costo previsti, e la lista di cosa acquistare.",
           comeSiUsa: [

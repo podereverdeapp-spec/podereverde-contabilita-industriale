@@ -48,6 +48,7 @@ import ColtSchedeCampi from "./ColtSchedeCampi";
 import ColtReseStagioni from "./ColtReseStagioni";
 import ColtPianoCampagna from "./ColtPianoCampagna";
 import ColtArchivioReport from "./ColtArchivioReport";
+import ColtGrafici from "./ColtGrafici";
 import Ricerca from "./Ricerca";
 import Parametri from "./Parametri";
 import ReportAcquistoAnimali from "./ReportAcquistoAnimali";
@@ -123,6 +124,7 @@ const MENU = [
     { tipo: "sottocartella", id: "sub-campi-stagioni", label: "Campi e Stagioni", icon: "🌾", voci: [
       { id: "colt-schede-campi", label: "Schede Campi", icon: "🗺️" },
       { id: "colt-rese-stagioni", label: "Rese e Costi per Stagione", icon: "📈" },
+      { id: "colt-grafici", label: "Grafici", icon: "📊" },
       { id: "colt-piano", label: "Piano della Campagna", icon: "🗓️" },
       { id: "colt-archivio-report", label: "Archivio dei Report", icon: "🗄️" },
     ]},
@@ -320,6 +322,7 @@ export default function App() {
         {tab === "colt-fatture-riepilogo" && <FattureColtivazioneRiepilogo />}
         {tab === "colt-schede-campi" && <ColtSchedeCampi />}
         {tab === "colt-rese-stagioni" && <ColtReseStagioni />}
+        {tab === "colt-grafici" && <ColtGrafici />}
         {tab === "colt-piano" && <ColtPianoCampagna />}
         {tab === "colt-archivio-report" && <ColtArchivioReport />}
         {tab === "ricerca" && <Ricerca />}
