@@ -41,6 +41,7 @@ import IstruzioniAnagrafiche from "./IstruzioniAnagrafiche";
 import IstruzioniAnimali from "./IstruzioniAnimali";
 import IstruzioniCosti from "./IstruzioniCosti";
 import IstruzioniStudi from "./IstruzioniStudi";
+import IstruzioniColtivazioni from "./IstruzioniColtivazioni";
 import Ricerca from "./Ricerca";
 import Parametri from "./Parametri";
 import ReportAcquistoAnimali from "./ReportAcquistoAnimali";
@@ -106,6 +107,9 @@ const MENU = [
   ]},
   { tipo: "cartella", id: "cart-studi", label: "Studi", icon: "🔎", contenuto: [
     { tipo: "voce", id: "istr-studi", label: "Istruzioni", icon: "📖" },
+  ]},
+  { tipo: "cartella", id: "cart-coltivazioni", label: "Coltivazioni", icon: "🚜", contenuto: [
+    { tipo: "voce", id: "istr-coltivazioni", label: "Istruzioni", icon: "📖" },
   ]},
   { tipo: "cartella", id: "cart-muratella", label: "Muratella S.r.l.", icon: "🏛️", contenuto: [
     { tipo: "voce", id: "muratella-costi", label: "Contabilità Muratella", icon: "🏛️" },
@@ -295,6 +299,7 @@ export default function App() {
         {tab === "istr-animali" && <IstruzioniAnimali />}
         {tab === "istr-costi" && <IstruzioniCosti />}
         {tab === "istr-studi" && <IstruzioniStudi />}
+        {tab === "istr-coltivazioni" && <IstruzioniColtivazioni />}
         {tab === "ricerca" && <Ricerca />}
         {tab === "parametri" && <Parametri />}
       </main>
