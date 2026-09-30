@@ -29,6 +29,7 @@ const FAMIGLIE = [
 const nomeColtura = s => { const t = String(s || "").trim().toLowerCase(); return t.charAt(0).toUpperCase() + t.slice(1); };
 const n0 = v => Math.round(v).toLocaleString("it-IT");
 const n2 = v => Number(v).toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const n1q = v => Number(v).toLocaleString("it-IT", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const breve = v => (v >= 100 ? n0(v) : n2(v));
 const passo = max => { const g = max / 5, p = Math.pow(10, Math.floor(Math.log10(g))); const m = g / p; return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 2.5 ? 2.5 : m <= 5 ? 5 : 10) * p; };
 
@@ -59,13 +60,13 @@ function Suggerimento({ tip }) {
 }
 
 // Asse e griglia comuni
-function Griglia({ W, L, R, B, T, max, y, categorie, cw, vuote }) {
+function Griglia({ W, L, R, B, T, max, y, categorie, cw, vuote, suffisso = "€" }) {
   const st = passo(max), righe = [];
   for (let v = 0; v <= max + 1e-9; v += st) righe.push(v);
   return (<>
     {righe.map(v => (<g key={v}>
       <line x1={L} x2={W - R} y1={y(v)} y2={y(v)} stroke="#E3DFD4" />
-      <text x={L - 8} y={y(v) + 4} fontSize="11" textAnchor="end" fill={C.muted}>{Number.isInteger(Math.round(v * 100) / 100) ? n0(v) : n2(v)} €</text>
+      <text x={L - 8} y={y(v) + 4} fontSize="11" textAnchor="end" fill={C.muted}>{Number.isInteger(Math.round(v * 100) / 100) ? n0(v) : n2(v)} {suffisso}</text>
     </g>))}
     {categorie.map((c, i) => (<g key={c}>
       <text x={L + cw * i + cw / 2} y={B + 20} fontSize="12" textAnchor="middle" fontWeight="700" fill={C.text}>{c}</text>
@@ -112,7 +113,10 @@ function ColonneImpilate({ campagne }) {
 
 // ---------------------------------------------------------------------------
 // Grafici 2 e 3 — barre affiancate, una per serie; facoltativo il trattino del prezzo di mercato
-function BarreAffiancate({ categorie, serie, vuote, conMercato, unita }) {
+function BarreAffiancate({ categorie, serie, vuote, conMercato, unita, rif, suffisso = "€", formatoBarra = breve }) {
+  // rif: { nome, nota, altoBene } — di serie il riferimento è il prezzo di mercato (sopra = male)
+  rif = rif || { nome: "prezzo di mercato al quintale", altoBene: false,
+    nota: <>Numero sopra la barra: costo {unita} — <b style={{ color: C.red }}>rosso</b> se sopra il mercato, <b style={{ color: "#2E7D32" }}>verde</b> se sotto.</> };
   const [tip, setTip] = useState(null);
   const [nascoste, setNascoste] = useState(() => new Set());
   const cambia = nome => setNascoste(p => { const n = new Set(p); n.has(nome) ? n.delete(nome) : n.add(nome); return n; });
@@ -124,9 +128,9 @@ function BarreAffiancate({ categorie, serie, vuote, conMercato, unita }) {
   return (
     <div style={{ position: "relative" }}>
       <Legenda voci={serie} nascoste={nascoste} onClick={cambia}
-        extra={conMercato && <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><i style={{ width: 16, height: 3, background: "#0b0b0b", display: "inline-block" }} />prezzo di mercato al quintale</span>} />
+        extra={conMercato && <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><i style={{ width: 16, height: 3, background: "#0b0b0b", display: "inline-block" }} />{rif.nome}</span>} />
       <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }} onMouseLeave={() => setTip(null)}>
-        <Griglia W={W} L={L} R={R} B={B} T={T} max={max} y={y} categorie={categorie} cw={cw}
+        <Griglia W={W} L={L} R={R} B={B} T={T} max={max} y={y} categorie={categorie} cw={cw} suffisso={suffisso}
           vuote={Object.fromEntries(categorie.map(c => [c, vuote[c] || (visibili.some(s => s.valori[c]) ? null : "—")]))} />
         {categorie.map((c, i) => {
           const pres = visibili.filter(s => s.valori[c]);
@@ -134,25 +138,62 @@ function BarreAffiancate({ categorie, serie, vuote, conMercato, unita }) {
           const bw = Math.min(26, (cw - 16) / pres.length - 3), tot = pres.length * (bw + 3), sx = L + cw * i + (cw - tot) / 2;
           return pres.map((s, k) => {
             const d = s.valori[c], x = sx + k * (bw + 3);
-            const sopra = conMercato && d.mercato != null ? d.v > d.mercato : null;
-            const top = Math.min(y(d.v), conMercato && d.mercato != null ? y(d.mercato) : y(d.v));
+            const sopra = conMercato && d.mercato != null ? (rif.altoBene ? d.v < d.mercato : d.v > d.mercato) : null;
+            const top = y(d.v);
             return (<g key={s.nome + c}>
               <rect x={x} y={y(d.v)} width={bw} height={Math.max(B - y(d.v), 0.5)} rx="3" fill={s.colore}
                 onMouseMove={e => { const r = e.currentTarget.ownerSVGElement.parentElement.getBoundingClientRect(); setTip({ x: e.clientX - r.left, y: e.clientY - r.top, righe: [`${s.nome} · ${c}`, ...d.dettaglio] }); }} />
               {conMercato && d.mercato != null && <line x1={x - 3} x2={x + bw + 3} y1={y(d.mercato)} y2={y(d.mercato)} stroke="#0b0b0b" strokeWidth="2.5" pointerEvents="none" />}
               <text transform={`translate(${x + bw / 2 + 3},${top - 5}) rotate(-90)`} fontSize="10" fontWeight="700" pointerEvents="none"
-                fill={sopra == null ? C.text : sopra ? C.red : "#2E7D32"}>{breve(d.v)}</text>
+                fill={sopra == null ? C.text : sopra ? C.red : "#2E7D32"}>{formatoBarra(d.v)}</text>
             </g>);
           });
         })}
       </svg>
       <Suggerimento tip={tip} />
-      {conMercato && <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>Numero sopra la barra: costo {unita} — <b style={{ color: C.red }}>rosso</b> se sopra il mercato, <b style={{ color: "#2E7D32" }}>verde</b> se sotto.</div>}
+      {conMercato && <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{rif.nota}</div>}
     </div>
   );
 }
 
-function Tabella({ categorie, serie, formato, conMercato }) {
+// ---------------------------------------------------------------------------
+// Saldo contro il mercato: colonne sotto lo zero, divise tra prodotti raccolti e pascoli
+function ColonneSaldo({ categorie, saldi }) {
+  const [tip, setTip] = useState(null);
+  const W = 1100, H = 340, L = 76, R = 10, T = 30, B = 316;
+  const vals = Object.values(saldi).flatMap(s => [s.saldo, s.prodotti, 0]);
+  const minV = Math.min(-1000, ...vals) * 1.12, maxV = Math.max(0, ...vals) * 1.12;
+  const y = v => T + ((maxV - v) / (maxV - minV)) * (B - T), cw = (W - L - R) / Math.max(categorie.length, 1);
+  const st = passo(maxV - minV), righe = [];
+  for (let v = Math.ceil(minV / st) * st; v <= maxV + 1e-9; v += st) righe.push(v);
+  const tipDa = (e, righe) => { const r = e.currentTarget.ownerSVGElement.parentElement.getBoundingClientRect(); setTip({ x: e.clientX - r.left, y: e.clientY - r.top, righe }); };
+  return (
+    <div style={{ position: "relative" }}>
+      <Legenda voci={[{ nome: "Saldo sui prodotti raccolti", colore: "#d03b3b" }, { nome: "Costo dei pascoli (nessuna raccolta)", colore: "#f0a3a3" }]} />
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }} onMouseLeave={() => setTip(null)}>
+        {righe.map(v => (<g key={v}><line x1={L} x2={W - R} y1={y(v)} y2={y(v)} stroke="#E3DFD4" />
+          <text x={L - 8} y={y(v) + 4} fontSize="11" textAnchor="end" fill={C.muted}>{n0(v)} €</text></g>))}
+        {categorie.map((c, i) => {
+          const x0 = L + cw * i, w = Math.min(70, cw * 0.44), x = x0 + (cw - w) / 2, s = saldi[c];
+          return (<g key={c}>
+            <text x={x0 + cw / 2} y={T - 12} fontSize="12" textAnchor="middle" fontWeight="700" fill={C.text}>{c}</text>
+            {!s ? <text x={x0 + cw / 2} y={y(0) + 22} fontSize="11" textAnchor="middle" fill={C.muted}>non caricata</text> : <>
+              <rect x={x} y={Math.min(y(0), y(s.prodotti))} width={w} height={Math.max(Math.abs(y(s.prodotti) - y(0)) - 1, 0.5)} rx="3" fill={s.prodotti < 0 ? "#d03b3b" : "#2E9E3A"}
+                onMouseMove={e => tipDa(e, [`${c} · prodotti raccolti`, `valore di mercato ${formattaEuro(s.valore)}`, `costo ${formattaEuro(s.costoProdotti)}`, `saldo ${formattaEuro(s.prodotti)}`])} />
+              {s.pascoli > 0 && <rect x={x} y={Math.min(y(s.prodotti), y(s.saldo)) + 1} width={w} height={Math.max(Math.abs(y(s.saldo) - y(s.prodotti)) - 1, 0.5)} rx="3" fill="#f0a3a3"
+                onMouseMove={e => tipDa(e, [`${c} · pascoli`, `costo ${formattaEuro(s.pascoli)}`, "nessuna raccolta, nessun valore di mercato"])} />}
+              <text x={x + w / 2} y={(s.saldo < 0 ? y(s.saldo) + 16 : y(s.saldo) - 6)} fontSize="13" textAnchor="middle" fontWeight="800" fill={s.saldo < 0 ? C.red : "#2E7D32"}>{n0(s.saldo)} €</text>
+            </>}
+          </g>);
+        })}
+        <line x1={L} x2={W - R} y1={y(0)} y2={y(0)} stroke={C.muted} />
+      </svg>
+      <Suggerimento tip={tip} />
+    </div>
+  );
+}
+
+function Tabella({ categorie, serie, formato, conMercato, nomeRif = "mercato", altoBene = false }) {
   const th = { padding: "6px 8px", fontSize: 11, textAlign: "right", whiteSpace: "nowrap" };
   const td = { padding: "5px 8px", textAlign: "right", whiteSpace: "nowrap", borderTop: `1px solid ${C.border}` };
   return (
@@ -165,8 +206,8 @@ function Tabella({ categorie, serie, formato, conMercato }) {
             <tr key={s.nome}>
               <td style={{ ...td, textAlign: "left" }}><i style={{ width: 10, height: 10, borderRadius: 2, background: s.colore, display: "inline-block", marginRight: 6 }} />{s.nome}</td>
               {categorie.map(c => { const d = s.valori[c]; return (
-                <td key={c} style={{ ...td, color: d && conMercato && d.mercato != null ? (d.v > d.mercato ? C.red : "#2E7D32") : undefined }}>
-                  {d ? formato(d.v) : "—"}{d && conMercato && d.mercato != null && <div style={{ fontSize: 10.5, color: C.muted }}>mercato {formato(d.mercato)}</div>}
+                <td key={c} style={{ ...td, color: d && conMercato && d.mercato != null ? ((altoBene ? d.v < d.mercato : d.v > d.mercato) ? C.red : "#2E7D32") : undefined }}>
+                  {d ? formato(d.v) : "—"}{d && conMercato && d.mercato != null && <div style={{ fontSize: 10.5, color: C.muted }}>{nomeRif} {formato(d.mercato)}</div>}
                 </td>); })}
             </tr>))}</tbody>
         </table>
@@ -250,7 +291,32 @@ export default function ColtGrafici() {
         })),
       })) });
     });
-    return { categorie, vuote, campagne, serieColture, famiglie };
+    // 4 — saldo contro il mercato, diviso tra prodotti raccolti e pascoli
+    const saldi = {};
+    concluse.forEach(c => {
+      const pasc = Object.values(Object.fromEntries(dati.prodotti.filter(p => p.campagna === c.campagna && !p.prodotto).map(p => [p.id, p])))
+        .reduce((s, p) => s + p.costoColtura, 0);
+      const valore = c.valore || 0, costoProdotti = c.costo - pasc;
+      saldi[c.campagna] = { saldo: valore - c.costo, prodotti: valore - costoProdotti, pascoli: pasc, valore, costoProdotti };
+    });
+
+    // 5 — resa per ettaro contro la resa di riferimento (solo i prodotti principali con un riferimento)
+    const RESE = [["Orzo", "#2a78d6", ["Granella di orzo"]], ["Avena", "#e87ba4", ["Granella di avena", "Semente di avena"]], ["Favino", "#8B6F47", ["Granella di favino"]]];
+    const serieRese = RESE.map(([nome, colore, prodotti]) => {
+      const perCp = {};
+      const perColtura = {};
+      dati.prodotti.filter(p => per[p.campagna] && p.costoColtura > 0 && prodotti.includes(p.prodotto) && p.quintali > 0).forEach(p => {
+        const k = p.id, a = (perColtura[k] ||= { campagna: p.campagna, ettari: p.ettari, q: 0, rif: p.resaRiferimento });
+        a.q += p.quintali; if (a.rif == null) a.rif = p.resaRiferimento;
+      });
+      Object.values(perColtura).forEach(a => {
+        const b = (perCp[a.campagna] ||= { q: 0, ettari: 0, rif: null }); b.q += a.q; b.ettari += a.ettari; if (b.rif == null) b.rif = a.rif;
+      });
+      return { nome: `${nome} (${prodotti.map(x => x.split(" ")[0].toLowerCase()).join(" e ")})`, colore,
+        valori: Object.fromEntries(Object.entries(perCp).filter(([, b]) => b.ettari > 0).map(([cp, b]) => [cp, { v: b.q / b.ettari, mercato: b.rif,
+          dettaglio: [`${n1q(b.q / b.ettari)} quintali per ettaro`, `riferimento ISTAT ${b.rif == null ? "non indicato" : n1q(b.rif)}`, `${n0(b.q)} quintali su ${n2(b.ettari)} ettari`] }])) };
+    }).filter(s => Object.keys(s.valori).length);
+    return { categorie, vuote, campagne, serieColture, famiglie, saldi, serieRese };
   }, [dati]);
 
   if (errore) return <div style={{ padding: 20, color: C.red }}>⚠️ {errore}</div>;
@@ -289,6 +355,25 @@ export default function ColtGrafici() {
           <Tabella categorie={m.categorie.filter(c => !m.vuote[c])} serie={f.serie} formato={v => formattaEuro(v)} conMercato />
         </Card>
       ))}
+
+      <Card titolo={`${3 + m.famiglie.length}. Saldo contro il mercato, campagna per campagna`}
+        sotto="Valore di mercato dei prodotti raccolti meno il costo di coltivazione. Sotto lo zero: produrre è costato più che comprare. La colonna è divisa tra il saldo sui prodotti raccolti e il costo dei pascoli, che non hanno raccolta e quindi nessun valore di mercato.">
+        <ColonneSaldo categorie={m.categorie} saldi={m.saldi} />
+        <Tabella categorie={m.categorie.filter(c => !m.vuote[c])} formato={v => formattaEuro(v)} serie={[
+          { nome: "Saldo sui prodotti raccolti", colore: "#d03b3b", valori: Object.fromEntries(Object.entries(m.saldi).map(([c, s]) => [c, { v: s.prodotti }])) },
+          { nome: "Costo dei pascoli", colore: "#f0a3a3", valori: Object.fromEntries(Object.entries(m.saldi).map(([c, s]) => [c, { v: -s.pascoli }])) },
+          { nome: "Saldo totale", colore: C.primary, valori: Object.fromEntries(Object.entries(m.saldi).map(([c, s]) => [c, { v: s.saldo }])) },
+        ]} />
+      </Card>
+
+      {m.serieRese.length > 0 && (
+        <Card titolo={`${4 + m.famiglie.length}. Resa per ettaro contro la resa di riferimento`}
+          sotto="Quintali per ettaro raccolti in azienda (barra) contro la resa di riferimento, media della provincia di Roma, fonte ISTAT (trattino nero). Barra sotto il trattino = resa sotto la media provinciale. Solo le colture con una resa di riferimento.">
+          <BarreAffiancate categorie={m.categorie} serie={m.serieRese} vuote={m.vuote} conMercato suffisso="q/ha" formatoBarra={n1q}
+            rif={{ nome: "resa di riferimento ISTAT", altoBene: true, nota: <>Numero sopra la barra: resa in quintali per ettaro — <b style={{ color: C.red }}>rosso</b> se sotto il riferimento, <b style={{ color: "#2E7D32" }}>verde</b> se sopra.</> }} />
+          <Tabella categorie={m.categorie.filter(c => !m.vuote[c])} serie={m.serieRese} formato={n1q} conMercato nomeRif="riferimento" altoBene />
+        </Card>
+      )}
     </div>
   );
 }

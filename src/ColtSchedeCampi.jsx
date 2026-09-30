@@ -2,7 +2,8 @@ import { useState, useEffect, useMemo } from "react";
 import { C } from "./style";
 import { formattaEuro, round2 } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
-import { caricaSchedeCampi, ordinaCampagne, unitaPerEttaro, perUnita } from "./calcoloCampiStagioni";
+import { caricaSchedeCampi, caricaRegistroLavori, ordinaCampagne, unitaPerEttaro, perUnita } from "./calcoloCampiStagioni";
+import ColtDettaglioLavori, { righeRegistro } from "./ColtDettaglioLavori";
 import { formattaDataItaliana } from "./calcoloFattureColtivazione";
 
 // Coltivazioni → Campi e Stagioni → Schede Campi
@@ -20,6 +21,7 @@ function Badge({ testo, colore }) {
 
 export default function ColtSchedeCampi() {
   const [schede, setSchede] = useState([]);
+  const [registro, setRegistro] = useState({});
   const [loading, setLoading] = useState(true);
   const [errore, setErrore] = useState(null);
   const [campagna, setCampagna] = useState("");
@@ -29,8 +31,9 @@ export default function ColtSchedeCampi() {
   useEffect(() => {
     (async () => {
       try {
-        const dati = await caricaSchedeCampi();
+        const [dati, reg] = await Promise.all([caricaSchedeCampi(), caricaRegistroLavori()]);
         setSchede(dati);
+        setRegistro(Object.fromEntries(reg.map(c => [c.id, c])));
         // si parte dall'ultima campagna con costi (quella in corso non ha ancora costi)
         const conCosti = ordinaCampagne(dati.filter(s => s.totale > 0).map(s => s.campagna));
         setCampagna(conCosti[0] || ordinaCampagne(dati.map(s => s.campagna))[0] || "");
@@ -80,6 +83,7 @@ export default function ColtSchedeCampi() {
     esportaExcel(`Schede_Campo_${campagna.replace("/", "_")}`, [
       { nome: `Schede ${campagna.replace("/", "-")}`, righe: principali },
       { nome: "Voci di costo", righe: voci },
+      ...righeRegistro(righe.map(r => registro[r.id]).filter(Boolean)),
     ]);
   }
 
@@ -90,7 +94,7 @@ export default function ColtSchedeCampi() {
     <div style={{ padding: 20, maxWidth: 1500, margin: "0 auto" }}>
       <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Schede Campi</h1>
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 16, fontSize: 13, lineHeight: 1.5 }}>
-        Le schede campo registrate nell'app Podere Verde: per ogni campo e coltura i lavori fatti, i costi e il raccolto. Cliccare su una riga per vedere i lavori e le voci di costo.
+        Le schede campo registrate nell'app Podere Verde: per ogni campo e coltura i lavori fatti, i costi e il raccolto. Cliccare su una riga per vedere le lavorazioni eseguite, le semine, le raccolte e le voci di costo.
       </p>
 
       <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap", background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: "12px 14px", marginBottom: 14 }}>
@@ -163,12 +167,9 @@ export default function ColtSchedeCampi() {
                 open && (
                   <tr key={r.id + "-d"}>
                     <td colSpan={11} style={{ padding: "10px 14px 14px 30px", background: "#FAFAF7", borderTop: `1px solid ${C.border}` }}>
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 10, fontSize: 12.5, marginBottom: 10 }}>
-                        {[["Semine", r.semine], ["Concimi", r.concimi], ["Lavorazioni", r.lavorazioni], ["Raccolte", r.raccolte]].map(([l, v]) => (
-                          <div key={l}><div style={{ fontSize: 11, fontWeight: 700, color: C.accent }}>{l}</div><div>{v || <span style={{ color: C.muted }}>—</span>}</div></div>
-                        ))}
-                      </div>
+                      <ColtDettaglioLavori c={registro[r.id]} />
                       {r.nota && <div style={{ fontSize: 12, color: C.muted, marginBottom: 10 }}><b>Nota:</b> {r.nota}</div>}
+                      <div style={{ fontSize: 11.5, fontWeight: 800, color: C.accent, margin: "10px 0 4px", textTransform: "uppercase", letterSpacing: 0.3 }}>Voci di costo</div>
                       {r.voci.length > 0 ? (
                         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, background: "#fff", border: `1px solid ${C.border}` }}>
                           <thead><tr style={{ background: "#EEF3EF", color: C.primary }}>

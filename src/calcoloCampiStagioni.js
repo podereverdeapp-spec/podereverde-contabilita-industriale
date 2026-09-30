@@ -220,3 +220,57 @@ export function fogliPerExcel(fogli) {
   });
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// REGISTRO DEI LAVORI: lavorazioni eseguite (con concimi e diserbi), semine e raccolte
+// registrate nell'app, per coltura. Sola lettura.
+// ---------------------------------------------------------------------------
+export async function caricaRegistroLavori() {
+  const [cc, lav, sem, rac] = await Promise.all([
+    fetchAllPages((da, a) => supabase.from("colture_campo")
+      .select("id,campagna,ordine,coltura,coltura_altro,ettari,porzione,campi(numero,nome,ettari)").order("id").range(da, a)),
+    fetchAllPages((da, a) => supabase.from("lavorazioni_campo")
+      .select("id,coltura_campo_id,tipo,data_esecuzione,giornate_lavoro,ettari_lavorati,conto_terzi,note,concimazioni(tipo_concime,tipo_concime_altro,quintali,provenienza),diserbi(prodotto,quantita,unita,provenienza)")
+      .order("id").range(da, a)),
+    fetchAllPages((da, a) => supabase.from("semine").select("*").order("id").range(da, a)),
+    fetchAllPages((da, a) => supabase.from("raccolte").select("*").order("id").range(da, a)),
+  ]);
+  const errore = cc.error || lav.error || sem.error || rac.error;
+  if (errore) throw new Error(errore.message);
+
+  const colture = {};
+  (cc.data || []).forEach(x => {
+    colture[x.id] = {
+      id: x.id, campagna: x.campagna, ordine: x.ordine,
+      coltura: x.coltura === "Altro" && x.coltura_altro ? x.coltura_altro : x.coltura,
+      numero: x.campi?.numero, campo: (x.campi?.nome || "") + (x.porzione ? ` — ${x.porzione}` : ""),
+      ettari: num(x.ettari) ?? num(x.campi?.ettari),
+      lavori: [], semine: [], raccolte: [],
+    };
+  });
+  (lav.data || []).forEach(l => {
+    const c = colture[l.coltura_campo_id]; if (!c) return;
+    c.lavori.push({
+      id: l.id, tipo: l.tipo, data: l.data_esecuzione, giornate: num(l.giornate_lavoro),
+      ettari: num(l.ettari_lavorati), ettariEffettivi: num(l.ettari_lavorati) ?? c.ettari, contoTerzi: !!l.conto_terzi, nota: l.note,
+      concimi: (l.concimazioni || []).map(k => ({ nome: k.tipo_concime === "Altro" && k.tipo_concime_altro ? k.tipo_concime_altro : k.tipo_concime, quintali: num(k.quintali), provenienza: k.provenienza })),
+      diserbi: (l.diserbi || []).map(d => ({ nome: d.prodotto, quantita: num(d.quantita), unita: d.unita, provenienza: d.provenienza })),
+    });
+  });
+  (sem.data || []).forEach(s => {
+    const c = colture[s.coltura_campo_id]; if (!c) return;
+    const q = num(s.quantita);
+    c.semine.push({ id: s.id, seme: s.seme, quantita: q, unita: s.unita, data: s.data_semina, provenienza: s.provenienza, nota: s.note,
+      dose: q != null && c.ettari ? q / c.ettari : null });
+  });
+  (rac.data || []).forEach(r => {
+    const c = colture[r.coltura_campo_id]; if (!c) return;
+    const q = num(r.quantita), balla = r.unita === "balloni" || r.unita === "rotoballe";
+    const quintali = q == null ? null : balla ? q * PESO_BALLA_KG / 100 : r.unita === "quintali" ? q : null;
+    c.raccolte.push({ id: r.id, prodotto: r.prodotto, quantita: q, unita: r.unita, quintali, data: r.data_raccolta, nota: r.note,
+      sottoprodotto: r.sottoprodotto, resa: quintali != null && c.ettari ? quintali / c.ettari : null });
+  });
+  const ordinaData = (a, b) => (b.data || "").localeCompare(a.data || "") || b.id - a.id;
+  Object.values(colture).forEach(c => { c.lavori.sort(ordinaData); c.semine.sort(ordinaData); c.raccolte.sort(ordinaData); });
+  return Object.values(colture).sort((a, b) => a.campagna.localeCompare(b.campagna) || (a.numero ?? 0) - (b.numero ?? 0) || a.ordine - b.ordine);
+}

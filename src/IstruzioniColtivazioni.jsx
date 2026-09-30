@@ -80,8 +80,21 @@ export default function IstruzioniColtivazioni() {
             "Grafico 1: una colonna per campagna, divisa tra semi, concimi e fitosanitari, lavorazioni e altro; sopra, il totale per ettaro.",
             "Grafico 2: per ogni campagna una barra per coltura, ogni coltura sempre con lo stesso colore. Cliccando su un nome della legenda la coltura si nasconde o si mostra.",
             "Costo unitario dei prodotti: la barra è il costo al quintale del prodotto fatto in azienda, il trattino nero il prezzo di mercato al quintale. Numero rosso = produrre è costato più che comprare; verde = meno. I prodotti sono divisi per famiglia (fieni e paglia, granelle, sementi, altri).",
+            "Saldo contro il mercato: valore di mercato dei prodotti raccolti meno il costo di coltivazione, diviso tra il saldo sui prodotti raccolti e il costo dei pascoli (che non hanno raccolta).",
+            "Resa per ettaro: quintali per ettaro raccolti in azienda (barra) contro la resa di riferimento ISTAT della provincia di Roma (trattino nero), per orzo, avena e favino.",
             "Passare il mouse su una barra per leggere i dettagli (ettari, quintali, costo per ballone). Sotto ogni grafico, «Tabella dei numeri».",
             "La campagna 2022/2023 compare vuota finché non viene caricata; la campagna in corso non compare finché non ha costi.",
+          ],
+        },
+        {
+          pagina: "Campi e Stagioni → Classifiche dei Campi", icon: "🏅",
+          aCosaServe: "Le tre classifiche dello Storico dell'app Podere Verde, con lo stesso metodo e gli stessi dati, quindi con gli stessi risultati dell'app: la classifica della stagione, la classifica per resa e la classifica per coltura.",
+          comeSiUsa: [
+            "Classifica della stagione: scegliere la campagna. I campi vanno dal migliore al peggiore per costo del raccolto rapportato al suo valore di mercato (quanti euro è costato ogni euro di prodotto). A destra il costo e il prezzo di mercato del prodotto principale: rosso se sopra il mercato.",
+            "Classifica per resa: i campi coltivati negli ultimi tre anni, con un indice in cui 100 è la media dell'azienda per la stessa coltura nella stessa stagione; sotto, l'indice di ogni stagione. La sulla è confrontata con la medica.",
+            "Classifica per coltura: scegliere la coltura; i campi dal migliore al peggiore sommando tutte le stagioni, con costo e mercato al quintale.",
+            "I pascoli sono esclusi; i campi in grigio non sono più coltivati.",
+            "«Esporta Excel» scarica tutte le classifiche: un foglio per stagione, uno per la resa e uno per coltura.",
           ],
         },
         {
