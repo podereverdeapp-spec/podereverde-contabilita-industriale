@@ -42,6 +42,12 @@ import IstruzioniAnimali from "./IstruzioniAnimali";
 import IstruzioniCosti from "./IstruzioniCosti";
 import IstruzioniStudi from "./IstruzioniStudi";
 import IstruzioniColtivazioni from "./IstruzioniColtivazioni";
+import FattureColtivazioneElenco from "./FattureColtivazioneElenco";
+import FattureColtivazioneRiepilogo from "./FattureColtivazioneRiepilogo";
+import ColtSchedeCampi from "./ColtSchedeCampi";
+import ColtReseStagioni from "./ColtReseStagioni";
+import ColtPianoCampagna from "./ColtPianoCampagna";
+import ColtArchivioReport from "./ColtArchivioReport";
 import Ricerca from "./Ricerca";
 import Parametri from "./Parametri";
 import ReportAcquistoAnimali from "./ReportAcquistoAnimali";
@@ -110,6 +116,16 @@ const MENU = [
   ]},
   { tipo: "cartella", id: "cart-coltivazioni", label: "Coltivazioni", icon: "🚜", contenuto: [
     { tipo: "voce", id: "istr-coltivazioni", label: "Istruzioni", icon: "📖" },
+    { tipo: "sottocartella", id: "sub-fatture-coltivazione", label: "Fatture Coltivazione", icon: "🧾", voci: [
+      { id: "colt-fatture-elenco", label: "Elenco Fatture", icon: "📋" },
+      { id: "colt-fatture-riepilogo", label: "Riepilogo per Anno e Centro di Costo", icon: "📊" },
+    ]},
+    { tipo: "sottocartella", id: "sub-campi-stagioni", label: "Campi e Stagioni", icon: "🌾", voci: [
+      { id: "colt-schede-campi", label: "Schede Campi", icon: "🗺️" },
+      { id: "colt-rese-stagioni", label: "Rese e Costi per Stagione", icon: "📈" },
+      { id: "colt-piano", label: "Piano della Campagna", icon: "🗓️" },
+      { id: "colt-archivio-report", label: "Archivio dei Report", icon: "🗄️" },
+    ]},
     { tipo: "sottocartella", id: "sub-muratella", label: "Muratella S.r.l.", icon: "🏛️", voci: [
       { id: "muratella-costi", label: "Contabilità Muratella", icon: "🏛️" },
     ]},
@@ -300,6 +316,12 @@ export default function App() {
         {tab === "istr-costi" && <IstruzioniCosti />}
         {tab === "istr-studi" && <IstruzioniStudi />}
         {tab === "istr-coltivazioni" && <IstruzioniColtivazioni />}
+        {tab === "colt-fatture-elenco" && <FattureColtivazioneElenco />}
+        {tab === "colt-fatture-riepilogo" && <FattureColtivazioneRiepilogo />}
+        {tab === "colt-schede-campi" && <ColtSchedeCampi />}
+        {tab === "colt-rese-stagioni" && <ColtReseStagioni />}
+        {tab === "colt-piano" && <ColtPianoCampagna />}
+        {tab === "colt-archivio-report" && <ColtArchivioReport />}
         {tab === "ricerca" && <Ricerca />}
         {tab === "parametri" && <Parametri />}
       </main>

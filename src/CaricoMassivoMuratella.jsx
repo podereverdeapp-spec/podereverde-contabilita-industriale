@@ -2,7 +2,7 @@ import { useState } from "react";
 import * as XLSX from "xlsx-js-style";
 import { supabase } from "./supabase";
 import { C } from "./style";
-import { round2 } from "./parsingUtils";
+import { round2, numeroRobusto, calcolaImponibile, leggiAliquotaIva, formattaData } from "./parsingUtils";
 import { esportaExcel } from "./esportaExcel";
 
 // Stesso schema colonne del "Prompt per carico Massivo" già usato per estrarre le fatture
@@ -55,42 +55,75 @@ export default function CaricoMassivoMuratella({ coloreMuratella }) {
     reader.readAsBinaryString(file);
   }
 
+  // Partita IVA scritta sempre allo stesso modo (senza spazi, senza "IT"), per riconoscere il fornitore
+  function pivaPulita(v) {
+    return String(v || "").replace(/\s+/g, "").toUpperCase().replace(/^IT/, "");
+  }
+
   async function importaRighe(righe) {
     let righeSaltate = 0;
     const { data: piano } = await supabase.from("ci_piano_dei_conti").select("area,centro_costo");
     const combinazioniValide = new Set((piano || []).map(p => `${p.area}|${p.centro_costo}`));
     const areeCentriNonStandard = new Set();
 
-    // Raggruppo per (Numero+Data+Fornitore) così più righe della stessa fattura non ne
+    // Raggruppo per (Numero + Data + Fornitore) così più righe della stessa fattura non ne
     // creano una copia ciascuna — stesso principio usato per le fatture di Podere Verde.
+    // Il fornitore si riconosce dalla partita IVA; se manca, dal nome.
     const gruppi = new Map();
     for (const r of righe) {
-      const numero = r["Numero"];
+      const numero = String(r["Numero"] ?? "").trim();
       const dataRaw = r["Data"];
       if (!dataRaw) { righeSaltate++; continue; }
-      const dataStr = dataRaw instanceof Date ? dataRaw.toISOString().slice(0, 10) : String(dataRaw).slice(0, 10);
-      const fornitore = r["Fornitore"] || "";
-      const chiave = `${numero}|${dataStr}|${fornitore}`;
+      const dataStr = dataRaw instanceof Date ? dataRaw.toISOString().slice(0, 10) : formattaData(dataRaw).slice(0, 10);
+      const fornitore = String(r["Fornitore"] || "").trim();
+      const piva = String(r["P.IVA"] || r["Partita IVA"] || "").trim();
+      const chiave = `${numero}|${dataStr}|${pivaPulita(piva) || fornitore.toLowerCase()}`;
       if (!gruppi.has(chiave)) {
-        gruppi.set(chiave, { numero, data: dataStr, fornitore: fornitore || null, articoli: [] });
+        gruppi.set(chiave, { numero, data: dataStr, fornitore: fornitore || null, piva: piva || null, articoli: [] });
       }
       const area = r["Area"] || null;
       const centroCosto = r["Centro di Costo"] || null;
       if (area && centroCosto && !combinazioniValide.has(`${area}|${centroCosto}`)) {
         areeCentriNonStandard.add(`${area} / ${centroCosto}`);
       }
+      const quantita = numeroRobusto(r["Quantità"] ?? r["Quantita"]);
+      const prezzo = numeroRobusto(r["Prezzo unitario"] ?? r["Prezzo Unitario"]);
+      const imponibile = round2(calcolaImponibile(r));
+      const aliquota = leggiAliquotaIva(r);
       gruppi.get(chiave).articoli.push({
         descrizione: r["Descrizione"] || null, area, centro_costo: centroCosto,
         tipo_costo: r["Tipo (Fisso/Variabile)"] || null,
-        totale_riga: round2(parseFloat(r["Imponibile"]) || 0),
+        quantita: Number.isNaN(quantita) ? null : quantita,
+        unita_misura: String(r["U.M."] || r["Unità Misura"] || "").trim() || null,
+        prezzo_unitario: Number.isNaN(prezzo) ? null : prezzo,
+        totale_riga: imponibile,
+        aliquota_iva: aliquota,
+        totale_iva: aliquota != null ? round2(imponibile * aliquota / 100) : null,
       });
     }
 
+    // Fatture già caricate: stesso numero e stessa data, e stesso fornitore (per partita IVA o per nome)
+    const { data: esistenti } = await supabase.from("muratella_fatture").select("numero, data, fornitore_nome, fornitore_piva");
+    const chiaviEsistenti = new Set();
+    (esistenti || []).forEach(f => {
+      if (f.fornitore_piva) chiaviEsistenti.add(`${String(f.numero).trim()}|${f.data}|${pivaPulita(f.fornitore_piva)}`);
+      chiaviEsistenti.add(`${String(f.numero).trim()}|${f.data}|${String(f.fornitore_nome || "").trim().toLowerCase()}`);
+    });
+
     let fattureCreate = 0, righeCreate = 0;
+    const giaPresenti = [];
     for (const g of gruppi.values()) {
+      const perPiva = g.piva ? `${g.numero}|${g.data}|${pivaPulita(g.piva)}` : null;
+      const perNome = `${g.numero}|${g.data}|${String(g.fornitore || "").toLowerCase()}`;
+      if ((perPiva && chiaviEsistenti.has(perPiva)) || chiaviEsistenti.has(perNome)) {
+        giaPresenti.push(`${g.fornitore || "—"} n. ${g.numero} del ${g.data}`);
+        continue;
+      }
       const totaleFattura = round2(g.articoli.reduce((s, a) => s + a.totale_riga, 0));
+      const totaleIva = round2(g.articoli.reduce((s, a) => s + (a.totale_iva || 0), 0));
       const { data: fattura, error: eF } = await supabase.from("muratella_fatture")
-        .insert([{ numero: g.numero, data: g.data, fornitore_nome: g.fornitore, totale_netto: totaleFattura }])
+        .insert([{ numero: g.numero, data: g.data, fornitore_nome: g.fornitore, fornitore_piva: g.piva,
+          totale_netto: totaleFattura, totale_iva: totaleIva, totale_lordo: round2(totaleFattura + totaleIva) }])
         .select().single();
       if (eF) { righeSaltate += g.articoli.length; continue; }
       fattureCreate++;
@@ -100,7 +133,7 @@ export default function CaricoMassivoMuratella({ coloreMuratella }) {
       else righeSaltate += articoliConFattura.length;
     }
 
-    setRisultato({ fattureCreate, righeCreate, righeSaltate, totaleRighe: righe.length, areeCentriNonStandard: [...areeCentriNonStandard] });
+    setRisultato({ fattureCreate, righeCreate, righeSaltate, totaleRighe: righe.length, areeCentriNonStandard: [...areeCentriNonStandard], giaPresenti });
   }
 
   return (
@@ -128,6 +161,11 @@ export default function CaricoMassivoMuratella({ coloreMuratella }) {
             <div>✓ {risultato.totaleRighe} righe lette dal file</div>
             <div>✓ {risultato.fattureCreate} fatture Muratella create</div>
             <div>✓ {risultato.righeCreate} righe di costo registrate</div>
+            {risultato.giaPresenti.length > 0 && (
+              <div style={{ color: C.accent, marginTop: 6 }}>
+                ⚠️ {risultato.giaPresenti.length} fatture erano già caricate e sono state saltate: {risultato.giaPresenti.join("; ")}
+              </div>
+            )}
             {risultato.righeSaltate > 0 && <div style={{ color: C.red }}>⚠️ {risultato.righeSaltate} righe saltate (data mancante o errore)</div>}
             {risultato.areeCentriNonStandard.length > 0 && (
               <div style={{ color: C.accent, marginTop: 6 }}>
