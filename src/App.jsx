@@ -42,6 +42,9 @@ import IstruzioniAnimali from "./IstruzioniAnimali";
 import IstruzioniCosti from "./IstruzioniCosti";
 import IstruzioniStudi from "./IstruzioniStudi";
 import IstruzioniColtivazioni from "./IstruzioniColtivazioni";
+import Modelli4 from "./Modelli4";
+import IstruzioniModelli4 from "./IstruzioniModelli4";
+import AltriDocumentiCortesi from "./AltriDocumentiCortesi";
 import FattureColtivazioneElenco from "./FattureColtivazioneElenco";
 import FattureColtivazioneRiepilogo from "./FattureColtivazioneRiepilogo";
 import ColtSchedeCampi from "./ColtSchedeCampi";
@@ -113,6 +116,11 @@ const MENU = [
       { id: "performanceeta-femmine", label: "Bovini — Solo Femmine", icon: "♀️" },
       { id: "storico-performanceeta", label: "Bovini — Storico", icon: "📈" },
     ]},
+  ]},
+  { tipo: "cartella", id: "cart-modelli4", label: "Modelli 4", icon: "📑", contenuto: [
+    { tipo: "voce", id: "istr-modelli4", label: "Istruzioni", icon: "📖" },
+    { tipo: "voce", id: "modelli4-elenco", label: "Elenco dei Modelli 4", icon: "📑" },
+    { tipo: "voce", id: "modelli4-altri", label: "Altri documenti di Stefano Cortesi", icon: "🗂️" },
   ]},
   { tipo: "cartella", id: "cart-studi", label: "Studi", icon: "🔎", contenuto: [
     { tipo: "voce", id: "istr-studi", label: "Istruzioni", icon: "📖" },
@@ -322,6 +330,9 @@ export default function App() {
         {tab === "istr-costi" && <IstruzioniCosti />}
         {tab === "istr-studi" && <IstruzioniStudi />}
         {tab === "istr-coltivazioni" && <IstruzioniColtivazioni />}
+        {tab === "istr-modelli4" && <IstruzioniModelli4 />}
+        {tab === "modelli4-elenco" && <Modelli4 />}
+        {tab === "modelli4-altri" && <AltriDocumentiCortesi />}
         {tab === "colt-fatture-elenco" && <FattureColtivazioneElenco />}
         {tab === "colt-fatture-riepilogo" && <FattureColtivazioneRiepilogo />}
         {tab === "colt-schede-campi" && <ColtSchedeCampi />}
