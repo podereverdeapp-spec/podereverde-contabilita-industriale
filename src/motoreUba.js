@@ -9,23 +9,40 @@ export const UBA_FASCE_EXP = {
 
 const MOTIVI_PRODUTTIVI_EXP = ["macellazione", "macellato", "venduto", "riformato", "riforma", "vendita"];
 
-export function periodoNellAnnoExp(nascita, dataUscita, stato, anno) {
+// Periodo di presenza in azienda nell'anno.
+// - nascita: data di nascita vera, usata SEMPRE per l'età (e quindi per il coefficiente UBA).
+// - dataIngresso (facoltativa): per i capi acquistati/trasferiti la presenza parte dall'ingresso,
+//   perché il costo sostenuto prima dell'acquisto è già compreso nel prezzo pagato.
+//   Per i nati in azienda non va passata: la presenza parte dalla nascita.
+export function periodoNellAnnoExp(nascita, dataUscita, stato, anno, dataIngresso = null) {
   if (!nascita) return null;
   const inizioAnno = new Date(anno, 0, 1);
   const fineAnno = new Date(anno, 11, 31, 23, 59, 59);
   const oggi = new Date();
-  const dataInizio = new Date(nascita);
+  const dataNascita = new Date(nascita);
+  const dataIngr = dataIngresso ? new Date(dataIngresso) : null;
+  const dataInizio = dataIngr && dataIngr > dataNascita ? dataIngr : dataNascita;
   const dataFine = dataUscita ? new Date(dataUscita) : (oggi < fineAnno ? oggi : fineAnno);
   if (dataFine < inizioAnno) return null;
   if (dataInizio > fineAnno) return null;
+  if (dataFine < dataInizio) return null;
   const inizio = dataInizio > inizioAnno ? dataInizio : inizioAnno;
   const fine = dataFine < fineAnno ? dataFine : fineAnno;
   return {
     inizio: inizio.toISOString().split("T")[0],
     fine: fine.toISOString().split("T")[0],
     giorni: Math.round((fine - inizio) / 86400000) + 1,
-    etaAllInizio: Math.round((inizio - dataInizio) / 86400000),
+    etaAllInizio: Math.round((inizio - dataNascita) / 86400000),
   };
+}
+
+// Data da cui conta la presenza in azienda: ingresso per i capi non nati in azienda
+// (acquistati, trasferiti, esterni), altrimenti null (si parte dalla nascita).
+export function dataIngressoPresenza(a) {
+  if (!a || a.provenienza === "Nato in azienda") return null;
+  // Ingresso successivo all'uscita = data errata nell'app: si ignora e si parte dalla nascita.
+  if (a.data_ingresso && a.data_uscita && a.data_ingresso > a.data_uscita) return null;
+  return a.data_ingresso || null;
 }
 
 export function calcolaUBAMedioExp(specie, giorni, etaAllInizio) {
@@ -65,7 +82,7 @@ export function calcolaReportUba(animali, lotti, suiniLotto, anno) {
     if (!a.specie || !UBA_FASCE_EXP[a.specie]) continue;
     const nascita = a.nascita || a.data_ingresso;
     if (!nascita) continue;
-    const periodo = periodoNellAnnoExp(nascita, a.data_uscita, a.stato, anno);
+    const periodo = periodoNellAnnoExp(nascita, a.data_uscita, a.stato, anno, dataIngressoPresenza(a));
     if (!periodo) continue;
     const uba = calcolaUBAMedioExp(a.specie, periodo.giorni, periodo.etaAllInizio);
     if (!uba) continue;

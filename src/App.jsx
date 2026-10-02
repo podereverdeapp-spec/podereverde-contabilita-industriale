@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Dashboard from "./Dashboard";
 import Fornitori from "./Fornitori";
 import Clienti from "./Clienti";
@@ -44,6 +44,12 @@ import IstruzioniStudi from "./IstruzioniStudi";
 import IstruzioniColtivazioni from "./IstruzioniColtivazioni";
 import Modelli4 from "./Modelli4";
 import IstruzioniModelli4 from "./IstruzioniModelli4";
+import IstruzioniEmissioneFatture from "./IstruzioniEmissioneFatture";
+import UsciteDaFatturare from "./UsciteDaFatturare";
+import PreparaFatture from "./PreparaFatture";
+import FattureEmesse from "./FattureEmesse";
+import NuovaFatturaLibera from "./NuovaFatturaLibera";
+import { contaUsciteDaFatturare } from "./calcoloEmissioneFatture";
 import AltriDocumentiCortesi from "./AltriDocumentiCortesi";
 import FattureColtivazioneElenco from "./FattureColtivazioneElenco";
 import FattureColtivazioneRiepilogo from "./FattureColtivazioneRiepilogo";
@@ -73,6 +79,18 @@ const MENU = [
     { tipo: "voce", id: "prompt-estrazione-pdf", label: "Prompt per carico Massivo", icon: "🤖" },
     { tipo: "voce", id: "verifica-fatture-mancanti", label: "Verifica Fatture Mancanti", icon: "🔍" },
     { tipo: "voce", id: "verifica-righe-mancanti", label: "Verifica Righe Mancanti", icon: "🔎" },
+  ]},
+  { tipo: "cartella", id: "cart-emissione-fatture", label: "Emissione Fatture", icon: "🧾", contenuto: [
+    { tipo: "voce", id: "istr-emissione-fatture", label: "Istruzioni", icon: "📖" },
+    { tipo: "sottocartella", id: "sub-fatturazione-animali", label: "Fatturazione Animali Allevamento", icon: "🐄", voci: [
+      { id: "fatt-animali-da-fatturare", label: "Uscite da Fatturare", icon: "🔔" },
+      { id: "fatt-animali-prepara", label: "Prepara Fatture", icon: "🧾" },
+      { id: "fatt-animali-emesse", label: "Fatture Emesse", icon: "📤" },
+    ]},
+    { tipo: "sottocartella", id: "sub-altre-fatturazioni", label: "Altre Fatturazioni", icon: "📄", voci: [
+      { id: "altre-nuova", label: "Nuova Fattura", icon: "✍️" },
+      { id: "altre-emesse", label: "Fatture Emesse", icon: "📤" },
+    ] },
   ]},
   { tipo: "cartella", id: "cart-ricerca", label: "Ricerca: Fatture, Articoli, Prezzi, Anagrafiche", icon: "🔎", contenuto: [
     { tipo: "voce", id: "istr-ricerca", label: "Istruzioni", icon: "📖" },
@@ -161,7 +179,13 @@ function cartellaDiPagina(pageId) {
   return null;
 }
 
-function VoceMenuBottone({ v, attiva, onClick, piccola }) {
+// Avviso numerico rosso accanto alle voci del menu (es. capi usciti da fatturare)
+function Avviso({ n }) {
+  if (!n) return null;
+  return <span title={`${n} capi usciti da fatturare`} style={{ marginLeft: "auto", background: "#C0392B", color: "#fff", borderRadius: 10, padding: "1px 7px", fontSize: 11, fontWeight: 800, lineHeight: "16px" }}>{n}</span>;
+}
+
+function VoceMenuBottone({ v, attiva, onClick, piccola, avviso }) {
   return (
     <button
       onClick={onClick}
@@ -173,6 +197,7 @@ function VoceMenuBottone({ v, attiva, onClick, piccola }) {
       }}
     >
       <span>{v.icon}</span> <span>{v.label}</span>
+      <Avviso n={avviso} />
     </button>
   );
 }
@@ -180,6 +205,17 @@ function VoceMenuBottone({ v, attiva, onClick, piccola }) {
 export default function App() {
   const [tab, setTab] = useState("dashboard");
   const [cartelleAperte, setCartelleAperte] = useState(() => new Set());
+  // Avviso «fatture da emettere»: capi usciti segnati «pronto da fatturare» nell'app.
+  // Si ricontrolla all'apertura, a ogni cambio di pagina e ogni 5 minuti.
+  const [daFatturare, setDaFatturare] = useState(0);
+  useEffect(() => {
+    let attivo = true;
+    const controlla = () => contaUsciteDaFatturare().then(n => { if (attivo) setDaFatturare(n); }).catch(() => {});
+    controlla();
+    const timer = setInterval(controlla, 5 * 60 * 1000);
+    return () => { attivo = false; clearInterval(timer); };
+  }, [tab]);
+  const AVVISI = { "cart-emissione-fatture": daFatturare, "sub-fatturazione-animali": daFatturare, "fatt-animali-da-fatturare": daFatturare, "fatt-animali-prepara": daFatturare };
 
   function vaiA(pageId) {
     setTab(pageId);
@@ -230,12 +266,13 @@ export default function App() {
                 }}
               >
                 <span>{cartelleAperte.has(m.id) ? "📂" : "📁"}</span> <span>{m.label}</span>
-                <span style={{ marginLeft: "auto", fontSize: 11, opacity: 0.7 }}>{cartelleAperte.has(m.id) ? "▾" : "▸"}</span>
+                <Avviso n={AVVISI[m.id]} />
+                <span style={{ marginLeft: AVVISI[m.id] ? 6 : "auto", fontSize: 11, opacity: 0.7 }}>{cartelleAperte.has(m.id) ? "▾" : "▸"}</span>
               </button>
               {cartelleAperte.has(m.id) && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 2, marginLeft: 14, borderLeft: "1.5px solid rgba(255,255,255,0.25)", paddingLeft: 6 }}>
                   {m.contenuto.map(c => c.tipo === "voce" ? (
-                    <VoceMenuBottone key={c.id} v={c} attiva={tab === c.id} onClick={() => vaiA(c.id)} piccola />
+                    <VoceMenuBottone key={c.id} v={c} attiva={tab === c.id} onClick={() => vaiA(c.id)} piccola avviso={AVVISI[c.id]} />
                   ) : (
                     <div key={c.id}>
                       <button
@@ -247,13 +284,17 @@ export default function App() {
                         }}
                       >
                         <span>{cartelleAperte.has(c.id) ? "📂" : "📁"}</span> <span>{c.label}</span>
-                        <span style={{ marginLeft: "auto", fontSize: 10, opacity: 0.7 }}>{cartelleAperte.has(c.id) ? "▾" : "▸"}</span>
+                        <Avviso n={AVVISI[c.id]} />
+                        <span style={{ marginLeft: AVVISI[c.id] ? 6 : "auto", fontSize: 10, opacity: 0.7 }}>{cartelleAperte.has(c.id) ? "▾" : "▸"}</span>
                       </button>
                       {cartelleAperte.has(c.id) && (
                         <div style={{ display: "flex", flexDirection: "column", gap: 2, marginLeft: 14, borderLeft: "1.5px solid rgba(255,255,255,0.2)", paddingLeft: 6 }}>
                           {c.voci.map(v => (
-                            <VoceMenuBottone key={v.id} v={v} attiva={tab === v.id} onClick={() => vaiA(v.id)} piccola />
+                            <VoceMenuBottone key={v.id} v={v} attiva={tab === v.id} onClick={() => vaiA(v.id)} piccola avviso={AVVISI[v.id]} />
                           ))}
+                          {c.voci.length === 0 && (
+                            <div style={{ color: "#fff", opacity: 0.6, fontSize: 11.5, padding: "6px 10px", fontStyle: "italic" }}>Pagine in preparazione</div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -265,7 +306,14 @@ export default function App() {
         </nav>
       </aside>
 
-      <main style={{ flex: 1, minWidth: 0 }}>        {tab === "dashboard" && <Dashboard onNavigate={vaiA} />}
+      <main style={{ flex: 1, minWidth: 0 }}>
+        {daFatturare > 0 && tab !== "fatt-animali-da-fatturare" && tab !== "fatt-animali-prepara" && (
+          <div onClick={() => vaiA("fatt-animali-da-fatturare")}
+            style={{ background: "#FBE1DE", borderBottom: "2px solid #C0392B", color: "#8B1E14", padding: "10px 20px", fontSize: 13.5, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+            🔔 {daFatturare === 1 ? "C'è 1 capo uscito" : `Ci sono ${daFatturare} capi usciti`} dall'allevamento da fatturare.
+            <span style={{ textDecoration: "underline", fontWeight: 800 }}>Vai alle uscite da fatturare →</span>
+          </div>
+        )}        {tab === "dashboard" && <Dashboard onNavigate={vaiA} />}
         {tab === "carica" && <CaricaFatture />}
         {tab === "passive" && <FatturePassive />}
         {tab === "attive" && (
@@ -331,6 +379,12 @@ export default function App() {
         {tab === "istr-studi" && <IstruzioniStudi />}
         {tab === "istr-coltivazioni" && <IstruzioniColtivazioni />}
         {tab === "istr-modelli4" && <IstruzioniModelli4 />}
+        {tab === "istr-emissione-fatture" && <IstruzioniEmissioneFatture />}
+        {tab === "fatt-animali-da-fatturare" && <UsciteDaFatturare onNavigate={vaiA} />}
+        {tab === "fatt-animali-prepara" && <PreparaFatture onNavigate={vaiA} />}
+        {tab === "fatt-animali-emesse" && <FattureEmesse tipo="animali_allevamento" />}
+        {tab === "altre-nuova" && <NuovaFatturaLibera onNavigate={vaiA} />}
+        {tab === "altre-emesse" && <FattureEmesse tipo="altre_fatturazioni" />}
         {tab === "modelli4-elenco" && <Modelli4 />}
         {tab === "modelli4-altri" && <AltriDocumentiCortesi />}
         {tab === "colt-fatture-elenco" && <FattureColtivazioneElenco />}

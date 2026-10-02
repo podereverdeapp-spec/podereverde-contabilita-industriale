@@ -1,6 +1,6 @@
 import { supabase } from "./supabase";
 import { fetchAllPages, round2 } from "./parsingUtils";
-import { periodoNellAnnoExp } from "./motoreUba";
+import { periodoNellAnnoExp, dataIngressoPresenza } from "./motoreUba";
 import { calcolaDatiQuantitaAnno, CENTRO_COSTO_MANGIMI } from "./calcoloQuantitaMangimi";
 
 // Assegna i giorni di presenza di un suino/unità-lotto NON riproduttivo alle categorie
@@ -71,7 +71,7 @@ export async function calcolaConsumoTeoricoSuini(anno) {
   const categorieEta = categorie.filter(c => !c.richiede_riproduttore);
 
   const [{ data: animali, error: eA }, { data: lotti, error: eL }, { data: suiniLotto, error: eS }, { data: eventi, error: eEv }] = await Promise.all([
-    fetchAllPages((da, a) => supabase.from("animali").select("id,specie,sesso,riproduttore,nascita,data_ingresso,data_uscita,stato").eq("specie", "suino").range(da, a)),
+    fetchAllPages((da, a) => supabase.from("animali").select("id,specie,sesso,riproduttore,nascita,data_ingresso,provenienza,data_uscita,stato").eq("specie", "suino").range(da, a)),
     fetchAllPages((da, a) => supabase.from("lotti_suini").select("id,data_parto").eq("specie", "suino").range(da, a)),
     fetchAllPages((da, a) => supabase.from("suini_lotto").select("lotto_id,stato,data_uscita").range(da, a)),
     fetchAllPages((da, a) => supabase.from("eventi_riproduttivi").select("animale_id,tipo_evento,data_evento").eq("tipo_evento", "parto").range(da, a)),
@@ -101,7 +101,7 @@ export async function calcolaConsumoTeoricoSuini(anno) {
   for (const a of animali || []) {
     const nascita = a.nascita || a.data_ingresso;
     if (!nascita) continue;
-    const periodo = periodoNellAnnoExp(nascita, a.data_uscita, a.stato, anno);
+    const periodo = periodoNellAnnoExp(nascita, a.data_uscita, a.stato, anno, dataIngressoPresenza(a));
     if (!periodo) continue;
     const giornoInizio = new Date(periodo.inizio), giornoFine = new Date(periodo.fine);
 

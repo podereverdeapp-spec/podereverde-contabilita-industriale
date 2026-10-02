@@ -21,7 +21,7 @@ export function classificaDestinazione(dest) {
 // una sola interrogazione condivisa, per non ripeterla due volte se servono entrambi i report
 export async function caricaDatiGrezziAnno(anno) {
   const [{ data: animali, error: eA }, { data: lotti, error: eL }, { data: suiniLotto, error: eS }] = await Promise.all([
-    fetchAllPages((da, a) => supabase.from("animali").select("id,bdn,nome,specie,sesso,nascita,stato,data_uscita,motivo_uscita,data_ingresso,razza,riproduttore").range(da, a)),
+    fetchAllPages((da, a) => supabase.from("animali").select("id,bdn,nome,specie,sesso,nascita,stato,data_uscita,motivo_uscita,data_ingresso,provenienza,razza,riproduttore").range(da, a)),
     fetchAllPages((da, a) => supabase.from("lotti_suini").select("*").range(da, a)),
     fetchAllPages((da, a) => supabase.from("suini_lotto").select("*").range(da, a)),
   ]);
