@@ -150,6 +150,7 @@ function FormAssegnaBDN({unita, lotto, animali, onSave, onCancel}) {
             costo_mantenimento: Math.round(((parseFloat(rigaEsistente.costo_mantenimento)||0)+(parseFloat(riga.costo_mantenimento)||0))*100)/100,
             costo_nascita_ereditato: Math.round(((parseFloat(rigaEsistente.costo_nascita_ereditato)||0)+(parseFloat(riga.costo_nascita_ereditato)||0))*100)/100,
             quota_scaricata_su_figli: Math.round(((parseFloat(rigaEsistente.quota_scaricata_su_figli)||0)+(parseFloat(riga.quota_scaricata_su_figli)||0))*100)/100,
+            quota_residuo_riproduttori: Math.round(((parseFloat(rigaEsistente.quota_residuo_riproduttori)||0)+(parseFloat(riga.quota_residuo_riproduttori)||0))*100)/100,
             costo_totale_anno: Math.round(((parseFloat(rigaEsistente.costo_totale_anno)||0)+(parseFloat(riga.costo_totale_anno)||0))*100)/100,
           }).eq("id", rigaEsistente.id);
           await supabase.from("ci_costo_animale_annuale").delete().eq("id", riga.id);

@@ -3,11 +3,20 @@ import { C } from "./style";
 import { calcolaPerformanceEta } from "./calcoloPerformanceEta";
 import { TabellaStepCurva, NotaPochiDati } from "./PerformanceEta";
 
-// Componente generico per le 4 pagine "Accrescimento e Costi" (Tutti gli Alimenti /
-// Mangimi / Foraggio / Pascolo) — stessa curva Ponderata di sempre, cambia solo quale
-// campo economico (già calcolato con il tasso giusto in calcoloPerformanceEta) si mostra.
-// Per ora solo Bovini — Ovini/Suini si aggiungeranno in seguito.
-export default function AccrescimentoCostiPagina({ campo, titolo, descrizione, vuota }) {
+// Accrescimento e Costi per alimento (Bovini): una sola pagina con la scelta dell'alimento
+// (prima erano quattro voci di menu con lo stesso calcolo). Stessa curva di sempre, cambia
+// solo quale campo economico (già calcolato in calcoloPerformanceEta) si mostra. Il Pascolo
+// si aggiungerà quando ci saranno i suoi dati di costo.
+const ALIMENTI = [
+  { campo: "stepVivoTuttiAlimenti", titolo: "Tutti gli alimenti", descrizione: "Mangimi e foraggio insieme: il quadro economico completo di quanto costa la crescita, per fascia d'età." },
+  { campo: "stepVivoSoloMangimi", titolo: "Solo mangimi", descrizione: "Solo il costo e il consumo dei mangimi, separato dal foraggio." },
+  { campo: "stepVivoSoloForaggio", titolo: "Solo foraggio", descrizione: "Solo il costo e il consumo del foraggio, separato dai mangimi." },
+];
+
+export default function AccrescimentoCostiPagina() {
+  const [scelta, setScelta] = useState(0);
+  const { campo, titolo, descrizione } = ALIMENTI[scelta];
+  const vuota = false;
   const [dati, setDati] = useState(null);
   const [loading, setLoading] = useState(true);
   const [errore, setErrore] = useState(null);
@@ -31,6 +40,14 @@ export default function AccrescimentoCostiPagina({ campo, titolo, descrizione, v
   return (
     <div style={{ padding: 20, maxWidth: 900, margin: "0 auto" }}>
       <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Accrescimento e Costi — Bovini — {titolo}</h1>
+      <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+        {ALIMENTI.map((a, i) => (
+          <button key={a.campo} onClick={() => setScelta(i)}
+            style={{ padding: "6px 14px", borderRadius: 6, border: `1.5px solid ${C.primary}`, background: scelta === i ? C.primary : "#fff", color: scelta === i ? "#fff" : C.primary, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+            {a.titolo}
+          </button>
+        ))}
+      </div>
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 16 }}>{descrizione}</p>
 
       {!vuota && (

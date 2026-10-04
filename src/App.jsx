@@ -28,14 +28,14 @@ import AccrescimentoCostiPagina from "./AccrescimentoCostiPagina";
 import RazioniSuiniComposizione from "./RazioniSuiniComposizione";
 import RazioniSuiniConsumi from "./RazioniSuiniConsumi";
 import PromptEstrazionePDF from "./PromptEstrazionePDF";
-import ConsultazioneAnimali from "./ConsultazioneAnimali";
 import InserimentoManualeFattura from "./InserimentoManualeFattura";
 import VerificaFattureMancanti from "./VerificaFattureMancanti";
 import VerificaRigheMancanti from "./VerificaRigheMancanti";
 import ReportCostiQuantitaAlimentare from "./ReportCostiQuantitaAlimentare";
 import ImportMassivoRiproduttori from "./ImportMassivoRiproduttori";
 import ImportFattureAcquistoAnimali from "./ImportFattureAcquistoAnimali";
-import ReportIngrasso from "./ReportIngrasso";
+import RiepilogoCostoAnimali from "./RiepilogoCostoAnimali";
+import PrezzoPareggio from "./PrezzoPareggio";
 import IstruzioniFatture from "./IstruzioniFatture";
 import IstruzioniAnagrafiche from "./IstruzioniAnagrafiche";
 import IstruzioniAnimali from "./IstruzioniAnimali";
@@ -103,6 +103,7 @@ const MENU = [
     { tipo: "voce", id: "istr-costi", label: "Istruzioni", icon: "📖" },
     { tipo: "voce", id: "costi", label: "Report Costi", icon: "📊" },
     { tipo: "voce", id: "grafico-macellazioni", label: "Grafico per le Macellazioni", icon: "📈" },
+    { tipo: "voce", id: "prezzo-pareggio", label: "Prezzo di Pareggio", icon: "🎯" },
     { tipo: "voce", id: "break-even", label: "Break Even Analysis", icon: "⚖️" },
     { tipo: "voce", id: "riepilogo-costi-breakeven", label: "Riepilogo Costi (Break Even)", icon: "📋" },
     { tipo: "voce", id: "cespiti", label: "Cespiti", icon: "🏗️" },
@@ -118,17 +119,13 @@ const MENU = [
     { tipo: "voce", id: "istr-animali", label: "Istruzioni", icon: "📖" },
     { tipo: "voce", id: "acquisto", label: "Report Acquisto Animali", icon: "🐄" },
     { tipo: "voce", id: "uba", label: "Report UBA", icon: "🐮" },
-    { tipo: "voce", id: "scheda", label: "Scheda Animale", icon: "🔍" },
+    { tipo: "voce", id: "riepilogo-costo-animali", label: "Riepilogo Costo Animali", icon: "📋" },
     { tipo: "voce", id: "riproduttori", label: "Report Riproduttori", icon: "🐄" },
-    { tipo: "voce", id: "ingrasso", label: "Report Accrescimento/Ingrasso", icon: "🐖" },
+    { tipo: "voce", id: "scheda", label: "Scheda Animale", icon: "🔍" },
     { tipo: "voce", id: "import-massivo-riproduttori", label: "Import Massivo Riproduttori", icon: "📥" },
     { tipo: "voce", id: "import-fatture-acquisto-animali", label: "Import Fatture Acquisto Animali", icon: "📥" },
-    { tipo: "voce", id: "consultazione-animali", label: "Consultazione Animali per Anno", icon: "📋" },
     { tipo: "sottocartella", id: "sub-accrescimento-costi", label: "Accrescimento e Costi", icon: "⚖️", voci: [
-      { id: "acc-bovini-tutti", label: "Bovini — Tutti gli Alimenti", icon: "🐄" },
-      { id: "acc-bovini-mangimi", label: "Bovini — Mangimi", icon: "🌾" },
-      { id: "acc-bovini-foraggio", label: "Bovini — Foraggio", icon: "🌱" },
-      { id: "acc-bovini-pascolo", label: "Bovini — Pascolo", icon: "🌳" },
+      { id: "acc-bovini-alimenti", label: "Bovini — Costo per Alimento", icon: "🌾" },
       { id: "performanceeta", label: "Bovini — Performance per Fascia d'Età", icon: "📐" },
       { id: "performanceeta-maschi", label: "Bovini — Solo Maschi", icon: "♂️" },
       { id: "performanceeta-femmine", label: "Bovini — Solo Femmine", icon: "♀️" },
@@ -344,6 +341,7 @@ export default function App() {
         {tab === "uba" && <ReportUba onVediScheda={vaiAllaSchedaAnimale} />}
         {tab === "costi" && <SezioneReportCosti />}
         {tab === "grafico-macellazioni" && <GraficoMacellazioni />}
+        {tab === "prezzo-pareggio" && <PrezzoPareggio />}
         {tab === "break-even" && <BreakEven />}
         {tab === "muratella-costi" && <ContabilitaMuratella />}
         {tab === "riepilogo-costi-breakeven" && <RiepilogoCostiBreakEven />}
@@ -357,21 +355,17 @@ export default function App() {
         {tab === "costidiretti" && <CostiDiretti />}
         {tab === "anomalie" && <ControlloAnomalie />}
         {tab === "armonizza" && <DaArmonizzare />}
-        {tab === "acc-bovini-tutti" && <AccrescimentoCostiPagina campo="stepVivoTuttiAlimenti" titolo="Tutti gli Alimenti" descrizione="Mangimi + Foraggio insieme (il Pascolo si aggiungerà quando avremo i suoi dati) — il quadro economico completo di quanto costa la crescita, per fascia d'età." />}
-        {tab === "acc-bovini-mangimi" && <AccrescimentoCostiPagina campo="stepVivoSoloMangimi" titolo="Mangimi" descrizione="Solo il costo/consumo Mangimi, isolato dal Foraggio — utile per capire il peso specifico di questo centro di costo da solo." />}
-        {tab === "acc-bovini-foraggio" && <AccrescimentoCostiPagina campo="stepVivoSoloForaggio" titolo="Foraggio" descrizione="Solo il costo/consumo Foraggio, isolato dai Mangimi — utile per capire il peso specifico di questo centro di costo da solo." />}
-        {tab === "acc-bovini-pascolo" && <AccrescimentoCostiPagina campo="stepVivoPascolo" titolo="Pascolo" descrizione="Pagina segnaposto — il Pascolo si affronterà insieme a Coltivazione." vuota />}
+        {tab === "acc-bovini-alimenti" && <AccrescimentoCostiPagina />}
         {tab === "razioni-suini-composizione" && <RazioniSuiniComposizione />}
         {tab === "razioni-suini-consumi" && <RazioniSuiniConsumi />}
         {tab === "prompt-estrazione-pdf" && <PromptEstrazionePDF />}
-        {tab === "consultazione-animali" && <ConsultazioneAnimali />}
         {tab === "inserimento-manuale" && <InserimentoManualeFattura />}
         {tab === "verifica-fatture-mancanti" && <VerificaFattureMancanti />}
         {tab === "verifica-righe-mancanti" && <VerificaRigheMancanti />}
         {tab === "costi-quantita-alimentare" && <ReportCostiQuantitaAlimentare />}
         {tab === "import-massivo-riproduttori" && <ImportMassivoRiproduttori />}
         {tab === "import-fatture-acquisto-animali" && <ImportFattureAcquistoAnimali />}
-        {tab === "ingrasso" && <ReportIngrasso />}
+        {tab === "riepilogo-costo-animali" && <RiepilogoCostoAnimali />}
         {tab === "istr-fatture" && <IstruzioniFatture />}
         {tab === "istr-ricerca" && <IstruzioniAnagrafiche />}
         {tab === "istr-animali" && <IstruzioniAnimali />}

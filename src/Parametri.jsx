@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
+import RipartizioneLavoroParametri from "./RipartizioneLavoroParametri";
 
 export default function Parametri() {
   const [parametri, setParametri] = useState([]);
@@ -42,8 +43,9 @@ export default function Parametri() {
 
   const gruppi = {
     "Consolidamento riproduttrici/riproduttori": parametri.filter(p => p.chiave.startsWith("soglia_")),
-    "Vita produttiva attesa (si affina da sola nel tempo)": parametri.filter(p => p.chiave.includes("vita_produttiva")),
-    "Altro": parametri.filter(p => !p.chiave.startsWith("soglia_") && !p.chiave.includes("vita_produttiva")),
+    "Vita produttiva attesa — standard per specie (si può correggere caso per caso nella scheda del riproduttore)": parametri.filter(p => p.chiave.includes("vita_produttiva")),
+    "Prezzi di riforma per il valore di realizzo dei riproduttori (€ al kg di carcassa)": parametri.filter(p => p.chiave.startsWith("prezzo_riforma_")),
+    "Altro": parametri.filter(p => !p.chiave.startsWith("soglia_") && !p.chiave.includes("vita_produttiva") && !p.chiave.startsWith("prezzo_riforma_")),
   };
 
   return (
@@ -74,6 +76,8 @@ export default function Parametri() {
               ))}
             </div>
           ))}
+
+          <RipartizioneLavoroParametri />
 
           {Object.keys(modifiche).length > 0 && (
             <button onClick={salvaTutto} disabled={salvando}

@@ -105,6 +105,11 @@ export default function ImportMassivoRiproduttori() {
   async function importaRighe(righe) {
     const { data: tuttiAnimali } = await fetchAllPages((da, a) => supabase.from("animali").select("id,bdn").range(da, a));
     const mappaBdn = new Map((tuttiAnimali || []).map(x => [x.bdn, x.id]));
+    // Standard della vita produttiva (Parametri): un valore uguale allo standard resta «standard»,
+    // un valore diverso diventa la correzione di quel capo
+    const { data: parametriVita } = await supabase.from("ci_parametri").select("chiave, valore").like("chiave", "vita_produttiva_attesa_%");
+    const vitaStandardPerSpecie = {};
+    (parametriVita || []).forEach(p => { vitaStandardPerSpecie[{ vita_produttiva_attesa_bovini: "bovino", vita_produttiva_attesa_suini: "suino", vita_produttiva_attesa_ovini: "ovino" }[p.chiave]] = parseFloat(p.valore); });
 
     let aggiornatiResiduo = 0, aggiornatiPeso = 0, fattureTrasporto = 0, fattureAcquisto = 0, righeSenzaMatch = [];
 
@@ -116,10 +121,15 @@ export default function ImportMassivoRiproduttori() {
       const vitaAttesa = r["Vita Attesa (anni) — MODIFICABILE"];
       const prezzoVendita = r["Prezzo Vendita €/kg Carcassa — MODIFICABILE"];
       if (vitaAttesa !== "" || prezzoVendita !== "") {
-        const { data: residuo } = await supabase.from("ci_residuo_riproduttore").select("id").eq("animale_id", animaleId).maybeSingle();
+        const { data: residuo } = await supabase.from("ci_residuo_riproduttore").select("id, specie").eq("animale_id", animaleId).maybeSingle();
         if (residuo) {
           const payload = {};
-          if (vitaAttesa !== "") payload.vita_produttiva_attesa_anni = parseFloat(vitaAttesa);
+          const vita = parseFloat(vitaAttesa);
+          if (vitaAttesa !== "" && Number.isFinite(vita) && vita >= 1) {
+            payload.vita_produttiva_attesa_anni = vita;
+            const standard = vitaStandardPerSpecie[residuo.specie];
+            payload.vita_produttiva_personalizzata = !Number.isFinite(standard) || vita !== standard;
+          }
           if (prezzoVendita !== "") payload.prezzo_vendita_kg_carcassa_reale = round2(parseFloat(prezzoVendita));
           await supabase.from("ci_residuo_riproduttore").update(payload).eq("id", residuo.id);
           aggiornatiResiduo++;

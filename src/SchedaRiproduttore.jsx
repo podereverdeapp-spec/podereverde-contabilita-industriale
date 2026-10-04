@@ -3,8 +3,7 @@ import { supabase } from "./supabase";
 import { C } from "./style";
 import { formattaEuro, formattaNumero, round2, fetchAllPages } from "./parsingUtils";
 import {
-  calcolaPartiStorici, calcolaFigliFemmina, calcolaFigliMaschio,
-  calcolaFallbackPopolazioneFemmine, stimaPesoCarcassaPerEta, calcolaConguaglio,
+  stimaPesoCarcassaPerEta, stimaFigliFuturi,
 } from "./motoreRiproduttori";
 
 export default function SchedaRiproduttore({ animaleId, onClose, onSalvato }) {
@@ -22,6 +21,7 @@ export default function SchedaRiproduttore({ animaleId, onClose, onSalvato }) {
   const [quotaNascitaPadre, setQuotaNascitaPadre] = useState(null);
   const [figliInfo, setFigliInfo] = useState(null);
   const [pesoStimatoInfo, setPesoStimatoInfo] = useState(null);
+  const [vitaStandard, setVitaStandard] = useState(null);
 
   const [form, setForm] = useState({});
   const [formAcquisto, setFormAcquisto] = useState({});
@@ -45,6 +45,11 @@ export default function SchedaRiproduttore({ animaleId, onClose, onSalvato }) {
 
       const { data: res } = await supabase.from("ci_residuo_riproduttore").select("*").eq("animale_id", animaleId).maybeSingle();
       setResiduo(res);
+      {
+        const chiaveVita = `vita_produttiva_attesa_${a.specie === "bovino" ? "bovini" : a.specie === "suino" ? "suini" : "ovini"}`;
+        const { data: pv } = await supabase.from("ci_parametri").select("valore").eq("chiave", chiaveVita).maybeSingle();
+        setVitaStandard(pv ? parseFloat(pv.valore) : null);
+      }
       if (res) setForm(prev => ({ ...prev, vita_produttiva_attesa_anni: res.vita_produttiva_attesa_anni, prezzo_vendita_kg_carcassa_reale: res.prezzo_vendita_kg_carcassa_reale || "" }));
 
       if (a.bdn) {
@@ -66,26 +71,24 @@ export default function SchedaRiproduttore({ animaleId, onClose, onSalvato }) {
         setTuttiScarichi(scarichi || []);
       }
 
-      // Se nato in azienda: quota nascita madre/padre, cercando lo scarico dell'anno di nascita dei genitori
+      // Se nato in azienda: costo di nascita dalla sua riga di costo dell'anno di nascita
+      // (parte delle madri e parte dei padri della mandria di quell'anno)
       if (a.provenienza === "Nato in azienda" && a.nascita) {
-        const annoNascita = new Date(a.nascita).getFullYear();
-        for (const [genitoreId, setter] of [[a.madre_id, setQuotaNascitaMadre], [a.padre_id, setQuotaNascitaPadre]]) {
-          if (!genitoreId) { setter(null); continue; }
-          const { data: resGenitore } = await supabase.from("ci_residuo_riproduttore").select("id").eq("animale_id", genitoreId).maybeSingle();
-          if (!resGenitore) { setter(null); continue; }
-          const { data: scaricoGenitore } = await supabase.from("ci_scarico_riproduttore_annuale").select("quota_per_figlio").eq("residuo_riproduttore_id", resGenitore.id).eq("anno", annoNascita).maybeSingle();
-          setter(scaricoGenitore?.quota_per_figlio ?? null);
-        }
+        const { data: rigaNascita } = await supabase.from("ci_costo_animale_annuale").select("costo_nascita_da_madre, costo_nascita_da_padre")
+          .eq("animale_id", animaleId).eq("anno", new Date(a.nascita).getFullYear()).maybeSingle();
+        setQuotaNascitaMadre(rigaNascita ? parseFloat(rigaNascita.costo_nascita_da_madre) || 0 : null);
+        setQuotaNascitaPadre(rigaNascita ? parseFloat(rigaNascita.costo_nascita_da_padre) || 0 : null);
       }
 
       // Figli avuti/potenziali (solo se è un riproduttore con residuo calcolato)
       if (res) {
-        const [{ data: tuttiAnimali }, { data: tuttiLotti }, { data: tutteUnita }, { data: altriRiproduttori }] = await Promise.all([
+        const [{ data: tuttiAnimali }, { data: tuttiLotti }, { data: tutteUnita }, { data: righeMandria }] = await Promise.all([
           fetchAllPages((da, r) => supabase.from("animali").select("id,padre_id,madre_id,nascita,specie,razza,razza_calcolata,sesso,stato,data_uscita,peso_carcassa").range(da, r)),
-          fetchAllPages((da, r) => supabase.from("lotti_suini").select("id,padre_id,madre_id,data_parto").range(da, r)),
-          fetchAllPages((da, r) => supabase.from("suini_lotto").select("id,lotto_id").range(da, r)),
-          supabase.from("ci_residuo_riproduttore").select("animale_id").eq("specie", a.specie),
+          fetchAllPages((da, r) => supabase.from("lotti_suini").select("id,padre_id,madre_id,data_parto,tipo_provenienza").range(da, r)),
+          fetchAllPages((da, r) => supabase.from("suini_lotto").select("id,lotto_id,stato").range(da, r)),
+          supabase.from("ci_costo_nascita_mandria").select("anno,nati").eq("specie", a.specie),
         ]);
+        const natiMandria = Object.fromEntries((righeMandria || []).map(m => [m.anno, m.nati]));
 
         // Peso carcassa: se già uscito mostriamo il reale (gestito altrove), se ancora
         // attivo stimiamo statisticamente dai macellati storici della stessa specie/razza/
@@ -100,20 +103,22 @@ export default function SchedaRiproduttore({ animaleId, onClose, onSalvato }) {
         // figli futuri — non è più produttivo, quindi gli anni residui sono azzerati:
         // "figli avuti" resterà il conteggio reale, "figli futuri stimati" sarà sempre 0.
         const isUscito = a.stato && a.stato !== "attivo";
-        const anniProduttiviResidui = isUscito ? 0 : res.vita_produttiva_attesa_anni - (new Date().getFullYear() - res.anno_inizio_riproduzione);
-        const sesso = a.sesso;
-
-        if (sesso === "M") {
-          const figliTotali = (tuttiAnimali || []).filter(x => x.padre_id === animaleId).length
-            + calcolaPartiStorici({ riproduttoreId: animaleId, specie: a.specie, tuttiAnimali: [], tuttiLotti, tutteUnita }).reduce((s, p) => s + p.numeroFigli, 0);
-          const anniAttivo = Math.max(new Date().getFullYear() - res.anno_inizio_riproduzione, 1);
-          setFigliInfo({ tipo: "maschio", ...calcolaFigliMaschio({ figliTotaliAvuti: figliTotali, anniAttivoComeRiproduttore: anniAttivo, anniProduttiviResidui }) });
-        } else {
-          const partiStorici = calcolaPartiStorici({ riproduttoreId: animaleId, specie: a.specie, tuttiAnimali, tuttiLotti, tutteUnita });
-          const altreIds = (altriRiproduttori || []).map(r => r.animale_id).filter(id => id !== animaleId);
-          const fallback = calcolaFallbackPopolazioneFemmine({ specie: a.specie, escludiId: animaleId, tutteLeRiproduttriciIds: altreIds, tuttiAnimali, tuttiLotti, tutteUnita });
-          setFigliInfo({ tipo: "femmina", ...calcolaFigliFemmina({ partiStorici, anniProduttiviResidui, fallbackPopolazione: fallback }) });
-        }
+        const anniProduttiviResidui = isUscito ? 0 : res.vita_produttiva_attesa_anni - (new Date().getFullYear() - (res.anno_inizio_riproduzione ?? new Date().getFullYear()));
+        // Figli per anno, ognuno contato una volta: capi con matricola nati in azienda
+        // + suinetti dei suoi lotti non ancora passati a matricola
+        const conteggio = {};
+        (tuttiAnimali || []).filter(x => (x.padre_id === animaleId || x.madre_id === animaleId) && x.nascita).forEach(x => {
+          const y = new Date(x.nascita).getFullYear(); conteggio[y] = (conteggio[y] || 0) + 1;
+        });
+        const lottiSuoi = new Map((tuttiLotti || []).filter(l => (l.padre_id === animaleId || l.madre_id === animaleId) && l.data_parto && l.tipo_provenienza !== "acquistato").map(l => [l.id, l]));
+        (tutteUnita || []).filter(u => lottiSuoi.has(u.lotto_id) && u.stato !== "registrato_individuale").forEach(u => {
+          const y = new Date(lottiSuoi.get(u.lotto_id).data_parto).getFullYear(); conteggio[y] = (conteggio[y] || 0) + 1;
+        });
+        const annoCorrente = new Date().getFullYear();
+        const stima = stimaFigliFuturi({ conteggioPerAnno: conteggio, annoCorrente, uscito: isUscito, anniProduttiviResidui });
+        const ultimoAnno = annoCorrente - 1;
+        setFigliInfo({ ...stima, conteggio, anniProduttiviResidui: Math.max(anniProduttiviResidui, 0),
+          quotaMandria: natiMandria[ultimoAnno] ? { anno: ultimoAnno, suoi: conteggio[ultimoAnno] || 0, nati: natiMandria[ultimoAnno] } : null });
       }
     } catch (err) {
       setErrore(err.message);
@@ -130,8 +135,13 @@ export default function SchedaRiproduttore({ animaleId, onClose, onSalvato }) {
       }).eq("id", animaleId);
 
       if (residuo) {
+        // Vita produttiva: se è uguale allo standard di Parametri torna «standard» (seguirà lo
+        // standard anche se cambia); se è diversa diventa la correzione di questo capo.
+        const vitaInserita = parseFloat(form.vita_produttiva_attesa_anni);
+        if (!Number.isFinite(vitaInserita) || vitaInserita < 1) throw new Error("La vita produttiva attesa deve essere di almeno 1 anno.");
         await supabase.from("ci_residuo_riproduttore").update({
-          vita_produttiva_attesa_anni: parseFloat(form.vita_produttiva_attesa_anni) || residuo.vita_produttiva_attesa_anni,
+          vita_produttiva_attesa_anni: vitaInserita,
+          vita_produttiva_personalizzata: vitaStandard == null ? true : vitaInserita !== vitaStandard,
           prezzo_vendita_kg_carcassa_reale: form.prezzo_vendita_kg_carcassa_reale !== "" ? parseFloat(form.prezzo_vendita_kg_carcassa_reale) : null,
         }).eq("id", residuo.id);
       }
@@ -185,17 +195,6 @@ export default function SchedaRiproduttore({ animaleId, onClose, onSalvato }) {
   const valoreRealizzoReale = pesoPerRealizzo && form.prezzo_vendita_kg_carcassa_reale
     ? round2(pesoPerRealizzo * parseFloat(form.prezzo_vendita_kg_carcassa_reale)) : null;
 
-  // Conguaglio: solo per animali già usciti, con residuo elaborato e valore reale calcolabile.
-  // Il numero di figli dell'anno di uscita è già disponibile in tuttiScarichi (stessa fonte
-  // usata per la tabella sopra), non va ricalcolato da capo.
-  const annoUscita = animale.data_uscita ? new Date(animale.data_uscita).getFullYear() : null;
-  const scaricoAnnoUscita = annoUscita ? tuttiScarichi.find(s => s.anno === annoUscita) : null;
-  const conguaglioInfo = (residuo && valoreRealizzoReale != null && annoUscita)
-    ? calcolaConguaglio({
-        valoreRealizzoReale, valoreRealizzoStimato: residuo.valore_realizzo_stimato,
-        numeroFigliAnnoUscita: scaricoAnnoUscita?.n_figli_anno ?? 0,
-      })
-    : null;
 
   return (
     <ModaleSfondo onClose={onClose}>
@@ -237,19 +236,29 @@ export default function SchedaRiproduttore({ animaleId, onClose, onSalvato }) {
           <Sezione titolo="Vita produttiva attesa">
             <Griglia>
               <Campo label="Vita attesa (anni)" tipo="number" value={form.vita_produttiva_attesa_anni} onChange={v => setForm(p => ({ ...p, vita_produttiva_attesa_anni: v }))} />
+              <CampoSoloLettura label="Standard della specie (Parametri)" value={vitaStandard != null ? `${vitaStandard} anni` : "—"} />
+              <CampoSoloLettura label="Valore usato per questo capo"
+                value={residuo.vita_produttiva_personalizzata ? `Personalizzato: ${residuo.vita_produttiva_attesa_anni} anni (corretto caso per caso)` : `Standard: ${residuo.vita_produttiva_attesa_anni} anni`} />
             </Griglia>
+            <p style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>
+              Scrivendo un numero diverso dallo standard e salvando, il capo tiene la sua correzione; scrivendo lo stesso numero dello standard torna a seguire lo standard. Vale dal prossimo «Calcola e scarica sui figli».
+            </p>
           </Sezione>
 
           {figliInfo && (
             <Sezione titolo="Figli">
               <Griglia>
                 <CampoSoloLettura label="Figli avuti finora" value={figliInfo.figliAvuti} />
+                <CampoSoloLettura label={`Figli all'anno (${figliInfo.anniUsati.join(" e ")})`} value={`${formattaNumero(figliInfo.figliAllAnno, 1)}${figliInfo.stimaDebole ? " — stima debole: un solo anno, non ancora completo" : ""}`} />
+                <CampoSoloLettura label="Anni di carriera che restano" value={figliInfo.anniProduttiviResidui} />
                 <CampoSoloLettura label="Figli futuri stimati" value={figliInfo.figliFuturiStimati} />
+                {figliInfo.quotaMandria && (
+                  <CampoSoloLettura label={`Nati del ${figliInfo.quotaMandria.anno} avuti da questo capo`}
+                    value={`${figliInfo.quotaMandria.suoi} su ${figliInfo.quotaMandria.nati} della specie (${formattaNumero(figliInfo.quotaMandria.suoi / figliInfo.quotaMandria.nati * 100, 0)}%)`} />
+                )}
               </Griglia>
               <p style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>
-                {figliInfo.tipo === "femmina"
-                  ? `Media ${formattaNumero(figliInfo.mediaFigliPerParto, 1)} figli/parto, intervallo ${formattaNumero(figliInfo.intervalloMedioAnni, 2)} anni tra parti${figliInfo.stimaBasataSuDatiPropri ? " (dati propri)" : " (media di popolazione — dati propri ancora insufficienti)"}.`
-                  : `Media ${formattaNumero(figliInfo.mediaFigliPerAnno, 2)} figli/anno.`}
+                Figli per anno: {Object.entries(figliInfo.conteggio).sort().map(([y, n]) => `${y}: ${n}`).join(" · ") || "nessuno"}. Figli all'anno = media delle ultime due annate complete; figli futuri = anni che restano × figli all'anno.
               </p>
             </Sezione>
           )}
@@ -269,11 +278,14 @@ export default function SchedaRiproduttore({ animaleId, onClose, onSalvato }) {
                   ? `${animale.peso_carcassa} (reale)`
                   : pesoStimatoInfo ? `${pesoStimatoInfo.pesoStimato} stimato (${pesoStimatoInfo.fonteStima}, n=${pesoStimatoInfo.campioneUsato})` : "—"} />
               <Campo label="Prezzo vendita €/kg carcassa" tipo="number" value={form.prezzo_vendita_kg_carcassa_reale} onChange={v => setForm(p => ({ ...p, prezzo_vendita_kg_carcassa_reale: v }))} />
-              <CampoSoloLettura label="Valore di realizzo" value={valoreRealizzoReale != null ? `${formattaEuro(valoreRealizzoReale)}${!animale.peso_carcassa ? " (su peso stimato)" : ""}` : "— (serve peso carcassa e prezzo)"} />
+              <CampoSoloLettura label="Valore di realizzo con questo prezzo" value={valoreRealizzoReale != null ? `${formattaEuro(valoreRealizzoReale)}${!animale.peso_carcassa ? " (su peso stimato)" : ""}` : "— (serve peso carcassa e prezzo)"} />
+              {residuo && <CampoSoloLettura label="Valore di realizzo stimato usato nel calcolo del residuo" value={formattaEuro(residuo.valore_realizzo_stimato)} />}
+              {residuo && (() => { const ecc = Math.max(0, (Number(residuo.valore_realizzo_stimato) || 0) - (Number(residuo.costo_acquisto) || 0) - (Number(residuo.costi_crescita_preriproduttiva) || 0));
+                return ecc > 0 ? <CampoSoloLettura label="⚠️ Eccedenza di realizzo non usata" value={`${formattaEuro(ecc)} — supera costo di partenza + crescita: non riduce il costo passato ai figli`} /> : null; })()}
             </Griglia>
           </Sezione>
 
-          <Sezione titolo="Scarico sui figli, per anno">
+          <Sezione titolo="Costo messo ogni anno nella mandria (mantenimento + quota annua del costo iniziale)">
             {tuttiScarichi.length === 0 ? (
               <p style={{ fontSize: 13, color: C.muted, margin: 0 }}>— Non ancora elaborato (usa "Calcola e scarica sui figli" in Report Riproduttori).</p>
             ) : (
@@ -281,18 +293,18 @@ export default function SchedaRiproduttore({ animaleId, onClose, onSalvato }) {
                 <thead>
                   <tr style={{ background: C.bg }}>
                     <th style={{ padding: "4px 8px", textAlign: "left" }}>Anno</th>
-                    <th style={{ padding: "4px 8px", textAlign: "right" }}>Figli nell'anno</th>
-                    <th style={{ padding: "4px 8px", textAlign: "right" }}>Totale scaricato</th>
-                    <th style={{ padding: "4px 8px", textAlign: "right" }}>Quota per figlio</th>
+                    <th style={{ padding: "4px 8px", textAlign: "right" }}>Figli suoi nell'anno</th>
+                    <th style={{ padding: "4px 8px", textAlign: "right" }}>Costo messo nella mandria</th>
+                    <th style={{ padding: "4px 8px", textAlign: "right" }}>Costo di nascita di ogni nato dell'anno</th>
                   </tr>
                 </thead>
                 <tbody>
                   {tuttiScarichi.map(s => (
-                    <tr key={s.anno} style={{ borderTop: `1px solid ${C.border}`, color: s.n_figli_anno === 0 ? C.muted : C.text }}>
+                    <tr key={s.anno} style={{ borderTop: `1px solid ${C.border}` }}>
                       <td style={{ padding: "4px 8px" }}>{s.anno}</td>
-                      <td style={{ padding: "4px 8px", textAlign: "right" }}>{s.n_figli_anno}</td>
-                      <td style={{ padding: "4px 8px", textAlign: "right" }}>{s.n_figli_anno > 0 ? formattaEuro(s.totale_scaricato_anno) : "— (in sospeso)"}</td>
-                      <td style={{ padding: "4px 8px", textAlign: "right", fontWeight: 700 }}>{s.n_figli_anno > 0 ? formattaEuro(s.quota_per_figlio) : "—"}</td>
+                      <td style={{ padding: "4px 8px", textAlign: "right", color: s.n_figli_anno === 0 ? C.accent : C.text, fontWeight: s.n_figli_anno === 0 ? 700 : 400 }}>{s.n_figli_anno === 0 ? "nessuno" : s.n_figli_anno}</td>
+                      <td style={{ padding: "4px 8px", textAlign: "right" }}>{formattaEuro(s.totale_scaricato_anno)}</td>
+                      <td style={{ padding: "4px 8px", textAlign: "right", fontWeight: 700 }}>{s.quota_per_figlio ? formattaEuro(s.quota_per_figlio) : "—"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -300,25 +312,28 @@ export default function SchedaRiproduttore({ animaleId, onClose, onSalvato }) {
             )}
           </Sezione>
 
-          {animale.stato && animale.stato !== "attivo" && conguaglioInfo && (
-            <Sezione titolo="Conguaglio alla vendita/macellazione reale">
+          {residuo.residuo_uscita_anno != null && (
+            <Sezione titolo="🔶 Costo rimasto all'uscita">
               <Griglia>
-                <CampoSoloLettura label="Valore stimato (a suo tempo)" value={formattaEuro(residuo.valore_realizzo_stimato)} />
-                <CampoSoloLettura label="Valore reale (peso reale × prezzo vendita)" value={valoreRealizzoReale != null ? formattaEuro(valoreRealizzoReale) : "— (serve peso reale e prezzo)"} />
-                <CampoSoloLettura label="Conguaglio totale" value={formattaEuro(conguaglioInfo.conguaglioTotale)} />
-                <CampoSoloLettura label="Conguaglio per figlio (anno di uscita)"
-                  value={conguaglioInfo.applicatoAiFigli ? formattaEuro(conguaglioInfo.conguaglioPerFiglio) : "— (nessun figlio quell'anno, resta un dato aziendale)"} />
+                <CampoSoloLettura label="Costo non ancora passato ai figli il giorno dell'uscita" value={formattaEuro(residuo.residuo_all_uscita)} />
+                <CampoSoloLettura label="Valore di realizzo reale" value={residuo.valore_realizzo_reale != null ? formattaEuro(residuo.valore_realizzo_reale) : "non disponibile"} />
+                <CampoSoloLettura label="Come è calcolato il realizzo reale" value={residuo.realizzo_reale_fonte || "—"} />
+                <CampoSoloLettura label="Conguaglio (realizzo stimato usato meno realizzo reale)" value={formattaEuro(residuo.conguaglio_uscita || 0)} />
+                <CampoSoloLettura label="Totale passato all'uscita" value={formattaEuro(round2((Number(residuo.residuo_all_uscita) || 0) + (Number(residuo.conguaglio_uscita) || 0)))} />
+                <CampoSoloLettura label="Anno di uscita" value={residuo.residuo_uscita_anno} />
+                <CampoSoloLettura label="Dove è andato" value={residuo.residuo_uscita_destinazione || "—"} />
               </Griglia>
             </Sezione>
           )}
+
         </>
       )}
 
       {animale.provenienza === "Nato in azienda" && (
-        <Sezione titolo="Valore di nascita (ereditato dai genitori)">
+        <Sezione titolo="Costo di nascita (dalla mandria dell'anno di nascita)">
           <Griglia>
-            <CampoSoloLettura label="Quota da madre" value={quotaNascitaMadre != null ? formattaEuro(quotaNascitaMadre) : "—"} />
-            <CampoSoloLettura label="Quota da padre" value={quotaNascitaPadre != null ? formattaEuro(quotaNascitaPadre) : "—"} />
+            <CampoSoloLettura label="Parte delle madri" value={quotaNascitaMadre != null ? formattaEuro(quotaNascitaMadre) : "—"} />
+            <CampoSoloLettura label="Parte dei padri" value={quotaNascitaPadre != null ? formattaEuro(quotaNascitaPadre) : "—"} />
             <CampoSoloLettura label="Totale valore di nascita" value={formattaEuro((quotaNascitaMadre || 0) + (quotaNascitaPadre || 0))} />
           </Griglia>
         </Sezione>

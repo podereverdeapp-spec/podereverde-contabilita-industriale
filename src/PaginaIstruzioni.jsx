@@ -21,6 +21,25 @@ export default function PaginaIstruzioni({ titolo, introduzione, sezioni }) {
               <ol style={{ fontSize: 13, color: C.text, marginTop: 0, paddingLeft: 20, lineHeight: 1.8 }}>
                 {s.comeSiUsa.map((passo, j) => <li key={j}>{passo}</li>)}
               </ol>
+              {s.spiegazione && (
+                <div style={{ marginTop: 14 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, color: C.text, marginBottom: 8 }}>{s.titoloSpiegazione || "Come funziona il calcolo, passo per passo"}</div>
+                  {s.spiegazione.map((blocco, j) => (
+                    <div key={j} style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 14px", marginBottom: 10 }}>
+                      <div style={{ fontWeight: 700, fontSize: 13, color: C.primary, marginBottom: 4 }}>{blocco.titolo}</div>
+                      {(Array.isArray(blocco.testo) ? blocco.testo : [blocco.testo]).map((t, k) => (
+                        <p key={k} style={{ fontSize: 13, color: C.text, margin: "0 0 6px", lineHeight: 1.6 }}>{t}</p>
+                      ))}
+                      {blocco.esempio && (
+                        <div style={{ fontSize: 12.5, background: "#F3F8EE", borderLeft: `3px solid ${C.green}`, borderRadius: 6, padding: "8px 12px", marginTop: 6, lineHeight: 1.7 }}>
+                          <strong>Esempio — </strong>
+                          {(Array.isArray(blocco.esempio) ? blocco.esempio : [blocco.esempio]).map((t, k) => <div key={k}>{t}</div>)}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
               {s.note && (
                 <div style={{ fontSize: 12, color: C.muted, background: C.bg, borderRadius: 8, padding: "8px 12px", marginTop: 10 }}>
                   💡 {s.note}

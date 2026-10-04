@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
-import { formattaEuro, round2, fetchAllPages } from "./parsingUtils";
+import { formattaEuro, formattaNumero, round2, fetchAllPages } from "./parsingUtils";
 import { stimaPesoCarcassaPerEta } from "./motoreRiproduttori";
+import { costoAnimale, eUscito } from "./costoAnimale";
 
-export default function SchedaIngrasso({ animaleId, lottoId, unitaNr, onClose, onSalvato }) {
+export default function SchedaAnimaleMacello({ animaleId, lottoId, unitaNr, onClose, onSalvato }) {
   const [caricando, setCaricando] = useState(true);
   const [salvando, setSalvando] = useState(false);
   const [errore, setErrore] = useState(null);
@@ -13,7 +14,7 @@ export default function SchedaIngrasso({ animaleId, lottoId, unitaNr, onClose, o
   const [costiAnnuali, setCostiAnnuali] = useState([]);
   const [vendita, setVendita] = useState(null);
   const [pesoStimatoInfo, setPesoStimatoInfo] = useState(null);
-  const [annoConsultazione, setAnnoConsultazione] = useState(new Date().getFullYear());
+  const [genitori, setGenitori] = useState({ madre: null, padre: null });
   const [form, setForm] = useState({});
 
   useEffect(() => { carica(); }, [animaleId, lottoId, unitaNr]);
@@ -25,28 +26,36 @@ export default function SchedaIngrasso({ animaleId, lottoId, unitaNr, onClose, o
       let s;
       if (animaleId) {
         const { data: a, error } = await supabase.from("animali")
-          .select("id,bdn,nome,specie,razza,razza_calcolata,sesso,provenienza,stato,nascita,data_ingresso,data_uscita,peso_carcassa,peso_vivo_uscita,costo_iniziale,prezzo_acquisto")
+          .select("id,bdn,nome,specie,razza,razza_calcolata,sesso,provenienza,stato,nascita,data_ingresso,data_uscita,motivo_uscita,peso_carcassa,peso_vivo_uscita,costo_iniziale,prezzo_acquisto,madre_id,padre_id")
           .eq("id", animaleId).single();
         if (error) throw new Error(error.message);
-        s = { ...a, identificativo: a.bdn || a.nome, razzaFinale: a.razza_calcolata || a.razza };
+        s = { ...a, identificativo: a.bdn || a.nome, razzaFinale: a.razza_calcolata || a.razza,
+          prezzo_acquisto: a.provenienza === "Acquistato" ? (parseFloat(a.prezzo_acquisto) || 0) : 0 };
+        const ids = [a.madre_id, a.padre_id].filter(Boolean);
+        if (ids.length) {
+          const { data: g } = await supabase.from("animali").select("id,bdn,nome").in("id", ids);
+          const nome = id => { const x = (g || []).find(y => y.id === id); return x ? (x.bdn || x.nome) : null; };
+          setGenitori({ madre: nome(a.madre_id), padre: nome(a.padre_id) });
+        }
       } else {
         const { data: u, error } = await supabase.from("suini_lotto")
-          .select("id,lotto_id,nr,sesso,stato,data_uscita,peso_carcassa,peso_vivo_uscita,bdn")
+          .select("id,lotto_id,nr,sesso,stato,data_uscita,motivo_uscita,peso_carcassa,peso_vivo_uscita,bdn,codice_completo")
           .eq("lotto_id", lottoId).eq("nr", unitaNr).single();
         if (error) throw new Error(error.message);
         const { data: lotto } = await supabase.from("lotti_suini").select("*").eq("id", lottoId).single();
         const { count: numeroUnitaLotto } = await supabase.from("suini_lotto").select("id", { count: "exact", head: true }).eq("lotto_id", lottoId);
-        const prezzoAcquistoUnitario = lotto?.prezzo_acquisto ? round2(lotto.prezzo_acquisto / (numeroUnitaLotto || 1)) : null;
+        const acquistato = lotto?.tipo_provenienza === "acquistato";
+        const prezzoAcquistoUnitario = acquistato && lotto?.prezzo_acquisto ? round2(lotto.prezzo_acquisto / (numeroUnitaLotto || 1)) : 0;
         s = { ...u, specie: lotto?.specie || "suino", razzaFinale: lotto?.razza_madre, provenienza: lotto?.tipo_provenienza === "acquistato" ? "Acquistato" : "Nato in azienda",
-          nascita: lotto?.data_parto, identificativo: u.bdn || `${lotto?.codice_lotto || lotto?.codice}#${u.nr}`,
-          costo_iniziale: null, prezzo_acquisto: prezzoAcquistoUnitario, prezzoAcquistoLottoTotale: lotto?.prezzo_acquisto, numeroUnitaLotto,
+          nascita: lotto?.data_parto, identificativo: u.bdn || u.codice_completo || `${lotto?.codice_lotto || lotto?.codice} n. ${u.nr}`,
+          costo_iniziale: null, prezzo_acquisto: prezzoAcquistoUnitario, prezzoAcquistoLottoTotale: acquistato ? lotto?.prezzo_acquisto : null, numeroUnitaLotto,
           fornitore: lotto?.fornitore, data_fattura: lotto?.data_fattura, numero_fattura: lotto?.numero_fattura };
       }
       setSoggetto(s);
 
       const { data: costi } = animaleId
-        ? await supabase.from("ci_costo_animale_annuale").select("anno,costo_mantenimento,costo_nascita_ereditato,costo_totale_anno").eq("animale_id", animaleId).order("anno")
-        : await supabase.from("ci_costo_animale_annuale").select("anno,costo_mantenimento,costo_nascita_ereditato,costo_totale_anno").eq("lotto_id", lottoId).eq("unita_nr", unitaNr).order("anno");
+        ? await supabase.from("ci_costo_animale_annuale").select("anno,uba_giorni,categoria_contabile,costo_mantenimento,costo_nascita_ereditato,costo_nascita_da_madre,costo_nascita_da_padre,quota_residuo_riproduttori,costo_totale_anno").eq("animale_id", animaleId).order("anno")
+        : await supabase.from("ci_costo_animale_annuale").select("anno,uba_giorni,categoria_contabile,costo_mantenimento,costo_nascita_ereditato,costo_nascita_da_madre,costo_nascita_da_padre,quota_residuo_riproduttori,costo_totale_anno").eq("lotto_id", lottoId).eq("unita_nr", unitaNr).order("anno");
       setCostiAnnuali(costi || []);
 
       const { data: v } = animaleId
@@ -56,7 +65,7 @@ export default function SchedaIngrasso({ animaleId, lottoId, unitaNr, onClose, o
       setForm({ prezzo_vendita_kg_reale: v?.prezzo_vendita_kg_reale ?? "" });
 
       // Stima peso, solo se ancora attivo (non uscito) e con data di nascita nota
-      const isUscito = s.stato && s.stato !== "attivo" && s.stato !== "vivo";
+      const isUscito = eUscito(s.stato);
       if (!isUscito && s.nascita) {
         const { data: tuttiAnimali } = await fetchAllPages((da, r) => supabase.from("animali")
           .select("specie,razza,razza_calcolata,sesso,nascita,data_uscita,peso_carcassa").range(da, r));
@@ -97,15 +106,11 @@ export default function SchedaIngrasso({ animaleId, lottoId, unitaNr, onClose, o
   if (caricando) return <ModaleSfondo onClose={onClose}><p style={{ color: C.muted }}>Caricamento...</p></ModaleSfondo>;
   if (!soggetto) return <ModaleSfondo onClose={onClose}><p style={{ color: C.red }}>⚠️ {errore || "Non trovato."}</p></ModaleSfondo>;
 
-  const isUscito = soggetto.stato && soggetto.stato !== "attivo" && soggetto.stato !== "vivo";
-  const costoNascita = costiAnnuali.reduce((s, c) => s + (parseFloat(c.costo_nascita_ereditato) || 0), 0);
-  const costoPartenza = soggetto.provenienza === "Nato in azienda" ? costoNascita : (soggetto.prezzo_acquisto || 0);
-  const mantenimentoTotale = round2(costiAnnuali.reduce((s, c) => s + (parseFloat(c.costo_mantenimento) || 0), 0));
-  const costoTotale = round2(costoPartenza + mantenimentoTotale);
-
-  // Costi accumulati prima dell'anno di consultazione, e in quello specifico anno
-  const costoPrimaDellAnno = round2(costiAnnuali.filter(c => c.anno < annoConsultazione).reduce((s, c) => s + (parseFloat(c.costo_totale_anno) || 0), 0));
-  const costoNellAnno = round2(costiAnnuali.filter(c => c.anno === annoConsultazione).reduce((s, c) => s + (parseFloat(c.costo_totale_anno) || 0), 0));
+  const isUscito = eUscito(soggetto.stato);
+  const costo = costoAnimale({ righe: costiAnnuali, costoAcquisto: soggetto.prezzo_acquisto || 0 });
+  const costoTotale = costo.totale;
+  const nascitaMadre = round2(costiAnnuali.reduce((t, c) => t + (parseFloat(c.costo_nascita_da_madre) || 0), 0));
+  const nascitaPadre = round2(costiAnnuali.reduce((t, c) => t + (parseFloat(c.costo_nascita_da_padre) || 0), 0));
 
   // Giorni ed età: dalla nascita a oggi (se attivo) o alla data di uscita (se uscito)
   const dataRiferimentoEta = isUscito && soggetto.data_uscita ? new Date(soggetto.data_uscita) : new Date();
@@ -113,7 +118,9 @@ export default function SchedaIngrasso({ animaleId, lottoId, unitaNr, onClose, o
   const anniVita = giorniVita != null ? round2(giorniVita / 365.25) : null;
 
   // Periodo in azienda: dalla data di INGRESSO (non nascita) a oggi (attivi) o all'uscita (usciti)
-  const giorniInAzienda = soggetto.data_ingresso ? Math.round((dataRiferimentoEta - new Date(soggetto.data_ingresso)) / 86400000) : null;
+  // Per i nati in azienda l'ingresso coincide con la nascita
+  const dataIngresso = soggetto.data_ingresso || (soggetto.provenienza === "Nato in azienda" ? soggetto.nascita : null);
+  const giorniInAzienda = dataIngresso ? Math.round((dataRiferimentoEta - new Date(dataIngresso)) / 86400000) : null;
   const mesiInAzienda = giorniInAzienda != null ? round2(giorniInAzienda / 30.44) : null;
   const costoAlGiorno = giorniVita > 0 ? round2(costoTotale / giorniVita) : null;
 
@@ -129,47 +136,71 @@ export default function SchedaIngrasso({ animaleId, lottoId, unitaNr, onClose, o
 
   return (
     <ModaleSfondo onClose={onClose}>
-      <h2 style={{ color: C.primary, fontSize: 20, marginTop: 0 }}>Scheda Accrescimento/Ingrasso</h2>
+      <h2 style={{ color: C.primary, fontSize: 20, marginTop: 0 }}>Scheda Animale — {soggetto.identificativo}</h2>
       {errore && <p style={{ color: C.red }}>⚠️ {errore}</p>}
 
       <Sezione titolo="Dati anagrafici">
         <Griglia>
-          <CampoSoloLettura label="BDN / Codice" value={soggetto.identificativo || "—"} />
+          <CampoSoloLettura label="Matricola o codice" value={soggetto.identificativo || "—"} />
           <CampoSoloLettura label="Specie" value={soggetto.specie} />
           <CampoSoloLettura label="Razza" value={soggetto.razzaFinale || "—"} />
           <CampoSoloLettura label="Sesso" value={soggetto.sesso || "—"} />
           <CampoSoloLettura label="Provenienza" value={soggetto.provenienza || "—"} />
           <CampoSoloLettura label="Stato" value={soggetto.stato || "—"} />
           <CampoSoloLettura label="Data di nascita" value={soggetto.nascita || "—"} />
-          <CampoSoloLettura label="Data di ingresso in azienda" value={soggetto.data_ingresso || "—"} />
+          <CampoSoloLettura label="Data di ingresso in azienda" value={dataIngresso || "—"} />
           {isUscito && <CampoSoloLettura label="Data di uscita" value={soggetto.data_uscita || "—"} />}
+          {isUscito && <CampoSoloLettura label="Motivo di uscita" value={soggetto.motivo_uscita || "—"} />}
+          {genitori.madre && <CampoSoloLettura label="Madre" value={genitori.madre} />}
+          {genitori.padre && <CampoSoloLettura label="Padre" value={genitori.padre} />}
           <CampoSoloLettura label={isUscito ? "Età alla uscita" : "Età attuale"} value={anniVita != null ? `${anniVita} anni (${giorniVita} giorni)` : "—"} />
           <CampoSoloLettura label={isUscito ? "Periodo in azienda (fino all'uscita)" : "Periodo in azienda (ad oggi)"}
             value={giorniInAzienda != null ? `${giorniInAzienda} giorni (${mesiInAzienda} mesi)` : "—"} />
         </Griglia>
       </Sezione>
 
-      <Sezione titolo="Costo di partenza e mantenimento">
+      <Sezione titolo="Costo">
         <Griglia>
-          <CampoSoloLettura label={soggetto.provenienza === "Nato in azienda" ? "Costo di nascita" : "Costo di acquisto (unitario)"} value={formattaEuro(costoPartenza)} />
-          <CampoSoloLettura label="Costo totale ad oggi" value={formattaEuro(costoTotale)} />
-          <CampoSoloLettura label="Costo al giorno" value={costoAlGiorno != null ? formattaEuro(costoAlGiorno, 3) : "—"} />
+          {soggetto.provenienza === "Acquistato"
+            ? <CampoSoloLettura label="Costo di acquisto" value={formattaEuro(costo.costoAcquisto)} />
+            : <CampoSoloLettura label="Costo di nascita (dalla mandria dell'anno di nascita)" value={`${formattaEuro(costo.costoNascita)} (madri ${formattaEuro(nascitaMadre)}, padri ${formattaEuro(nascitaPadre)})`} />}
+          <CampoSoloLettura label="Mantenimento di tutti gli anni" value={formattaEuro(costo.mantenimento)} />
+          <CampoSoloLettura label="Costo rimasto di riproduttori usciti" value={costo.costoRimastoRicevuto > 0 ? formattaEuro(costo.costoRimastoRicevuto) : "—"} />
+          <CampoSoloLettura label={isUscito ? "Costo totale" : "Costo totale ad oggi"} value={formattaEuro(costoTotale)} />
+          <CampoSoloLettura label="Costo al giorno di vita" value={costoAlGiorno != null ? formattaEuro(costoAlGiorno, 3) : "—"} />
         </Griglia>
         {soggetto.prezzoAcquistoLottoTotale != null && (
           <p style={{ fontSize: 11, color: C.muted, marginTop: 6, marginBottom: 0 }}>
-            Prezzo lotto: {formattaEuro(soggetto.prezzoAcquistoLottoTotale)} ÷ {soggetto.numeroUnitaLotto} suinetti = {formattaEuro(costoPartenza)} a capo — mai l'intero importo del lotto ripetuto su ciascuno.
+            Prezzo del lotto: {formattaEuro(soggetto.prezzoAcquistoLottoTotale)} ÷ {soggetto.numeroUnitaLotto} suinetti = {formattaEuro(costo.costoAcquisto)} a capo.
           </p>
         )}
-        <div style={{ marginTop: 10, marginBottom: 6 }}>
-          <label style={{ fontSize: 11, color: C.muted }}>Anno di consultazione (per lo spacchettamento sotto)
-            <input type="number" value={annoConsultazione} onChange={e => setAnnoConsultazione(parseInt(e.target.value) || new Date().getFullYear())}
-              style={{ width: 100, marginLeft: 8, padding: "4px 8px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 13 }} />
-          </label>
-        </div>
-        <Griglia>
-          <CampoSoloLettura label={`Costi accumulati prima del ${annoConsultazione}`} value={formattaEuro(costoPrimaDellAnno)} />
-          <CampoSoloLettura label={`Costi accumulati nel ${annoConsultazione}`} value={formattaEuro(costoNellAnno)} />
-        </Griglia>
+      </Sezione>
+
+      <Sezione titolo="Costo anno per anno">
+        {costiAnnuali.length === 0 ? <p style={{ fontSize: 13, color: C.muted, margin: 0 }}>— Nessun costo calcolato (fare il Report Costi degli anni in cui è stato in azienda).</p> : (
+          <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ background: C.bg }}>
+                <th style={cella}>Anno</th><th style={cellaD}>UBA-giorni</th><th style={cellaD}>Mantenimento</th><th style={cellaD}>Costo di nascita</th>
+                <th style={cellaD}>Costo rimasto di riproduttori usciti</th><th style={cellaD}>Totale dell'anno</th>
+              </tr>
+            </thead>
+            <tbody>
+              {costiAnnuali.map(c => (
+                <tr key={c.anno} style={{ borderTop: `1px solid ${C.border}` }}>
+                  <td style={cella}>{c.anno}</td>
+                  <td style={cellaD}>{formattaNumero(parseFloat(c.uba_giorni) || 0, 1)}</td>
+                  <td style={cellaD}>{c.categoria_contabile === "IMPRODUTTIVO_USCITO"
+                    ? <span style={{ fontSize: 11, color: C.muted }}>animale morto: costo dell'anno spalmato sugli altri capi</span>
+                    : formattaEuro(parseFloat(c.costo_mantenimento) || 0)}</td>
+                  <td style={cellaD}>{parseFloat(c.costo_nascita_ereditato) ? formattaEuro(parseFloat(c.costo_nascita_ereditato)) : "—"}</td>
+                  <td style={{ ...cellaD, ...(parseFloat(c.quota_residuo_riproduttori) > 0 ? { background: "#FDE2D3", color: "#A0440E" } : {}) }}>{parseFloat(c.quota_residuo_riproduttori) > 0 ? formattaEuro(parseFloat(c.quota_residuo_riproduttori)) : "—"}</td>
+                  <td style={{ ...cellaD, fontWeight: 700 }}>{formattaEuro(round2((parseFloat(c.costo_mantenimento) || 0) + (parseFloat(c.costo_nascita_ereditato) || 0) + (parseFloat(c.quota_residuo_riproduttori) || 0)))}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </Sezione>
 
       <Sezione titolo="Costo per unità">
@@ -205,10 +236,13 @@ export default function SchedaIngrasso({ animaleId, lottoId, unitaNr, onClose, o
   );
 }
 
+const cella = { padding: "4px 8px", textAlign: "left" };
+const cellaD = { padding: "4px 8px", textAlign: "right" };
+
 function ModaleSfondo({ children, onClose }) {
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "flex-start", justifyContent: "center", padding: 24, overflowY: "auto", zIndex: 1000 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: C.card, borderRadius: 14, padding: 24, maxWidth: 700, width: "100%", marginTop: 20, marginBottom: 20 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: C.card, borderRadius: 14, padding: 24, maxWidth: 820, width: "100%", marginTop: 20, marginBottom: 20 }}>
         {children}
       </div>
     </div>

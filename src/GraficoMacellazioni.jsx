@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
+import { costoAnimale, costoAcquistoUnitario, righePerSoggetto } from "./costoAnimale";
 import { C } from "./style";
 import { formattaEuro, formattaNumero, round2, fetchAllPages } from "./parsingUtils";
 import GraficoDispersioneCostoKg from "./GraficoDispersioneCostoKg";
@@ -16,25 +17,25 @@ export default function GraficoMacellazioni() {
     setErrore(null);
     try {
       const { data: animali, error: eAnimali } = await fetchAllPages((da, a) => supabase.from("animali")
-        .select("id,bdn,nascita,data_uscita,peso_carcassa")
+        .select("id,bdn,nascita,data_uscita,peso_carcassa,riproduttore,provenienza,prezzo_acquisto")
         .eq("specie", "bovino").neq("stato", "attivo").not("peso_carcassa", "is", null).range(da, a));
       if (eAnimali) throw new Error(`Errore caricando gli animali: ${eAnimali.message}`);
 
       const { data: costi, error: eCosti } = await fetchAllPages((da, a) => supabase.from("ci_costo_animale_annuale")
-        .select("animale_id,costo_totale_anno").range(da, a));
+        .select("animale_id,costo_mantenimento,costo_nascita_ereditato,quota_residuo_riproduttori").range(da, a));
       if (eCosti) throw new Error(`Errore caricando i costi: ${eCosti.message}`);
 
-      const costoPerAnimale = new Map();
-      for (const c of (costi || [])) {
-        costoPerAnimale.set(c.animale_id, (costoPerAnimale.get(c.animale_id) || 0) + (parseFloat(c.costo_totale_anno) || 0));
-      }
+      // Costo dell'animale calcolato come in tutto il programma (costoAnimale.js): acquisto,
+      // nascita, mantenimento, costo rimasto ricevuto. I riproduttori non sono animali da macello.
+      const { perAnimale } = righePerSoggetto(costi);
 
       const risultati = [];
       for (const a of (animali || [])) {
+        if (a.riproduttore) continue;
         const peso = parseFloat(a.peso_carcassa);
         if (!peso || peso <= 0 || !a.nascita || !a.data_uscita) continue;
         const etaMesi = round2((new Date(a.data_uscita) - new Date(a.nascita)) / (30.44 * 86400000));
-        const costoCumulato = costoPerAnimale.get(a.id) || 0;
+        const costoCumulato = costoAnimale({ righe: perAnimale.get(a.id), costoAcquisto: costoAcquistoUnitario({ animale: a }) }).totale;
         if (costoCumulato <= 0) continue;
         risultati.push({ bdn: a.bdn, etaMesi, costoKg: round2(costoCumulato / peso) });
       }

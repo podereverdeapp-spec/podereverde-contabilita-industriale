@@ -4,6 +4,7 @@ import { C } from "./style";
 import { calcolaReportUba } from "./motoreUba";
 import { numerizzaCampi, round2, formattaEuro, formattaNumero, fetchAllPages } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
+import { caricaRipartizioneLavoro, applicaRipartizioneLavoro } from "./ripartizioneLavoro";
 
 // Mappa tra il nome specie usato nel motore UBA (minuscolo) e quello usato come
 // Destinazione sulle fatture / Imputazione sui cespiti (maiuscolo, italiano)
@@ -65,6 +66,8 @@ export default function ReportCosti({ anno }) {
         .gte("data", `${anno}-01-01`).lte("data", `${anno}-12-31`).range(da, a));
       if (eCD) throw new Error(eCD.message);
       articoliAnno = articoliAnno.concat(numerizzaCampi(costiDiretti || [], ["importo"]).map(c => ({ ...c, totale_riga: c.importo })));
+      // Costo del lavoro diviso tra le attività secondo le percentuali dell'anno (Parametri)
+      articoliAnno = applicaRipartizioneLavoro(articoliAnno, await caricaRipartizioneLavoro(anno));
       const costiOrdinari = articoliAnno.reduce((s, r) => s + (r.totale_riga || 0), 0);
 
       // Quote di ammortamento dell'anno, CON la specie di imputazione del cespite
@@ -184,6 +187,10 @@ export default function ReportCosti({ anno }) {
       const mappaIncidenzaPerSpecie = new Map(perSpecie.map(p => [p.specie, p.incidenzaUbaGiorno]));
       const costoPerAnimale = righeUba.map(r => {
         const tassoSpecie = mappaIncidenzaPerSpecie.get(r.specie) ?? tasso.tassoRettificato;
+        // Animale uscito senza ricavo (morto): il suo costo dell'anno è già dentro il tasso dei
+        // capi rimasti (che si dividono i costi solo tra i produttivi), quindi qui vale 0 —
+        // altrimenti sarebbe contato due volte (corretto il 03/10/2026 su richiesta del Dott. Bizzarri).
+        if (r.categoria_contabile === "IMPRODUTTIVO_USCITO") return { ...r, costo_mantenimento: 0 };
         return { ...r, costo_mantenimento: round2(r.uba_giorni * tassoSpecie) };
       });
 

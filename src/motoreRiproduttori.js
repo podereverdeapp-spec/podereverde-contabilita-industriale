@@ -59,6 +59,24 @@ export function calcolaValoreRealizzoStimato({ specie, razza, sesso, animaliUsci
   };
 }
 
+// Valore di realizzo stimato (deciso dal Dott. Bizzarri il 03/10/2026): peso MEDIO DELLA CARCASSA
+// dei capi della stessa specie, razza e sesso usciti con almeno "etaMinimaAnni" anni (se meno di
+// 3, stessa specie e sesso di qualunque razza) × prezzo di riforma al kg di carcassa (parametro
+// modificabile per specie: di partenza 7 € bovini, 5 € suini, 3 € ovini). Sostituisce la vecchia stima vivo/carcassa che con i
+// dati disponibili (prezzi solo al vivo, pesi solo in carcassa) dava sempre zero.
+export function calcolaRealizzoCarcassa({ specie, razza, sesso, animaliUsciti, etaMinimaAnni, prezzoKgCarcassa }) {
+  const norm = r => (r || "").trim().toLowerCase();
+  const etaAnni = a => (!a.nascita || !a.data_uscita) ? null : (new Date(a.data_uscita) - new Date(a.nascita)) / (365.25 * 86400000);
+  const base = (animaliUsciti || []).filter(a => a.specie === specie && a.sesso === sesso && a.stato !== "attivo"
+    && a.peso_carcassa > 0 && etaAnni(a) !== null && etaAnni(a) >= etaMinimaAnni);
+  let campione = base.filter(a => norm(a.razza_calcolata || a.razza) === norm(razza));
+  let fonte = "stessa razza e sesso";
+  if (campione.length < 3) { campione = base; fonte = "stesso sesso, tutte le razze"; }
+  if (campione.length === 0) return { campioneUsato: 0, fonte: "nessun capo adulto della specie e del sesso uscito con peso della carcassa", pesoCarcassaMedio: 0, prezzoKgCarcassa, valore: 0 };
+  const pesoCarcassaMedio = round2(campione.reduce((t, a) => t + Number(a.peso_carcassa), 0) / campione.length);
+  return { campioneUsato: campione.length, fonte, pesoCarcassaMedio, prezzoKgCarcassa, valore: round2(pesoCarcassaMedio * (prezzoKgCarcassa || 0)) };
+}
+
 // Stima il peso carcassa di UN animale ancora in vita, basandosi sui pesi REALI di animali
 // della stessa specie/razza/SESSO già usciti per macellazione — guardando specificamente
 // quelli macellati a un'età SIMILE alla sua (non solo la media generale degli adulti, come
@@ -167,6 +185,28 @@ export function calcolaFigliFemmina({ partiStorici, anniProduttiviResidui, fallb
   return { figliAvuti, mediaFigliPerParto, intervalloMedioAnni, partiFuturiStimati, figliFuturiStimati, stimaBasataSuDatiPropri: !usaFallback };
 }
 
+// Stima dei figli futuri, UGUALE per maschi e femmine (deciso dal Dott. Bizzarri il 03/10/2026):
+// - ogni figlio contato una sola volta (il suinetto passato a matricola non si conta due volte);
+// - figli all'anno = media delle ultime DUE annate complete di carriera (l'uso recente conta più
+//   della storia: un toro copre più o meno vacche a seconda della mandria);
+// - se c'è solo l'anno in corso si usa quello, segnalandolo come «stima debole»;
+// - figli futuri = anni di carriera che restano × figli all'anno (zero se è uscito).
+// conteggioPerAnno = { anno: numero di figli }
+export function stimaFigliFuturi({ conteggioPerAnno, annoCorrente, uscito, anniProduttiviResidui }) {
+  const anni = Object.keys(conteggioPerAnno || {}).map(Number).filter(Boolean);
+  const figliAvuti = Object.values(conteggioPerAnno || {}).reduce((s, n) => s + n, 0);
+  if (!anni.length) return { figliAvuti: 0, figliAllAnno: 0, anniUsati: [], stimaDebole: false, figliFuturiStimati: 0 };
+  const primo = Math.min(...anni);
+  const ultimoCompleto = annoCorrente - 1;
+  let anniUsati = [ultimoCompleto - 1, ultimoCompleto].filter(y => y >= primo);
+  let stimaDebole = false;
+  if (!anniUsati.length) { anniUsati = [annoCorrente]; stimaDebole = true; }
+  const figliAllAnno = round2(anniUsati.reduce((s, y) => s + (conteggioPerAnno[y] || 0), 0) / anniUsati.length);
+  const figliFuturiStimati = uscito ? 0 : Math.round(Math.max(anniProduttiviResidui, 0) * figliAllAnno);
+  return { figliAvuti, figliAllAnno, anniUsati, stimaDebole, figliFuturiStimati };
+}
+
+// (vecchio calcolo, non più usato dalla scheda)
 // Figli avuti finora e stima dei figli futuri per un RIPRODUTTORE (maschio): usa una
 // media annuale (figli totali / anni attivo come riproduttore), non i parti — dato che
 // un maschio può generare più figli nello stesso periodo da femmine diverse.
@@ -192,32 +232,31 @@ export function calcolaFigliMaschio({ figliTotaliAvuti, anniAttivoComeRiprodutto
 //    va per intero sui figli di QUESTO stesso anno; se non ci sono figli, si accumula in un
 //    "mantenimento sospeso" che si scarica per intero (con quello dell'anno corrente) sul primo
 //    anno successivo che ha figli — mai spalmato all'indietro sui figli passati.
-// Calcola lo scarico di un anno per un riproduttore. UN SOLO pool da recuperare (non più
-// due componenti separate) — ogni anno il mantenimento DI QUELL'ANNO si aggiunge al pool
-// PRIMA di calcolare la quota, poi tutto (residuo iniziale + mantenimento accumulato) si
-// smorza allo stesso modo con il meccanismo del "saldo residuo": quota = pool / anni residui,
-// ricalcolata ogni anno. Se un anno non ha figli, il pool cresce ma non si scarica nulla —
-// niente si perde, e non si scarica mai tutto insieme sul primo figlio buono: si spalma su
-// TUTTI gli anni futuri restanti, sia che si tratti del residuo iniziale sia del mantenimento
-// di un anno saltato (prima erano gestiti in modo incoerente: il residuo si smorzava così,
-// il mantenimento invece si scaricava tutto insieme sulla prima occasione buona).
+// Calcola lo scarico di un anno per un riproduttore (deciso dal Dott. Bizzarri il 03/10/2026,
+// principio: a ogni figlio il costo che ha davvero generato):
+// - il MANTENIMENTO del riproduttore di quell'anno passa PER INTERO ai figli nati quell'anno;
+// - il RESIDUO (costo di partenza + crescita − realizzo, più il mantenimento degli anni senza
+//   figli) si ammortizza come un bene: residuo ÷ anni di carriera che restano (minimo 1);
+// - anno senza figli: non passa niente, il mantenimento dell'anno si aggiunge al residuo e lo
+//   pagheranno i figli degli anni successivi (prezzo dell'anno improduttivo).
 export function calcolaPianoScarico({ residuoRimanentePrimaDellAnno, anniProduttiviResiduiAllInizioAnno, numeroFigliAnno, costoMantenimentoAnno = 0 }) {
   const anniResidui = Math.max(anniProduttiviResiduiAllInizioAnno, 1); // almeno 1, per non dividere per zero o numeri negativi
-  const poolConMantenimento = round2((residuoRimanentePrimaDellAnno || 0) + (costoMantenimentoAnno || 0));
-  const quotaTeorica = round2(poolConMantenimento / anniResidui);
+  const residuo = round2(Math.max(0, residuoRimanentePrimaDellAnno || 0));
+  const mantenimento = round2(costoMantenimentoAnno || 0);
 
   if (numeroFigliAnno === 0) {
     return {
-      totaleScaricatoAnno: 0,
-      residuoRimanenteDopo: poolConMantenimento, // il mantenimento dell'anno resta nel pool, non si perde
+      totaleScaricatoAnno: 0, quotaResiduoAnno: 0, mantenimentoAnno: 0,
+      residuoRimanenteDopo: round2(residuo + mantenimento), // il mantenimento dell'anno improduttivo resta da recuperare
       quotaPerFiglio: 0,
     };
   }
 
-  const totaleScaricatoAnno = Math.min(quotaTeorica, poolConMantenimento);
+  const quotaResiduoAnno = Math.min(round2(residuo / anniResidui), residuo);
+  const totaleScaricatoAnno = round2(quotaResiduoAnno + mantenimento);
   return {
-    totaleScaricatoAnno,
-    residuoRimanenteDopo: round2(Math.max(0, poolConMantenimento - totaleScaricatoAnno)),
+    totaleScaricatoAnno, quotaResiduoAnno, mantenimentoAnno: mantenimento,
+    residuoRimanenteDopo: round2(Math.max(0, residuo - quotaResiduoAnno)),
     quotaPerFiglio: round2(totaleScaricatoAnno / numeroFigliAnno),
   };
 }

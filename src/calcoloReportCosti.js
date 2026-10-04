@@ -1,6 +1,7 @@
 import { supabase } from "./supabase";
 import { calcolaReportUba, calcolaRigaAggregata } from "./motoreUba";
 import { numerizzaCampi, round2, fetchAllPages } from "./parsingUtils";
+import { caricaRipartizioneLavoro, applicaRipartizioneLavoro } from "./ripartizioneLavoro";
 
 export const AREE_ORDINARIE = [
   "Allevamento", "Coltivazione", "Lavoro", "Energia Elettrica", "Acqua", "Consulenze",
@@ -57,6 +58,7 @@ export async function caricaDatiGrezziAnno(anno) {
     .gte("data", `${anno}-01-01`).lte("data", `${anno}-12-31`).range(da, a));
   if (eCD) throw new Error(eCD.message);
   articoliAnno = articoliAnno.concat(numerizzaCampi(costiDiretti || [], ["importo"]).map(c => ({ ...c, totale_riga: c.importo })));
+  articoliAnno = applicaRipartizioneLavoro(articoliAnno, await caricaRipartizioneLavoro(anno));
 
   const { data: cespiti, error: eC } = await supabase.from("ci_cespiti").select("id, specie, categoria");
   if (eC) throw new Error(eC.message);

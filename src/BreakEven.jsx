@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
+import { costoAcquistoUnitario, conteggioUnitaPerLotto } from "./costoAnimale";
+import { caricaRipartizioneLavoro, applicaRipartizioneLavoro } from "./ripartizioneLavoro";
 import { C } from "./style";
 import { formattaEuro, formattaNumero, round2, fetchAllPages } from "./parsingUtils";
 import { allocaCostiPerSpecie, MAPPA_SPECIE } from "./calcoloAllocazioneSpecie";
@@ -58,8 +60,10 @@ export default function BreakEven() {
         });
       }
 
-      const tuttiFissi = [...articoli.filter(a => a.tipo_costo === "Fisso"), ...costiDirettiNorm.filter(c => c.tipo_costo === "Fisso"), ...quoteAmmortamento];
-      const tuttiVariabili = [...articoli.filter(a => a.tipo_costo === "Variabile"), ...costiDirettiNorm.filter(c => c.tipo_costo === "Variabile")];
+      // Costo del lavoro diviso tra le attività secondo le percentuali dell'anno (Parametri)
+      const righeAnno = applicaRipartizioneLavoro([...articoli.map(a => ({ ...a, totale_riga: parseFloat(a.totale_riga) || 0 })), ...costiDirettiNorm], await caricaRipartizioneLavoro(anno));
+      const tuttiFissi = [...righeAnno.filter(a => a.tipo_costo === "Fisso"), ...quoteAmmortamento];
+      const tuttiVariabili = righeAnno.filter(a => a.tipo_costo === "Variabile");
 
       const perSpecieFissi = allocaCostiPerSpecie(tuttiFissi, righeUba || []);
       const perSpecieVariabili = allocaCostiPerSpecie(tuttiVariabili, righeUba || []);
@@ -97,7 +101,7 @@ export default function BreakEven() {
       // il costo di nascita medio e il costo totale medio di questo stesso gruppo, come
       // riferimento — richiesto da Filippo per rendere la break even più realistica.
       const { data: tuttiBoviniUsciti, error: eB } = await fetchAllPages((da, a) => supabase.from("animali")
-        .select("id,nascita,data_uscita,peso_carcassa,riproduttore").eq("specie", "bovino").eq("stato", "macellato")
+        .select("id,nascita,data_uscita,peso_carcassa,riproduttore,provenienza,prezzo_acquisto").eq("specie", "bovino").eq("stato", "macellato")
         .not("peso_carcassa", "is", null).not("nascita", "is", null).not("data_uscita", "is", null).range(da, a));
       if (eB) throw new Error(`Errore bovini storici: ${eB.message}`);
 
@@ -116,7 +120,12 @@ export default function BreakEven() {
       // rappresentativo del costo di un capo normale, va escluso dal campione.
       const { data: tuttiConGenitori } = await fetchAllPages((da, a) => supabase.from("animali")
         .select("padre_id,madre_id").range(da, a));
-      const { data: lottiConGenitori } = await supabase.from("lotti_suini").select("padre_id,madre_id");
+      const { data: lottiConGenitori } = await supabase.from("lotti_suini").select("id,padre_id,madre_id,tipo_provenienza,prezzo_acquisto");
+      const { data: tutteLeUnita } = await fetchAllPages((da, a) => supabase.from("suini_lotto").select("lotto_id").range(da, a));
+      const unitaPerLotto = conteggioUnitaPerLotto(tutteLeUnita);
+      const lottoPerId = new Map((lottiConGenitori || []).map(l => [l.id, l]));
+      // Costo totale come in tutto il programma: costi annuali + costo di acquisto (se comprato)
+      const totaleAnimale = a => costoTotalePerAnimale.has(a.id) ? round2(costoTotalePerAnimale.get(a.id) + costoAcquistoUnitario({ animale: a })) : null;
       const idConFigli = new Set();
       (tuttiConGenitori || []).forEach(f => { if (f.padre_id) idConFigli.add(f.padre_id); if (f.madre_id) idConFigli.add(f.madre_id); });
       (lottiConGenitori || []).forEach(l => { if (l.padre_id) idConFigli.add(l.padre_id); if (l.madre_id) idConFigli.add(l.madre_id); });
@@ -127,7 +136,7 @@ export default function BreakEven() {
         return etaMesi >= 12 && etaMesi <= 24 && a.peso_carcassa > 0 && !riproduttoreSenzaFigli;
       });
       const pesoMedioBovinoAdulto = boviniAdulti.length > 0 ? round2(boviniAdulti.reduce((s, a) => s + a.peso_carcassa, 0) / boviniAdulti.length) : null;
-      const costiTotaliNoti = boviniAdulti.map(a => costoTotalePerAnimale.get(a.id)).filter(c => c != null && c > 0);
+      const costiTotaliNoti = boviniAdulti.map(a => totaleAnimale(a)).filter(c => c != null && c > 0);
       const costoTotaleMedioBovinoAdulto = costiTotaliNoti.length > 0 ? round2(costiTotaliNoti.reduce((s, c) => s + c, 0) / costiTotaliNoti.length) : null;
       const costiNascitaNoti = boviniAdulti.map(a => costoNascitaPerAnimale.get(a.id)).filter(c => c != null && c > 0);
       const costoNascitaMedioBovinoAdulto = costiNascitaNoti.length > 0 ? round2(costiNascitaNoti.reduce((s, c) => s + c, 0) / costiNascitaNoti.length) : null;
@@ -137,7 +146,7 @@ export default function BreakEven() {
       // con peso vivo oltre 130kg — includendo sia gli animali individuali sia i suinetti nei
       // lotti (suini_lotto), che sono la maggioranza dei suini dell'azienda.
       const { data: suiniIndividuali, error: eSI } = await fetchAllPages((da, a) => supabase.from("animali")
-        .select("id,peso_carcassa,peso_vivo_uscita,riproduttore").eq("specie", "suino").eq("stato", "macellato")
+        .select("id,peso_carcassa,peso_vivo_uscita,riproduttore,provenienza,prezzo_acquisto").eq("specie", "suino").eq("stato", "macellato")
         .not("peso_carcassa", "is", null).not("peso_vivo_uscita", "is", null).range(da, a));
       if (eSI) throw new Error(`Errore suini individuali: ${eSI.message}`);
 
@@ -160,8 +169,11 @@ export default function BreakEven() {
       const pesiCampioneSuino = [...suiniCampioneIndividuali.map(a => a.peso_carcassa), ...suiniCampioneLotto.map(u => u.peso_carcassa)];
       const pesoMedioSuinoCampione = pesiCampioneSuino.length > 0 ? round2(pesiCampioneSuino.reduce((s, p) => s + p, 0) / pesiCampioneSuino.length) : null;
       const costiCampioneSuino = [
-        ...suiniCampioneIndividuali.map(a => costoTotalePerAnimale.get(a.id)).filter(c => c != null && c > 0),
-        ...suiniCampioneLotto.map(u => costoTotalePerUnita.get(`${u.lotto_id}|${u.nr}`)).filter(c => c != null && c > 0),
+        ...suiniCampioneIndividuali.map(a => totaleAnimale(a)).filter(c => c != null && c > 0),
+        ...suiniCampioneLotto.map(u => {
+          const c = costoTotalePerUnita.get(`${u.lotto_id}|${u.nr}`);
+          return c == null ? null : round2(c + costoAcquistoUnitario({ unita: u, lotto: lottoPerId.get(u.lotto_id), numeroUnitaLotto: unitaPerLotto.get(u.lotto_id) }));
+        }).filter(c => c != null && c > 0),
       ];
       const costoTotaleMedioSuinoCampione = costiCampioneSuino.length > 0 ? round2(costiCampioneSuino.reduce((s, c) => s + c, 0) / costiCampioneSuino.length) : null;
       const numeroSuiniCampione = pesiCampioneSuino.length;

@@ -66,11 +66,18 @@ export function categoriaEtàExp(specie, etaAllInizio, giorni) {
   return UBA_FASCE_EXP[specie].at(-1).label;
 }
 
+// Deciso dal Dott. Bizzarri il 04/10/2026:
+// - un RIPRODUTTORE morto, scambiato o trasferito non va tra gli «improduttivi» (il cui costo si spalma sugli altri capi):
+//   il suo costo resta suo in tutti gli anni e passa ai nati attraverso il costo della mandria
+//   (la morte del toro o della vacca è un costo della mandria, non degli animali da ingrasso);
+// - un animale da macello uscito senza ricavo (morto, predato, smarrito) resta improduttivo in
+//   tutti i suoi anni: il suo costo lo pagano, anno per anno, i capi produttivi della specie.
 export function categoriaContabileExp(animale) {
-  if (animale.stato === "attivo") return animale.riproduttore ? "RIPRODUTTORE" : "PRODUTTIVO";
+  if (animale.riproduttore) return "RIPRODUTTORE";
+  if (animale.stato === "attivo") return "PRODUTTIVO";
   const motivo = (animale.motivo_uscita || "").toLowerCase();
   const isProduttivo = MOTIVI_PRODUTTIVI_EXP.some(k => motivo.includes(k));
-  if (isProduttivo) return animale.riproduttore ? "RIPRODUTTORE" : "PRODUTTIVO";
+  if (isProduttivo) return "PRODUTTIVO";
   return "IMPRODUTTIVO_USCITO";
 }
 
