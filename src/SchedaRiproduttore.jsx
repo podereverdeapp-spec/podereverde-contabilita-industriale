@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { eTrasferito } from "./venditeDaFatture";
+import { applicaNatiConLaMadre } from "./costoAnimale";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { formattaEuro, formattaNumero, round2, fetchAllPages } from "./parsingUtils";
@@ -37,6 +39,13 @@ export default function SchedaRiproduttore({ animaleId, onClose, onSalvato }) {
         .select("id, bdn, nome, specie, razza, razza_calcolata, nascita, data_ingresso, provenienza, stato, padre_id, madre_id, peso_carcassa, costo_iniziale, prezzo_acquisto, sesso")
         .eq("id", animaleId).single();
       if (eA) throw new Error(eA.message);
+      // Entrato in azienda con la madre: è un figlio della mandria (costo di nascita, non di acquisto)
+      if (a.madre_id && a.provenienza !== "Nato in azienda") {
+        const { data: m } = await supabase.from("animali").select("id,provenienza,data_ingresso,prezzo_acquisto").eq("id", a.madre_id).maybeSingle();
+        if (m && applicaNatiConLaMadre([a, m]).find(x => x.id === a.id)?.natoConLaMadre) {
+          a.provenienzaNellApp = a.provenienza; a.provenienza = "Nato in azienda"; a.natoConLaMadre = true;
+        }
+      }
       setAnimale(a);
       setForm({
         bdn: a.bdn || "", specie: a.specie || "", razza: a.razza || "",
@@ -265,7 +274,7 @@ export default function SchedaRiproduttore({ animaleId, onClose, onSalvato }) {
 
           <Sezione titolo="Riepilogo costi">
             <Griglia>
-              <CampoSoloLettura label="Costo di acquisto" value={formattaEuro(residuo.costo_acquisto)} />
+              <CampoSoloLettura label={animale.provenienza === "Nato in azienda" ? "Costo di nascita (costo di partenza)" : "Costo di acquisto"} value={formattaEuro(residuo.costo_acquisto)} />
               <CampoSoloLettura label="Costo mantenimento anni precedenti" value={formattaEuro(costoMantenimentoAnniPrecedenti)} />
               <CampoSoloLettura label="Costo mantenimento anno in corso" value={formattaEuro(costoMantenimentoAnnoCorrente)} />
             </Griglia>
@@ -314,6 +323,14 @@ export default function SchedaRiproduttore({ animaleId, onClose, onSalvato }) {
 
           {residuo.residuo_uscita_anno != null && (
             <Sezione titolo="🔶 Costo rimasto all'uscita">
+              {eTrasferito(animale.stato) && (
+                <div style={{ background: String(residuo.realizzo_reale_fonte || "").startsWith("venduto") ? "#E3F1E4" : "#FDE2D3",
+                  color: String(residuo.realizzo_reale_fonte || "").startsWith("venduto") ? C.green : "#A0440E", borderRadius: 10, padding: "10px 14px", marginBottom: 10, fontSize: 13, fontWeight: 700 }}>
+                  {String(residuo.realizzo_reale_fonte || "").startsWith("venduto")
+                    ? `Trasferito e venduto — ${residuo.realizzo_reale_fonte}`
+                    : "Trasferito senza fattura di vendita: considerato uno scambio (peso vivo × prezzo di riforma). Se è stato venduto, caricare la fattura attiva con la matricola nella descrizione e rifare il calcolo dei riproduttori."}
+                </div>
+              )}
               <Griglia>
                 <CampoSoloLettura label="Costo non ancora passato ai figli il giorno dell'uscita" value={formattaEuro(residuo.residuo_all_uscita)} />
                 <CampoSoloLettura label="Valore di realizzo reale" value={residuo.valore_realizzo_reale != null ? formattaEuro(residuo.valore_realizzo_reale) : "non disponibile"} />

@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { formattaEuro, formattaNumero, round2, fetchAllPages } from "./parsingUtils";
-import { conteggioUnitaPerLotto, costoAcquistoUnitario, costoAnimale, righePerSoggetto } from "./costoAnimale";
+import { conteggioUnitaPerLotto, costoAcquistoUnitario, costoAnimale, righePerSoggetto , idGenitori, normalizzaAnimali } from "./costoAnimale";
 
 // Prezzo di pareggio per specie e anno: quanto è costato in media un kg di carcassa degli
 // animali da macello usciti nell'anno (= prezzo sotto il quale si perde), da cosa è fatto il
@@ -25,15 +25,16 @@ export default function PrezzoPareggio() {
     try {
       const inizio = `${anno}-01-01`, fine = `${anno}-12-31`;
       const [rA, rL, rU, rC, rV, rM] = await Promise.all([
-        fetchAllPages((da, a) => supabase.from("animali").select("id,specie,riproduttore,provenienza,prezzo_acquisto,stato,data_uscita,peso_carcassa").range(da, a)),
-        fetchAllPages((da, a) => supabase.from("lotti_suini").select("id,tipo_provenienza,prezzo_acquisto,specie").range(da, a)),
-        fetchAllPages((da, a) => supabase.from("suini_lotto").select("id,lotto_id,nr,stato,data_uscita,peso_carcassa").range(da, a)),
+        fetchAllPages((da, a) => supabase.from("animali").select("id,bdn,specie,riproduttore,provenienza,prezzo_acquisto,stato,data_uscita,peso_carcassa,madre_id,padre_id,nascita,data_ingresso,note").range(da, a)),
+        fetchAllPages((da, a) => supabase.from("lotti_suini").select("id,tipo_provenienza,prezzo_acquisto,specie,madre_id,padre_id").range(da, a)),
+        fetchAllPages((da, a) => supabase.from("suini_lotto").select("id,lotto_id,nr,stato,data_uscita,peso_carcassa,bdn,codice_completo").range(da, a)),
         fetchAllPages((da, a) => supabase.from("ci_costo_animale_annuale").select("animale_id,lotto_id,unita_nr,costo_mantenimento,costo_nascita_ereditato,quota_residuo_riproduttori").range(da, a)),
         supabase.from("ci_dati_vendita_ingrasso").select("animale_id,lotto_id,unita_nr,prezzo_vendita_kg_reale"),
         supabase.from("ci_costo_nascita_mandria").select("*").eq("anno", anno),
       ]);
       for (const r of [rA, rL, rU, rC, rV]) if (r.error) throw new Error(r.error.message);
       const lotti = new Map((rL.data || []).map(l => [l.id, l]));
+      const genitori = idGenitori(normalizzaAnimali(rA.data || [], rL.data || [], rU.data || []), rL.data); // chi ha partorito o generato è un riproduttore
       const unitaPerLotto = conteggioUnitaPerLotto(rU.data);
       const { perAnimale, perUnita } = righePerSoggetto(rC.data);
       const prezzoAnimale = new Map((rV.data || []).filter(v => v.animale_id).map(v => [v.animale_id, parseFloat(v.prezzo_vendita_kg_reale)]));
@@ -42,8 +43,8 @@ export default function PrezzoPareggio() {
       const venduto = s => s === "macellato" || s === "venduto";
 
       const capi = [];
-      (rA.data || []).forEach(a => {
-        if (a.riproduttore || !venduto(a.stato) || !nellAnno(a.data_uscita) || !(parseFloat(a.peso_carcassa) > 0)) return;
+      normalizzaAnimali(rA.data || [], rL.data || [], rU.data || []).forEach(a => {
+        if (a.riproduttore || genitori.has(a.id) || !venduto(a.stato) || !nellAnno(a.data_uscita) || !(parseFloat(a.peso_carcassa) > 0)) return;
         capi.push({ specie: a.specie, peso: parseFloat(a.peso_carcassa), prezzo: prezzoAnimale.get(a.id) || null,
           ...costoAnimale({ righe: perAnimale.get(a.id), costoAcquisto: costoAcquistoUnitario({ animale: a }) }) });
       });

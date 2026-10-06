@@ -4,6 +4,7 @@ import { C } from "./style";
 import { round2, fetchAllPages } from "./parsingUtils";
 import SchedaRiproduttore from "./SchedaRiproduttore";
 import SchedaAnimaleMacello from "./SchedaAnimaleMacello";
+import { caricaIdGenitori } from "./genitori";
 
 // Scheda Animale: ricerca per matricola, nome o codice del suinetto. Il risultato apre la
 // scheda giusta: Scheda Riproduttore per i riproduttori, Scheda Animale (unica, con lo stesso
@@ -50,8 +51,13 @@ export default function SchedaAnimale({ ricercaIniziale, onRicercaConsumata }) {
         unitaConLotto = unitaTrovate.map(u => ({ ...u, lotto: mappaLotti.get(u.lotto_id) }));
       }
 
+      // Regola del 05/10/2026: chi ha parti registrati (padre o madre di un nato o di un lotto)
+      // è un riproduttore anche se nell'app manca il segno.
+      const genitori = (animaliTrovati || []).some(a => !a.riproduttore) ? await caricaIdGenitori() : new Set();
       const elenco = [
-        ...(animaliTrovati || []).map(a => ({ tipo: "animale", ...a })),
+        ...(animaliTrovati || []).map(a => (!a.riproduttore && genitori.has(a.id))
+          ? { tipo: "animale", ...a, riproduttore: true, riproduttoreDaiParti: true }
+          : { tipo: "animale", ...a }),
         // il suinetto già passato a matricola si trova come animale, non due volte
         ...unitaConLotto.filter(u => u.stato !== "registrato_individuale").map(u => ({ tipo: "lotto", ...u })),
       ];
@@ -150,7 +156,7 @@ export default function SchedaAnimale({ ricercaIniziale, onRicercaConsumata }) {
             <div key={`${item.tipo}-${item.id}`} onClick={() => selezionaEd(item)}
               style={{ padding: "10px 14px", borderBottom: `1px solid ${C.border}`, cursor: "pointer" }}>
               <strong>{item.tipo === "animale" ? (item.bdn || item.nome) : (item.codice_completo || item.matricola)}</strong>
-              {item.tipo === "animale" && <span style={{ color: C.muted, fontSize: 12 }}> — {item.nome || "senza nome"} · {item.specie} · {item.razza || "razza non indicata"}{item.riproduttore ? " · riproduttore" : ""}</span>}
+              {item.tipo === "animale" && <span style={{ color: C.muted, fontSize: 12 }}> — {item.nome || "senza nome"} · {item.specie} · {item.razza || "razza non indicata"}{item.riproduttore ? " · riproduttore" : ""}{item.riproduttoreDaiParti ? " (dai parti registrati: nell'app manca il segno «riproduttore»)" : ""}</span>}
               {item.tipo === "lotto" && <span style={{ color: C.muted, fontSize: 12 }}> — suinetto del lotto {item.lotto?.codice_lotto || item.lotto?.codice}</span>}
             </div>
           ))}

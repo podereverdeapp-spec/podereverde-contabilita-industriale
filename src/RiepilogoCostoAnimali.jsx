@@ -4,7 +4,8 @@ import { C } from "./style";
 import { formattaEuro, formattaNumero, round2, fetchAllPages } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
 import { stimaPesoCarcassaPerEta } from "./motoreRiproduttori";
-import { conteggioUnitaPerLotto, costoAcquistoUnitario, costoAnimale, righePerSoggetto, eUscito } from "./costoAnimale";
+import { conteggioUnitaPerLotto, costoAcquistoUnitario, costoAnimale, righePerSoggetto, eUscito, idGenitori, segnaRiproduttoriEffettivi, normalizzaAnimali } from "./costoAnimale";
+import { caricaRigheVendita, uscitaTrasferimento } from "./venditeDaFatture";
 import SchedaRiproduttore from "./SchedaRiproduttore";
 import SchedaAnimaleMacello from "./SchedaAnimaleMacello";
 
@@ -34,8 +35,8 @@ export default function RiepilogoCostoAnimali() {
     setErrore(null);
     try {
       const [rAnimali, rLotti, rUnita, rCosti, rVendite, rResidui] = await Promise.all([
-        fetchAllPages((da, a) => supabase.from("animali").select("id,bdn,nome,specie,razza,razza_calcolata,sesso,riproduttore,provenienza,prezzo_acquisto,nascita,data_ingresso,stato,data_uscita,motivo_uscita,peso_vivo_uscita,peso_carcassa").range(da, a)),
-        fetchAllPages((da, a) => supabase.from("lotti_suini").select("id,codice_lotto,codice,tipo_provenienza,prezzo_acquisto,razza_madre,specie,data_parto").range(da, a)),
+        fetchAllPages((da, a) => supabase.from("animali").select("id,bdn,nome,specie,razza,razza_calcolata,sesso,riproduttore,provenienza,prezzo_acquisto,nascita,data_ingresso,stato,data_uscita,motivo_uscita,peso_vivo_uscita,peso_carcassa,madre_id,padre_id,note").range(da, a)),
+        fetchAllPages((da, a) => supabase.from("lotti_suini").select("id,codice_lotto,codice,tipo_provenienza,prezzo_acquisto,razza_madre,specie,data_parto,madre_id,padre_id").range(da, a)),
         fetchAllPages((da, a) => supabase.from("suini_lotto").select("id,lotto_id,nr,codice_completo,bdn,sesso,stato,data_uscita,motivo_uscita,peso_carcassa,peso_vivo_uscita").range(da, a)),
         fetchAllPages((da, a) => supabase.from("ci_costo_animale_annuale").select("animale_id,lotto_id,unita_nr,anno,costo_mantenimento,costo_nascita_ereditato,quota_residuo_riproduttori,quota_scaricata_su_figli").range(da, a)),
         supabase.from("ci_dati_vendita_ingrasso").select("*"),
@@ -44,13 +45,18 @@ export default function RiepilogoCostoAnimali() {
       for (const [r, cosa] of [[rAnimali, "gli animali"], [rLotti, "i lotti suini"], [rUnita, "i suinetti dei lotti"], [rCosti, "i costi annuali"], [rVendite, "i dati di vendita"], [rResidui, "i riproduttori"]]) {
         if (r.error) throw new Error(`Errore caricando ${cosa}: ${r.error.message}`);
       }
-      const animali = rAnimali.data || [], lotti = rLotti.data || [], unita = rUnita.data || [];
+      const lotti = rLotti.data || [], unita = rUnita.data || [];
+      // Chi ha un parto registrato è riproduttore anche senza il segno nell'app
+      const base = normalizzaAnimali(rAnimali.data || [], lotti, unita);
+      const animali = segnaRiproduttoriEffettivi(base, idGenitori(base, lotti));
       const mappaLotti = new Map(lotti.map(l => [l.id, l]));
       const unitaPerLotto = conteggioUnitaPerLotto(unita);
       const { perAnimale, perUnita } = righePerSoggetto(rCosti.data);
       const venditaAnimale = new Map((rVendite.data || []).filter(v => v.animale_id).map(v => [v.animale_id, v]));
       const venditaUnita = new Map((rVendite.data || []).filter(v => v.lotto_id).map(v => [`${v.lotto_id}|${v.unita_nr}`, v]));
       const residuo = new Map((rResidui.data || []).map(r => [r.animale_id, r]));
+      // Animali trasferiti: venduti (con fattura attiva che ha la matricola) o scambiati
+      const righeVendita = await caricaRigheVendita();
 
       // Pesi storici (animali e suinetti usciti con carcassa) per stimare il peso di chi è in azienda
       const poolPeso = [
@@ -79,10 +85,11 @@ export default function RiepilogoCostoAnimali() {
         const uscito = eUscito(a.stato);
         const costo = costoAnimale({ righe: perAnimale.get(a.id), costoAcquisto: costoAcquistoUnitario({ animale: a }) });
         const { eta, peso, pesoStimato } = pesoEEta(a.specie, a.razza_calcolata || a.razza, a.sesso, a.nascita, uscito, a.data_uscita, a.peso_carcassa);
-        const vendita = valoreVendita(uscito, peso, pesoStimato, venditaAnimale.get(a.id));
-        risultati.push({
+        const trasferimento = uscitaTrasferimento(a, righeVendita);
+        const vendita = trasferimento?.incasso != null ? trasferimento.incasso : valoreVendita(uscito, peso, pesoStimato, venditaAnimale.get(a.id));
+        risultati.push({ trasferimento,
           chiave: `a${a.id}`, tipo: "animale", animaleId: a.id, identificativo: a.bdn || a.nome || `animale ${a.id}`,
-          specie: a.specie, razza: a.razza_calcolata || a.razza, sesso: a.sesso, provenienza: a.provenienza, riproduttore: !!a.riproduttore,
+          specie: a.specie, razza: a.razza_calcolata || a.razza, sesso: a.sesso, provenienza: a.natoConLaMadre ? "Entrato con la madre (figlio della mandria)" : a.daLottoComprato ? `Acquistato nel lotto ${a.daLottoComprato}` : a.provenienza, riproduttore: !!a.riproduttore, riproduttoreDaiParti: !!a.riproduttoreDaiParti,
           stato: a.stato, uscito, dataUscita: a.data_uscita, motivoUscita: a.motivo_uscita, inizio: a.data_ingresso || a.nascita,
           eta, peso, pesoStimato, ...costo, costoAlKg: peso ? round2(costo.totale / peso) : null,
           valoreVendita: vendita, margine: vendita != null ? round2(vendita - costo.totale) : null,
@@ -143,6 +150,9 @@ export default function RiepilogoCostoAnimali() {
     };
   }, [visibili]);
 
+  const trasferitiSenzaFattura = righe.filter(r => r.trasferimento?.tipo === "scambio");
+  const riproduttoriNonSegnati = righe.filter(r => r.riproduttoreDaiParti);
+
   function statoTesto(r) {
     if (!r.uscito) return "In azienda";
     const data = r.dataUscita ? new Date(r.dataUscita).toLocaleDateString("it-IT") : "data non indicata";
@@ -153,7 +163,7 @@ export default function RiepilogoCostoAnimali() {
     const righeExcel = visibili.map(r => {
       const base = {
         "Animale": r.identificativo, "Specie": ETICHETTE_SPECIE[r.specie], "Razza": r.razza || "", "Sesso": ETICHETTE_SESSO[r.sesso] || r.sesso || "",
-        "Provenienza": r.provenienza || "", "Età (anni)": r.eta, "Stato": statoTesto(r),
+        "Provenienza": r.provenienza || "", "Età (anni)": r.eta, "Stato": statoTesto(r), "Uscita per trasferimento": r.trasferimento ? r.trasferimento.testo : "",
         "Costo di acquisto": numeroExcel(r.costoAcquisto), "Costo di nascita": numeroExcel(r.costoNascita), "Mantenimento": numeroExcel(r.mantenimento),
       };
       if (categoria === "riproduttori") return { ...base, "Costo totale sostenuto": numeroExcel(r.totale), "Messo nella mandria (passato ai nati)": numeroExcel(r.messoNellaMandria), "Ancora da recuperare": numeroExcel(r.daRecuperare) };
@@ -173,6 +183,20 @@ export default function RiepilogoCostoAnimali() {
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 16 }}>
         Tutti gli animali con il loro costo: acquisto o nascita, mantenimento, costo rimasto di riproduttori usciti. Per chi è uscito, valore di vendita e margine. Clicca un animale per aprire la sua scheda.
       </p>
+
+      {riproduttoriNonSegnati.length > 0 && (
+        <div style={{ background: "#FFF3CD", color: "#8A6D00", border: "1px solid #F0D98C", borderRadius: 10, padding: "10px 14px", marginBottom: 14, fontSize: 13 }}>
+          <strong>Riproduttori dai parti registrati ma senza il segno «riproduttore» nell'app: {riproduttoriNonSegnati.length}</strong> ({riproduttoriNonSegnati.map(r => r.identificativo).join(", ")}).
+          {" "}Il programma li tratta già come riproduttori; nell'app va messo il segno nella loro scheda.
+        </div>
+      )}
+
+      {trasferitiSenzaFattura.length > 0 && (
+        <div style={{ background: "#FDE2D3", color: "#A0440E", border: "1px solid #F0B48F", borderRadius: 10, padding: "10px 14px", marginBottom: 14, fontSize: 13 }}>
+          <strong>Animali trasferiti senza fattura di vendita: {trasferitiSenzaFattura.length}</strong> ({trasferitiSenzaFattura.map(r => r.identificativo).join(", ")}).
+          {" "}Il programma li considera scambiati e li valuta peso vivo × prezzo di riforma. Se sono stati venduti, caricare la fattura attiva con la matricola nella descrizione: l'incasso verrà preso da lì.
+        </div>
+      )}
 
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 14, marginBottom: 14, display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-end" }}>
         <div>
@@ -250,7 +274,9 @@ export default function RiepilogoCostoAnimali() {
                 {visibili.length === 0 && <tr><td colSpan={14} style={{ ...td, color: C.muted }}>Nessun animale con questi filtri.</td></tr>}
                 {visibili.map(r => (
                   <tr key={r.chiave} onClick={() => setSelezionato(r)} style={{ borderTop: `1px solid ${C.border}`, cursor: "pointer" }}>
-                    <td style={{ ...td, fontWeight: 700 }}>{r.identificativo}</td>
+                    <td style={{ ...td, fontWeight: 700 }}>{r.identificativo}
+                      {r.riproduttoreDaiParti && <div style={{ fontSize: 10, color: "#8A6D00", background: "#FFF3CD", borderRadius: 4, padding: "1px 4px", marginTop: 2, fontWeight: 700 }}>manca il segno nell'app</div>}
+                    </td>
                     <td style={td}>{r.razza || "—"}</td>
                     <td style={td}>{ETICHETTE_SESSO[r.sesso] || r.sesso || "—"}</td>
                     <td style={td}>{r.provenienza || "—"}</td>
@@ -273,7 +299,15 @@ export default function RiepilogoCostoAnimali() {
                         <td style={{ ...destra, fontWeight: 700, color: r.margine == null ? C.muted : r.margine >= 0 ? C.green : C.red }}>{r.margine != null ? formattaEuro(r.margine) : "—"}</td>
                       </>
                     )}
-                    <td style={{ ...td, color: r.uscito ? C.text : C.muted, whiteSpace: "nowrap" }}>{statoTesto(r)}</td>
+                    <td style={{ ...td, color: r.uscito ? C.text : C.muted, whiteSpace: "nowrap" }}>
+                      {statoTesto(r)}
+                      {r.trasferimento && (
+                        <div title={r.trasferimento.testo} style={{ marginTop: 3, padding: "2px 6px", borderRadius: 6, fontSize: 11, fontWeight: 700, whiteSpace: "normal", maxWidth: 260,
+                          background: r.trasferimento.tipo === "vendita" ? "#E3F1E4" : "#FDE2D3", color: r.trasferimento.tipo === "vendita" ? C.green : "#A0440E" }}>
+                          {r.trasferimento.tipo === "vendita" ? `Venduto: fattura ${r.trasferimento.vendita.numero}` : "Senza fattura di vendita: scambio?"}
+                        </div>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

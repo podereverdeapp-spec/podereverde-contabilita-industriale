@@ -30,7 +30,7 @@ export default function ReportCosti({ anno }) {
     setRisultato(null);
     try {
       const [{ data: animali, error: eA }, { data: lotti, error: eL }, { data: suiniLotto, error: eS }] = await Promise.all([
-        fetchAllPages((da, a) => supabase.from("animali").select("id,bdn,nome,specie,sesso,nascita,stato,data_uscita,motivo_uscita,data_ingresso,provenienza,razza,riproduttore").range(da, a)),
+        fetchAllPages((da, a) => supabase.from("animali").select("id,bdn,nome,specie,sesso,nascita,stato,data_uscita,motivo_uscita,data_ingresso,provenienza,razza,riproduttore,madre_id,padre_id").range(da, a)),
         fetchAllPages((da, a) => supabase.from("lotti_suini").select("*").range(da, a)),
         fetchAllPages((da, a) => supabase.from("suini_lotto").select("*").range(da, a)),
       ]);

@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
+import { caricaRigheVendita, uscitaTrasferimento, eTrasferito } from "./venditeDaFatture";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { formattaEuro, formattaNumero, round2, fetchAllPages } from "./parsingUtils";
 import { stimaPesoCarcassaPerEta } from "./motoreRiproduttori";
-import { costoAnimale, eUscito } from "./costoAnimale";
+import { costoAnimale, eUscito, applicaNatiConLaMadre, applicaAcquistoDaLotto } from "./costoAnimale";
 
 export default function SchedaAnimaleMacello({ animaleId, lottoId, unitaNr, onClose, onSalvato }) {
   const [caricando, setCaricando] = useState(true);
@@ -13,6 +14,7 @@ export default function SchedaAnimaleMacello({ animaleId, lottoId, unitaNr, onCl
   const [soggetto, setSoggetto] = useState(null); // dati anagrafici uniformati (animale o unità di lotto)
   const [costiAnnuali, setCostiAnnuali] = useState([]);
   const [vendita, setVendita] = useState(null);
+  const [trasferimento, setTrasferimento] = useState(null);
   const [pesoStimatoInfo, setPesoStimatoInfo] = useState(null);
   const [genitori, setGenitori] = useState({ madre: null, padre: null });
   const [form, setForm] = useState({});
@@ -26,11 +28,33 @@ export default function SchedaAnimaleMacello({ animaleId, lottoId, unitaNr, onCl
       let s;
       if (animaleId) {
         const { data: a, error } = await supabase.from("animali")
-          .select("id,bdn,nome,specie,razza,razza_calcolata,sesso,provenienza,stato,nascita,data_ingresso,data_uscita,motivo_uscita,peso_carcassa,peso_vivo_uscita,costo_iniziale,prezzo_acquisto,madre_id,padre_id")
+          .select("id,bdn,nome,specie,razza,razza_calcolata,sesso,provenienza,stato,nascita,data_ingresso,data_uscita,motivo_uscita,peso_carcassa,peso_vivo_uscita,costo_iniziale,prezzo_acquisto,madre_id,padre_id,note")
           .eq("id", animaleId).single();
         if (error) throw new Error(error.message);
         s = { ...a, identificativo: a.bdn || a.nome, razzaFinale: a.razza_calcolata || a.razza,
           prezzo_acquisto: a.provenienza === "Acquistato" ? (parseFloat(a.prezzo_acquisto) || 0) : 0 };
+        // Capo passato a scheda individuale da un lotto comprato: vale la sua parte del lotto
+        if (a.provenienza === "Acquistato") {
+          const codice = (String(a.note || "").match(/da lotto .*?unit[aà]\s+([A-Z0-9]+)/i) || [])[1];
+          const filtro = [a.bdn ? `bdn.eq.${a.bdn}` : null, codice ? `codice_completo.eq.${codice}` : null].filter(Boolean).join(",");
+          if (filtro) {
+            const { data: un } = await supabase.from("suini_lotto").select("id,lotto_id,nr,bdn,codice_completo,stato").eq("stato", "registrato_individuale").or(filtro);
+            const u = (un || [])[0];
+            if (u) {
+              const { data: l } = await supabase.from("lotti_suini").select("id,codice_lotto,codice,tipo_provenienza,prezzo_acquisto").eq("id", u.lotto_id).maybeSingle();
+              const { data: tutte } = await supabase.from("suini_lotto").select("id,lotto_id,nr,bdn,codice_completo,stato").eq("lotto_id", u.lotto_id);
+              const x = l ? applicaAcquistoDaLotto([a], [l], tutte || [])[0] : null;
+              if (x?.daLottoComprato) s = { ...s, prezzo_acquisto: x.prezzo_acquisto, provenienzaTesto: `Acquistato nel lotto ${x.daLottoComprato}: vale la sua parte del lotto (nell'app ${formattaEuro(x.prezzoAcquistoNellApp)})` };
+            }
+          }
+        }
+        // Vitello entrato con la madre: è un figlio della mandria (costo di nascita, acquisto zero)
+        if (a.madre_id && a.provenienza !== "Nato in azienda") {
+          const { data: m } = await supabase.from("animali").select("id,provenienza,data_ingresso,prezzo_acquisto").eq("id", a.madre_id).maybeSingle();
+          if (m && applicaNatiConLaMadre([a, m]).find(x => x.id === a.id)?.natoConLaMadre) {
+            s = { ...s, natoConLaMadre: true, prezzo_acquisto: 0, provenienza: "Nato in azienda", provenienzaTesto: "Entrato in azienda con la madre: è un figlio della mandria" };
+          }
+        }
         const ids = [a.madre_id, a.padre_id].filter(Boolean);
         if (ids.length) {
           const { data: g } = await supabase.from("animali").select("id,bdn,nome").in("id", ids);
@@ -63,6 +87,8 @@ export default function SchedaAnimaleMacello({ animaleId, lottoId, unitaNr, onCl
         : await supabase.from("ci_dati_vendita_ingrasso").select("*").eq("lotto_id", lottoId).eq("unita_nr", unitaNr).maybeSingle();
       setVendita(v);
       setForm({ prezzo_vendita_kg_reale: v?.prezzo_vendita_kg_reale ?? "" });
+      // Trasferito: venduto con fattura (incasso dalla fattura) o scambiato
+      setTrasferimento(eTrasferito(s.stato) ? uscitaTrasferimento({ stato: s.stato, bdn: s.bdn }, await caricaRigheVendita()) : null);
 
       // Stima peso, solo se ancora attivo (non uscito) e con data di nascita nota
       const isUscito = eUscito(s.stato);
@@ -129,8 +155,8 @@ export default function SchedaAnimaleMacello({ animaleId, lottoId, unitaNr, onCl
 
   const pesoReale = soggetto.peso_carcassa;
   const pesoPerValore = pesoReale || pesoStimatoInfo?.pesoStimato || null;
-  const valoreVendita = pesoPerValore && form.prezzo_vendita_kg_reale
-    ? round2(pesoPerValore * parseFloat(form.prezzo_vendita_kg_reale)) : null;
+  const valoreVendita = trasferimento?.incasso != null ? trasferimento.incasso
+    : pesoPerValore && form.prezzo_vendita_kg_reale ? round2(pesoPerValore * parseFloat(form.prezzo_vendita_kg_reale)) : null;
   const margine = valoreVendita != null ? round2(valoreVendita - costoTotale) : null;
   const costoAlKgCarcassa = pesoPerValore ? round2(costoTotale / pesoPerValore) : null;
 
@@ -145,7 +171,7 @@ export default function SchedaAnimaleMacello({ animaleId, lottoId, unitaNr, onCl
           <CampoSoloLettura label="Specie" value={soggetto.specie} />
           <CampoSoloLettura label="Razza" value={soggetto.razzaFinale || "—"} />
           <CampoSoloLettura label="Sesso" value={soggetto.sesso || "—"} />
-          <CampoSoloLettura label="Provenienza" value={soggetto.provenienza || "—"} />
+          <CampoSoloLettura label="Provenienza" value={soggetto.provenienzaTesto || soggetto.provenienza || "—"} />
           <CampoSoloLettura label="Stato" value={soggetto.stato || "—"} />
           <CampoSoloLettura label="Data di nascita" value={soggetto.nascita || "—"} />
           <CampoSoloLettura label="Data di ingresso in azienda" value={dataIngresso || "—"} />
@@ -216,6 +242,13 @@ export default function SchedaAnimaleMacello({ animaleId, lottoId, unitaNr, onCl
             value={pesoReale ? `${pesoReale} (reale)` : pesoStimatoInfo ? `${pesoStimatoInfo.pesoStimato} stimato (${pesoStimatoInfo.fonteStima}, n=${pesoStimatoInfo.campioneUsato})` : "—"} />
         </Griglia>
       </Sezione>
+
+      {trasferimento && (
+        <div style={{ background: trasferimento.tipo === "vendita" ? "#E3F1E4" : "#FDE2D3", color: trasferimento.tipo === "vendita" ? C.green : "#A0440E",
+          borderRadius: 10, padding: "10px 14px", margin: "10px 0", fontSize: 13, fontWeight: 700 }}>
+          {trasferimento.testo}
+        </div>
+      )}
 
       <Sezione titolo="Vendita e margine">
         <Griglia>

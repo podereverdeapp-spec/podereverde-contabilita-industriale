@@ -4,6 +4,9 @@ import { C } from "./style";
 import { numerizzaCampi, round2, formattaEuro, fetchAllPages } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
 import { calcolaResiduoIniziale, calcolaRealizzoCarcassa } from "./motoreRiproduttori";
+import { caricaRigheVendita, venditaDiAnimale, eTrasferito } from "./venditeDaFatture";
+import { idGenitori, segnaRiproduttoriEffettivi, normalizzaAnimali, eNatoDellaMandria } from "./costoAnimale";
+import { caricaIdGenitori } from "./genitori";
 
 // Prezzo di riforma al kg di carcassa, per specie (modificabile in Parametri; 7 € di partenza)
 export const PARAMETRI_PREZZO_RIFORMA = { bovino: "prezzo_riforma_kg_carcassa_bovini", suino: "prezzo_riforma_kg_carcassa_suini", ovino: "prezzo_riforma_kg_carcassa_ovini" };
@@ -50,11 +53,25 @@ function vivoAl(dataNascita, dataUscitaAnimale, stato, data) {
 // - morto: 0 (non si ricava nulla);
 // - macellato con peso della carcassa: peso carcassa × prezzo scritto nella scheda del
 //   riproduttore, o in mancanza prezzo di riforma della specie (Parametri);
-// - venduto vivo con peso: peso vivo × prezzo al kg vivo (tabella prezzi di riforma);
+// - venduto o trasferito con una fattura attiva che contiene la sua matricola: l'incasso della
+//   fattura (deciso dal Dott. Bizzarri il 05/10/2026);
+// - venduto vivo, o trasferito senza fattura (scambio), con peso: peso vivo × prezzo al kg vivo
+//   (tabella prezzi di riforma);
 // - dati mancanti: null → nessun conguaglio, si tiene la stima (e lo si segnala).
-export function realizzoRealeUscita({ rip, prezzoSchedaCarcassa, prezzoRiformaCarcassa, prezziRiforma }) {
+export function realizzoRealeUscita({ rip, prezzoSchedaCarcassa, prezzoRiformaCarcassa, prezziRiforma, righeVendita }) {
   const motivo = `${rip.stato || ""} ${rip.motivo_uscita || ""}`.toLowerCase();
   if (motivo.includes("decedut") || motivo.includes("mort")) return { valore: 0, fonte: "morto: nessun ricavo" };
+  if (motivo.includes("vend") || motivo.includes("trasferit") || motivo.includes("scambi")) {
+    const v = venditaDiAnimale(rip.bdn, righeVendita);
+    if (v) return { valore: v.incasso, fonte: `venduto: ${v.testo}` };
+    // Senza fattura: prezzo di vendita scritto nella nota della scheda dell'app
+    // (es. «Venduto vivo il 07/05/2021 a 3.000,00 €»), finché l'app non ha un campo apposito
+    const n = String(rip.note || "").match(/vendut[oa][^.]*?\ba\s+([\d.]+(?:,\d{1,2})?)\s*€/i);
+    if (n) {
+      const valore = round2(parseFloat(n[1].replace(/\./g, "").replace(",", ".")));
+      if (valore > 0) return { valore, fonte: `venduto: ${formattaEuro(valore)} scritto nella nota della scheda dell'app (nessuna fattura di vendita nel database)` };
+    }
+  }
   if (motivo.includes("macell") && Number(rip.peso_carcassa) > 0) {
     const prezzo = Number(prezzoSchedaCarcassa) > 0 ? Number(prezzoSchedaCarcassa) : prezzoRiformaCarcassa;
     return { valore: round2(Number(rip.peso_carcassa) * prezzo), fonte: `${rip.peso_carcassa} kg di carcassa × ${formattaEuro(prezzo)} (${Number(prezzoSchedaCarcassa) > 0 ? "prezzo della scheda" : "prezzo di riforma della specie"})` };
@@ -62,7 +79,8 @@ export function realizzoRealeUscita({ rip, prezzoSchedaCarcassa, prezzoRiformaCa
   if (Number(rip.peso_vivo_uscita) > 0) {
     const razza = rip.razza_calcolata || rip.razza;
     const p = (prezziRiforma || []).find(x => x.specie === rip.specie && x.razza === razza) || (prezziRiforma || []).find(x => x.specie === rip.specie);
-    if (Number(p?.prezzo_kg_vivo) > 0) return { valore: round2(Number(rip.peso_vivo_uscita) * Number(p.prezzo_kg_vivo)), fonte: `${rip.peso_vivo_uscita} kg vivi × ${formattaEuro(p.prezzo_kg_vivo)}` };
+    const scambio = eTrasferito(rip.stato) ? "trasferito senza fattura di vendita, considerato uno scambio: " : "";
+    if (Number(p?.prezzo_kg_vivo) > 0) return { valore: round2(Number(rip.peso_vivo_uscita) * Number(p.prezzo_kg_vivo)), fonte: `${scambio}${rip.peso_vivo_uscita} kg vivi × ${formattaEuro(p.prezzo_kg_vivo)}` };
   }
   return { valore: null, fonte: "dati reali mancanti (peso o prezzo): si tiene la stima, nessun conguaglio" };
 }
@@ -241,8 +259,11 @@ export default function ReportRiproduttori() {
   }
 
   async function caricaElenco() {
-    const { data } = await supabase.from("ci_residuo_riproduttore").select("*, animali(bdn, nome, specie, stato, provenienza)").order("updated_at", { ascending: false });
-    setRiproduttori(numerizzaCampi(data || [], ["costo_acquisto", "costi_crescita_preriproduttiva", "valore_realizzo_stimato", "valore_realizzo_reale", "residuo_totale", "residuo_rimanente", "conto_sospeso", "residuo_all_uscita", "conguaglio_uscita"]));
+    const { data } = await supabase.from("ci_residuo_riproduttore").select("*, animali(bdn, nome, specie, stato, provenienza, riproduttore)").order("updated_at", { ascending: false });
+    // Si mostrano solo gli animali marcati «riproduttore» nell'app: un vecchio record di un capo
+    // a cui il segno è stato tolto non viene più ricalcolato e avrebbe valori vecchi o vuoti.
+    const genitori = await caricaIdGenitori();
+    setRiproduttori(numerizzaCampi((data || []).filter(r => r.animali?.riproduttore || genitori.has(r.animale_id)).map(r => ({ ...r, riproduttoreDaiParti: !r.animali?.riproduttore })),  ["costo_acquisto", "costi_crescita_preriproduttiva", "valore_realizzo_stimato", "valore_realizzo_reale", "residuo_totale", "residuo_rimanente", "conto_sospeso", "residuo_all_uscita", "conguaglio_uscita"]));
   }
 
   async function caricaParametri() {
@@ -260,21 +281,22 @@ export default function ReportRiproduttori() {
       setParametri(parametriMap);
 
       const { data: tuttiAnimali, error: eA } = await fetchAllPages((da, a) => supabase
-        .from("animali").select("id,bdn,nome,specie,razza,razza_calcolata,riproduttore,costo_iniziale,prezzo_acquisto,padre_id,madre_id,nascita,stato,data_uscita,peso_vivo_uscita,peso_carcassa,provenienza,sesso,motivo_uscita,tipo_costo_iniziale").range(da, a));
+        .from("animali").select("id,bdn,nome,specie,razza,razza_calcolata,riproduttore,costo_iniziale,prezzo_acquisto,padre_id,madre_id,nascita,data_ingresso,note,stato,data_uscita,peso_vivo_uscita,peso_carcassa,provenienza,sesso,motivo_uscita,tipo_costo_iniziale").range(da, a));
       if (eA) throw new Error(eA.message);
 
       const { data: tuttiLotti, error: eL } = await fetchAllPages((da, a) => supabase
-        .from("lotti_suini").select("id,padre_id,madre_id,data_parto,codice_lotto,codice,tipo_provenienza").range(da, a));
+        .from("lotti_suini").select("id,padre_id,madre_id,data_parto,codice_lotto,codice,tipo_provenienza,prezzo_acquisto").range(da, a));
       if (eL) throw new Error(eL.message);
       const { data: tutteUnita, error: eU } = await fetchAllPages((da, a) => supabase
-        .from("suini_lotto").select("id,lotto_id,nr,stato,data_uscita").range(da, a));
+        .from("suini_lotto").select("id,lotto_id,nr,stato,data_uscita,bdn,codice_completo").range(da, a));
       if (eU) throw new Error(eU.message);
       const mappaLottiPerId = new Map((tuttiLotti || []).map(l => [l.id, l]));
 
       const { data: prezziRiforma } = await supabase.from("prezzi_riforma").select("*");
+      const righeVendita = await caricaRigheVendita();
       const etaMinimaAnni = parametriMap.eta_minima_calcolo_peso_storico || 3;
       const realeDi = (rip, rec) => realizzoRealeUscita({
-        rip, prezzoSchedaCarcassa: rec.prezzo_vendita_kg_carcassa_reale, prezziRiforma,
+        rip, prezzoSchedaCarcassa: rec.prezzo_vendita_kg_carcassa_reale, prezziRiforma, righeVendita,
         prezzoRiformaCarcassa: parametriMap[PARAMETRI_PREZZO_RIFORMA[rip.specie]] || PREZZO_RIFORMA_PREDEFINITO[rip.specie],
       });
 
@@ -291,7 +313,10 @@ export default function ReportRiproduttori() {
       // non pesa sull'anno, entra nel residuo e si ammortizza.
       const nomeAnimale = a => a.bdn || a.nome || `animale ${a.id}`;
       const annoDi = d => (d ? Number(String(d).slice(0, 4)) : null);
-      const tutti = tuttiAnimali || [];
+      // Chi ha un parto registrato è riproduttore anche senza il segno nell'app (05/10/2026)
+      const base = normalizzaAnimali(tuttiAnimali || [], tuttiLotti, tutteUnita);
+      const tutti = segnaRiproduttoriEffettivi(base, idGenitori(base, tuttiLotti));
+      // Riproduttore = segnato nell'app OPPURE con almeno un parto registrato (madre o padre)
       const riproduttoriAttivi = tutti.filter(a => a.riproduttore)
         .sort((x, y) => (x.nascita || "9999").localeCompare(y.nascita || "9999") || x.id - y.id);
       if (riproduttoriAttivi.length === 0) {
@@ -321,7 +346,7 @@ export default function ReportRiproduttori() {
         natiPerChiave.get(k).push(riga);
       };
       let natiSenzaRiga = 0;
-      tutti.filter(a => a.provenienza === "Nato in azienda" && a.nascita && annoDi(a.nascita) <= anno).forEach(a => {
+      tutti.filter(a => eNatoDellaMandria(a) && a.nascita && annoDi(a.nascita) <= anno).forEach(a => {
         const riga = rigaAnimale.get(`${a.id}|${annoDi(a.nascita)}`);
         if (riga) aggiungiNato(a.specie, annoDi(a.nascita), riga); else natiSenzaRiga++;
       });
@@ -336,7 +361,7 @@ export default function ReportRiproduttori() {
 
       // Dati fissi di ogni riproduttore
       const info = riproduttoriAttivi.map(rip => {
-        const figli = tutti.filter(a => (a.padre_id === rip.id || a.madre_id === rip.id) && a.provenienza === "Nato in azienda");
+        const figli = tutti.filter(a => (a.padre_id === rip.id || a.madre_id === rip.id) && eNatoDellaMandria(a));
         const unitaFiglie = (tutteUnita || []).filter(u => {
           const lotto = mappaLottiPerId.get(u.lotto_id);
           return lotto && u.stato !== "registrato_individuale" && lotto.tipo_provenienza !== "acquistato" && (lotto.padre_id === rip.id || lotto.madre_id === rip.id);
@@ -367,7 +392,7 @@ export default function ReportRiproduttori() {
       // Costo di partenza: acquisto, oppure costo di nascita calcolato qui (anno di nascita)
       const costoNascitaCalcolato = new Map(); // id riga → { madre, padre }
       const partenzaDi = i => {
-        if (i.rip.provenienza !== "Nato in azienda") return round2(parseFloat(i.rip.prezzo_acquisto) || 0);
+        if (!eNatoDellaMandria(i.rip)) return round2(parseFloat(i.rip.prezzo_acquisto) || 0);
         const riga = i.rip.nascita ? rigaAnimale.get(`${i.rip.id}|${annoDi(i.rip.nascita)}`) : null;
         if (!riga) return 0;
         const c = costoNascitaCalcolato.get(riga.id);
@@ -701,7 +726,9 @@ function TabellaRiproduttoriRaggruppata({ riproduttori, parametri, provenienzeEs
                       <tbody>
                         {righeSpecie.map(r => (
                           <tr key={r.id} onClick={() => onSelezionaAnimale(r.animale_id)} style={{ borderTop: `1px solid ${C.border}`, cursor: "pointer" }}>
-                            <td style={td}>{r.animali?.bdn || r.animali?.nome || "—"}</td>
+                            <td style={td}>{r.animali?.bdn || r.animali?.nome || "—"}
+                              {r.riproduttoreDaiParti && <div style={{ fontSize: 10, fontWeight: 700, color: "#8A6D00", background: "#FFF3CD", borderRadius: 4, padding: "1px 4px", marginTop: 2 }}>dai parti registrati: nell'app manca il segno «riproduttore»</div>}
+                            </td>
                             <td style={{ ...td, textAlign: "right" }}>{formattaEuro(r.residuo_totale)}</td>
                             <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{formattaEuro(r.residuo_rimanente)}</td>
                             <td style={{ ...td, textAlign: "right" }}>
@@ -718,9 +745,9 @@ function TabellaRiproduttoriRaggruppata({ riproduttori, parametri, provenienzeEs
                               title={r.residuo_uscita_destinazione || "Riproduttore non uscito (o uscito dopo l'anno elaborato)"}>
                               {r.residuo_uscita_anno != null ? `🔶 ${formattaEuro(round2((r.residuo_all_uscita || 0) + (r.conguaglio_uscita || 0)))}` : "—"}
                               {r.residuo_uscita_anno != null && (
-                                <div style={{ fontSize: 10, fontWeight: 400, textAlign: "left", maxWidth: 240 }}>
-                                  costo rimasto {formattaEuro(r.residuo_all_uscita)}{r.conguaglio_uscita ? ` ${r.conguaglio_uscita > 0 ? "+" : "−"} conguaglio ${formattaEuro(Math.abs(r.conguaglio_uscita))}` : ""}
-                                  {" "}(realizzo stimato {formattaEuro(r.valore_realizzo_stimato)}, reale {r.valore_realizzo_reale != null ? formattaEuro(r.valore_realizzo_reale) : "non disponibile"}) — {r.residuo_uscita_destinazione}
+                                <div style={{ fontSize: 11, fontWeight: 400, textAlign: "left", minWidth: 200 }}>
+                                  → {r.residuo_uscita_destinazione}
+                                  <div style={{ fontSize: 10, color: C.muted }}>dettaglio nella scheda</div>
                                 </div>
                               )}
                             </td>
@@ -728,6 +755,7 @@ function TabellaRiproduttoriRaggruppata({ riproduttori, parametri, provenienzeEs
                               {r.animali?.stato && r.animali.stato !== "attivo"
                                 ? (r.residuo_uscita_anno != null ? <span style={{ color: C.green, fontWeight: 700 }}>Uscito nel {r.residuo_uscita_anno} — costo rimasto passato</span> : <span style={{ color: C.accent, fontWeight: 700 }}>Uscito — da elaborare</span>)
                                 : <span style={{ color: C.muted }}>Attivo</span>}
+                              {eTrasferito(r.animali?.stato) && <BadgeTrasferito fonte={r.realizzo_reale_fonte} />}
                             </td>
                           </tr>
                         ))}
@@ -740,6 +768,17 @@ function TabellaRiproduttoriRaggruppata({ riproduttori, parametri, provenienzeEs
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// Uscita per trasferimento evidenziata: venduto con fattura, oppure scambio (o fattura mancante)
+function BadgeTrasferito({ fonte }) {
+  const venduto = String(fonte || "").startsWith("venduto");
+  return (
+    <div title={fonte || ""} style={{ marginTop: 4, padding: "3px 6px", borderRadius: 6, fontSize: 11, fontWeight: 700,
+      background: venduto ? "#E3F1E4" : "#FDE2D3", color: venduto ? C.green : "#A0440E" }}>
+      {venduto ? "Trasferito e venduto: incasso dalla fattura" : "Trasferito senza fattura di vendita: scambio o fattura mancante"}
     </div>
   );
 }

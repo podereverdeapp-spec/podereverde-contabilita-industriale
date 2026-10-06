@@ -1,3 +1,4 @@
+import { idGenitori, segnaRiproduttoriEffettivi, applicaNatiConLaMadre } from "./costoAnimale";
 // Motore UBA — identico a quello reale di podereverdeapp.it (ExportManager.jsx)
 // Condiviso tra ReportUba.jsx e ReportCosti.jsx
 
@@ -7,7 +8,9 @@ export const UBA_FASCE_EXP = {
   ovino: [{ fino: 120, coeff: 0.027, label: "Agnello (<4 mesi)" }, { fino: 365, coeff: 0.10, label: "Agnellone (4m-1a)" }, { fino: Infinity, coeff: 0.15, label: "Ovino adulto (≥1a)" }],
 };
 
-const MOTIVI_PRODUTTIVI_EXP = ["macellazione", "macellato", "venduto", "riformato", "riforma", "vendita"];
+// «Trasferito» e «scambiato» sono uscite con ricavo (scambio o vendita con fattura), mai come i
+// morti: deciso dal Dott. Bizzarri il 05/10/2026.
+const MOTIVI_PRODUTTIVI_EXP = ["macellazione", "macellato", "venduto", "riformato", "riforma", "vendita", "trasferit", "scambi"];
 
 // Periodo di presenza in azienda nell'anno.
 // - nascita: data di nascita vera, usata SEMPRE per l'età (e quindi per il coefficiente UBA).
@@ -82,8 +85,11 @@ export function categoriaContabileExp(animale) {
 }
 
 // Calcola tutte le righe UBA per un anno, da animali + lotti suini reali
-export function calcolaReportUba(animali, lotti, suiniLotto, anno) {
+export function calcolaReportUba(animaliApp, lotti, suiniLotto, anno) {
   const righe = [];
+  // Chi ha un parto registrato è riproduttore anche senza il segno nell'app
+  const base = applicaNatiConLaMadre(animaliApp);
+  const animali = segnaRiproduttoriEffettivi(base, idGenitori(base, lotti));
 
   for (const a of animali) {
     if (!a.specie || !UBA_FASCE_EXP[a.specie]) continue;

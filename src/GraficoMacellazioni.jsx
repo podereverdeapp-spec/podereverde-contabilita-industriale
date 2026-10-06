@@ -1,3 +1,4 @@
+import { caricaIdGenitori } from "./genitori";
 import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import { costoAnimale, costoAcquistoUnitario, righePerSoggetto } from "./costoAnimale";
@@ -28,10 +29,11 @@ export default function GraficoMacellazioni() {
       // Costo dell'animale calcolato come in tutto il programma (costoAnimale.js): acquisto,
       // nascita, mantenimento, costo rimasto ricevuto. I riproduttori non sono animali da macello.
       const { perAnimale } = righePerSoggetto(costi);
+      const genitori = await caricaIdGenitori(); // chi ha partorito o generato è un riproduttore
 
       const risultati = [];
       for (const a of (animali || [])) {
-        if (a.riproduttore) continue;
+        if (a.riproduttore || genitori.has(a.id)) continue;
         const peso = parseFloat(a.peso_carcassa);
         if (!peso || peso <= 0 || !a.nascita || !a.data_uscita) continue;
         const etaMesi = round2((new Date(a.data_uscita) - new Date(a.nascita)) / (30.44 * 86400000));

@@ -11,3 +11,11 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
+
+/* Intestazioni delle colonne sempre visibili quando si scorre una tabella
+   (richiesto dal Dott. Bizzarri il 05/10/2026): ogni tabella lunga scorre dentro il suo
+   riquadro e la riga dei titoli resta ferma in alto. */
+div:has(> table) { max-height: 78vh; overflow: auto; }
+thead th { position: sticky; top: 0; z-index: 2; }
+thead tr, thead th { background-color: inherit; }
+thead:not([style*="background"]) th { background-color: #fff; }

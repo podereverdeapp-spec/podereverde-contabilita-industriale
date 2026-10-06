@@ -3,6 +3,7 @@ import { supabase } from "./supabase";
 import { C } from "./style";
 import { numerizzaCampi, formattaEuro, fetchAllPages } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
+import { normalizzaAnimali } from "./costoAnimale";
 
 export default function ReportAcquistoAnimali() {
   const [righe, setRighe] = useState([]);
@@ -12,8 +13,32 @@ export default function ReportAcquistoAnimali() {
   const [modificaId, setModificaId] = useState(null); // id della riga in modifica
   const [formModifica, setFormModifica] = useState({});
   const [salvando, setSalvando] = useState(null);
+  const [compresi, setCompresi] = useState(new Map()); // matricola → { escluso, testo }
 
-  useEffect(() => { carica(); caricaAnimaliSenzaCosto(); }, []);
+  useEffect(() => { carica(); caricaAnimaliSenzaCosto(); caricaCompresi(); }, []);
+
+  // Righe il cui prezzo è già compreso in un'altra (deciso il 05/10/2026): capi passati a scheda
+  // individuale da un lotto comprato (contano nella riga del lotto) e vitelli entrati con la madre
+  // (contano nella riga della madre). Restano in elenco ma non entrano nei totali.
+  async function caricaCompresi() {
+    const [rA, rL, rU] = await Promise.all([
+      fetchAllPages((da, a) => supabase.from("animali").select("id,bdn,provenienza,prezzo_acquisto,madre_id,nascita,data_ingresso,note").range(da, a)),
+      fetchAllPages((da, a) => supabase.from("lotti_suini").select("id,codice_lotto,codice,tipo_provenienza,prezzo_acquisto").range(da, a)),
+      fetchAllPages((da, a) => supabase.from("suini_lotto").select("id,lotto_id,nr,bdn,codice_completo,stato").range(da, a)),
+    ]);
+    if (rA.error || rL.error || rU.error) return;
+    const perId = new Map((rA.data || []).map(a => [a.id, a]));
+    const m = new Map();
+    for (const a of normalizzaAnimali(rA.data || [], rL.data || [], rU.data || [])) {
+      const chiave = String(a.bdn || "").trim().toUpperCase();
+      if (!chiave) continue;
+      if (a.daLottoComprato) m.set(chiave, { escluso: true, testo: `Non conta nel totale: compreso nel lotto ${a.daLottoComprato} (vale la sua parte: ${formattaEuro(a.prezzo_acquisto)})` });
+      else if (a.natoConLaMadre) m.set(chiave, { escluso: false, testo: `Entrato con la madre ${perId.get(a.madre_id)?.bdn || ""}: nei costi questo importo va alla madre (il vitello è un figlio della mandria)` });
+    }
+    setCompresi(m);
+  }
+  const compresoIn = r => compresi.get(String(r.bdn || "").trim().toUpperCase()) || null;
+  const importoValido = r => compresoIn(r)?.escluso ? 0 : (parseFloat(r.importo) || 0);
 
   async function caricaAnimaliSenzaCosto() {
     const { data, error } = await fetchAllPages((da, a) => supabase
@@ -120,12 +145,12 @@ export default function ReportAcquistoAnimali() {
       "Fornitore": r.ci_fornitori?.nome, "Numero fattura": r.numero_fattura, "Data fattura": r.data_fattura,
       "Specie": r.specie, "Razza": r.razza, "Destinazione": r.destinazione_acquisto, "BDN": r.bdn, "Lotto": r.nr_lotto,
       "Quantità": numeroExcel(r.quantita), "U.M.": r.unita_misura, "Prezzo unitario": numeroExcel(r.prezzo_unitario),
-      "Importo": numeroExcel(r.importo), "Stato": r.stato,
+      "Importo": numeroExcel(r.importo), "Importo che conta nel totale": numeroExcel(importoValido(r)), "Nota": compresoIn(r)?.testo || "", "Stato": r.stato,
     }));
     esportaExcel("ReportAcquistoAnimali", [{ nome: "Acquisto Animali", righe: righeExcel }]);
   }
   const daElaborare = righe.filter(r => r.stato === "DA_ELABORARE");
-  const totaleDaElaborare = daElaborare.reduce((s, r) => s + (r.importo || 0), 0);
+  const totaleDaElaborare = daElaborare.reduce((s, r) => s + importoValido(r), 0);
 
   return (
     <div style={{ padding: 20, maxWidth: 1100, margin: "0 auto" }}>
@@ -219,6 +244,8 @@ export default function ReportAcquistoAnimali() {
                     {r.destinazione_acquisto && ` · ${r.destinazione_acquisto}`}
                     {r.bdn && ` · BDN ${r.bdn}`}{r.nr_lotto && ` · Lotto ${r.nr_lotto}`}
                   </div>
+                  {compresoIn(r) && <div style={{ fontSize: 11, fontWeight: 700, color: "#8A6D00", background: "#FFF3CD", borderRadius: 4, padding: "2px 6px", marginTop: 3, display: "inline-block" }}>
+                    {compresoIn(r).testo}</div>}
                   {(r.quantita || r.prezzo_unitario) && (
                     <div style={{ fontSize: 12, color: C.muted }}>
                       {r.quantita && `${r.quantita} ${r.unita_misura || ""}`}
@@ -247,7 +274,7 @@ export default function ReportAcquistoAnimali() {
           {filtrate.length > 0 && (
             <div style={{ background: C.bg, border: `2px solid ${C.border}`, borderRadius: 10, padding: "10px 16px", display: "flex", justifyContent: "space-between", fontWeight: 700 }}>
               <span>Totale ({filtrate.length} righe)</span>
-              <span>{formattaEuro(filtrate.reduce((s, r) => s + (parseFloat(r.importo) || 0), 0))}</span>
+              <span>{formattaEuro(filtrate.reduce((s, r) => s + importoValido(r), 0))}</span>
             </div>
           )}
         </div>
