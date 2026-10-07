@@ -17,6 +17,9 @@ const AREE_ORDINARIE = [
 ];
 const DESTINAZIONI = ["Bovini", "Suini", "Ovini", "Bovini e Ovini", "Bovini e Suini", "Suini e Ovini", "Generali", "Pollame", "Cavalli"];
 
+// Versione 235: i prezzi nell'Excel con 4 decimali (numeroExcel arrotonda a 2)
+const prezzo4 = n => (n === null || n === undefined || Number.isNaN(Number(n))) ? null : Math.round(Number(n) * 10000) / 10000;
+
 function raggruppaRighe(righeInput, chiaveFn) {
   const mappa = new Map();
   righeInput.forEach(r => {
@@ -28,7 +31,8 @@ function raggruppaRighe(righeInput, chiaveFn) {
     const ordinate = righeGruppo.slice().sort((a, b) => new Date(b.data) - new Date(a.data));
     const prezziValidi = ordinate.map(r => r.prezzo_unitario).filter(p => p > 0);
     const prezzi = prezziValidi.length > 0 ? prezziValidi : [0];
-    const prezzoMedio = round2(prezzi.reduce((s, p) => s + p, 0) / prezzi.length);
+    // Versione 235: 4 decimali (prima 2), come i prezzi mostrati — per i prezzi al kg i centesimi contano
+    const prezzoMedio = Math.round(prezzi.reduce((s, p) => s + p, 0) / prezzi.length * 10000) / 10000;
     const prezziPrecedenti = ordinate.slice(1).map(r => r.prezzo_unitario).filter(p => p > 0);
     const prezzoMassimoPrecedente = prezziPrecedenti.length > 0 ? Math.max(...prezziPrecedenti) : null;
     const prezzoRecente = ordinate.find(r => r.prezzo_unitario > 0)?.prezzo_unitario ?? 0;
@@ -40,6 +44,7 @@ function raggruppaRighe(righeInput, chiaveFn) {
     };
     return {
       descrizione: ordinate[0].descrizione, unitaMisura: ordinate[0].unita_misura,
+      unitaDiverse: [...new Set(ordinate.map(r => (r.unita_misura || "").trim().toLowerCase()).filter(Boolean))],
       controparti: [...new Set(ordinate.map(r => r.controparte).filter(Boolean))],
       fornitoriIdPassivi: [...new Set(righePassive.map(r => r.fornitore_id).filter(Boolean))],
       idRighePassive: righePassive.map(r => r.id),
@@ -73,8 +78,8 @@ export default function ArticoliPrezzi() {
     const mappaFatture = new Map((fatture || []).map(f => [f.id, f]));
     const idFatture = (fatture || []).map(f => f.id);
 
-    const { data: fornitori } = await supabase.from("ci_fornitori").select("id, nome");
-    const { data: clienti } = await supabase.from("ci_clienti").select("id, nome");
+    const { data: fornitori } = await fetchAllPages((da, a) => supabase.from("ci_fornitori").select("id, nome").order("id").range(da, a));
+    const { data: clienti } = await fetchAllPages((da, a) => supabase.from("ci_clienti").select("id, nome").order("id").range(da, a));
     const mappaFornitori = new Map((fornitori || []).map(f => [f.id, f.nome]));
     const mappaClienti = new Map((clienti || []).map(c => [c.id, c.nome]));
 
@@ -146,12 +151,15 @@ export default function ArticoliPrezzi() {
   }
 
   async function salvaClassifica(g) {
+    // Versione 235: un campo lasciato vuoto NON viene più cancellato su tutte le righe (resta com'è),
+    // e prima di scrivere si chiede conferma con il numero di righe e di fornitori coinvolti.
+    const nuovaClassifica = {};
+    for (const k of ["area", "centro_costo", "destinazione", "tipo_costo"]) if (formClassifica[k]) nuovaClassifica[k] = formClassifica[k];
+    if (Object.keys(nuovaClassifica).length === 0) { alert("Nessun campo scelto: niente da cambiare."); return; }
+    const etichette = { area: "Area", centro_costo: "Centro di Costo", destinazione: "Destinazione", tipo_costo: "Tipo di Costo" };
+    if (!window.confirm(`Confermi?\n\n${Object.entries(nuovaClassifica).map(([k, v]) => `${etichette[k]}: ${v}`).join("\n")}\n\nVerranno cambiate ${g.idRighePassive.length} righe di acquisto di «${g.descrizione}» (tutti gli anni) e create o aggiornate le regole per ${g.fornitoriIdPassivi.length} fornitori, valide per le prossime fatture.\nI campi lasciati vuoti restano come sono.`)) return;
     setSalvandoClassifica(true);
     try {
-      const nuovaClassifica = {
-        area: formClassifica.area || null, centro_costo: formClassifica.centro_costo || null,
-        destinazione: formClassifica.destinazione || null, tipo_costo: formClassifica.tipo_costo || null,
-      };
       // 1) Corregge tutte le righe fattura già caricate con questa descrizione
       if (g.idRighePassive.length > 0) {
         const { error } = await supabase.from("ci_articoli_fattura").update(nuovaClassifica).in("id", g.idRighePassive);
@@ -160,8 +168,10 @@ export default function ArticoliPrezzi() {
       // 2) Crea/aggiorna una regola per OGNI fornitore che vende questo prodotto,
       // così le prossime fatture si classificano da sole allo stesso modo
       for (const fornitoreId of g.fornitoriIdPassivi) {
-        const { data: esistente } = await supabase.from("ci_regole_fornitore_variabile")
-          .select("id").eq("fornitore_id", fornitoreId).eq("parola_chiave", g.descrizione).maybeSingle();
+        const { data: esistenti, error: eR } = await supabase.from("ci_regole_fornitore_variabile")
+          .select("id").eq("fornitore_id", fornitoreId).eq("parola_chiave", g.descrizione).order("id");
+        if (eR) throw new Error(eR.message);
+        const esistente = (esistenti || [])[0];
         if (esistente) {
           const { error } = await supabase.from("ci_regole_fornitore_variabile").update(nuovaClassifica).eq("id", esistente.id);
           if (error) throw new Error(error.message);
@@ -181,13 +191,13 @@ export default function ArticoliPrezzi() {
   function esporta() {
     const righeExcel = filtrati.map(g => ({
       "Descrizione": g.descrizione, "U.M.": g.unitaMisura, "Controparti": g.controparti.join(", "), "N° Acquisti": g.nAcquisti,
-      "Prezzo minimo": numeroExcel(g.prezzoMinimo), "Prezzo medio": numeroExcel(g.prezzoMedio), "Prezzo massimo": numeroExcel(g.prezzoMassimo),
-      "Prezzo più recente": numeroExcel(g.prezzoRecente), "Scostamento % dalla media": numeroExcel(g.scostamentoPct), "Data più recente": g.dataRecente,
+      "Prezzo minimo": prezzo4(g.prezzoMinimo), "Prezzo medio": prezzo4(g.prezzoMedio), "Prezzo massimo": prezzo4(g.prezzoMassimo),
+      "Prezzo più recente": prezzo4(g.prezzoRecente), "Unità di misura diverse nello stesso prodotto": g.unitaDiverse.length > 1 ? g.unitaDiverse.join(", ") : "", "Scostamento % dalla media": numeroExcel(g.scostamentoPct), "Data più recente": g.dataRecente,
       "Nuovo massimo storico": g.prezzoRecenteERecord ? "Sì" : "No",
     }));
     const righeStorico = filtrati.flatMap(g => g.storico.map(s => ({
       "Descrizione": g.descrizione, "Tipo": s.tipo, "Controparte": s.controparte, "Data": s.data, "Fattura n.": s.numero,
-      "Quantità": numeroExcel(s.quantita), "U.M.": s.unita_misura, "Prezzo unitario": numeroExcel(s.prezzo_unitario), "Imponibile": numeroExcel(s.totale_riga),
+      "Quantità": numeroExcel(s.quantita), "U.M.": s.unita_misura, "Prezzo unitario": prezzo4(s.prezzo_unitario), "Imponibile": numeroExcel(s.totale_riga),
     })));
     esportaExcel("ArticoliPrezzi", [
       { nome: "Riepilogo", righe: righeExcel },
@@ -251,7 +261,7 @@ export default function ArticoliPrezzi() {
                     style={{ borderTop: `1px solid ${C.border}`, cursor: "pointer", background: espanso === chiave ? C.primary + "10" : "transparent" }}>
                     <td style={td}>{g.descrizione}</td>
                     <td style={{ ...td, fontSize: 11, color: C.muted }}>{g.controparti.slice(0, 2).join(", ")}{g.controparti.length > 2 && ` +${g.controparti.length - 2}`}</td>
-                    <td style={td}>{g.unitaMisura || "—"}</td>
+                    <td style={td}>{g.unitaMisura || "—"}{g.unitaDiverse.length > 1 && <span title={`Unità di misura diverse in questo prodotto: ${g.unitaDiverse.join(", ")} — i prezzi non sono confrontabili tra loro`} style={{ color: C.red, fontWeight: 800 }}> ⚠️</span>}</td>
                     <td style={{ ...td, textAlign: "right" }}>{g.nAcquisti}</td>
                     <td style={{ ...td, textAlign: "right" }}>{formattaEuro(g.prezzoMinimo, 4)}</td>
                     <td style={{ ...td, textAlign: "right" }}>{formattaEuro(g.prezzoMedio, 4)}</td>

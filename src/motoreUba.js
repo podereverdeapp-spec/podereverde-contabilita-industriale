@@ -17,23 +17,34 @@ const MOTIVI_PRODUTTIVI_EXP = ["macellazione", "macellato", "venduto", "riformat
 // - dataIngresso (facoltativa): per i capi acquistati/trasferiti la presenza parte dall'ingresso,
 //   perché il costo sostenuto prima dell'acquisto è già compreso nel prezzo pagato.
 //   Per i nati in azienda non va passata: la presenza parte dalla nascita.
+// Versione 236 (anomalia 7, decisione del Dott. Bizzarri del 07/10/2026 ore 21:11): i giorni si contano
+// sulle sole DATE, senza ore né fusi orari. Prima l'inizio e la fine dell'anno erano in ora italiana e le
+// date dell'app in ora di Greenwich: chi era presente il 31 dicembre riceveva un giorno in più
+// (366 giorni nel 2025, 367 nel 2024) e l'inizio appariva come «31/12 dell'anno prima».
+export function giornoSoloData(v) {
+  if (!v) return null;
+  if (v instanceof Date) return Date.UTC(v.getFullYear(), v.getMonth(), v.getDate());
+  const [a, m, g] = String(v).slice(0, 10).split("-").map(Number);
+  const t = Date.UTC(a, (m || 1) - 1, g || 1);
+  return Number.isFinite(t) ? t : null;
+}
 export function periodoNellAnnoExp(nascita, dataUscita, stato, anno, dataIngresso = null) {
-  if (!nascita) return null;
-  const inizioAnno = new Date(anno, 0, 1);
-  const fineAnno = new Date(anno, 11, 31, 23, 59, 59);
-  const oggi = new Date();
-  const dataNascita = new Date(nascita);
-  const dataIngr = dataIngresso ? new Date(dataIngresso) : null;
-  const dataInizio = dataIngr && dataIngr > dataNascita ? dataIngr : dataNascita;
-  const dataFine = dataUscita ? new Date(dataUscita) : (oggi < fineAnno ? oggi : fineAnno);
-  if (dataFine < inizioAnno) return null;
+  const dataNascita = giornoSoloData(nascita);
+  if (dataNascita === null) return null;
+  const inizioAnno = Date.UTC(anno, 0, 1);
+  const fineAnno = Date.UTC(anno, 11, 31);
+  const oggi = giornoSoloData(new Date());
+  const dataIngr = giornoSoloData(dataIngresso);
+  const dataInizio = dataIngr !== null && dataIngr > dataNascita ? dataIngr : dataNascita;
+  const dataFine = dataUscita ? giornoSoloData(dataUscita) : (oggi < fineAnno ? oggi : fineAnno);
+  if (dataFine === null || dataFine < inizioAnno) return null;
   if (dataInizio > fineAnno) return null;
   if (dataFine < dataInizio) return null;
   const inizio = dataInizio > inizioAnno ? dataInizio : inizioAnno;
   const fine = dataFine < fineAnno ? dataFine : fineAnno;
   return {
-    inizio: inizio.toISOString().split("T")[0],
-    fine: fine.toISOString().split("T")[0],
+    inizio: new Date(inizio).toISOString().slice(0, 10),
+    fine: new Date(fine).toISOString().slice(0, 10),
     giorni: Math.round((fine - inizio) / 86400000) + 1,
     etaAllInizio: Math.round((inizio - dataNascita) / 86400000),
   };

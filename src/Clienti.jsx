@@ -22,10 +22,16 @@ export default function Clienti() {
 
   async function salvaNuovo() {
     if (!nuovo.nome?.trim()) { alert("Il nome è obbligatorio."); return; }
+    // Versione 235: controllo dei doppioni per nome e partita IVA prima di creare il cliente
+    const nome = nuovo.nome.trim().toLowerCase().replace(/\s+/g, " ");
+    const piva = (nuovo.partita_iva || "").toUpperCase().replace(/\s+/g, "").replace(/^IT/, "");
+    const doppio = clienti.find(c => (c.nome || "").trim().toLowerCase().replace(/\s+/g, " ") === nome
+      || (piva && (c.partita_iva || "").toUpperCase().replace(/\s+/g, "").replace(/^IT/, "") === piva));
+    if (doppio && !window.confirm(`Esiste già il cliente «${doppio.nome}»${doppio.partita_iva ? ` (P.IVA ${doppio.partita_iva})` : ""}.\n\nCrearne comunque uno nuovo?`)) return;
     setSalvando(true);
     const { error } = await supabase.from("ci_clienti").insert([{
       nome: nuovo.nome.trim(), partita_iva: nuovo.partita_iva || null,
-      citta: nuovo.citta || null, telefono: nuovo.telefono || null, email: nuovo.email || null,
+      citta: nuovo.citta || null, telefono: nuovo.telefono || null, email: nuovo.email || null, attivo: true,
     }]);
     setSalvando(false);
     if (error) { alert(`⚠️ Errore nel salvataggio:\n\n${error.message}`); return; }

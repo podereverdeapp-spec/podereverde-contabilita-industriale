@@ -16,7 +16,7 @@ export default function IstruzioniControlli() {
       sezioni={[
         {
           pagina: "Registro Controlli", icon: "🛡️",
-          aCosaServe: "L'elenco delle anomalie trovate: madri non presenti al parto, lotti senza padre, capi acquistati senza prezzo o senza fattura, date di uscita incoerenti, parti senza lotto o troppo vicini, cespiti senza imputazione, righe di costo rimaste senza capo, fatture d'acquisto non abbinate.",
+          aCosaServe: "L'elenco delle anomalie trovate: madri non presenti al parto, lotti senza padre, capi acquistati senza prezzo o senza fattura, date di uscita incoerenti, parti senza lotto o troppo vicini, cespiti senza imputazione, righe di costo rimaste senza capo, fatture d'acquisto non abbinate, righe di fatture senza Tipo di Costo (che restano fuori dai costi), fornitori con fatture ma senza partita IVA.",
           comeSiUsa: [
             "In alto si sceglie l'elenco: «Da decidere», «Decisa», «Lasciata com'è», «Risolta», oppure il «Diario dei controlli» (quando sono stati fatti i controlli e con quale esito).",
             "«✏️ Correggi» (solo dove la correzione è semplice): mostra il valore attuale, si sceglie il nuovo valore e si conferma. Viene scritto solo quel campo di quel record, e solo se nessuno l'ha cambiato nel frattempo.",

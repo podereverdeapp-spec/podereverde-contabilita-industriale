@@ -8,7 +8,7 @@ import { C } from "./style";
 import { fetchAllPages } from "./parsingUtils";
 import { eseguiControlli, personePerRecord, STATI_ANOMALIA, dataIt } from "./controlliRegistri";
 
-const COLORE_AREA = { "Lotti suini": C.suini, "Parti": "#7A5C8E", "Animali": C.bovini, "Cespiti": C.blue, "Costi": C.accent, "Fatture acquisto": C.green };
+const COLORE_AREA = { "Fatture": C.primaryLight, "Lotti suini": C.suini, "Parti": "#7A5C8E", "Animali": C.bovini, "Cespiti": C.blue, "Costi": C.accent, "Fatture acquisto": C.green };
 const bottone = (colore, pieno = true) => ({ background: pieno ? colore : "transparent", color: pieno ? "#fff" : colore, border: `1.5px solid ${colore}`, borderRadius: 8, padding: "6px 12px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" });
 const campo = { padding: "7px 9px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 13 };
 const quandoIt = t => t ? new Date(t).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
@@ -23,6 +23,8 @@ const CORREZIONI = {
   A3: { tabella: "animali", campo: "data_uscita", etichetta: "Data di uscita", tipo: "data" },
   A4: { tabella: "animali", campo: "data_uscita", etichetta: "Data di uscita", tipo: "data" },
   C1: { tabella: "ci_cespiti", campo: "specie", etichetta: "Imputazione del cespite", tipo: "specie" },
+  R1: { tabella: "ci_articoli_fattura", campo: "tipo_costo", etichetta: "Tipo di Costo della riga", tipo: "scelta", scelte: ["Fisso", "Variabile", "Ammortizzabile"] },
+  R2: { tabella: "ci_fornitori", campo: "partita_iva", etichetta: "Partita IVA del fornitore", tipo: "testo" },
 };
 const DOVE_SI_CORREGGE = {
   L2: "Si decide quale dei due lotti è giusto; la correzione del lotto si fa nell'app (o con istruzione diretta del Topo).",
@@ -72,7 +74,9 @@ function Correzione({ anomalia, onFatta }) {
     : (attuale === null || attuale === "" ? "vuoto" : (reg.tipo === "padre" || reg.tipo === "madre") ? nomeScelta(attuale) : String(attuale));
 
   async function salva() {
-    let nuovo = valore === "" ? null : valore;
+    let nuovo = valore === "" ? null : (reg.tipo === "testo" ? String(valore).trim() : valore);
+    if ((reg.tipo === "scelta" || reg.tipo === "testo") && !nuovo) { setErrore("Inserire il nuovo valore."); return; }
+    if (reg.campo === "partita_iva") nuovo = nuovo.toUpperCase().replace(/\s+/g, "");
     if (reg.tipo === "numero") { nuovo = parseFloat(String(valore).replace(",", ".")); if (!(nuovo > 0)) { setErrore("Inserire un importo maggiore di zero."); return; } }
     if (reg.tipo === "padre" || reg.tipo === "madre") nuovo = nuovo ? Number(nuovo) : null;
     if (reg.tipo === "specie") nuovo = SPECIE_CESPITE[valore] || [];
@@ -105,6 +109,12 @@ function Correzione({ anomalia, onFatta }) {
           </select>
         )}
         {reg.tipo === "numero" && <input type="number" step="0.01" value={valore} onChange={e => setValore(e.target.value)} style={{ ...campo, width: 160 }} />}
+        {reg.tipo === "scelta" && (
+          <select value={valore || ""} onChange={e => setValore(e.target.value)} style={campo}>
+            <option value="">— scegliere —</option>
+            {reg.scelte.map(x => <option key={x} value={x}>{x}</option>)}
+          </select>
+        )}
         {reg.tipo === "testo" && <input value={valore} onChange={e => setValore(e.target.value)} style={{ ...campo, width: 220 }} />}
         {reg.tipo === "data" && <input type="date" value={valore || ""} onChange={e => setValore(e.target.value)} style={campo} />}
         {(anomalia.codice === "A3" || anomalia.codice === "A4") && (
@@ -127,7 +137,7 @@ function Correzione({ anomalia, onFatta }) {
 function SchedaAnomalia({ a, persona, onCambiata }) {
   const [apri, setApri] = useState(null); // "decidi" | "lascia" | "correggi"
   const [testo, setTesto] = useState(a.decisione || "");
-  const tabelleConPersona = ["animali", "lotti_suini", "eventi_riproduttivi", "ci_cespiti"];
+  const tabelleConPersona = ["animali", "lotti_suini", "eventi_riproduttivi", "ci_cespiti", "ci_articoli_fattura", "ci_fornitori"];
 
   async function aggiorna(campi) {
     const { error } = await supabase.from("ci_anomalie").update(campi).eq("id", a.id);

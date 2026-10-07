@@ -7,11 +7,12 @@ const round2 = n => Math.round((n + Number.EPSILON) * 100) / 100;
 // etichette valore sui punti, linea tratteggiata per la media (in un angolo fisso, per
 // non sovrapporsi mai alle etichette dei punti). Riusato da Storico Mangimi e Storico Costi.
 // punti: [{ anno, valore }] — non serve altro, l'estrazione del campo la fa il chiamante.
-export default function GraficoAndamento({ punti: puntiInput, decimaliValore = 3 }) {
+// media (facoltativa, versione 236): media già calcolata dal chiamante, per esempio senza l'anno in corso
+export default function GraficoAndamento({ punti: puntiInput, decimaliValore = 3, media: mediaData = null }) {
   const punti = puntiInput.slice().sort((a, b) => a.anno - b.anno); // dal più vecchio al più recente
   if (punti.length < 2) return <div style={{ padding: 12, color: C.muted, fontSize: 12 }}>Servono almeno 2 anni per tracciare un andamento.</div>;
 
-  const media = round2(punti.reduce((s, p) => s + p.valore, 0) / punti.length);
+  const media = mediaData !== null && Number.isFinite(mediaData) ? mediaData : round2(punti.reduce((s, p) => s + p.valore, 0) / punti.length);
   const W = 360, H = 190, PAD_X = 34, PAD_TOP = 44, PAD_BOTTOM = 30;
   const valori = punti.map(p => p.valore);
   const min = Math.min(...valori, media), max = Math.max(...valori, media);

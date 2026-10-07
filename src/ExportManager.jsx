@@ -1,6 +1,7 @@
 import { useState } from "react";
 import * as XLSX from "xlsx-js-style";
 import { supabase } from "./supabase";
+import { giornoSoloData } from "./motoreUba";
 
 const C = {
   bg:"#F5F0E8", card:"#FFFFFF", primary:"#5C3D1E", accent:"#A0522D",
@@ -774,22 +775,23 @@ const MOTIVI_PRODUTTIVI_EXP = ["macellazione","macellato","venduto","riformato",
 
 // Perimetro annuale: solo se presenza effettiva nell'anno
 function periodoNellAnnoExp(nascita, dataIngresso, dataUscita, stato, anno) {
-  if(!nascita) return null;
-  const inizioAnno = new Date(anno, 0, 1);
-  const fineAnno   = new Date(anno, 11, 31, 23, 59, 59);
-  const oggi = new Date();
-  const dataNascita = new Date(nascita);
+  // Versione 236 (anomalia 7): giorni contati sulle sole date, senza ore né fusi orari (vedi motoreUba.js)
+  const dataNascita = giornoSoloData(nascita);
+  if(dataNascita === null) return null;
+  const inizioAnno = Date.UTC(anno, 0, 1);
+  const fineAnno   = Date.UTC(anno, 11, 31);
+  const oggi = giornoSoloData(new Date());
   // Il periodo di presenza in azienda parte dall'ingresso (acquisto/trasferimento) se noto,
   // altrimenti dalla nascita (animale nato in azienda: nascita = ingresso).
-  const dataPresenzaInizio = dataIngresso ? new Date(dataIngresso) : dataNascita;
-  const dataFine = dataUscita ? new Date(dataUscita) : (oggi < fineAnno ? oggi : fineAnno);
-  if(dataFine < inizioAnno) return null;
+  const dataPresenzaInizio = dataIngresso ? giornoSoloData(dataIngresso) : dataNascita;
+  const dataFine = dataUscita ? giornoSoloData(dataUscita) : (oggi < fineAnno ? oggi : fineAnno);
+  if(dataFine === null || dataFine < inizioAnno) return null;
   if(dataPresenzaInizio > fineAnno) return null;
   const inizio = dataPresenzaInizio > inizioAnno ? dataPresenzaInizio : inizioAnno;
   const fine   = dataFine < fineAnno ? dataFine : fineAnno;
   return {
-    inizio: inizio.toISOString().split("T")[0],
-    fine:   fine.toISOString().split("T")[0],
+    inizio: new Date(inizio).toISOString().slice(0, 10),
+    fine:   new Date(fine).toISOString().slice(0, 10),
     giorni: Math.round((fine - inizio) / 86400000) + 1,
     // Età sempre calcolata dalla vera data di nascita, indipendentemente da quando
     // l'animale è arrivato in questa azienda — determina il coefficiente UBA corretto.

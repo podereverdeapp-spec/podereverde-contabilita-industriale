@@ -7,7 +7,8 @@ import { round2 } from "./parsingUtils";
 // - ALLEVAMENTO: come prima, su tutte le specie in proporzione agli UBA-giorni;
 // - COLTIVAZIONE: come i costi delle coltivazioni di quell'anno (stesse destinazioni, nella
 //   stessa proporzione: il foraggio va a bovini e ovini, non ai suini);
-// - LAVORAZIONE DELLE CARNI: come i costi dell'area «Lavorazioni prodotti allevamento»
+// - LAVORAZIONE DELLE CARNI: dal 07/10/2026 (versione 236) fuori dal costo degli animali, come le spese di macello;
+//   qui si divide ancora come i costi dell'area «Lavorazioni prodotti allevamento»
 //   di quell'anno (stesse destinazioni, stessa proporzione);
 // - ORTO E ALTRE ATTIVITÀ NON ZOOTECNICHE: escluso dal costo degli animali (va con l'Orto).
 // Percentuali per anno nella tabella ci_ripartizione_lavoro (Parametri). Anno senza percentuali

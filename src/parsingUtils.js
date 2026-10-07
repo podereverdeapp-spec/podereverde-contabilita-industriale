@@ -47,6 +47,21 @@ export async function fetchAllPages(queryBuilderFn) {
   return { data: tutti, error: null };
 }
 
+// Versione 236 (anomalia 13): legge una lista lunga di identificativi a blocchi (200 per volta), ogni
+// blocco «a pagine» con fetchAllPages — un elenco troppo lungo in una sola richiesta può farla fallire.
+// costruisci(blocco, da, a) deve restituire la query con .in(..., blocco) e .range(da, a).
+export async function leggiInBlocchi(ids, costruisci, dimensione = 200) {
+  let tutti = [];
+  const lista = [...new Set(ids || [])];
+  for (let i = 0; i < lista.length; i += dimensione) {
+    const blocco = lista.slice(i, i + dimensione);
+    const { data, error } = await fetchAllPages((da, a) => costruisci(blocco, da, a));
+    if (error) return { data: null, error };
+    tutti = tutti.concat(data || []);
+  }
+  return { data: tutti, error: null };
+}
+
 export function round2(n) {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }

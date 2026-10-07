@@ -49,7 +49,7 @@ export default function Ricerca() {
     if (eA) { alert(`⚠️ Errore nel caricamento articoli:\n\n${eA.message}`); setLoading(false); return; }
     const { data: pdc } = await supabase.from("ci_piano_dei_conti").select("*").order("area").order("centro_costo");
     setPianoDeiConti(pdc || []);
-    const { data: forn } = await supabase.from("ci_fornitori").select("id, nome, partita_iva, codice_fiscale").order("nome");
+    const { data: forn } = await fetchAllPages((da, aa) => supabase.from("ci_fornitori").select("id, nome, partita_iva, codice_fiscale").order("nome").order("id").range(da, aa));
     setFornitori(forn || []);
 
     setFatture(numerizzaCampi(f || [], ["totale_netto", "totale_iva", "totale_lordo"]));
@@ -62,6 +62,21 @@ export default function Ricerca() {
   }
 
   async function salvaFattura(fatturaId) {
+    // Versione 235: riepilogo e conferma prima di scrivere; la P.IVA e il codice fiscale di un
+    // fornitore non vengono mai cancellati lasciando vuoto il campo (si cancellano solo se confermato).
+    const fo = fornitori.find(x => String(x.id) === String(formModificaFattura.fornitore_id));
+    const f0 = fatture.find(x => x.id === fatturaId);
+    const pivaVuota = fo && fo.partita_iva && !(formModificaFattura.partita_iva || "").trim();
+    const cfVuoto = fo && fo.codice_fiscale && !(formModificaFattura.codice_fiscale || "").trim();
+    let cancellaPiva = false, cancellaCf = false;
+    if (pivaVuota) cancellaPiva = window.confirm(`Il campo P.IVA è vuoto, ma il fornitore «${fo.nome}» ha la partita IVA ${fo.partita_iva}.\n\nOK = CANCELLA la partita IVA dal fornitore (vale per tutte le sue fatture)\nAnnulla = lasciala com'è`);
+    if (cfVuoto) cancellaCf = window.confirm(`Il campo Codice fiscale è vuoto, ma il fornitore «${fo.nome}» ha il codice fiscale ${fo.codice_fiscale}.\n\nOK = CANCELLA il codice fiscale\nAnnulla = lascialo com'è`);
+    const nuovaPiva = (formModificaFattura.partita_iva || "").trim() || (cancellaPiva ? null : fo?.partita_iva ?? null);
+    const nuovoCf = (formModificaFattura.codice_fiscale || "").trim() || (cancellaCf ? null : fo?.codice_fiscale ?? null);
+    const righe = [`Numero: ${f0?.numero ?? ""} → ${formModificaFattura.numero}`, `Data: ${f0?.data ?? ""} → ${formModificaFattura.data}`];
+    if (fo) righe.push(`Fornitore: ${fo.nome}${formModificaFattura.nome_fornitore && formModificaFattura.nome_fornitore !== fo.nome ? ` → nome cambiato in «${formModificaFattura.nome_fornitore}» (per tutte le sue fatture)` : ""}`,
+      `P.IVA del fornitore: ${fo.partita_iva || "vuota"} → ${nuovaPiva || "vuota"}`, `Codice fiscale del fornitore: ${fo.codice_fiscale || "vuoto"} → ${nuovoCf || "vuoto"}`);
+    if (!window.confirm(`Confermi la modifica della fattura?\n\n${righe.join("\n")}`)) return;
     try {
       const { error } = await supabase.from("ci_fatture").update({
         numero: formModificaFattura.numero, data: formModificaFattura.data, fornitore_id: formModificaFattura.fornitore_id || null,
@@ -71,7 +86,7 @@ export default function Ricerca() {
       if (formModificaFattura.fornitore_id) {
         const { error: eForn } = await supabase.from("ci_fornitori").update({
           nome: formModificaFattura.nome_fornitore || undefined,
-          partita_iva: formModificaFattura.partita_iva || null, codice_fiscale: formModificaFattura.codice_fiscale || null,
+          partita_iva: nuovaPiva, codice_fiscale: nuovoCf,
         }).eq("id", formModificaFattura.fornitore_id);
         if (eForn) throw new Error(eForn.message);
       }
@@ -81,7 +96,7 @@ export default function Ricerca() {
         ? { ...f, numero: formModificaFattura.numero, data: formModificaFattura.data, fornitore_id: formModificaFattura.fornitore_id, ci_fornitori: nomeFornitore ? { nome: nomeFornitore } : f.ci_fornitori }
         : f));
       setFornitori(prev => prev.map(fo => fo.id === formModificaFattura.fornitore_id
-        ? { ...fo, nome: formModificaFattura.nome_fornitore || fo.nome, partita_iva: formModificaFattura.partita_iva || null, codice_fiscale: formModificaFattura.codice_fiscale || null }
+        ? { ...fo, nome: formModificaFattura.nome_fornitore || fo.nome, partita_iva: nuovaPiva, codice_fiscale: nuovoCf }
         : fo));
       setModificaFatturaId(null);
     } catch (err) {
@@ -93,21 +108,32 @@ export default function Ricerca() {
     setModificaRigaId(r.id);
     setFormModificaRiga({
       area: r.area || "", centro_costo: r.centro_costo || "", destinazione: r.destinazione || "", tipo_costo: r.tipo_costo || "",
-      descrizione: r.descrizione || "", quantita: r.quantita ?? "", prezzo_unitario: r.prezzo_unitario ?? "", totale_riga: r.totale_riga ?? "", aliquota_iva: r.aliquota_iva ?? "22", unita_misura: r.unita_misura || "",
+      descrizione: r.descrizione || "", quantita: r.quantita ?? "", prezzo_unitario: r.prezzo_unitario ?? "", totale_riga: r.totale_riga ?? "", aliquota_iva: r.aliquota_iva ?? "", unita_misura: r.unita_misura || "",
     });
   }
 
   async function salvaModificaRiga(rigaId, fatturaId) {
+    // Versione 235: riepilogo dei campi cambiati e conferma prima di scrivere
+    const r0 = (righePerFattura[fatturaId] || []).find(x => x.id === rigaId) || {};
+    const etichette = { descrizione: "Descrizione", quantita: "Quantità", unita_misura: "U.M.", prezzo_unitario: "Prezzo unitario", totale_riga: "Importo", aliquota_iva: "Aliquota IVA %", area: "Area", centro_costo: "Centro di Costo", destinazione: "Destinazione", tipo_costo: "Tipo di Costo" };
+    const cambi = Object.entries(etichette).filter(([k]) => String(r0[k] ?? "") !== String(formModificaRiga[k] ?? "") && !(Number(r0[k]) === Number(formModificaRiga[k]) && String(formModificaRiga[k]) !== ""))
+      .map(([k, t]) => `${t}: «${r0[k] ?? ""}» → «${formModificaRiga[k] ?? ""}»`);
+    if (cambi.length === 0) { setModificaRigaId(null); return; }
+    // quantità e prezzo unitario non possono essere vuoti nel database
+    if (formModificaRiga.quantita === "" || isNaN(parseFloat(formModificaRiga.quantita))) { alert("Indicare la Quantità."); return; }
+    if (formModificaRiga.prezzo_unitario === "" || isNaN(parseFloat(formModificaRiga.prezzo_unitario))) { alert("Indicare il Prezzo unitario."); return; }
+    if (fatture.find(x => x.id === fatturaId)?.tipo === "PASSIVA" && !formModificaRiga.tipo_costo) { alert("Indicare il Tipo di Costo: senza, la riga resta fuori dai calcoli dei costi."); return; }
+    if (!window.confirm(`Confermi la modifica della riga?\n\n${cambi.join("\n")}\n\nI totali della fattura verranno ricalcolati.`)) return;
     setSalvandoRiga(rigaId);
     try {
       const { error } = await supabase.from("ci_articoli_fattura").update({
         area: formModificaRiga.area || null, centro_costo: formModificaRiga.centro_costo || null,
         destinazione: formModificaRiga.destinazione || null, tipo_costo: formModificaRiga.tipo_costo || null,
-        descrizione: formModificaRiga.descrizione, quantita: parseFloat(formModificaRiga.quantita) || 1,
-        prezzo_unitario: formModificaRiga.prezzo_unitario !== "" ? parseFloat(formModificaRiga.prezzo_unitario) : null,
+        descrizione: formModificaRiga.descrizione, quantita: parseFloat(formModificaRiga.quantita),
+        prezzo_unitario: parseFloat(formModificaRiga.prezzo_unitario),
         unita_misura: formModificaRiga.unita_misura || null,
         totale_riga: round2(parseFloat(formModificaRiga.totale_riga) || 0),
-        aliquota_iva: parseFloat(formModificaRiga.aliquota_iva) || 0,
+        aliquota_iva: formModificaRiga.aliquota_iva !== "" && !isNaN(parseFloat(formModificaRiga.aliquota_iva)) ? parseFloat(formModificaRiga.aliquota_iva) : null,
         totale_iva: round2((parseFloat(formModificaRiga.totale_riga) || 0) * (parseFloat(formModificaRiga.aliquota_iva) || 0) / 100),
       }).eq("id", rigaId);
       if (error) throw new Error(error.message);
@@ -116,13 +142,15 @@ export default function Ricerca() {
       // Ricarico solo le righe di questa fattura, e l'elenco leggero usato per i filtri
       const { data } = await supabase.from("ci_articoli_fattura").select("*").eq("fattura_id", fatturaId).order("id");
       setRighePerFattura(prev => ({ ...prev, [fatturaId]: numerizzaCampi(data || [], ["quantita", "prezzo_unitario", "totale_riga", "aliquota_iva", "totale_iva"]) }));
-      const { data: a } = await fetchAllPages((da, aa) => supabase.from("ci_articoli_fattura").select("fattura_id, descrizione, area, destinazione, totale_riga").order("id").range(da, aa));
+      const { data: a } = await fetchAllPages((da, aa) => supabase.from("ci_articoli_fattura").select("fattura_id, descrizione, area, centro_costo, destinazione, tipo_costo, totale_riga").order("id").range(da, aa));
       setArticoli(numerizzaCampi(a || [], ["totale_riga"]));
       // Ricalcolo i totali della fattura, dato che l'importo della riga può essere cambiato
       const righeFattura = (data || []);
       const netto = righeFattura.reduce((s, x) => s + (parseFloat(x.totale_riga) || 0), 0);
       const iva = righeFattura.reduce((s, x) => s + (parseFloat(x.totale_iva) || 0), 0);
-      await supabase.from("ci_fatture").update({ totale_netto: round2(netto), totale_iva: round2(iva), totale_lordo: round2(netto + iva) }).eq("id", fatturaId);
+      const { error: eTot } = await supabase.from("ci_fatture").update({ totale_netto: round2(netto), totale_iva: round2(iva), totale_lordo: round2(netto + iva) }).eq("id", fatturaId);
+      if (eTot) throw new Error(`Riga salvata, ma i totali della fattura non sono stati aggiornati: ${eTot.message}`);
+      setFatture(prev => prev.map(x => x.id === fatturaId ? { ...x, totale_netto: round2(netto), totale_iva: round2(iva), totale_lordo: round2(netto + iva) } : x));
     } catch (err) {
       alert(`⚠️ Errore nel salvataggio:\n\n${err.message}`);
     }
@@ -275,8 +303,9 @@ export default function Ricerca() {
                   {modificaFatturaId === f.id ? (
                     <div onClick={e => e.stopPropagation()} style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", marginTop: 4 }}>
                       <select value={formModificaFattura.fornitore_id || ""} onChange={e => {
-                        const fo = fornitori.find(x => x.id === e.target.value);
-                        setFormModificaFattura(prev => ({ ...prev, fornitore_id: e.target.value, nome_fornitore: fo?.nome || "", partita_iva: fo?.partita_iva || "", codice_fiscale: fo?.codice_fiscale || "" }));
+                        // Versione 235: gli id dei fornitori sono numeri, il valore del menu è testo
+                        const fo = fornitori.find(x => String(x.id) === e.target.value);
+                        setFormModificaFattura(prev => ({ ...prev, fornitore_id: fo ? fo.id : "", nome_fornitore: fo?.nome || "", partita_iva: fo?.partita_iva || "", codice_fiscale: fo?.codice_fiscale || "" }));
                       }}
                         style={{ padding: "3px 6px", borderRadius: 5, border: `1.5px solid ${C.border}`, fontSize: 12 }}>
                         <option value="">— fornitore —</option>

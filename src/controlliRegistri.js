@@ -51,7 +51,7 @@ async function leggi(nome, colonne, filtro) {
 // ── I controlli ──────────────────────────────────────────────────────────────────────────
 // Ogni anomalia: { codice, area, tabella, riga_id, titolo, descrizione }
 export async function trovaAnomalie() {
-  const [animali, lotti, eventi, unita, cespiti, report, costiUnita, mandria] = await Promise.all([
+  const [animali, lotti, eventi, unita, cespiti, report, costiUnita, mandria, righeFatt, fattureTeste, fornitori] = await Promise.all([
     leggi("animali", "id,bdn,nome,specie,sesso,provenienza,stato,nascita,data_ingresso,data_uscita,prezzo_acquisto,numero_fattura,riproduttore"),
     leggi("lotti_suini", "id,codice,codice_lotto,madre_id,padre_id,data_parto,nati_vivi,nati_morti,tipo_provenienza,prezzo_acquisto,numero_fattura,specie"),
     leggi("eventi_riproduttivi", "id,animale_id,tipo_evento,data_evento,padre_id,nati_vivi,nati_morti"),
@@ -60,6 +60,9 @@ export async function trovaAnomalie() {
     leggi("ci_report_acquisto_animali", "id,fonte,animale_id,lotto_id,stato,importo"),
     leggi("ci_costo_animale_annuale", "id,lotto_id,unita_nr,anno", q => q.not("lotto_id", "is", null)),
     leggi("ci_costo_nascita_mandria", "id,anno"),
+    leggi("ci_articoli_fattura", "id,fattura_id,descrizione,area,tipo_costo,totale_riga", q => q.or("tipo_costo.is.null,tipo_costo.eq.")),
+    leggi("ci_fatture", "id,tipo,numero,data,fornitore_id"),
+    leggi("ci_fornitori", "id,nome,partita_iva"),
   ]);
   const perId = new Map(animali.map(a => [a.id, a]));
   const nomeA = id => { const a = perId.get(id); return a ? (a.bdn || a.nome || `capo ${a.id}`) : `capo ${id}`; };
@@ -177,7 +180,22 @@ export async function trovaAnomalie() {
     add("F2", "Fatture acquisto", "ci_report_acquisto_animali", "", `${daConfermare.length} righe già collegate a un capo ma mai confermate`,
       "Si confermano dalla pagina «Abbinamenti Fatture Acquisto», sezione «Già collegate».");
 
-  return { trovate, nonEseguibili, controlliEseguiti: 16 - nonEseguibili.length * 3 };
+  // R1 – righe di fatture d'acquisto senza Tipo di Costo (restano fuori dai calcoli dei costi)
+  const fatturaPerId = new Map(fattureTeste.map(f => [f.id, f]));
+  const fornitorePerId = new Map(fornitori.map(f => [f.id, f]));
+  for (const r of righeFatt) {
+    const f = fatturaPerId.get(r.fattura_id);
+    if (!f || f.tipo !== "PASSIVA" || r.area === "TRASPORTO ANIMALI" && !(parseFloat(r.totale_riga) > 0)) continue;
+    add("R1", "Fatture", "ci_articoli_fattura", r.id, `Riga senza Tipo di Costo: «${r.descrizione}» (${Number(r.totale_riga || 0).toLocaleString("it-IT", { minimumFractionDigits: 2 })} €)`,
+      `Fattura ${f.numero} del ${dataIt(f.data)}, ${fornitorePerId.get(f.fornitore_id)?.nome || "fornitore ignoto"}, area ${r.area || "—"}. Senza Tipo di Costo la riga resta fuori dai calcoli dei costi.`);
+  }
+  // R2 – fornitori con fatture ma senza partita IVA (vengono riconosciuti solo per nome)
+  const conFatture = new Set(fattureTeste.filter(f => f.tipo === "PASSIVA").map(f => f.fornitore_id));
+  for (const fo of fornitori.filter(fo => conFatture.has(fo.id) && !(fo.partita_iva || "").trim()))
+    add("R2", "Fatture", "ci_fornitori", fo.id, `Fornitore «${fo.nome}» senza partita IVA`,
+      "Ha fatture registrate. Senza partita IVA viene riconosciuto solo se il nome è scritto esattamente uguale: le sue prossime fatture possono creare un fornitore doppio.");
+
+  return { trovate, nonEseguibili, controlliEseguiti: 18 - nonEseguibili.length * 3 };
 }
 
 // ── Scrittura nel quaderno e nel diario ─────────────────────────────────────────────────

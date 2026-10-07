@@ -40,6 +40,7 @@ import IstruzioniFatture from "./IstruzioniFatture";
 import IstruzioniAnagrafiche from "./IstruzioniAnagrafiche";
 import IstruzioniAnimali from "./IstruzioniAnimali";
 import IstruzioniCosti from "./IstruzioniCosti";
+import IstruzioniBreakEven from "./IstruzioniBreakEven";
 import IstruzioniStudi from "./IstruzioniStudi";
 import IstruzioniColtivazioni from "./IstruzioniColtivazioni";
 import Modelli4 from "./Modelli4";
@@ -69,6 +70,7 @@ import RegistroModifiche from "./RegistroModifiche";
 import IstruzioniControlli from "./IstruzioniControlli";
 import AccessoProgramma, { useSessione, esci } from "./AccessoProgramma";
 import { eseguiControlli, contaAnomalieAperte } from "./controlliRegistri";
+import { statoCalcoli, testoAvvisoCalcoli } from "./statoCalcoli";
 import { C, FONT } from "./style";
 
 const MENU = [
@@ -116,7 +118,9 @@ const MENU = [
     { tipo: "voce", id: "costi", label: "Report Costi", icon: "📊" },
     { tipo: "voce", id: "grafico-macellazioni", label: "Grafico per le Macellazioni", icon: "📈" },
     { tipo: "voce", id: "prezzo-pareggio", label: "Prezzo di Pareggio", icon: "🎯" },
-    { tipo: "voce", id: "break-even", label: "Break Even Analysis", icon: "⚖️" },
+    { tipo: "voce", id: "istr-break-even", label: "Istruzioni del Break Even", icon: "📖" },
+    { tipo: "voce", id: "break-even", label: "Break Even sulla carcassa", icon: "⚖️" },
+    { tipo: "voce", id: "break-even-vivo", label: "Break Even sul capo vivo", icon: "🐂" },
     { tipo: "voce", id: "riepilogo-costi-breakeven", label: "Riepilogo Costi (Break Even)", icon: "📋" },
     { tipo: "voce", id: "cespiti", label: "Cespiti", icon: "🏗️" },
   ]},
@@ -241,6 +245,10 @@ function Programma({ utente }) {
       .finally(() => setControlloInCorso(false));
   }, []);
   useEffect(() => { if (!controlloInCorso) contaAnomalieAperte().then(setAnomalieAperte); }, [tab]);
+  // Versione 236: avviso «occorre ricalcolare i costi» quando dopo l'ultimo calcolo salvato sono
+  // cambiati dati che entrano nei costi (fatture, costi diretti, cespiti, animali…)
+  const [avvisoCalcoli, setAvvisoCalcoli] = useState(null);
+  useEffect(() => { statoCalcoli().then(st => setAvvisoCalcoli(testoAvvisoCalcoli(st))).catch(() => setAvvisoCalcoli(null)); }, [tab]);
   const AVVISI = { "cart-controlli": anomalieAperte || 0, "registro-controlli": anomalieAperte || 0, "cart-emissione-fatture": daFatturare, "sub-fatturazione-animali": daFatturare, "fatt-animali-da-fatturare": daFatturare, "fatt-animali-prepara": daFatturare };
 
   function vaiA(pageId) {
@@ -276,7 +284,7 @@ function Programma({ utente }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 232</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 236</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -344,6 +352,13 @@ function Programma({ utente }) {
             <span style={{ textDecoration: "underline", fontWeight: 800 }}>Vai al Registro Controlli →</span>
           </div>
         )}
+        {avvisoCalcoli && tab !== "costi" && (
+          <div onClick={() => vaiA("costi")}
+            style={{ background: "#FFF1DC", borderBottom: "2px solid #D4880F", color: "#7A4A00", padding: "9px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            🔄 {avvisoCalcoli}
+            <span style={{ textDecoration: "underline", fontWeight: 800 }}>Vai al Report Costi →</span>
+          </div>
+        )}
         {anomalieAperte === null && !controlloInCorso && (
           <div style={{ background: "#FFF4D6", borderBottom: "2px solid #D4A017", color: "#6B5200", padding: "8px 20px", fontSize: 13 }}>
             ⚠️ I controlli dei registri non sono disponibili: il database non ha ancora le strutture della versione 232 (file contabilita_strutture_v232.sql).
@@ -387,9 +402,10 @@ function Programma({ utente }) {
         {tab === "costi" && <SezioneReportCosti />}
         {tab === "grafico-macellazioni" && <GraficoMacellazioni />}
         {tab === "prezzo-pareggio" && <PrezzoPareggio />}
-        {tab === "break-even" && <BreakEven />}
+        {tab === "break-even" && <BreakEven base="carcassa" onNavigate={vaiA} />}
+        {tab === "break-even-vivo" && <BreakEven base="vivo" onNavigate={vaiA} />}
         {tab === "muratella-costi" && <ContabilitaMuratella />}
-        {tab === "riepilogo-costi-breakeven" && <RiepilogoCostiBreakEven />}
+        {tab === "riepilogo-costi-breakeven" && <RiepilogoCostiBreakEven onNavigate={vaiA} />}
         {tab === "scheda" && <SchedaAnimale ricercaIniziale={ricercaSchedaAnimale} onRicercaConsumata={() => setRicercaSchedaAnimale(null)} />}
         {tab === "riproduttori" && <ReportRiproduttori />}
         {tab === "performanceeta" && <PerformanceEta onNavigate={vaiA} />}
@@ -415,6 +431,7 @@ function Programma({ utente }) {
         {tab === "istr-ricerca" && <IstruzioniAnagrafiche />}
         {tab === "istr-animali" && <IstruzioniAnimali />}
         {tab === "istr-costi" && <IstruzioniCosti />}
+        {tab === "istr-break-even" && <IstruzioniBreakEven />}
         {tab === "istr-studi" && <IstruzioniStudi />}
         {tab === "istr-coltivazioni" && <IstruzioniColtivazioni />}
         {tab === "istr-modelli4" && <IstruzioniModelli4 />}

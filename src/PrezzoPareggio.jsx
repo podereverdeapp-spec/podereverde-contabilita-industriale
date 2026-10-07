@@ -29,8 +29,8 @@ export default function PrezzoPareggio() {
         fetchAllPages((da, a) => supabase.from("lotti_suini").select("id,tipo_provenienza,prezzo_acquisto,specie,madre_id,padre_id").range(da, a)),
         fetchAllPages((da, a) => supabase.from("suini_lotto").select("id,lotto_id,nr,stato,data_uscita,peso_carcassa,bdn,codice_completo").range(da, a)),
         fetchAllPages((da, a) => supabase.from("ci_costo_animale_annuale").select("animale_id,lotto_id,unita_nr,costo_mantenimento,costo_nascita_ereditato,quota_residuo_riproduttori").range(da, a)),
-        supabase.from("ci_dati_vendita_ingrasso").select("animale_id,lotto_id,unita_nr,prezzo_vendita_kg_reale"),
-        supabase.from("ci_costo_nascita_mandria").select("*").eq("anno", anno),
+        fetchAllPages((da, a) => supabase.from("ci_dati_vendita_ingrasso").select("id,animale_id,lotto_id,unita_nr,prezzo_vendita_kg_reale").order("id").range(da, a)),
+        fetchAllPages((da, a) => supabase.from("ci_costo_nascita_mandria").select("*").eq("anno", anno).order("id").range(da, a)),
       ]);
       for (const r of [rA, rL, rU, rC, rV]) if (r.error) throw new Error(r.error.message);
       const lotti = new Map((rL.data || []).map(l => [l.id, l]));
@@ -45,20 +45,25 @@ export default function PrezzoPareggio() {
       const capi = [];
       normalizzaAnimali(rA.data || [], rL.data || [], rU.data || []).forEach(a => {
         if (a.riproduttore || genitori.has(a.id) || !venduto(a.stato) || !nellAnno(a.data_uscita) || !(parseFloat(a.peso_carcassa) > 0)) return;
-        capi.push({ specie: a.specie, peso: parseFloat(a.peso_carcassa), prezzo: prezzoAnimale.get(a.id) || null,
+        capi.push({ specie: a.specie, codice: a.bdn || `scheda ${a.id}`, senzaCosti: !perAnimale.has(a.id), peso: parseFloat(a.peso_carcassa), prezzo: prezzoAnimale.get(a.id) || null,
           ...costoAnimale({ righe: perAnimale.get(a.id), costoAcquisto: costoAcquistoUnitario({ animale: a }) }) });
       });
       (rU.data || []).forEach(u => {
         if (!venduto(u.stato) || !nellAnno(u.data_uscita) || !(parseFloat(u.peso_carcassa) > 0)) return;
         const l = lotti.get(u.lotto_id);
-        capi.push({ specie: l?.specie || "suino", peso: parseFloat(u.peso_carcassa), prezzo: prezzoUnita.get(`${u.lotto_id}|${u.nr}`) || null,
+        capi.push({ specie: l?.specie || "suino", codice: u.codice_completo || u.bdn || `suinetto ${u.nr} del lotto ${u.lotto_id}`, senzaCosti: !perUnita.has(`${u.lotto_id}|${u.nr}`), peso: parseFloat(u.peso_carcassa), prezzo: prezzoUnita.get(`${u.lotto_id}|${u.nr}`) || null,
           ...costoAnimale({ righe: perUnita.get(`${u.lotto_id}|${u.nr}`), costoAcquisto: costoAcquistoUnitario({ unita: u, lotto: l, numeroUnitaLotto: unitaPerLotto.get(u.lotto_id) }) }) });
       });
 
       const perSpecie = {};
       for (const s of Object.keys(ETICHETTE_SPECIE)) {
-        const c = capi.filter(x => x.specie === s);
-        if (!c.length) continue;
+        // Versione 236 (anomalia 9, decisione del 07/10/2026 ore 21:32): i capi usciti senza costi salvati
+        // restano fuori dal calcolo (costo e chili) e sono elencati in un avviso; prima entravano i loro
+        // chili con costo zero e il prezzo di pareggio risultava più basso del vero.
+        const tutti = capi.filter(x => x.specie === s);
+        const senzaCosti = tutti.filter(x => x.senzaCosti).map(x => x.codice);
+        const c = tutti.filter(x => !x.senzaCosti);
+        if (!c.length) { if (senzaCosti.length) perSpecie[s] = { capi: 0, senzaCosti }; continue; }
         const somma = k => round2(c.reduce((t, x) => t + (x[k] || 0), 0));
         const conPrezzo = c.filter(x => x.prezzo > 0);
         perSpecie[s] = {
@@ -67,14 +72,13 @@ export default function PrezzoPareggio() {
           prezzoMedioRegistrato: conPrezzo.length ? round2(conPrezzo.reduce((t, x) => t + x.prezzo * x.peso, 0) / conPrezzo.reduce((t, x) => t + x.peso, 0)) : null,
           capiConPrezzo: conPrezzo.length,
           mandria: (rM.data || []).find(m => m.specie === s) || null,
+          senzaCosti,
         };
       }
       setDati(perSpecie);
-      setPrezzi(prev => {
-        const n = { ...prev };
-        Object.entries(perSpecie).forEach(([s, d]) => { if (n[s] == null || n[s] === "") n[s] = d.prezzoMedioRegistrato != null ? String(d.prezzoMedioRegistrato) : ""; });
-        return n;
-      });
+      // Versione 236 (anomalia 9 punto 2, decisione del 07/10/2026 ore 21:35): in «prezzi» ci sono solo i
+      // prezzi SCRITTI a mano, che restano cambiando anno; altrimenti la casella mostra il prezzo registrato
+      // dell'anno guardato (prima restava quello dell'anno visto prima).
     } catch (err) {
       setErrore(err.message);
     }
@@ -96,21 +100,37 @@ export default function PrezzoPareggio() {
       {errore && <p style={{ color: C.red }}>⚠️ {errore}</p>}
       {dati && Object.keys(dati).length === 0 && <p style={{ color: C.muted }}>Nessun animale da macello uscito nel {anno} con il peso della carcassa.</p>}
       {dati && Object.entries(dati).map(([s, d]) => (
-        <SchedaSpecie key={s} specie={s} d={d} prezzo={prezzi[s] ?? ""} onPrezzo={v => setPrezzi(p => ({ ...p, [s]: v }))} anno={anno} />
+        <SchedaSpecie key={s} specie={s} d={d} anno={anno}
+          prezzo={prezzi[s] !== undefined ? prezzi[s] : (d.prezzoMedioRegistrato != null ? String(d.prezzoMedioRegistrato) : "")}
+          scrittoAMano={prezzi[s] !== undefined}
+          onPrezzo={v => setPrezzi(p => ({ ...p, [s]: v }))}
+          onRegistrato={() => setPrezzi(p => { const n = { ...p }; delete n[s]; return n; })} />
       ))}
     </div>
   );
 }
 
-function SchedaSpecie({ specie, d, prezzo, onPrezzo, anno }) {
+function SchedaSpecie({ specie, d, prezzo, onPrezzo, anno, scrittoAMano, onRegistrato }) {
+  const avvisoSenzaCosti = d.senzaCosti?.length > 0 && (
+    <div style={{ background: "#FFF6E5", border: "1px solid #F0B44C", borderRadius: 8, padding: "8px 12px", fontSize: 12.5, marginBottom: 10 }}>
+      ⚠️ <strong>{d.senzaCosti.length} {d.senzaCosti.length === 1 ? "capo uscito" : "capi usciti"} senza costi salvati</strong>, {d.senzaCosti.length === 1 ? "escluso" : "esclusi"} dal calcolo: salvare il Report Costi del loro anno (e poi rifare il Report Riproduttori). {d.senzaCosti.join(", ")}.
+    </div>
+  );
+  if (!d.capi) return (
+    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 18 }}>
+      <div style={{ fontSize: 18, fontWeight: 800, color: C.primary, marginBottom: 8 }}>{ETICHETTE_SPECIE[specie]} — nessun capo calcolabile nel {anno}</div>
+      {avvisoSenzaCosti}
+    </div>
+  );
   const pareggio = d.kg > 0 ? round2(d.costo / d.kg) : null;
   const costoCapo = round2(d.costo / d.capi), pesoMedio = round2(d.kg / d.capi);
   const p = parseFloat(String(prezzo).replace(",", "."));
   const haPrezzo = p > 0;
   const ricavo = haPrezzo ? round2(d.kg * p) : null;
   const risultato = haPrezzo ? round2(ricavo - d.costo) : null;
-  const costoMassimoCapo = haPrezzo ? round2(p * pesoMedio) : null;
-  const differenzaCapo = haPrezzo ? round2(costoCapo - costoMassimoCapo) : null;
+  // calcolati sui valori non arrotondati, così «per capo» e «da togliere» coincidono al centesimo
+  const costoMassimoCapo = haPrezzo ? round2(p * d.kg / d.capi) : null;
+  const differenzaCapo = haPrezzo ? round2(d.costo / d.capi - p * d.kg / d.capi) : null;
   // Fertilità: quanti nati sarebbero serviti perché il costo di nascita scendesse della differenza
   const m = d.mandria;
   const costoNascitaMedio = d.capi ? round2(d.nascita / d.capi) : 0;
@@ -125,6 +145,7 @@ function SchedaSpecie({ specie, d, prezzo, onPrezzo, anno }) {
   );
   return (
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 18 }}>
+      {avvisoSenzaCosti}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 10 }}>
         <div style={{ fontSize: 18, fontWeight: 800, color: C.primary }}>{ETICHETTE_SPECIE[specie]} — {d.capi} capi usciti nel {anno}</div>
         <div style={{ fontSize: 14 }}>Prezzo di pareggio: <span style={{ fontSize: 22, fontWeight: 800, color: C.red }}>{pareggio != null ? `${formattaEuro(pareggio)} al kg` : "—"}</span> di carcassa</div>
@@ -144,9 +165,10 @@ function SchedaSpecie({ specie, d, prezzo, onPrezzo, anno }) {
         <div>
           <div style={titolo}>AL PREZZO DI VENDITA</div>
           <label style={{ fontSize: 12, color: C.muted }}>Prezzo di vendita (€ al kg di carcassa)
-            <input type="number" value={prezzo} onChange={e => onPrezzo(e.target.value)}
-              style={{ display: "block", width: 120, padding: "6px 8px", borderRadius: 6, border: `1.5px solid ${C.primary}`, fontSize: 14, marginTop: 3, marginBottom: 6 }} />
+            <input type="text" inputMode="decimal" value={prezzo} onChange={e => onPrezzo(e.target.value)}
+              style={{ display: "block", width: 120, padding: "6px 8px", borderRadius: 6, border: `1.5px solid ${scrittoAMano ? C.blue : C.primary}`, fontSize: 14, marginTop: 3, marginBottom: 6 }} />
           </label>
+          {scrittoAMano && <button onClick={onRegistrato} style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer", marginBottom: 6 }}>Torna al prezzo registrato</button>}
           <div style={{ fontSize: 11, color: C.muted, marginBottom: 6 }}>
             {d.prezzoMedioRegistrato != null ? `Prezzo medio registrato nelle schede: ${formattaEuro(d.prezzoMedioRegistrato)} al kg (${d.capiConPrezzo} capi).` : "Nessun prezzo di vendita registrato nelle schede: scriverlo qui."}
           </div>

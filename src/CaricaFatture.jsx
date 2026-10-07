@@ -337,6 +337,7 @@ export default function CaricaFatture() {
       if (Math.abs(somma - r.imponibile) > 0.01) {
         return `La somma di "Trasporto macello" + "Ingresso allevamento" (${formattaEuro(somma)}) non torna con l'imponibile della riga (${formattaEuro(r.imponibile)}).`;
       }
+      if ((parseFloat(r.importoMacello) || 0) !== 0 && !r.editTipo) return "Indicare il Tipo di Costo della parte verso il macello (Fisso o Variabile).";
     }
     if (r.editArea === "Ammortamenti") {
       if (!r.categoriaAmmortamento || !r.imputazioneAmmortamento || !r.pctAmmortamento) {
@@ -799,8 +800,10 @@ function RigaFattura({ riga, aree, centriPerArea, regoleArmonizzazione, onChange
             {!isAcquistoAnimali && (
               <Select label="Destinazione" value={r.editDestinazione} options={["Bovini", "Suini", "Ovini", "Bovini e Ovini", "Bovini e Suini", "Suini e Ovini", "Generali", "Pollame", "Cavalli"]} onChange={v => onChange({ editDestinazione: v })} />
             )}
-            {!isTrasportoAnimali && !isAcquistoAnimali && (
-              <Select label="Tipo di Costo" value={r.editTipo}
+            {/* Versione 235: il Tipo di Costo si chiede anche per il Trasporto Animali (parte verso il macello),
+                altrimenti la riga restava senza tipo e fuori dai calcoli dei costi */}
+            {!isAcquistoAnimali && (
+              <Select label={isTrasportoAnimali ? "Tipo di Costo (parte verso il macello)" : "Tipo di Costo"} value={r.editTipo}
                 options={r.editArea === "Ammortamenti" ? ["Ammortizzabile"] : ["Fisso", "Variabile"]}
                 disabled={r.editArea === "Ammortamenti"} onChange={v => onChange({ editTipo: v })} />
             )}

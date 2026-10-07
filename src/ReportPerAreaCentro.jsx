@@ -49,7 +49,7 @@ export default function ReportPerAreaCentro({ anno }) {
     const righeRossaExcel = rigaRossa.map(r => ({ "Voce": r.label, "Imponibile complessivo": numeroExcel(r.valore), "€/UBA-gg (tutte le specie)": numeroExcel(r.tasso) }));
     esportaExcel(`ReportPerAreaCentro_${anno}`, [
       { nome: "Per Area e Centro", righe: righeExcel },
-      { nome: "Orto e Non Allevamento", righe: righeRossaExcel },
+      { nome: "Esclusi dal costo animali", righe: righeRossaExcel },
     ]);
   }
 
@@ -141,7 +141,7 @@ export default function ReportPerAreaCentro({ anno }) {
 
       {rigaRossa && rigaRossa.length > 0 && (
         <div style={{ background: "#FDECEC", border: `1.5px solid ${C.red}`, borderRadius: 12, padding: 16 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: C.red, marginBottom: 8 }}>⚠️ ORTO, ANIMALI NON D'ALLEVAMENTO E AMMORTAMENTI SENZA IMPUTAZIONE</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.red, marginBottom: 8 }}>⚠️ ESCLUSI DAL COSTO DEGLI ANIMALI: MACELLO E LAVORAZIONE DELLE CARNI, ORTO, CAVALLI, POLLAME, ANIMALI NON D'ALLEVAMENTO E AMMORTAMENTI SENZA IMPUTAZIONE</div>
           <table style={{ width: "100%", fontSize: 13 }}>
             <thead>
               <tr style={{ color: C.muted, textAlign: "left" }}>

@@ -96,6 +96,13 @@ export default function InserimentoManualeFattura() {
     if (!fornitoreSelezionato && !fornitoreTesto.trim()) { alert("Indica il fornitore."); return; }
     if (!numero.trim()) { alert("Indica il numero fattura."); return; }
     if (righe.some(r => !r.descrizione.trim() || r.imponibile === "")) { alert("Ogni riga deve avere almeno Descrizione e Imponibile."); return; }
+    // Versione 235: senza Area e Tipo di Costo la riga resterebbe fuori dai costi; gli Ammortamenti
+    // qui non creerebbero il cespite (si caricano da «Carica Fatture Passive massivamente»)
+    if (righe.some(r => !r.area || !r.tipo_costo)) { alert("Ogni riga deve avere Area e Tipo di Costo: senza, resta fuori dai calcoli dei costi."); return; }
+    if (righe.some(r => ["Ammortamenti", "ACQUISTO ANIMALI", "TRASPORTO ANIMALI"].includes(r.area))) {
+      alert("Le righe di Ammortamenti, Acquisto Animali e Trasporto Animali si caricano da «Carica Fatture Passive massivamente»: qui non verrebbero creati il cespite o la riga nel Report Acquisto Animali.");
+      return;
+    }
 
     setSalvando(true);
     try {
@@ -111,6 +118,12 @@ export default function InserimentoManualeFattura() {
       const { data: fatturaEsistente } = await supabase.from("ci_fatture")
         .select("id").eq("fornitore_id", fornitoreId).eq("numero", numero.trim()).eq("data", data).maybeSingle();
       let fatturaId = fatturaEsistente?.id;
+      // Versione 235: se la fattura esiste già, si chiede conferma prima di aggiungervi le righe
+      if (fatturaId) {
+        const { data: giaPresenti } = await supabase.from("ci_articoli_fattura").select("descrizione, totale_riga").eq("fattura_id", fatturaId);
+        const elenco = (giaPresenti || []).slice(0, 10).map(x => `• ${x.descrizione} — ${x.totale_riga} €`).join("\n");
+        if (!window.confirm(`La fattura ${numero.trim()} del ${data} di questo fornitore ESISTE GIÀ con ${(giaPresenti || []).length} righe:\n\n${elenco}\n\nAggiungere le ${righe.length} righe nuove a questa fattura?\n(Annulla = non salvare niente)`)) { setSalvando(false); return; }
+      }
       if (!fatturaId) {
         const { data: nuovaFattura, error } = await supabase.from("ci_fatture").insert([{
           numero: numero.trim(), data, tipo: "PASSIVA", fornitore_id: fornitoreId, totale_netto: 0, totale_iva: 0, totale_lordo: 0,
@@ -138,7 +151,8 @@ export default function InserimentoManualeFattura() {
       const { data: righeArt } = await supabase.from("ci_articoli_fattura").select("totale_riga, totale_iva").eq("fattura_id", fatturaId);
       const netto = (righeArt || []).reduce((s, x) => s + (parseFloat(x.totale_riga) || 0), 0);
       const iva = (righeArt || []).reduce((s, x) => s + (parseFloat(x.totale_iva) || 0), 0);
-      await supabase.from("ci_fatture").update({ totale_netto: round2(netto), totale_iva: round2(iva), totale_lordo: round2(netto + iva) }).eq("id", fatturaId);
+      const { error: eTot } = await supabase.from("ci_fatture").update({ totale_netto: round2(netto), totale_iva: round2(iva), totale_lordo: round2(netto + iva) }).eq("id", fatturaId);
+      if (eTot) throw new Error(`Righe salvate, ma i totali della fattura non sono stati aggiornati: ${eTot.message}`);
 
       setMessaggioOk(`Fattura ${numero} salvata con ${righe.length} righe.`);
       setFornitoreTesto(""); setFornitoreSelezionato(null); setNumero(""); setData(new Date().toISOString().slice(0, 10));

@@ -118,6 +118,8 @@ export default function VerificaRigheMancanti() {
   async function registraRigaMancante(r) {
     if (!r._fornitoreId) { alert("Fornitore non riconosciuto — registralo prima in anagrafica."); return; }
     if (!formRegistra.numero.trim()) { alert("Indica il numero fattura."); return; }
+    // Versione 235: una riga normale senza Area e Tipo di Costo resterebbe fuori dai costi
+    if (formRegistra.tipoDestinazione !== "cespite" && (!formRegistra.area || !formRegistra.tipo_costo)) { alert("Indicare Area e Tipo di Costo: senza, la riga resta fuori dai calcoli dei costi."); return; }
     setSalvandoRegistra(true);
     try {
       const importo = round2(parseFloat(r[mappaImporto]));
@@ -135,7 +137,23 @@ export default function VerificaRigheMancanti() {
         fatturaId = nuovaFattura.id;
       }
 
+      const aliquota = mappaAliquotaIva && !isNaN(parseFloat(r[mappaAliquotaIva])) ? parseFloat(r[mappaAliquotaIva]) : 0;
       if (formRegistra.tipoDestinazione === "cespite") {
+        // Versione 235: come in «Carica Fatture Passive massivamente» — riga di fattura (Ammortamenti,
+        // Ammortizzabile) + dettaglio dell'ammortamento + cespite. Prima si creava solo il cespite e la
+        // fattura restava senza righe (e finiva in Controllo Anomalie).
+        const { data: art, error: eArt } = await supabase.from("ci_articoli_fattura").insert([{
+          fattura_id: fatturaId, descrizione, quantita: 1, prezzo_unitario: importo, totale_riga: importo,
+          aliquota_iva: aliquota, totale_iva: round2(importo * aliquota / 100),
+          area: "Ammortamenti", centro_costo: null, destinazione: null, tipo_costo: "Ammortizzabile", stato_classificazione: "MANUALE",
+        }]).select().single();
+        if (eArt) throw new Error(eArt.message);
+        const anni = parseInt(formRegistra.anni_ammortamento) || 5;
+        const { error: eAmm } = await supabase.from("ci_articolo_dettaglio_ammortamento").insert([{
+          articolo_id: art.id, categoria_ammortamento: formRegistra.categoria_ammortamento || null, imputazione: formRegistra.imputazione || null,
+          anno_acquisto: formRegistra.data ? parseInt(String(formRegistra.data).slice(0, 4)) : null, pct_ammortamento: round2(1 / anni * 10000) / 10000, importo_acquisto: importo,
+        }]);
+        if (eAmm) throw new Error(eAmm.message);
         const { error } = await supabase.from("ci_cespiti").insert([{
           descrizione, categoria: formRegistra.categoria_ammortamento || null, fornitore_id: r._fornitoreId, fattura_id: fatturaId,
           data_acquisto: formRegistra.data, costo_acquisto: importo,
@@ -144,7 +162,7 @@ export default function VerificaRigheMancanti() {
         if (error) throw new Error(error.message);
       } else {
         const { error } = await supabase.from("ci_articoli_fattura").insert([{
-          fattura_id: fatturaId, descrizione, quantita: 1, prezzo_unitario: importo, totale_riga: importo, aliquota_iva: 0, totale_iva: 0,
+          fattura_id: fatturaId, descrizione, quantita: 1, prezzo_unitario: importo, totale_riga: importo, aliquota_iva: aliquota, totale_iva: round2(importo * aliquota / 100),
           area: formRegistra.area || null, centro_costo: formRegistra.centro_costo || null,
           destinazione: formRegistra.destinazione || null, tipo_costo: formRegistra.tipo_costo || null, stato_classificazione: "MANUALE",
         }]);
@@ -154,7 +172,8 @@ export default function VerificaRigheMancanti() {
       const { data: righeArt } = await supabase.from("ci_articoli_fattura").select("totale_riga, totale_iva").eq("fattura_id", fatturaId);
       const netto = (righeArt || []).reduce((s, x) => s + (parseFloat(x.totale_riga) || 0), 0);
       const iva = (righeArt || []).reduce((s, x) => s + (parseFloat(x.totale_iva) || 0), 0);
-      await supabase.from("ci_fatture").update({ totale_netto: round2(netto), totale_iva: round2(iva), totale_lordo: round2(netto + iva) }).eq("id", fatturaId);
+      const { error: eTot } = await supabase.from("ci_fatture").update({ totale_netto: round2(netto), totale_iva: round2(iva), totale_lordo: round2(netto + iva) }).eq("id", fatturaId);
+      if (eTot) throw new Error(`Riga registrata, ma i totali della fattura non sono stati aggiornati: ${eTot.message}`);
 
       setRisultato(prev => ({ ...prev, mancanti: prev.mancanti.filter(m => m !== r) }));
       setRegistrandoIndice(null);
