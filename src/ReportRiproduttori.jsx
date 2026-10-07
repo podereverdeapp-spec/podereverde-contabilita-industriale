@@ -24,6 +24,7 @@ export function eccedenzaRealizzo(r) {
   return round2(Math.max(0, (Number(r.valore_realizzo_stimato) || 0) - (Number(r.costo_acquisto) || 0) - (Number(r.costi_crescita_preriproduttiva) || 0)));
 }
 import SchedaRiproduttore from "./SchedaRiproduttore";
+import { confermaRicalcoloConAnomalie } from "./controlliRegistri";
 
 // ── Costo rimasto all'uscita di un riproduttore ────────────────────────────────────────────
 // Quando un riproduttore esce (venduto, macellato, morto) la parte del suo costo non ancora
@@ -274,6 +275,7 @@ export default function ReportRiproduttori() {
   }
 
   async function elabora() {
+    if (!(await confermaRicalcoloConAnomalie())) return;
     setElaborando(true);
     try {
       await assicuraPrezziRiforma();
@@ -522,7 +524,10 @@ export default function ReportRiproduttori() {
 
       // 3) Riepilogo della mandria per anno
       {
-        const { error: eDel } = await supabase.from("ci_costo_nascita_mandria").delete().gte("anno", 0);
+        // Versione 232: si cancellano solo gli anni appena ricalcolati (fino all'anno scelto).
+        // Prima si cancellavano tutti gli anni: elaborando un anno senza nati (es. il 2019) il
+        // riepilogo degli anni successivi spariva.
+        const { error: eDel } = await supabase.from("ci_costo_nascita_mandria").delete().lte("anno", anno);
         if (eDel) throw new Error(eDel.message);
         if (mandria.length) {
           const { error: eIns } = await supabase.from("ci_costo_nascita_mandria").insert(mandria);

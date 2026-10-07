@@ -5,6 +5,7 @@ import { calcolaReportUba } from "./motoreUba";
 import { numerizzaCampi, round2, formattaEuro, formattaNumero, fetchAllPages } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
 import { caricaRipartizioneLavoro, applicaRipartizioneLavoro } from "./ripartizioneLavoro";
+import { confermaRicalcoloConAnomalie } from "./controlliRegistri";
 
 // Mappa tra il nome specie usato nel motore UBA (minuscolo) e quello usato come
 // Destinazione sulle fatture / Imputazione sui cespiti (maiuscolo, italiano)
@@ -230,6 +231,7 @@ export default function ReportCosti({ anno }) {
 
   async function salvaRisultato() {
     if (!risultato) return;
+    if (!(await confermaRicalcoloConAnomalie())) return;
     if (!window.confirm(`Salvare il costo calcolato per ${risultato.costoPerAnimale.length} animali/unità per l'anno ${anno}? Sostituirà eventuali dati già salvati per questo anno.`)) return;
     setSalvando(true);
     try {

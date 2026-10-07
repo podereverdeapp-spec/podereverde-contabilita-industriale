@@ -63,10 +63,22 @@ import ColtRegistroLavori from "./ColtRegistroLavori";
 import Ricerca from "./Ricerca";
 import Parametri from "./Parametri";
 import ReportAcquistoAnimali from "./ReportAcquistoAnimali";
+import RegistroControlli from "./RegistroControlli";
+import AbbinamentiFatture from "./AbbinamentiFatture";
+import RegistroModifiche from "./RegistroModifiche";
+import IstruzioniControlli from "./IstruzioniControlli";
+import AccessoProgramma, { useSessione, esci } from "./AccessoProgramma";
+import { eseguiControlli, contaAnomalieAperte } from "./controlliRegistri";
 import { C, FONT } from "./style";
 
 const MENU = [
   { tipo: "voce", id: "dashboard", label: "Dashboard", icon: "📊" },
+  { tipo: "cartella", id: "cart-controlli", label: "Controlli", icon: "🛡️", contenuto: [
+    { tipo: "voce", id: "istr-controlli", label: "Istruzioni", icon: "📖" },
+    { tipo: "voce", id: "registro-controlli", label: "Registro Controlli", icon: "🛡️" },
+    { tipo: "voce", id: "abbinamenti-fatture", label: "Abbinamenti Fatture Acquisto", icon: "🔗" },
+    { tipo: "voce", id: "registro-modifiche", label: "Registro delle Modifiche", icon: "🕓" },
+  ]},
   { tipo: "cartella", id: "cart-fatture", label: "Carica Fatture", icon: "📥", contenuto: [
     { tipo: "voce", id: "istr-fatture", label: "Istruzioni", icon: "📖" },
     { tipo: "voce", id: "carica", label: "Carica Fatture Passive massivamente", icon: "📥" },
@@ -179,7 +191,7 @@ function cartellaDiPagina(pageId) {
 // Avviso numerico rosso accanto alle voci del menu (es. capi usciti da fatturare)
 function Avviso({ n }) {
   if (!n) return null;
-  return <span title={`${n} capi usciti da fatturare`} style={{ marginLeft: "auto", background: "#C0392B", color: "#fff", borderRadius: 10, padding: "1px 7px", fontSize: 11, fontWeight: 800, lineHeight: "16px" }}>{n}</span>;
+  return <span title={`${n} da vedere`} style={{ marginLeft: "auto", background: "#C0392B", color: "#fff", borderRadius: 10, padding: "1px 7px", fontSize: 11, fontWeight: 800, lineHeight: "16px" }}>{n}</span>;
 }
 
 function VoceMenuBottone({ v, attiva, onClick, piccola, avviso }) {
@@ -199,7 +211,15 @@ function VoceMenuBottone({ v, attiva, onClick, piccola, avviso }) {
   );
 }
 
+// Accesso con le credenziali dell'app (versione 232): senza sessione si vede solo la schermata d'accesso.
 export default function App() {
+  const sessione = useSessione();
+  if (sessione === undefined) return <div style={{ fontFamily: FONT, padding: 40, color: C.muted }}>Verifica dell'accesso…</div>;
+  if (!sessione) return <AccessoProgramma />;
+  return <Programma utente={sessione.user} />;
+}
+
+function Programma({ utente }) {
   const [tab, setTab] = useState("dashboard");
   const [cartelleAperte, setCartelleAperte] = useState(() => new Set());
   // Avviso «fatture da emettere»: capi usciti segnati «pronto da fatturare» nell'app.
@@ -212,7 +232,16 @@ export default function App() {
     const timer = setInterval(controlla, 5 * 60 * 1000);
     return () => { attivo = false; clearInterval(timer); };
   }, [tab]);
-  const AVVISI = { "cart-emissione-fatture": daFatturare, "sub-fatturazione-animali": daFatturare, "fatt-animali-da-fatturare": daFatturare, "fatt-animali-prepara": daFatturare };
+  // Controlli dei registri: all'apertura del programma, poi il conteggio si aggiorna a ogni cambio di pagina
+  const [anomalieAperte, setAnomalieAperte] = useState(null);
+  const [controlloInCorso, setControlloInCorso] = useState(true);
+  useEffect(() => {
+    eseguiControlli("apertura del programma").then(e => setAnomalieAperte(e.aperte))
+      .catch(() => contaAnomalieAperte().then(setAnomalieAperte))
+      .finally(() => setControlloInCorso(false));
+  }, []);
+  useEffect(() => { if (!controlloInCorso) contaAnomalieAperte().then(setAnomalieAperte); }, [tab]);
+  const AVVISI = { "cart-controlli": anomalieAperte || 0, "registro-controlli": anomalieAperte || 0, "cart-emissione-fatture": daFatturare, "sub-fatturazione-animali": daFatturare, "fatt-animali-da-fatturare": daFatturare, "fatt-animali-prepara": daFatturare };
 
   function vaiA(pageId) {
     setTab(pageId);
@@ -247,7 +276,11 @@ export default function App() {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 232</div>
+          <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
+            <span title={utente?.email}>👤 {utente?.email}</span>
+            <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
+          </div>
         </div>
         <nav style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           {MENU.map(m => m.tipo === "voce" ? (
@@ -304,6 +337,18 @@ export default function App() {
       </aside>
 
       <main style={{ flex: 1, minWidth: 0 }}>
+        {anomalieAperte > 0 && tab !== "registro-controlli" && (
+          <div onClick={() => vaiA("registro-controlli")}
+            style={{ background: "#C0392B", color: "#fff", padding: "10px 20px", fontSize: 13.5, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+            ⚠️ {anomalieAperte === 1 ? "C'è 1 anomalia" : `Ci sono ${anomalieAperte} anomalie`} nei registri da decidere.
+            <span style={{ textDecoration: "underline", fontWeight: 800 }}>Vai al Registro Controlli →</span>
+          </div>
+        )}
+        {anomalieAperte === null && !controlloInCorso && (
+          <div style={{ background: "#FFF4D6", borderBottom: "2px solid #D4A017", color: "#6B5200", padding: "8px 20px", fontSize: 13 }}>
+            ⚠️ I controlli dei registri non sono disponibili: il database non ha ancora le strutture della versione 232 (file contabilita_strutture_v232.sql).
+          </div>
+        )}
         {daFatturare > 0 && tab !== "fatt-animali-da-fatturare" && tab !== "fatt-animali-prepara" && (
           <div onClick={() => vaiA("fatt-animali-da-fatturare")}
             style={{ background: "#FBE1DE", borderBottom: "2px solid #C0392B", color: "#8B1E14", padding: "10px 20px", fontSize: 13.5, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
@@ -392,6 +437,10 @@ export default function App() {
         {tab === "colt-archivio-report" && <ColtArchivioReport />}
         {tab === "ricerca" && <Ricerca />}
         {tab === "parametri" && <Parametri />}
+        {tab === "istr-controlli" && <IstruzioniControlli />}
+        {tab === "registro-controlli" && <RegistroControlli onCambiaAperte={setAnomalieAperte} />}
+        {tab === "abbinamenti-fatture" && <AbbinamentiFatture />}
+        {tab === "registro-modifiche" && <RegistroModifiche />}
       </main>
     </div>
   );
