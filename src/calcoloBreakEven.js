@@ -19,6 +19,7 @@ import { applicaRipartizioneLavoro } from "./ripartizioneLavoro";
 import { allocaCostiPerSpecie } from "./calcoloAllocazioneSpecie";
 import { normalizzaAnimali, idGenitori, conteggioUnitaPerLotto, costoAcquistoUnitario, eNatoDellaMandria, eUscito } from "./costoAnimale";
 import { dataIngressoPresenza } from "./motoreUba";
+import { entraNeiCosti } from "./documentiCompetenza";
 
 export const SPECIE = ["bovino", "suino", "ovino"];
 export const ETICHETTE = { bovino: "Bovini", suino: "Suini", ovino: "Ovini" };
@@ -61,7 +62,7 @@ async function tutte(tabella, colonne, ordine = "id", facoltativa = false) {
 
 export async function caricaDatiBase() {
   const [fatture, articoli, costiDiretti, quote, cespiti, costiAnimali, mandria, animali, lotti, unita, eventi, vendite, ripartizioni] = await Promise.all([
-    tutte("ci_fatture", "id, data, tipo"),
+    tutte("ci_fatture", "id, data, tipo, regolarizzazione_di", "id", true).then(f => f || tutte("ci_fatture", "id, data, tipo")),
     tutte("ci_articoli_fattura", "id, fattura_id, totale_riga, tipo_costo, area, destinazione, centro_costo"),
     tutte("ci_costi_diretti", "id, data, importo, tipo_costo, area, destinazione, centro_costo"),
     tutte("ci_cespiti_ammortamento", "id, cespite_id, anno, quota"),
@@ -84,7 +85,8 @@ export function preparaBase(g) {
   if (g.eventi === null) avvisiDati.push("Gli eventi di parto non sono leggibili: i nati per madre non si possono calcolare (accedere con nome e password).");
   if (!g.mandria || g.mandria.length === 0) avvisiDati.push("Il riepilogo della mandria del Report Riproduttori è vuoto: il costo di nascita non si può dividere tra costo rimasto dei genitori e mantenimento delle madri, quindi se ne considera variabile solo la quota dei costi variabili. Rifare l'elaborazione del Report Riproduttori.");
 
-  const annoFattura = new Map((g.fatture || []).filter(f => f.tipo === "PASSIVA").map(f => [f.id, annoDi(f.data)]));
+  // Versione 237: acquisti + fatture da ricevere/da emettere; acquisti collegati a un documento di competenza esclusi
+  const annoFattura = new Map((g.fatture || []).filter(entraNeiCosti).map(f => [f.id, annoDi(f.data)]));
   const specieCespite = new Map((g.cespiti || []).map(c => [c.id, c.specie || []]));
   const ripartizioni = new Map((g.ripartizioni || []).map(r => [r.anno, r]));
   const mandria = new Map((g.mandria || []).map(m => [`${m.specie}|${m.anno}`, m]));

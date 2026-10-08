@@ -46,6 +46,7 @@ import IstruzioniColtivazioni from "./IstruzioniColtivazioni";
 import Modelli4 from "./Modelli4";
 import IstruzioniModelli4 from "./IstruzioniModelli4";
 import IstruzioniEmissioneFatture from "./IstruzioniEmissioneFatture";
+import FattureCompetenza from "./FattureCompetenza";
 import UsciteDaFatturare from "./UsciteDaFatturare";
 import PreparaFatture from "./PreparaFatture";
 import FattureEmesse from "./FattureEmesse";
@@ -104,6 +105,9 @@ const MENU = [
     { tipo: "sottocartella", id: "sub-altre-fatturazioni", label: "Altre Fatturazioni", icon: "📄", voci: [
       { id: "altre-nuova", label: "Nuova Fattura", icon: "✍️" },
       { id: "altre-emesse", label: "Fatture Emesse", icon: "📤" },
+    ] },
+    { tipo: "sottocartella", id: "sub-fatture-competenza", label: "Fatture da Ricevere e da Emettere", icon: "🗂️", voci: [
+      { id: "fatture-competenza", label: "Rapporti con Muratella", icon: "🏛️" },
     ] },
   ]},
   { tipo: "cartella", id: "cart-ricerca", label: "Ricerca: Fatture, Articoli, Prezzi, Anagrafiche", icon: "🔎", contenuto: [
@@ -284,7 +288,7 @@ function Programma({ utente }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 236</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 237</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -441,6 +445,7 @@ function Programma({ utente }) {
         {tab === "fatt-animali-emesse" && <FattureEmesse tipo="animali_allevamento" />}
         {tab === "altre-nuova" && <NuovaFatturaLibera onNavigate={vaiA} />}
         {tab === "altre-emesse" && <FattureEmesse tipo="altre_fatturazioni" />}
+        {tab === "fatture-competenza" && <FattureCompetenza />}
         {tab === "modelli4-elenco" && <Modelli4 />}
         {tab === "modelli4-altri" && <AltriDocumentiCortesi />}
         {tab === "colt-fatture-elenco" && <FattureColtivazioneElenco />}

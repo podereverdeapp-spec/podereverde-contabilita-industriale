@@ -26,7 +26,8 @@ export default function Dashboard({ onNavigate }) {
     if (errore) {
       alert(`⚠️ Errore nel caricamento della dashboard:\n\n${errore.message}`);
     } else {
-      setFatture(numerizzaCampi(f || [], ["totale_netto", "totale_iva", "totale_lordo"]));
+      // Versione 237: la dashboard mostra solo le fatture vere (non le fatture da ricevere / da emettere)
+      setFatture(numerizzaCampi((f || []).filter(x => x.tipo === "PASSIVA" || x.tipo === "ATTIVA"), ["totale_netto", "totale_iva", "totale_lordo"]));
       setFornitori(fo || []);
       setReportAcquisto(numerizzaCampi(ra || [], ["importo", "quantita", "prezzo_unitario"]));
     }

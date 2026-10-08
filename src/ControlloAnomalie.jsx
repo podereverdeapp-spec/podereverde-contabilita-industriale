@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { etichettaTipo } from "./documentiCompetenza";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { numerizzaCampi, formattaEuro, fetchAllPages } from "./parsingUtils";
@@ -36,7 +37,7 @@ export default function ControlloAnomalie() {
         const sueRighe = righePerFattura.get(f.id) || [];
         const nRighe = sueRighe.length;
         const sommaRighe = sueRighe.reduce((s, r) => s + (parseFloat(r.totale_riga) || 0), 0);
-        const controparte = f.tipo === "ATTIVA" ? mappaClienti.get(f.cliente_id) : mappaFornitori.get(f.fornitore_id);
+        const controparte = f.cliente_id ? mappaClienti.get(f.cliente_id) : mappaFornitori.get(f.fornitore_id);
         const problemi = [];
         if ((f.totale_lordo || 0) === 0) problemi.push("Totale fattura a zero");
         if (nRighe === 0) problemi.push("Nessuna riga articolo associata");
@@ -87,7 +88,7 @@ export default function ControlloAnomalie() {
               <div key={f.id} style={{ background: "#FDECEC", border: `1.5px solid ${C.red}`, borderRadius: 10, padding: 14, display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
                 <div>
                   <span style={{ fontSize: 11, fontWeight: 700, color: f.tipo === "ATTIVA" ? C.green : C.blue, marginRight: 8 }}>
-                    {f.tipo === "ATTIVA" ? "VENDITA" : "ACQUISTO"}
+                    {etichettaTipo(f.tipo)}
                   </span>
                   <strong>{f.controparte || "—"}</strong>
                   <div style={{ fontSize: 12, color: C.muted }}>Fatt. {f.numero} del {f.data} · {f.nRighe} righe</div>

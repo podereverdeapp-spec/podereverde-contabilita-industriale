@@ -2,6 +2,19 @@ import { supabase } from "./supabase";
 import { calcolaReportUba, calcolaRigaAggregata } from "./motoreUba";
 import { numerizzaCampi, round2, fetchAllPages, leggiInBlocchi } from "./parsingUtils";
 import { caricaRipartizioneLavoro, applicaRipartizioneLavoro } from "./ripartizioneLavoro";
+import { leggiFattureNeiCosti, TIPO_DA_RICEVERE, TIPO_DA_EMETTERE } from "./documentiCompetenza";
+
+// Versione 237: quanto pesano nell'anno i documenti di competenza (fatture da ricevere e da emettere)
+export function riepilogoCompetenza(articoli, tipoFattura) {
+  const r = { daRicevere: 0, daEmettere: 0, righeDaRicevere: 0, righeDaEmettere: 0 };
+  for (const a of articoli || []) {
+    const t = tipoFattura.get(a.fattura_id);
+    if (t === TIPO_DA_RICEVERE) { r.daRicevere += a.totale_riga || 0; r.righeDaRicevere++; }
+    if (t === TIPO_DA_EMETTERE) { r.daEmettere += a.totale_riga || 0; r.righeDaEmettere++; }
+  }
+  r.daRicevere = round2(r.daRicevere); r.daEmettere = round2(r.daEmettere);
+  return r;
+}
 
 export const AREE_ORDINARIE = [
   "Allevamento", "Coltivazione", "Lavoro", "Energia Elettrica", "Acqua", "Consulenze",
@@ -36,20 +49,22 @@ export async function caricaDatiGrezziAnno(anno) {
     ovino: righeUba.filter(r => r.specie === "ovino" && r.categoria_contabile !== "IMPRODUTTIVO_USCITO").reduce((s, r) => s + r.uba_giorni, 0),
   };
 
-  const { data: fattureAnno, error: eF } = await fetchAllPages((da, a) => supabase
-    .from("ci_fatture").select("id, data").eq("tipo", "PASSIVA")
-    .gte("data", `${anno}-01-01`).lte("data", `${anno}-12-31`).order("id").range(da, a));
+  // Versione 237: acquisti + documenti di competenza (fatture da ricevere / da emettere); gli acquisti
+  // collegati a un documento di competenza non si contano due volte (vedi documentiCompetenza.js)
+  const { data: fattureAnno, error: eF } = await leggiFattureNeiCosti(supabase, fetchAllPages, `${anno}-01-01`, `${anno}-12-31`);
   if (eF) throw new Error(eF.message);
   const idFattureAnno = (fattureAnno || []).map(f => f.id);
+  const tipoFattura = new Map((fattureAnno || []).map(f => [f.id, f.tipo]));
 
   let articoliAnno = [];
   if (idFattureAnno.length > 0) {
     const { data: articoli, error: eArt } = await leggiInBlocchi(idFattureAnno, (blocco, da, a) => supabase
-      .from("ci_articoli_fattura").select("totale_riga, tipo_costo, destinazione, area, centro_costo")
+      .from("ci_articoli_fattura").select("fattura_id, totale_riga, tipo_costo, destinazione, area, centro_costo")
       .in("fattura_id", blocco).in("tipo_costo", ["Fisso", "Variabile"]).order("id").range(da, a));
     if (eArt) throw new Error(eArt.message);
     articoliAnno = numerizzaCampi(articoli || [], ["totale_riga"]);
   }
+  const competenza = riepilogoCompetenza(articoliAnno, tipoFattura);
 
   // Costi Diretti (es. costo del lavoro) — inseriti a mano, senza passare da una fattura,
   // ma vanno sommati insieme alle righe da fattura per non sparire dai report dei costi.
@@ -75,7 +90,7 @@ export async function caricaDatiGrezziAnno(anno) {
     quoteAnno = numerizzaCampi((quote || []).filter(q => idSet.has(q.cespite_id)), ["quota"]);
   }
 
-  return { ubaGiorniProduttiviAziendali, ubaGiorniProduttiviPerSpecie, articoliAnno, quoteAnno, mappaCespiteSpecie, mappaCespiteCategoria };
+  return { ubaGiorniProduttiviAziendali, ubaGiorniProduttiviPerSpecie, articoliAnno, quoteAnno, mappaCespiteSpecie, mappaCespiteCategoria, competenza };
 }
 
 // Versione 236 (decisione del Dott. Bizzarri del 07/10/2026 ore 20:58): i costi di Cavalli, Pollame e

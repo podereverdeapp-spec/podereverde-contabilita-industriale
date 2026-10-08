@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, Fragment } from "react";
+import { etichettaTipo } from "./documentiCompetenza";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { numerizzaCampi, formattaEuro, formattaNumero, fetchAllPages, round2 } from "./parsingUtils";
@@ -98,7 +99,7 @@ export default function ArticoliPrezzi() {
     const arricchiti = articoli.map(a => {
       const f = mappaFatture.get(a.fattura_id);
       if (!f) return null;
-      const controparte = f.tipo === "ATTIVA" ? mappaClienti.get(f.cliente_id) : mappaFornitori.get(f.fornitore_id);
+      const controparte = f.cliente_id ? mappaClienti.get(f.cliente_id) : mappaFornitori.get(f.fornitore_id);
       return { ...a, numero: f.numero, data: f.data, tipo: f.tipo, controparte, fornitore_id: f.fornitore_id };
     }).filter(a => a && a.data);
 
@@ -333,7 +334,7 @@ export default function ArticoliPrezzi() {
                             {g.storico.map((s, j) => (
                               <tr key={j} style={{ borderTop: `1px solid ${C.border}` }}>
                                 <td style={{ padding: "6px 20px" }}>{s.data}</td>
-                                <td style={{ padding: "6px 8px" }}>{s.tipo === "ATTIVA" ? "Vendita" : "Acquisto"}</td>
+                                <td style={{ padding: "6px 8px" }}>{etichettaTipo(s.tipo)}</td>
                                 <td style={{ padding: "6px 8px" }}>{s.controparte || "—"}</td>
                                 <td style={{ padding: "6px 8px" }}>{s.numero}</td>
                                 <td style={{ padding: "6px 8px", textAlign: "right" }}>{formattaNumero(s.quantita, 2)} {s.unita_misura || ""}</td>

@@ -6,7 +6,8 @@ import { numerizzaCampi, round2, formattaEuro, formattaNumero, fetchAllPages, le
 import { esportaExcel, numeroExcel } from "./esportaExcel";
 import { caricaRipartizioneLavoro, applicaRipartizioneLavoro } from "./ripartizioneLavoro";
 import { confermaRicalcoloConAnomalie } from "./controlliRegistri";
-import { chiaveQuotaCespite, eLavorazioneCarni } from "./calcoloReportCosti";
+import { chiaveQuotaCespite, eLavorazioneCarni, riepilogoCompetenza } from "./calcoloReportCosti";
+import { leggiFattureNeiCosti } from "./documentiCompetenza";
 
 // Mappa tra il nome specie usato nel motore UBA (minuscolo) e quello usato come
 // Destinazione sulle fatture / Imputazione sui cespiti (maiuscolo, italiano)
@@ -56,20 +57,22 @@ export default function ReportCosti({ anno }) {
       }
 
       // Costi ordinari dell'anno (Fisso + Variabile), CON la destinazione (per separare diretti/generali)
-      const { data: fattureAnno, error: eF } = await fetchAllPages((da, a) => supabase
-        .from("ci_fatture").select("id, data").eq("tipo", "PASSIVA")
-        .gte("data", `${anno}-01-01`).lte("data", `${anno}-12-31`).order("id").range(da, a));
+      // Versione 237: acquisti + fatture da ricevere / da emettere (documenti di competenza);
+      // gli acquisti collegati a un documento di competenza non si contano due volte
+      const { data: fattureAnno, error: eF } = await leggiFattureNeiCosti(supabase, fetchAllPages, `${anno}-01-01`, `${anno}-12-31`);
       if (eF) throw new Error(eF.message);
       const idFattureAnno = (fattureAnno || []).map(f => f.id);
+      const tipoFattura = new Map((fattureAnno || []).map(f => [f.id, f.tipo]));
 
       let articoliAnno = [];
       if (idFattureAnno.length > 0) {
         const { data: articoli, error: eArt } = await leggiInBlocchi(idFattureAnno, (blocco, da, a) => supabase
-          .from("ci_articoli_fattura").select("totale_riga, tipo_costo, destinazione, area, centro_costo")
+          .from("ci_articoli_fattura").select("fattura_id, totale_riga, tipo_costo, destinazione, area, centro_costo")
           .in("fattura_id", blocco).in("tipo_costo", ["Fisso", "Variabile"]).order("id").range(da, a));
         if (eArt) throw new Error(eArt.message);
         articoliAnno = numerizzaCampi(articoli || [], ["totale_riga"]);
       }
+      const competenza = riepilogoCompetenza(articoliAnno, tipoFattura);
 
       // Costi Diretti (es. costo del lavoro) — inseriti a mano, senza passare da una fattura,
       // ma vanno sommati insieme alle righe da fattura per non sparire dal report.
@@ -216,7 +219,7 @@ export default function ReportCosti({ anno }) {
         return { ...r, costo_mantenimento: round2(r.uba_giorni * tassoSpecie) };
       });
 
-      setRisultato({ anno, costiOrdinari, costoAmmortamenti, costiTotali, valoreRiformaTotale, tasso, perSpecie, costoPerAnimale, righeUba, costiAltreSpecie });
+      setRisultato({ anno, costiOrdinari, costoAmmortamenti, costiTotali, valoreRiformaTotale, tasso, perSpecie, costoPerAnimale, righeUba, costiAltreSpecie, competenza });
     } catch (err) {
       alert(`⚠️ Errore nel calcolo:\n\n${err.message}`);
     }
@@ -234,6 +237,8 @@ export default function ReportCosti({ anno }) {
       "Tasso semplice €/UBA-gg": numeroExcel(risultato.tasso.tassoSemplice),
       "Perdita spalmata": numeroExcel(risultato.tasso.perditaSpalmata),
       "Tasso rettificato €/UBA-gg": numeroExcel(risultato.tasso.tassoRettificato),
+      "di cui fatture da ricevere (Muratella)": numeroExcel(risultato.competenza?.daRicevere || 0),
+      "di cui fatture da emettere (orzo, in meno)": numeroExcel(risultato.competenza?.daEmettere || 0),
     }];
     const righePerSpecie = risultato.perSpecie.map(r => ({
       "Specie": r.specie, "% sul totale UBA-giorni": numeroExcel(r.percentualeSulTotale),
@@ -311,6 +316,18 @@ export default function ReportCosti({ anno }) {
             <Riga label="Perdita spalmata sui produttivi" valore={`${formattaEuro(risultato.tasso.perditaSpalmata)}`} color={C.red} />
             <Riga label="Tasso RETTIFICATO (quello usato)" valore={`${formattaEuro(risultato.tasso.tassoRettificato, 4)}/UBA-gg`} bold color={C.primary} />
           </div>
+
+          {risultato.competenza && (risultato.competenza.righeDaRicevere > 0 || risultato.competenza.righeDaEmettere > 0) && (
+            <div style={{ background: "#FFF7E6", border: `1px solid ${C.orange || "#E8A33D"}`, borderRadius: 12, padding: 16, marginBottom: 16, fontSize: 13 }}>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>🧾 Nei costi ordinari dell'anno {risultato.anno} sono comprese fatture da ricevere e da emettere (rapporti con Muratella)</div>
+              {risultato.competenza.righeDaRicevere > 0 && <Riga label={`Fatture da ricevere da Muratella (${risultato.competenza.righeDaRicevere} righe): costi dei campi di Podere pagati da Muratella`} valore={formattaEuro(risultato.competenza.daRicevere)} />}
+              {risultato.competenza.righeDaEmettere > 0 && <Riga label="Fattura da emettere a Muratella: orzo di Podere conferito, in meno nei Mangimi (rientra come farina comprata dalla Cooperativa Ceri)" valore={formattaEuro(risultato.competenza.daEmettere)} />}
+              <div style={{ color: C.muted, marginTop: 6 }}>
+                Decisione del 08/10/2026: i costi dei campi di Podere stanno in Podere, anno per anno, anche se li ha pagati Muratella; l'orzo venduto e ricomprato non si conta due volte.
+                Elenco riga per riga, stato delle fatture vere ed esportazione per il commercialista: cartella «Emissione Fatture» → «Fatture da Ricevere e da Emettere».
+              </div>
+            </div>
+          )}
 
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 16 }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: C.muted, marginBottom: 10 }}>ALLOCAZIONE PER SPECIE</div>

@@ -83,6 +83,19 @@ export default function IstruzioniEmissioneFatture() {
           ],
           note: "Se la fattura è già stata inviata allo SdI, per stornarla serve una nota di credito emessa con Aruba.",
         },
+        {
+          pagina: "Fatture da Ricevere e da Emettere → Rapporti con Muratella", icon: "🗂️",
+          aCosaServe: "Raccoglie, anno per anno, le fatture che Podere deve ricevere da Muratella e quelle che deve emetterle, decise l'8 ottobre 2026 per rispettare i principi contabili. Da ricevere: i costi dei campi di Podere pagati da Muratella dal 2021 (gasolio, manutenzione delle macchine agricole, concimi, diserbanti, diserbo, semina, seme, reti). Da emettere: l'orzo raccolto da Podere che Muratella ha venduto alla Cooperativa Ceri (2025 e 2026), che Podere ricompra come farina.",
+          comeSiUsa: [
+            "In cima c'è la decisione spiegata per esteso: è il testo da dare al commercialista, che lo ritrova anche nell'Excel («Esporta in Excel per il commercialista»: nota, riepilogo per anno, righe da ricevere, righe da emettere).",
+            "Il riepilogo per anno mostra quanto entra nei costi di Podere: le fatture da ricevere in più, l'orzo in meno nei Mangimi. Sono gli stessi importi che il Report Costi segnala nel riquadro arancione dell'anno.",
+            "Ogni documento di competenza («DA RICEVERE MURATELLA 2021», «DA EMETTERE MURATELLA 2025»…) ha le sue righe: ogni riga riporta la fattura originale pagata da Muratella (fornitore, numero, data) con la stessa classificazione delle fatture di Podere.",
+            "Stato arancione «da ricevere» / «da emettere»: la fattura vera non c'è ancora. Quando la fattura vera è registrata in contabilità (acquisto caricato in «Carica Fatture»; vendita emessa con Aruba o con «Altre Fatturazioni» e poi registrata in «Carica Fatture Attive»), la si sceglie nella tendina del documento e si clicca «Collega»: lo stato diventa verde «regolarizzato».",
+            "Una fattura d'acquisto vera collegata NON si conta nei costi: il costo è già contato dal documento di competenza nell'anno giusto (es. il gasolio del 2022 resta nel 2022 anche se Muratella lo fattura nel 2026). Per questo le fatture di Muratella arrivate dopo l'8 ottobre 2026 e non ancora collegate sono elencate in rosso: vanno collegate, altrimenti il costo si conta due volte.",
+            "Dopo ogni collegamento o modifica, gli anni interessati vanno ricalcolati (il programma lo segnala con l'avviso arancione «Occorre ricalcolare i costi»).",
+          ],
+          note: "Il 2019 e il 2020 non hanno documenti: in quegli anni Muratella fatturava a Podere le lavorazioni, le semine, il seme e il fieno, quindi i suoi costi erano già nel prezzo. Il 2026 contiene i costi di Muratella registrati fino al 22/04/2026: quelli successivi vanno aggiunti quando si caricano le sue fatture.",
+        },
       ]}
     />
   );

@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { etichettaTipo } from "./documentiCompetenza";
 import { supabase } from "./supabase";
 import { C } from "./style";import { numerizzaCampi, formattaEuro, round2, fetchAllPages } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
@@ -205,7 +206,7 @@ export default function Ricerca() {
 
   function esporta() {
     const righeExcel = risultati.map(f => ({
-      "Tipo": f.tipo === "ATTIVA" ? "Vendita" : "Acquisto", "Controparte": f.ci_fornitori?.nome || f.ci_clienti?.nome,
+      "Tipo": etichettaTipo(f.tipo), "Controparte": f.ci_fornitori?.nome || f.ci_clienti?.nome,
       "Numero": f.numero, "Data": f.data, "Totale netto": numeroExcel(f.totale_netto),
       "Totale IVA": numeroExcel(f.totale_iva), "Totale lordo": numeroExcel(f.totale_lordo), "Note": f.note,
     }));
@@ -298,7 +299,7 @@ export default function Ricerca() {
               <div onClick={() => espandi(f.id)} style={{ display: "flex", justifyContent: "space-between", padding: 14, cursor: "pointer", flexWrap: "wrap", gap: 8 }}>
                 <div>
                   <span style={{ fontSize: 11, fontWeight: 700, color: f.tipo === "ATTIVA" ? C.green : C.blue, marginRight: 8 }}>
-                    {f.tipo === "ATTIVA" ? "VENDITA" : "ACQUISTO"}
+                    {etichettaTipo(f.tipo)}
                   </span>
                   {modificaFatturaId === f.id ? (
                     <div onClick={e => e.stopPropagation()} style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", marginTop: 4 }}>
