@@ -9,7 +9,16 @@ export default function IstruzioniEmissioneFatture() {
         <>
           Questa sezione serve a preparare ed emettere le fatture di vendita di Podere Verde: per prime le consegne degli animali al macello.
           <br /><br />
-          I dati dei capi consegnati (matricola o lotto, modello 4, peso della carcassa, numero di partita, cliente) arrivano dall'app Podere Verde, dove l'operatore li completa dopo la consegna. Qui si prepara la fattura, la si controlla e la si registra nel programma.
+          I dati dei capi consegnati (matricola o lotto, modello 4, peso della carcassa, numeri di partita, cliente) arrivano dall'app Podere Verde, dove l'operatore li completa dopo la consegna. Qui si prepara la fattura, la si controlla e la si registra nel programma.
+          <br /><br />
+          <strong>Numero di partita per pezzo</strong> (decisione del Dott. Bizzarri dell'8 ottobre 2026): il cliente riceve il capo diviso in pezzi e dà un numero di partita a ogni pezzo.
+          <br />• suino: 2 mezzene («mezzena 1», «mezzena 2»), quindi 2 numeri di partita;
+          <br />• bovino: 4 quarti («quarto 1»…«quarto 4»), quindi 4 numeri di partita;
+          <br />• ovino: la carcassa intera, 1 numero di partita.
+          <br />Un capo è <strong>pronto da fatturare</strong> quando ha tutti i numeri di partita; è <strong>fatturato</strong> quando è in una fattura emessa e non annullata. La stessa regola vale nell'app.
+          <br />In fattura c'è una riga per ogni pezzo, con il suo numero di partita e i suoi chili. Se l'app non ha il peso di tutti i pezzi, il capo va in una riga unica con i chili della carcassa e tutti i numeri di partita nella descrizione.
+          <br />Esempio: suino con carcassa di 92,0 kg → mezzena 1, partita 4512, 46,2 kg; mezzena 2, partita 4513, 45,8 kg → due righe in fattura. Se 46,2 + 45,8 non facesse 92,0, il programma lo segnala in arancione (in fattura vanno i chili dei pezzi).
+          <br />Il database impedisce di fatturare due volte lo stesso pezzo o lo stesso capo, e finché la fattura è valida nell'app non si possono cambiare partite, pesi, cliente e dati del capo, né cancellare il capo: prima si annulla la fattura.
           <br /><br />
           La sezione è divisa in due sottocartelle:
           <br />• <strong>Fatturazione Animali Allevamento</strong>: le fatture per gli animali consegnati al macello o venduti ad altri allevamenti, preparate dai dati dei capi usciti;
@@ -21,19 +30,19 @@ export default function IstruzioniEmissioneFatture() {
       sezioni={[
         {
           pagina: "Fatturazione Animali Allevamento → Uscite da Fatturare", icon: "🔔",
-          aCosaServe: "Avvisa chi fa le fatture che ci sono animali usciti da fatturare e li elenca. Sono i capi usciti per la macellazione che l'operatore ha completato nell'app Podere Verde (peso vivo, peso della carcassa, modello 4, numero di partita, cliente) e che l'app segna «pronto da fatturare».",
+          aCosaServe: "Avvisa chi fa le fatture che ci sono animali usciti da fatturare e li elenca. Sono i capi usciti per la macellazione registrati nell'app Podere Verde con qualcosa ancora da fatturare; per ogni capo sono elencati i pezzi con numero di partita e peso (i pezzi già fatturati sono barrati).",
           comeSiUsa: [
             "Quando ci sono capi da fatturare compare un numero rosso nel menu, accanto a Emissione Fatture, a Fatturazione Animali Allevamento e a Uscite da Fatturare, e in cima a ogni pagina del programma una striscia rossa «Ci sono N capi usciti dall'allevamento da fatturare»: cliccandola si apre l'elenco.",
             "L'avviso si ricontrolla all'apertura del programma, a ogni cambio di pagina e ogni 5 minuti.",
             "I capi sono raggruppati per cliente e data di uscita, con i chili di carcassa e di peso vivo della consegna.",
-            "Bordo verde «DATI COMPLETI»: la consegna si può fatturare. Bordo giallo «DATI DA COMPLETARE»: nella colonna «Da completare» è indicato cosa manca (peso della carcassa, modello 4, numero di partita, cliente, cliente non presente in anagrafica).",
+            "Bordo verde «DATI COMPLETI»: la consegna si può fatturare. Bordo giallo «DATI DA COMPLETARE»: nella colonna «Da completare» è indicato cosa manca (peso della carcassa, modello 4, numeri di partita dei pezzi, cliente, cliente non presente in anagrafica). L'avviso arancione dice che la somma dei pesi dei pezzi non torna con il peso della carcassa.",
             "«Aggiorna» rilegge i dati; «Esporta Excel» scarica l'elenco.",
           ],
           note: "Pagina in sola lettura: i dati mancanti si completano nell'app Podere Verde, non qui. Quando la fattura è emessa nel programma, i suoi capi non compaiono più tra quelli da fatturare e il numero rosso scende.",
         },
         {
           pagina: "Fatturazione Animali Allevamento → Prepara Fatture", icon: "🧾",
-          aCosaServe: "Prepara una fattura per ogni cliente con i capi da fatturare, una riga per capo (matricola o lotto, modello 4, numero di partita, chili di carcassa, prezzo al kg, importo), e alla conferma scarica il file XML da caricare in Aruba Fatturazione Elettronica.",
+          aCosaServe: "Prepara una fattura per ogni cliente con i capi da fatturare, una riga per pezzo (matricola o lotto, modello 4, pezzo e numero di partita, chili, prezzo al kg, importo) o una riga unica per il capo quando i pesi dei pezzi mancano, e alla conferma scarica il file XML da caricare in Aruba Fatturazione Elettronica.",
           comeSiUsa: [
             "La prima volta aprire «Dati di Podere Verde in fattura», controllare i dati (ripresi dalla fattura FPR 8/26 emessa con Aruba) e salvarli. Finché non sono salvati le fatture non si possono emettere.",
             "Scegliere, se serve, il periodo dei capi usciti e la data delle fatture (di solito oggi).",
@@ -42,10 +51,10 @@ export default function IstruzioniEmissioneFatture() {
             "Se mancano dati del cliente necessari alla fattura elettronica (partita IVA, indirizzo, CAP, comune, provincia, codice destinatario o PEC) compare il modulo per completarli.",
             "Il pulsante «Conferma ed emetti» si attiva solo quando numero, prezzi confermati e dati sono a posto; altrimenti dice cosa manca. Alla conferma la fattura si registra nel programma e si scarica il file XML.",
             "In Aruba: «Carica fattura» → «Seleziona documenti» (oppure trascinare il file) → controllare → inviare allo SdI.",
-            "Riquadro giallo «Cliente da assegnare»: i capi senza cliente o con un nome che non è in anagrafica. Scegliere il cliente dall'anagrafica (o crearlo con «+ nuovo cliente») e cliccare «Assegna»: il capo passa nella fattura di quel cliente. Il suggerimento indica l'ultimo cliente fatturato per lo stesso macello, ma non assegna nulla da solo. Se l'operatore aveva scritto un nome, il programma lo ricorda per le volte successive.",
-            "Riquadro rosso: capi non fatturabili perché manca il peso della carcassa, il modello 4 o il numero di partita. Si completano nell'app.",
+            "Riquadro giallo «Cliente da assegnare»: i capi (o i singoli pezzi destinati a un cliente diverso) senza cliente o con un nome che non è in anagrafica. Scegliere il cliente dall'anagrafica (o crearlo con «+ nuovo cliente») e cliccare «Assegna»: il capo passa nella fattura di quel cliente. Il suggerimento indica l'ultimo cliente fatturato per lo stesso macello, ma non assegna nulla da solo. Se l'operatore aveva scritto un nome, il programma lo ricorda per le volte successive.",
+            "Riquadro rosso: capi non fatturabili perché manca il peso della carcassa, il modello 4 o un numero di partita, oppure perché i pezzi vanno a clienti diversi o una parte è già fatturata e mancano i pesi dei pezzi. Si completano nell'app.",
           ],
-          note: "Il cliente assegnato, i prezzi confermati e le fatture si registrano solo nelle tabelle del programma: i dati dell'app non vengono mai modificati. Un capo si fattura una sola volta.",
+          note: "Il cliente assegnato, i prezzi confermati e le fatture si registrano solo nelle tabelle del programma: i dati dell'app non vengono mai modificati. Un pezzo, e un capo, si fattura una sola volta.",
         },
         {
           pagina: "Fatturazione Animali Allevamento → Fatture Emesse", icon: "📤",
@@ -53,7 +62,7 @@ export default function IstruzioniEmissioneFatture() {
           comeSiUsa: [
             "Cliccare sul numero per vedere le righe della fattura.",
             "«XML per Aruba» riscarica il file di una fattura; spuntando più fatture, «Scarica per Aruba le selezionate» le mette in un unico .zip, che Aruba carica in un colpo solo.",
-            "«Annulla registrazione» (con motivo obbligatorio) si usa solo se la fattura non è stata inviata con Aruba o è stata stornata con nota di credito: i capi tornano tra quelli da fatturare e il numero torna libero. Non cancella nulla: la fattura resta visibile tra le annullate.",
+            "«Annulla registrazione» (con motivo obbligatorio) si usa solo se la fattura non è stata inviata con Aruba o è stata stornata con nota di credito: i capi e i pezzi tornano tra quelli da fatturare e il numero torna libero. Non cancella nulla: la fattura resta visibile tra le annullate.",
             "«Esporta Excel» scarica fatture e righe.",
           ],
           note: "Se la fattura è già stata inviata allo SdI, per stornarla serve una nota di credito emessa con Aruba.",

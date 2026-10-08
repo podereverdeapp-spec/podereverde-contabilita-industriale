@@ -8,7 +8,9 @@ import {
 import { generaXmlFattura, nomeFileXml, scaricaFile, scaricaZip } from "./xmlFatturaPA";
 
 // Emissione Fatture → Fatturazione Animali Allevamento → Prepara Fatture
-// Una fattura per cliente con i capi «pronto da fatturare». Prezzo al kg per prodotto: proposto
+// Una fattura per cliente con i capi «pronto da fatturare». Versione 238: una riga per pezzo (mezzena,
+// quarto, carcassa intera) con il suo numero di partita e i suoi chili; una riga unica per il capo, con
+// tutte le partite in descrizione, quando i pesi dei pezzi mancano. Prezzo al kg per prodotto: proposto
 // per i clienti abituali (ultimo prezzo) ma sempre da confermare; da inserire per i nuovi.
 // Alla conferma la fattura si registra nel programma e si scarica il file XML per Aruba.
 
@@ -46,7 +48,8 @@ export default function PreparaFatture({ onNavigate }) {
 
   if (loading && !dati) return <div style={{ padding: 20, color: C.muted }}>Preparazione delle fatture...</div>;
 
-  const nCapi = dati ? dati.fatture.reduce((s, f) => s + f.capi.length, 0) + dati.daAssegnare.length + dati.esclusi.length : 0;
+  const nCapi = dati ? new Set([...dati.fatture.flatMap(f => f.capi), ...dati.daAssegnare, ...dati.esclusi].map(v => v.capoId)).size : 0;
+  const nRighe = dati ? dati.fatture.reduce((s, f) => s + f.capi.length, 0) + dati.daAssegnare.length + dati.esclusi.length : 0;
 
   return (
     <div style={{ padding: 20, maxWidth: 1300, margin: "0 auto" }}>
@@ -58,7 +61,8 @@ export default function PreparaFatture({ onNavigate }) {
         </div>
       </div>
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 14, fontSize: 13, lineHeight: 1.5 }}>
-        I capi usciti «pronto da fatturare» divisi per cliente: una fattura per ogni cliente, una riga per capo (matricola o lotto, modello 4, numero di partita, chili di carcassa).
+        I capi usciti «pronto da fatturare» divisi per cliente: una fattura per ogni cliente, una riga per ogni pezzo (mezzena, quarto, carcassa intera) con il suo numero di partita e i suoi chili.
+        Se l'app non ha i pesi dei pezzi, il capo va in una riga unica con i chili della carcassa e tutti i numeri di partita in descrizione.
         Confermata la fattura, si scarica il file XML da caricare in Aruba Fatturazione Elettronica con «Carica fattura».
       </p>
       {errore && <div style={{ color: C.red, marginBottom: 12, fontWeight: 700 }}>⚠️ {errore}</div>}
@@ -70,7 +74,7 @@ export default function PreparaFatture({ onNavigate }) {
         {(dataDa || dataA) && <button onClick={() => { setDataDa(""); setDataA(""); }} style={btn(false, C.muted)}>Tutti i periodi</button>}
         <span style={{ marginLeft: 16 }}>Data delle fatture</span><input type="date" value={dataFattura} onChange={e => setDataFattura(e.target.value)} style={input} />
         <span style={{ padding: "5px 12px", borderRadius: 6, background: C.primary, color: "#fff", fontWeight: 700 }}>
-          {nCapi} {nCapi === 1 ? "capo" : "capi"} · {dati?.fatture.length || 0} {dati?.fatture.length === 1 ? "fattura" : "fatture"} · {dati?.daAssegnare.length || 0} con cliente da assegnare
+          {nCapi} {nCapi === 1 ? "capo" : "capi"} · {nRighe} {nRighe === 1 ? "riga" : "righe"} · {dati?.fatture.length || 0} {dati?.fatture.length === 1 ? "fattura" : "fatture"} · {dati?.daAssegnare.length || 0} con cliente da assegnare
         </span>
       </div>
 
@@ -113,10 +117,10 @@ export default function PreparaFatture({ onNavigate }) {
           <div style={{ fontWeight: 800, color: C.red }}>Capi non fatturabili per dati mancanti — {dati.esclusi.length}</div>
           <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 6 }}>Restano fuori dalle fatture finché l'operatore non completa i dati nell'app Podere Verde.</div>
           <table style={{ fontSize: 12.5 }}>
-            <thead><tr style={{ color: C.muted, textAlign: "left" }}><th style={th}>Capo</th><th style={th}>Uscita</th><th style={th}>Cliente</th><th style={th}>Manca</th></tr></thead>
+            <thead><tr style={{ color: C.muted, textAlign: "left" }}><th style={th}>Capo</th><th style={th}>Pezzo</th><th style={th}>Uscita</th><th style={th}>Cliente</th><th style={th}>Manca</th></tr></thead>
             <tbody>{dati.esclusi.map(c => (
               <tr key={c.id} style={{ borderTop: `1px solid ${C.border}` }}>
-                <td style={td}><b>{c.matricola}</b> · {SPECIE[c.specie] || c.specie}</td><td style={td}>{dataItaliana(c.data_uscita)}</td>
+                <td style={td}><b>{c.matricola}</b> · {SPECIE[c.specie] || c.specie}</td><td style={td}>{c.pezzo || "capo intero"}</td><td style={td}>{dataItaliana(c.data_uscita)}</td>
                 <td style={td}>{c.cliente?.nome}</td><td style={{ ...td, color: C.red, fontWeight: 700 }}>{c.mancanti.join(", ")}</td>
               </tr>))}</tbody>
           </table>
@@ -187,7 +191,7 @@ function SchedaFattura({ fattura, cedente, dataFattura, numeroIniziale, onEmessa
         <div>
           <div style={{ fontSize: 15, fontWeight: 800, color: C.primary }}>{cliente.nome}</div>
           <div style={{ fontSize: 12.5, color: C.muted }}>
-            P.IVA {cliente.partita_iva || "—"} · {cliente.codice_destinatario ? `codice destinatario ${cliente.codice_destinatario}` : cliente.pec ? `PEC ${cliente.pec}` : "senza codice destinatario né PEC"} · {capi.length} capi · carcassa {formattaNumero(fattura.kgCarcassa, 2)} kg
+            P.IVA {cliente.partita_iva || "—"} · {cliente.codice_destinatario ? `codice destinatario ${cliente.codice_destinatario}` : cliente.pec ? `PEC ${cliente.pec}` : "senza codice destinatario né PEC"} · {fattura.nCapi} {fattura.nCapi === 1 ? "capo" : "capi"} in {capi.length} {capi.length === 1 ? "riga" : "righe"} · {formattaNumero(fattura.kgCarcassa, 2)} kg
             {" · "}<a onClick={() => setModificaCliente(v => !v)} style={{ color: C.primary, cursor: "pointer", textDecoration: "underline" }}>{modificaCliente ? "chiudi dati cliente" : "dati cliente"}</a>
           </div>
         </div>
@@ -212,14 +216,16 @@ function SchedaFattura({ fattura, cedente, dataFattura, numeroIniziale, onEmessa
       <div style={{ overflowX: "auto" }}>
         <table style={{ fontSize: 12.5, marginTop: 8 }}>
           <thead><tr style={{ color: C.muted, textAlign: "left" }}>
-            <th style={th}>Capo</th><th style={th}>Uscita</th><th style={th}>Modello 4</th><th style={th}>Partita</th>
-            <th style={{ ...th, textAlign: "right" }}>Carcassa kg</th><th style={{ ...th, textAlign: "right" }}>€/kg</th><th style={{ ...th, textAlign: "right" }}>Importo</th>
+            <th style={th}>Capo</th><th style={th}>Uscita</th><th style={th}>Modello 4</th><th style={th}>Pezzo e numero di partita</th>
+            <th style={{ ...th, textAlign: "right" }}>Chili</th><th style={{ ...th, textAlign: "right" }}>€/kg</th><th style={{ ...th, textAlign: "right" }}>Importo</th>
           </tr></thead>
           <tbody>{calcolo.righe.map(r => (
             <tr key={r.capo.id} style={{ borderTop: `1px solid ${C.border}` }}>
               <td style={td}><b>{r.capo.matricola}</b> · {r.capo.prodotto.toLowerCase()}{r.capo.lotto ? ` (lotto ${r.capo.lotto})` : ""}
-                {r.capo.origineCliente === "assegnato" && <span style={{ fontSize: 11, color: C.accent }}> · cliente assegnato</span>}</td>
-              <td style={td}>{dataItaliana(r.capo.data_uscita)}</td><td style={td}>{r.capo.modello4_numero}</td><td style={td}>{r.capo.numero_partita}</td>
+                {(r.capo.origineCliente || "").startsWith("assegnato") && <span style={{ fontSize: 11, color: C.accent }}> · cliente assegnato</span>}
+                {r.capo.avvisoPesi && <div style={{ fontSize: 11, color: "#8a6500", fontWeight: 700 }}>⚠️ {r.capo.avvisoPesi}</div>}</td>
+              <td style={td}>{dataItaliana(r.capo.data_uscita)}</td><td style={td}>{r.capo.modello4_numero}</td>
+              <td style={td}>{r.capo.pezzoId ? <><b>{r.capo.pezzo}</b>: {r.capo.numero_partita}</> : <>capo intero · {r.capo.numero_partita}</>}</td>
               <td style={{ ...td, textAlign: "right" }}>{formattaNumero(r.quantita, 2)}</td>
               <td style={{ ...td, textAlign: "right" }}>{Number.isFinite(r.prezzo) ? formattaNumero(r.prezzo, 2) : "—"}</td>
               <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{r.importo != null ? formattaNumero(r.importo, 2) : "—"}</td>
@@ -279,25 +285,27 @@ function ClientiDaAssegnare({ capi, clienti, onFatto }) {
 
   async function assegna(c, clienteId) {
     setErrore(null);
-    try { await assegnaCliente(c.id, clienteId, null, ricorda[c.id] !== false && c.cliente_nome ? c.cliente_nome : null); await onFatto(); }
+    const nomeScritto = c.assegna?.nomeScritto ?? c.cliente_nome;
+    try { await assegnaCliente(c.assegna || c.capoId, clienteId, null, ricorda[c.id] !== false && nomeScritto ? nomeScritto : null); await onFatto(); }
     catch (err) { setErrore(err.message); }
   }
 
   return (
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderLeft: `6px solid ${C.yellow}`, borderRadius: 12, padding: "12px 16px", marginBottom: 14 }}>
-      <div style={{ fontWeight: 800, color: "#8a6500", fontSize: 15 }}>⚠️ Cliente da assegnare — {capi.length} {capi.length === 1 ? "capo" : "capi"}</div>
+      <div style={{ fontWeight: 800, color: "#8a6500", fontSize: 15 }}>⚠️ Cliente da assegnare — {capi.length} {capi.length === 1 ? "riga" : "righe"}</div>
       <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 6 }}>L'operatore non ha indicato il cliente, oppure ha scritto un nome che non è in anagrafica. Assegnato il cliente, il capo entra nella sua fattura.</div>
       {errore && <div style={{ color: C.red, fontWeight: 700 }}>⚠️ {errore}</div>}
       <table style={{ fontSize: 12.5 }}>
         <thead><tr style={{ color: C.muted, textAlign: "left" }}>
-          <th style={th}>Capo</th><th style={th}>Uscita</th><th style={th}>Macello</th><th style={{ ...th, textAlign: "right" }}>Carcassa kg</th><th style={th}>Scritto dall'operatore</th><th style={th}>Assegna cliente</th>
+          <th style={th}>Capo</th><th style={th}>Pezzo</th><th style={th}>Uscita</th><th style={th}>Macello</th><th style={{ ...th, textAlign: "right" }}>Chili</th><th style={th}>Scritto dall'operatore</th><th style={th}>Assegna cliente</th>
         </tr></thead>
         <tbody>{capi.map(c => (
           <tr key={c.id} style={{ borderTop: `1px solid ${C.border}`, verticalAlign: "top" }}>
             <td style={td}><b>{c.matricola}</b> · {c.prodotto.toLowerCase()}{c.mancanti.length > 0 && <div style={{ fontSize: 11, color: C.red }}>manca anche: {c.mancanti.join(", ")}</div>}</td>
+            <td style={td}>{c.pezzo ? <>{c.pezzo}{c.assegna?.tipo === "pezzo" && <div style={{ fontSize: 11, color: C.muted }}>cliente diverso dal capo</div>}</> : "capo intero"}</td>
             <td style={td}>{dataItaliana(c.data_uscita)}</td><td style={td}>{c.destinatario || "—"}</td>
-            <td style={{ ...td, textAlign: "right" }}>{c.peso_carcassa != null ? formattaNumero(c.peso_carcassa, 2) : "—"}</td>
-            <td style={td}>{c.cliente_nome || <span style={{ color: C.muted }}>nessun nome</span>}</td>
+            <td style={{ ...td, textAlign: "right" }}>{c.kg != null ? formattaNumero(c.kg, 2) : "—"}</td>
+            <td style={td}>{(c.assegna?.nomeScritto ?? c.cliente_nome) || <span style={{ color: C.muted }}>nessun nome</span>}</td>
             <td style={td}>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                 <select value={scelte[c.id] || ""} onChange={e => setScelte(v => ({ ...v, [c.id]: e.target.value }))} style={{ ...input, maxWidth: 260 }}>
@@ -308,15 +316,15 @@ function ClientiDaAssegnare({ capi, clienti, onFatto }) {
                 <button onClick={() => setNuovoPer(nuovoPer === c.id ? null : c.id)} style={btn(false)}>+ nuovo cliente</button>
               </div>
               {c.suggerito && <div style={{ fontSize: 11.5, color: C.muted, marginTop: 4 }}>suggerimento: per questo macello l'ultimo cliente è stato <a style={{ color: C.primary, cursor: "pointer", textDecoration: "underline" }} onClick={() => setScelte(v => ({ ...v, [c.id]: String(c.suggerito.id) }))}>{c.suggerito.nome}</a></div>}
-              {c.cliente_nome && (
+              {(c.assegna?.nomeScritto ?? c.cliente_nome) && (
                 <label style={{ display: "flex", gap: 6, fontSize: 11.5, marginTop: 4 }}>
                   <input type="checkbox" checked={ricorda[c.id] !== false} onChange={e => setRicorda(v => ({ ...v, [c.id]: e.target.checked }))} />
-                  ricorda che «{c.cliente_nome}» è questo cliente
+                  ricorda che «{c.assegna?.nomeScritto ?? c.cliente_nome}» è questo cliente
                 </label>
               )}
               {nuovoPer === c.id && (
                 <div style={{ marginTop: 8 }}>
-                  <ClienteForm iniziale={{ nome: c.cliente_nome || "" }} onSalvato={async nuovo => { setNuovoPer(null); await assegna(c, nuovo.id); }} />
+                  <ClienteForm iniziale={{ nome: (c.assegna?.nomeScritto ?? c.cliente_nome) || "" }} onSalvato={async nuovo => { setNuovoPer(null); await assegna(c, nuovo.id); }} />
                 </div>
               )}
             </td>

@@ -288,7 +288,7 @@ function Programma({ utente }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 237</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 238</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>

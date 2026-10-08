@@ -58,8 +58,8 @@ export default function FattureEmesse({ tipo = "animali_allevamento" }) {
         "Imponibile": Number(f.imponibile), "IVA": Number(f.imposta), "Totale": Number(f.totale), ...(altre ? { "Bollo": Number(f.bollo || 0), "Nota interna": f.note || "" } : {}), "Stato": f.stato, "Motivo dell'annullamento": f.motivo_annullamento || "", "Nome del file XML": f.nome_file_xml })) },
       { nome: "Righe", righe: righeExcel || visibili.flatMap(f => (f.ci_fatture_emesse_righe || []).sort((a, b) => a.numero_linea - b.numero_linea).map(r => ({
         "Numero fattura": f.numero, "Riga": r.numero_linea, "Descrizione": r.descrizione, "Matricola": r.matricola, "Lotto": r.lotto || "", "Modello 4": r.modello4_numero,
-        "Numero di partita": r.numero_partita, "Data di uscita": dataItaliana(r.data_uscita), "Chili": Number(r.quantita_kg), "Prezzo al kg": Number(r.prezzo_kg), "Importo": Number(r.importo),
-        "Identificativo del capo nell'app": r.uscita_consegna_id }))) },
+        "Pezzo": r.pezzo || (r.uscita_consegna_pezzo_id ? "" : "capo intero"), "Numero di partita": r.numero_partita, "Data di uscita": dataItaliana(r.data_uscita), "Chili": Number(r.quantita_kg), "Prezzo al kg": Number(r.prezzo_kg), "Importo": Number(r.importo),
+        "Identificativo del capo nell'app": r.uscita_consegna_id, "Identificativo del pezzo nell'app": r.uscita_consegna_pezzo_id }))) },
     ]);
   }
 
@@ -79,7 +79,7 @@ export default function FattureEmesse({ tipo = "animali_allevamento" }) {
       </div>
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 14, fontSize: 13, lineHeight: 1.5 }}>
         {altre ? "Le fatture libere emesse dal programma (rifatturazioni, vendite diverse dai capi al macello, servizi)." : "Le fatture emesse dal programma con i capi fatturati."} «XML per Aruba» riscarica il file da caricare in Aruba Fatturazione Elettronica («Carica fattura»).
-        «Annulla registrazione» serve solo se la fattura non è stata inviata con Aruba o è stata stornata{altre ? "." : ": i capi tornano tra quelli da fatturare."}
+        «Annulla registrazione» serve solo se la fattura non è stata inviata con Aruba o è stata stornata{altre ? "." : ": i capi e i pezzi tornano tra quelli da fatturare."}
       </p>
       {errore && <div style={{ color: C.red, marginBottom: 12, fontWeight: 700 }}>⚠️ {errore}</div>}
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 12, fontSize: 13 }}>
@@ -93,7 +93,7 @@ export default function FattureEmesse({ tipo = "animali_allevamento" }) {
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "auto" }}>
         <table style={{ fontSize: 12.5 }}>
           <thead><tr style={{ background: C.primary, color: "#fff", textAlign: "left" }}>
-            <th style={th}></th><th style={th}>Numero</th><th style={th}>Data</th><th style={th}>Cliente</th><th style={{ ...th, textAlign: "right" }}>{altre ? "Righe" : "Capi"}</th>
+            <th style={th}></th><th style={th}>Numero</th><th style={th}>Data</th><th style={th}>Cliente</th><th style={{ ...th, textAlign: "right" }}>{altre ? "Righe" : "Righe (pezzi o capi)"}</th>
             <th style={{ ...th, textAlign: "right" }}>Imponibile</th><th style={{ ...th, textAlign: "right" }}>IVA</th><th style={{ ...th, textAlign: "right" }}>Totale</th><th style={th}></th>
           </tr></thead>
           <tbody>
