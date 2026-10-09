@@ -45,7 +45,9 @@ export default function Parametri() {
     "Consolidamento riproduttrici/riproduttori": parametri.filter(p => p.chiave.startsWith("soglia_")),
     "Vita produttiva attesa — standard per specie (si può correggere caso per caso nella scheda del riproduttore)": parametri.filter(p => p.chiave.includes("vita_produttiva")),
     "Prezzi di riforma per il valore di realizzo dei riproduttori (€ al kg di carcassa)": parametri.filter(p => p.chiave.startsWith("prezzo_riforma_")),
-    "Altro": parametri.filter(p => !p.chiave.startsWith("soglia_") && !p.chiave.includes("vita_produttiva") && !p.chiave.startsWith("prezzo_riforma_")),
+    // Versione 240: dati scritti nel testo di ricerca dei fornitori alternativi (Attenzione Variazione Prezzi)
+    "Testo di ricerca dei fornitori alternativi (Attenzione Variazione Prezzi)": parametri.filter(p => p.chiave.startsWith("ricerca_")),
+    "Altro": parametri.filter(p => !p.chiave.startsWith("soglia_") && !p.chiave.includes("vita_produttiva") && !p.chiave.startsWith("prezzo_riforma_") && !p.chiave.startsWith("ricerca_")),
   };
 
   return (
@@ -67,10 +69,10 @@ export default function Parametri() {
                     <div style={{ fontSize: 11, color: C.muted }}>{p.chiave}</div>
                   </div>
                   <input
-                    type="number"
+                    type={p.chiave === "ricerca_zona_consegna" ? "text" : "number"}
                     value={modifiche[p.chiave] !== undefined ? modifiche[p.chiave] : p.valore}
                     onChange={e => aggiorna(p.chiave, e.target.value)}
-                    style={{ width: 80, padding: "6px 10px", borderRadius: 6, border: `1.5px solid ${modifiche[p.chiave] !== undefined ? C.primary : C.border}`, fontSize: 14, textAlign: "center" }}
+                    style={{ width: p.chiave === "ricerca_zona_consegna" ? 280 : 80, padding: "6px 10px", borderRadius: 6, border: `1.5px solid ${modifiche[p.chiave] !== undefined ? C.primary : C.border}`, fontSize: 14, textAlign: "center" }}
                   />
                 </div>
               ))}

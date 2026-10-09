@@ -107,7 +107,16 @@ export function leggiAliquotaIva(rigaGrezza) {
 
 export function formattaData(v) {
   if (!v) return "";
-  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  // Versione 240 (09/10/2026): Excel dà le date a mezzanotte ora italiana; toISOString le portava all'ora di
+  // Londra e quindi al giorno prima (922 fatture caricate con un giorno in meno). Si legge il giorno locale,
+  // spostando di 12 ore per assorbire gli scarti di secondi che la libreria di Excel a volte aggiunge.
+  if (v instanceof Date) {
+    if (Number.isNaN(v.getTime())) return "";
+    const g = new Date(v.getTime() + 12 * 3600 * 1000);
+    const locale = new Date(v.getFullYear(), v.getMonth(), v.getDate());
+    const d = v.getHours() >= 12 ? g : locale;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
   const s = String(v).trim();
   if (s.includes("/")) {
     const [gg, mm, aa] = s.split("/");

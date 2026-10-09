@@ -15,6 +15,37 @@ export default function IstruzioniAnagrafiche() {
       }
       sezioni={[
         {
+          // Versione 240
+          pagina: "Attenzione Variazione Prezzi", icon: "⚠️",
+          aCosaServe: "Avvisare quando un prodotto comprato costa di più (o di meno) rispetto alla fattura precedente, dire quanto vale la differenza in un anno, indicare cause possibili e cosa fare: cambiare fornitore, trattare, confrontare con il mercato, cercare fornitori nuovi. Si ricalcola da solo a ogni apertura con le fatture caricate.",
+          comeSiUsa: [
+            "In alto la sintesi: quanto costano in un anno i rincari, le opportunità di risparmio, i ribassi e quante righe vanno sistemate.",
+            "«Prezzi aumentati, in ordine di gravità»: ogni riga è una famiglia di prodotto, con il prezzo della fattura precedente e dell'ultima, la variazione e quanto vale in un anno con le quantità comprate negli ultimi 12 mesi.",
+            "Cliccando su un prodotto si aprono il grafico del prezzo nel tempo (un colore per fornitore, con il prezzo di mercato quando c'è), i problemi e i consigli, le ultime fatture e il testo di ricerca.",
+            "«📋 Copia il testo di ricerca» copia un testo già compilato con prodotto, quantità, prezzo e fornitore: si incolla in un'intelligenza artificiale che sa cercare in internet per trovare fornitori e prezzi alternativi.",
+            "«Opportunità di risparmio»: prodotti per cui un altro fornitore o il mercato costano meno di quanto paghiamo oggi.",
+            "«Da sistemare»: righe di fattura con un prezzo che non torna (di solito la quantità scritta «1»), righe senza unità di misura e descrizioni nuove da assegnare a una famiglia.",
+          ],
+          titoloSpiegazione: "Come si confrontano i prezzi",
+          spiegazione: [{
+            titolo: "Un'unità di misura unica",
+            testo: "Ogni riga si converte in € al kg (o al litro) con le regole di conversione del programma o con l'unità scritta in fattura, poi si mostra nell'unità più comoda della famiglia.",
+            esempio: ["Fieno in rotoballe da 340 kg: 27,50 € a balla = 8,09 € a quintale; 30,00 € a balla = 8,82 € a quintale.", "Rincaro: 0,0074 € al kg × 185.300 kg comprati negli ultimi 12 mesi = circa 1.363 € l'anno."],
+          }],
+          note: "Il report non scrive nulla. Zona di consegna e distanza dei fornitori da cercare si cambiano nella pagina «Parametri».",
+        },
+        {
+          pagina: "Famiglie di Prodotto", icon: "🗂️",
+          aCosaServe: "Decidere quali descrizioni di fattura sono lo stesso prodotto (per esempio «orzo farina sfusa» e «orzo farina sfuso»), così il report confronta i prezzi giusti.",
+          comeSiUsa: [
+            "In «Descrizioni delle fatture» si sceglie la famiglia di ogni descrizione, oppure «Esclusa dal confronto» per bolli, pallet e prestazioni diverse ogni volta. Il salvataggio è immediato.",
+            "Il filtro «Da assegnare» mostra le descrizioni nuove: vanno assegnate quando compaiono.",
+            "In «Famiglie» si cambiano nome, unità di misura, prodotto di mercato di confronto e caratteristiche tecniche (finiscono nel testo di ricerca). Il pulsante «Salva» compare dopo una modifica.",
+            "«Nuova famiglia» crea un gruppo nuovo.",
+          ],
+          note: "Questa pagina scrive nel database solo le famiglie e le assegnazioni: non tocca fatture, righe o costi.",
+        },
+        {
           pagina: "Ricerca", icon: "🔎",
           aCosaServe: "Trovare qualsiasi fattura, di acquisto o di vendita, quando non si ricorda dove sia: per numero, fornitore o cliente, descrizione di un articolo o nota. Da qui si possono anche correggere la testata della fattura e la classificazione delle singole righe.",
           comeSiUsa: [

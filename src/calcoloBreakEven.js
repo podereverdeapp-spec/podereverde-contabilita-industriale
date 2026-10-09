@@ -196,7 +196,8 @@ export function preparaBase(g) {
 
   const presenteIl = (s, data) => !!s.inizio && s.inizio <= data && (s.uscita ? s.uscita > data : !eUscito(s.stato));
 
-  return { g, avvisiDati, costiAnno, soggetti, righeSoggetto, anniCalcolati, nascitaVariabile, prezzoVendita, presenteIl,
+  // Versione 239: esposti anche righe di costo, UBA e riepilogo della mandria per i Report di Analisi
+  return { g, avvisiDati, righeCostoAnno, ubaAnno, mandria, costiAnno, soggetti, righeSoggetto, anniCalcolati, nascitaVariabile, prezzoVendita, presenteIl,
     eventi: g.eventi || [], primoAnno: anniCalcolati[0] || null, ultimoAnno: anniCalcolati[anniCalcolati.length - 1] || null };
 }
 

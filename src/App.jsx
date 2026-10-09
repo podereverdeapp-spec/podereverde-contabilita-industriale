@@ -41,6 +41,13 @@ import IstruzioniAnagrafiche from "./IstruzioniAnagrafiche";
 import IstruzioniAnimali from "./IstruzioniAnimali";
 import IstruzioniCosti from "./IstruzioniCosti";
 import IstruzioniBreakEven from "./IstruzioniBreakEven";
+// Versione 239: Report di Analisi
+import ReportAnalisi from "./ReportAnalisi";
+import ReportAnalisiColtivazioni from "./ReportAnalisiColtivazioni";
+import IstruzioniReportAnalisi from "./IstruzioniReportAnalisi";
+// Versione 240: Attenzione Variazione Prezzi e Famiglie di Prodotto
+import VariazionePrezzi from "./VariazionePrezzi";
+import FamiglieProdotto from "./FamiglieProdotto";
 import IstruzioniStudi from "./IstruzioniStudi";
 import IstruzioniColtivazioni from "./IstruzioniColtivazioni";
 import Modelli4 from "./Modelli4";
@@ -76,6 +83,14 @@ import { C, FONT } from "./style";
 
 const MENU = [
   { tipo: "voce", id: "dashboard", label: "Dashboard", icon: "📊" },
+  // Versione 239: Report di Analisi (cosa va, cosa non va, cause e interventi), richiesti il 09/10/2026
+  { tipo: "cartella", id: "cart-report-analisi", label: "Report di Analisi", icon: "🧭", contenuto: [
+    { tipo: "voce", id: "istr-report-analisi", label: "Istruzioni", icon: "📖" },
+    { tipo: "voce", id: "analisi-suini", label: "Suini", icon: "🐖" },
+    { tipo: "voce", id: "analisi-bovini", label: "Bovini", icon: "🐄" },
+    { tipo: "voce", id: "analisi-ovini", label: "Ovini", icon: "🐑" },
+    { tipo: "voce", id: "analisi-coltivazioni", label: "Coltivazioni", icon: "🌾" },
+  ]},
   { tipo: "cartella", id: "cart-controlli", label: "Controlli", icon: "🛡️", contenuto: [
     { tipo: "voce", id: "istr-controlli", label: "Istruzioni", icon: "📖" },
     { tipo: "voce", id: "registro-controlli", label: "Registro Controlli", icon: "🛡️" },
@@ -112,8 +127,10 @@ const MENU = [
   ]},
   { tipo: "cartella", id: "cart-ricerca", label: "Ricerca: Fatture, Articoli, Prezzi, Anagrafiche", icon: "🔎", contenuto: [
     { tipo: "voce", id: "istr-ricerca", label: "Istruzioni", icon: "📖" },
+    { tipo: "voce", id: "variazione-prezzi", label: "Attenzione Variazione Prezzi", icon: "⚠️" },
     { tipo: "voce", id: "ricerca", label: "Ricerca", icon: "🔎" },
     { tipo: "voce", id: "articoliprezzi", label: "Articoli & Prezzi", icon: "🏷️" },
+    { tipo: "voce", id: "famiglie-prodotto", label: "Famiglie di Prodotto", icon: "🗂️" },
     { tipo: "voce", id: "fornitori", label: "Fornitori", icon: "🏢" },
     { tipo: "voce", id: "clienti", label: "Clienti", icon: "🤝" },
   ]},
@@ -288,7 +305,7 @@ function Programma({ utente }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 238</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 240</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -417,6 +434,8 @@ function Programma({ utente }) {
         {tab === "performanceeta-femmine" && <PerformanceEtaFemmine onNavigate={vaiA} />}
         {tab === "storico-performanceeta" && <StoricoPerformanceEta />}
         {tab === "articoliprezzi" && <ArticoliPrezzi />}
+        {tab === "variazione-prezzi" && <VariazionePrezzi onNavigate={vaiA} />}
+        {tab === "famiglie-prodotto" && <FamiglieProdotto />}
         {tab === "costidiretti" && <CostiDiretti />}
         {tab === "anomalie" && <ControlloAnomalie />}
         {tab === "armonizza" && <DaArmonizzare />}
@@ -436,6 +455,11 @@ function Programma({ utente }) {
         {tab === "istr-animali" && <IstruzioniAnimali />}
         {tab === "istr-costi" && <IstruzioniCosti />}
         {tab === "istr-break-even" && <IstruzioniBreakEven />}
+        {tab === "istr-report-analisi" && <IstruzioniReportAnalisi />}
+        {tab === "analisi-suini" && <ReportAnalisi key="suino" specie="suino" />}
+        {tab === "analisi-bovini" && <ReportAnalisi key="bovino" specie="bovino" />}
+        {tab === "analisi-ovini" && <ReportAnalisi key="ovino" specie="ovino" />}
+        {tab === "analisi-coltivazioni" && <ReportAnalisiColtivazioni />}
         {tab === "istr-studi" && <IstruzioniStudi />}
         {tab === "istr-coltivazioni" && <IstruzioniColtivazioni />}
         {tab === "istr-modelli4" && <IstruzioniModelli4 />}
