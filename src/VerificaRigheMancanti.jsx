@@ -3,7 +3,10 @@ import * as XLSX from "xlsx-js-style";
 import { esportaExcel } from "./esportaExcel";
 import { supabase } from "./supabase";
 import { C } from "./style";
-import { formattaEuro, round2 } from "./parsingUtils";
+import { formattaEuro, round2, formattaData } from "./parsingUtils";
+
+// Versione 242: la data letta da Excel si converte con formattaData (giorno italiano), non con toISOString che la portava al giorno prima.
+const oggiLocale = () => formattaData(new Date());
 
 const AREE_ORDINARIE = [
   "Allevamento", "Coltivazione", "Lavoro", "Energia Elettrica", "Acqua", "Consulenze",
@@ -109,7 +112,7 @@ export default function VerificaRigheMancanti() {
   function iniziaRegistrazione(indice, r) {
     setRegistrandoIndice(indice);
     setFormRegistra({
-      tipoDestinazione: "fattura", numero: "", data: mappaData ? String(r[mappaData]).slice(0, 10) : new Date().toISOString().slice(0, 10),
+      tipoDestinazione: "fattura", numero: "", data: mappaData ? formattaData(r[mappaData]).slice(0, 10) : oggiLocale(),
       area: "", centro_costo: "", destinazione: "", tipo_costo: "",
       categoria_ammortamento: "", anni_ammortamento: "5", imputazione: "Generali",
     });
@@ -188,7 +191,7 @@ export default function VerificaRigheMancanti() {
       Fornitore: r[mappaFornitore] || "",
       "P.IVA": mappaPiva ? (r[mappaPiva] || "") : "",
       Numero: mappaNumero ? (r[mappaNumero] || "") : "",
-      Data: mappaData ? (r[mappaData] instanceof Date ? r[mappaData].toISOString().slice(0, 10) : r[mappaData]) : "",
+      Data: mappaData ? (r[mappaData] instanceof Date ? formattaData(r[mappaData]) : r[mappaData]) : "",
       Descrizione: mappaDescrizione ? (r[mappaDescrizione] || "") : "",
       "Quantità": mappaQuantita ? (parseFloat(r[mappaQuantita]) || 1) : 1,
       "U.M.": mappaUnitaMisura ? (r[mappaUnitaMisura] || "") : "",
@@ -238,7 +241,7 @@ export default function VerificaRigheMancanti() {
     try {
       const righeAnno = righeExcel.filter(r => {
         if (!mappaData) return true;
-        const d = String(r[mappaData] instanceof Date ? r[mappaData].toISOString() : r[mappaData]);
+        const d = String(formattaData(r[mappaData]) || r[mappaData]);
         return d.startsWith(String(anno));
       });
 

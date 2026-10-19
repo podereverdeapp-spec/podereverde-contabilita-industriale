@@ -27,6 +27,8 @@ import StoricoPerformanceEta from "./StoricoPerformanceEta";
 import AccrescimentoCostiPagina from "./AccrescimentoCostiPagina";
 import RazioniSuiniComposizione from "./RazioniSuiniComposizione";
 import RazioniSuiniConsumi from "./RazioniSuiniConsumi";
+import CostruisciRazione from "./CostruisciRazione";
+import IstruzioniAlimentaria from "./IstruzioniAlimentaria";
 import PromptEstrazionePDF from "./PromptEstrazionePDF";
 import InserimentoManualeFattura from "./InserimentoManualeFattura";
 import VerificaFattureMancanti from "./VerificaFattureMancanti";
@@ -38,6 +40,7 @@ import RiepilogoCostoAnimali from "./RiepilogoCostoAnimali";
 import PrezzoPareggio from "./PrezzoPareggio";
 import IstruzioniFatture from "./IstruzioniFatture";
 import IstruzioniAnagrafiche from "./IstruzioniAnagrafiche";
+import IstruzioniPrezziAcquisto from "./IstruzioniPrezziAcquisto";
 import IstruzioniAnimali from "./IstruzioniAnimali";
 import IstruzioniCosti from "./IstruzioniCosti";
 import IstruzioniBreakEven from "./IstruzioniBreakEven";
@@ -91,6 +94,13 @@ const MENU = [
     { tipo: "voce", id: "analisi-ovini", label: "Ovini", icon: "🐑" },
     { tipo: "voce", id: "analisi-coltivazioni", label: "Coltivazioni", icon: "🌾" },
   ]},
+  // Versione 241: cartella dedicata al controllo dei prezzi di acquisto (richiesta del Dott. Bizzarri del 09/10/2026)
+  { tipo: "cartella", id: "cart-prezzi-acquisto", label: "Controllo Prezzi di Acquisto", icon: "💶", contenuto: [
+    { tipo: "voce", id: "istr-prezzi-acquisto", label: "Istruzioni", icon: "📖" },
+    { tipo: "voce", id: "variazione-prezzi", label: "Attenzione Variazione Prezzi", icon: "⚠️" },
+    { tipo: "voce", id: "articoliprezzi", label: "Articoli & Prezzi", icon: "🏷️" },
+    { tipo: "voce", id: "famiglie-prodotto", label: "Famiglie di Prodotto", icon: "🗂️" },
+  ]},
   { tipo: "cartella", id: "cart-controlli", label: "Controlli", icon: "🛡️", contenuto: [
     { tipo: "voce", id: "istr-controlli", label: "Istruzioni", icon: "📖" },
     { tipo: "voce", id: "registro-controlli", label: "Registro Controlli", icon: "🛡️" },
@@ -125,12 +135,9 @@ const MENU = [
       { id: "fatture-competenza", label: "Rapporti con Muratella", icon: "🏛️" },
     ] },
   ]},
-  { tipo: "cartella", id: "cart-ricerca", label: "Ricerca: Fatture, Articoli, Prezzi, Anagrafiche", icon: "🔎", contenuto: [
+  { tipo: "cartella", id: "cart-ricerca", label: "Ricerca: Fatture e Anagrafiche", icon: "🔎", contenuto: [
     { tipo: "voce", id: "istr-ricerca", label: "Istruzioni", icon: "📖" },
-    { tipo: "voce", id: "variazione-prezzi", label: "Attenzione Variazione Prezzi", icon: "⚠️" },
     { tipo: "voce", id: "ricerca", label: "Ricerca", icon: "🔎" },
-    { tipo: "voce", id: "articoliprezzi", label: "Articoli & Prezzi", icon: "🏷️" },
-    { tipo: "voce", id: "famiglie-prodotto", label: "Famiglie di Prodotto", icon: "🗂️" },
     { tipo: "voce", id: "fornitori", label: "Fornitori", icon: "🏢" },
     { tipo: "voce", id: "clienti", label: "Clienti", icon: "🤝" },
   ]},
@@ -146,7 +153,9 @@ const MENU = [
     { tipo: "voce", id: "cespiti", label: "Cespiti", icon: "🏗️" },
   ]},
   { tipo: "cartella", id: "cart-alimentaria", label: "Alimentaria", icon: "🌾", contenuto: [
+    { tipo: "voce", id: "istr-alimentaria", label: "Istruzioni", icon: "📖" },
     { tipo: "voce", id: "costi-quantita-alimentare", label: "Costi e Quantità", icon: "📊" },
+    { tipo: "voce", id: "costruisci-razione", label: "Costruisci razione", icon: "🥣" },
     { tipo: "sottocartella", id: "sub-razioni-suini", label: "Razioni Suini", icon: "🥣", voci: [
       { id: "razioni-suini-composizione", label: "Composizione Razioni", icon: "📋" },
       { id: "razioni-suini-consumi", label: "Consumi", icon: "📊" },
@@ -305,7 +314,7 @@ function Programma({ utente }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 240</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 243</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -442,6 +451,8 @@ function Programma({ utente }) {
         {tab === "acc-bovini-alimenti" && <AccrescimentoCostiPagina />}
         {tab === "razioni-suini-composizione" && <RazioniSuiniComposizione />}
         {tab === "razioni-suini-consumi" && <RazioniSuiniConsumi />}
+        {tab === "costruisci-razione" && <CostruisciRazione />}
+        {tab === "istr-alimentaria" && <IstruzioniAlimentaria />}
         {tab === "prompt-estrazione-pdf" && <PromptEstrazionePDF />}
         {tab === "inserimento-manuale" && <InserimentoManualeFattura />}
         {tab === "verifica-fatture-mancanti" && <VerificaFattureMancanti />}
@@ -452,6 +463,7 @@ function Programma({ utente }) {
         {tab === "riepilogo-costo-animali" && <RiepilogoCostoAnimali />}
         {tab === "istr-fatture" && <IstruzioniFatture />}
         {tab === "istr-ricerca" && <IstruzioniAnagrafiche />}
+        {tab === "istr-prezzi-acquisto" && <IstruzioniPrezziAcquisto />}
         {tab === "istr-animali" && <IstruzioniAnimali />}
         {tab === "istr-costi" && <IstruzioniCosti />}
         {tab === "istr-break-even" && <IstruzioniBreakEven />}

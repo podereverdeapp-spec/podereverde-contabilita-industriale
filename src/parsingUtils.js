@@ -108,13 +108,14 @@ export function leggiAliquotaIva(rigaGrezza) {
 export function formattaData(v) {
   if (!v) return "";
   // Versione 240 (09/10/2026): Excel dà le date a mezzanotte ora italiana; toISOString le portava all'ora di
-  // Londra e quindi al giorno prima (922 fatture caricate con un giorno in meno). Si legge il giorno locale,
-  // spostando di 12 ore per assorbire gli scarti di secondi che la libreria di Excel a volte aggiunge.
+  // Londra e quindi al giorno prima (922 fatture caricate con un giorno in meno). Si legge il giorno locale.
+  // Versione 242: solo un orario dopo le 23:30 si considera uno scarto della libreria di Excel (la mezzanotte
+  // del giorno dopo); prima si spostava tutto ciò che era dopo mezzogiorno, e una data con ora pomeridiana
+  // (o la data di oggi) passava al giorno dopo.
   if (v instanceof Date) {
     if (Number.isNaN(v.getTime())) return "";
-    const g = new Date(v.getTime() + 12 * 3600 * 1000);
-    const locale = new Date(v.getFullYear(), v.getMonth(), v.getDate());
-    const d = v.getHours() >= 12 ? g : locale;
+    const scarto = v.getHours() === 23 && v.getMinutes() >= 30;
+    const d = scarto ? new Date(v.getFullYear(), v.getMonth(), v.getDate() + 1) : v;
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   }
   const s = String(v).trim();

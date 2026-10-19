@@ -2,7 +2,7 @@ import { useState } from "react";
 import * as XLSX from "xlsx-js-style";
 import { supabase } from "./supabase";
 import { C } from "./style";
-import { formattaEuro, round2, fetchAllPages } from "./parsingUtils";
+import { formattaEuro, round2, fetchAllPages, formattaData } from "./parsingUtils";
 import { esportaExcel } from "./esportaExcel";
 import { stimaPesoCarcassaPerEta } from "./motoreRiproduttori";
 
@@ -156,7 +156,8 @@ export default function ImportMassivoRiproduttori() {
             fornitoreId = fNuovo?.id;
           }
         }
-        const dataAcquistoStr = fAcquistoData instanceof Date ? fAcquistoData.toISOString().slice(0, 10) : String(fAcquistoData).slice(0, 10);
+        // Versione 242: la data letta da Excel si converte con formattaData (giorno italiano), non con toISOString che la portava al giorno prima.
+        const dataAcquistoStr = formattaData(fAcquistoData).slice(0, 10);
         const { data: esistenteAcq } = await supabase.from("ci_report_acquisto_animali").select("id").eq("bdn", bdn).eq("fonte", "ACQUISTO_DIRETTO").maybeSingle();
         const payloadAcq = { fonte: "ACQUISTO_DIRETTO", fornitore_id: fornitoreId, data_fattura: dataAcquistoStr, numero_fattura: String(fAcquistoNumero), importo: round2(parseFloat(fAcquistoImporto)), bdn };
         if (esistenteAcq) await supabase.from("ci_report_acquisto_animali").update(payloadAcq).eq("id", esistenteAcq.id);
@@ -178,7 +179,7 @@ export default function ImportMassivoRiproduttori() {
             fornitoreId = fNuovo?.id;
           }
         }
-        const dataFatturaStr = fTrasportoData instanceof Date ? fTrasportoData.toISOString().slice(0, 10) : String(fTrasportoData).slice(0, 10);
+        const dataFatturaStr = formattaData(fTrasportoData).slice(0, 10); // versione 242, come sopra
         const { data: esistente } = await supabase.from("ci_report_acquisto_animali").select("id").eq("bdn", bdn).eq("fonte", "TRASPORTO_INGRESSO").maybeSingle();
         const payload = { fonte: "TRASPORTO_INGRESSO", fornitore_id: fornitoreId, data_fattura: dataFatturaStr, numero_fattura: String(fTrasportoNumero), importo: round2(parseFloat(fTrasportoImporto)), bdn };
         if (esistente) await supabase.from("ci_report_acquisto_animali").update(payload).eq("id", esistente.id);

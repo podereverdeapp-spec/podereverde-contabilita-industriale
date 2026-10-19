@@ -74,7 +74,8 @@ export default function CaricoMassivoMuratella({ coloreMuratella }) {
       const numero = String(r["Numero"] ?? "").trim();
       const dataRaw = r["Data"];
       if (!dataRaw) { righeSaltate++; continue; }
-      const dataStr = dataRaw instanceof Date ? dataRaw.toISOString().slice(0, 10) : formattaData(dataRaw).slice(0, 10);
+      // Versione 242: la data letta da Excel si converte con formattaData (giorno italiano), non con toISOString che la portava al giorno prima.
+      const dataStr = formattaData(dataRaw).slice(0, 10);
       const fornitore = String(r["Fornitore"] || "").trim();
       const piva = String(r["P.IVA"] || r["Partita IVA"] || "").trim();
       const chiave = `${numero}|${dataStr}|${pivaPulita(piva) || fornitore.toLowerCase()}`;

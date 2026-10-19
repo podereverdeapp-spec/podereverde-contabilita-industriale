@@ -14,7 +14,7 @@ export default function IstruzioniFatture() {
           Ogni fattura di acquisto si scompone in righe: ogni riga ha la sua classificazione (Area, Centro di Costo, Destinazione, Tipo di Costo), perché nella stessa fattura possono esserci, per esempio, un attrezzo da ammortizzare e un sacco di mangime.
           Sono queste righe che poi finiscono nei costi degli animali e delle coltivazioni.
           <br /><br />
-          La ricerca delle fatture e il confronto dei prezzi si trovano nella cartella «Ricerca: Fatture, Articoli, Prezzi, Anagrafiche».
+          La ricerca delle fatture si trova nella cartella «Ricerca: Fatture e Anagrafiche»; il confronto dei prezzi nella cartella «Controllo Prezzi di Acquisto».
         </>
       }
       sezioni={[

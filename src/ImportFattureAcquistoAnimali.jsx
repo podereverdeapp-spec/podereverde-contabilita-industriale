@@ -2,7 +2,7 @@ import { useState } from "react";
 import * as XLSX from "xlsx-js-style";
 import { supabase } from "./supabase";
 import { C } from "./style";
-import { round2, fetchAllPages } from "./parsingUtils";
+import { round2, fetchAllPages, formattaData } from "./parsingUtils";
 import { esportaExcel } from "./esportaExcel";
 
 export default function ImportFattureAcquistoAnimali() {
@@ -77,7 +77,8 @@ export default function ImportFattureAcquistoAnimali() {
       const numero = r["Numero Fattura — MODIFICABILE"];
       if (!fornitore && !dataRaw && !numero) continue; // nessuna modifica per questa riga
 
-      const dataStr = dataRaw instanceof Date ? dataRaw.toISOString().slice(0, 10) : (dataRaw ? String(dataRaw).slice(0, 10) : null);
+      // Versione 242: la data letta da Excel si converte con formattaData (giorno italiano), non con toISOString che la portava al giorno prima.
+      const dataStr = dataRaw ? (formattaData(dataRaw).slice(0, 10) || null) : null;
       const payload = { fornitore: fornitore || null, data_fattura: dataStr, numero_fattura: numero ? String(numero) : null };
 
       if (r["Tipo"] === "Lotto Suini") {

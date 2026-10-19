@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import * as XLSX from "xlsx-js-style";
 import { supabase } from "./supabase";
 import { C } from "./style";
-import { formattaEuro } from "./parsingUtils";
+import { formattaEuro, formattaData } from "./parsingUtils";
 
 export default function VerificaFattureMancanti() {
   const [anno, setAnno] = useState(new Date().getFullYear());
@@ -50,7 +50,7 @@ export default function VerificaFattureMancanti() {
   }
   function normalizzaData(d) {
     if (!d) return "";
-    if (d instanceof Date) return d.toISOString().slice(0, 10);
+    if (d instanceof Date) return formattaData(d); // versione 242: giorno italiano, non toISOString
     const s = String(d).trim();
     // Prova formato gg/mm/aaaa o gg-mm-aaaa
     const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
