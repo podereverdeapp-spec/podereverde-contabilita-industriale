@@ -1,6 +1,6 @@
 // Calcolo della razione per capo: apporti, fabbisogni, percentuali di copertura e costi.
 // Stesso calcolo nel programma di Contabilità Industriale e nell'app Podere Verde (versione 244).
-// Dati: tabelle ci_alimenti_nutrizione, ci_fabbisogni_classi, vista ci_v_prezzi_alimenti_anno.
+// Dati: tabelle ci_alimenti_nutrizione, ci_fabbisogni_classi, vista ci_v_prezzi_riferimento (dalla versione 245; prima ci_v_prezzi_alimenti_anno).
 
 export const GRUPPI_RIGHE = [
   { gruppo: "Foraggio", etichetta: "Foraggio 1" },
@@ -12,6 +12,28 @@ export const GRUPPI_RIGHE = [
   { gruppo: "Mangime composto", etichetta: "Mangime composto" },
   { gruppo: "Integratore minerale", etichetta: "Integratore minerale" },
 ];
+
+// Suini (versione 246): niente foraggi; 4 energetici, 3 proteici, 1 mangime composto, 3 minerali (in grammi)
+export const GRUPPI_RIGHE_SUINI = [
+  { gruppo: "Energetico", etichetta: "Energetico 1" },
+  { gruppo: "Energetico", etichetta: "Energetico 2" },
+  { gruppo: "Energetico", etichetta: "Energetico 3" },
+  { gruppo: "Energetico", etichetta: "Energetico 4" },
+  { gruppo: "Proteico", etichetta: "Proteico 1" },
+  { gruppo: "Proteico", etichetta: "Proteico 2" },
+  { gruppo: "Proteico", etichetta: "Proteico 3" },
+  { gruppo: "Mangime composto", etichetta: "Mangime composto" },
+  { gruppo: "Integratore minerale", etichetta: "Minerale 1" },
+  { gruppo: "Integratore minerale", etichetta: "Minerale 2" },
+  { gruppo: "Integratore minerale", etichetta: "Minerale 3" },
+];
+export const SPECIE = [
+  { valore: "bovino", etichetta: "Bovini" },
+  { valore: "suino", etichetta: "Suini" },
+  { valore: "ovino", etichetta: "Ovini" },
+];
+export const gruppiRighe = specie => (specie === "suino" ? GRUPPI_RIGHE_SUINI : GRUPPI_RIGHE);
+export const alimentoDellaSpecie = (alimento, specie) => !alimento?.specie || alimento.specie.length === 0 ? specie === "bovino" : alimento.specie.includes(specie);
 
 // voce, campo dell'alimento (per kg tal quale), se è «principale» (energia e proteine: si segnala l'eccesso)
 const NUTRIENTI = [
@@ -79,16 +101,18 @@ export function kgTalQuale(riga, alimento) {
  * @param {object} classe  riga di ci_fabbisogni_classi
  * @param {Array}  righe   [{gruppo, alimento (nome), quantita}] — quantità per capo al giorno (kg; grammi per l'integratore)
  * @param {object} alimentiPerNome  { nome: riga di ci_alimenti_nutrizione }
- * @param {object} prezziPerNome    { nome: { prezzo_euro_t, fonte_prezzo } } dell'anno in corso
+ * @param {object} prezziPerNome    { nome: { prezzo_euro_t, fonte_prezzo } } dell'anno in corso;
+ *                                  fonte_prezzo «modificato» = prezzo scritto a mano (versione 245)
  * @param {number} numeroCapi
  */
 export function calcolaRazione(classe, righe, alimentiPerNome, prezziPerNome, numeroCapi = 1) {
+  if (classe?.specie === "suino") return calcolaRazioneSuini(classe, righe, alimentiPerNome, prezziPerNome, numeroCapi);
   const capi = Math.max(1, parseInt(numeroCapi, 10) || 1);
   let ss = 0, ufl = 0, ufv = 0;
   const tot = {}; const mancanti = {}; const contributi = { energia: [] };
   NUTRIENTI.forEach(x => { tot[x.chiave] = 0; mancanti[x.chiave] = []; contributi[x.chiave] = []; });
   const energiaUFL = classe?.unita_energia === "UFL";
-  let costoCapo = 0; const prezziMancanti = []; const prezziListino = [];
+  let costoCapo = 0; const prezziMancanti = []; const prezziListino = []; const prezziModificati = [];
 
   const righeCalcolate = righe.map(r => {
     const a = r.alimento ? alimentiPerNome[r.alimento] : null;
@@ -110,9 +134,10 @@ export function calcolaRazione(classe, righe, alimentiPerNome, prezziPerNome, nu
     if (prezzo === null) prezziMancanti.push(a.nome);
     else {
       costo = kg * prezzo / 1000; costoCapo += costo;
-      if (p.fonte_prezzo === "listino") prezziListino.push(a.nome);
+      if (p.fonte_prezzo === "listino" || p.livello === "da verificare") prezziListino.push(a.nome);
+      if (p.fonte_prezzo === "modificato") prezziModificati.push(a.nome);
     }
-    return { ...r, kg, costoCapo: costo, kgTutti: kg * capi, costoTutti: costo === null ? null : costo * capi, prezzoEuroT: prezzo, fonte: p?.fonte_prezzo || "mancante" };
+    return { ...r, kg, costoCapo: costo, kgTutti: kg * capi, costoTutti: costo === null ? null : costo * capi, prezzoEuroT: prezzo, fonte: p?.livello === "da verificare" ? "listino" : (p?.fonte_prezzo || "mancante"), livello: p?.livello || null };
   });
 
   // fabbisogni
@@ -168,7 +193,67 @@ export function calcolaRazione(classe, righe, alimentiPerNome, prezziPerNome, nu
       perKgCrescita: n(c.crescita_kg_giorno) ? costoCapo / n(c.crescita_kg_giorno) : null,
       completo: prezziMancanti.length === 0,
     },
-    prezziMancanti, prezziListino,
+    prezziMancanti, prezziListino, prezziModificati,
     numeroCapi: capi,
+  };
+}
+
+// ─────────────── Suini (versione 246) ───────────────
+// Fabbisogno = kg di mangime al giorno della classe × concentrazione per kg (energia netta, proteina grezza,
+// lisina digeribile, calcio, fosforo digeribile); per la scrofa cinta o apulo-calabrese a fine gestazione
+// anche la lisina totale minima al giorno. Valori degli alimenti per kg tal quale.
+const NUTRIENTI_SUINI = [
+  { chiave: "energia", nome: "Energia netta (Mcal)", unita: "Mcal", campo: "energia_netta_suini_mcal", fabb: "energia_netta_mcal_kg", fattore: 1, principale: true, decimali: 2 },
+  { chiave: "pg", nome: "Proteina grezza", unita: "g", campo: "proteina_grezza_g", fabb: "proteina_grezza_pct", fattore: 10, principale: true, decimali: 0 },
+  { chiave: "lisina", nome: "Lisina digeribile", unita: "g", campo: "lisina_digeribile_g", fabb: "lisina_digeribile_pct", fattore: 10, decimali: 1 },
+  { chiave: "ca", nome: "Calcio", unita: "g", campo: "calcio_g", fabb: "calcio_pct", fattore: 10, decimali: 1 },
+  { chiave: "pdig", nome: "Fosforo digeribile", unita: "g", campo: "fosforo_digeribile_g", fabb: "fosforo_digeribile_pct", fattore: 10, decimali: 1 },
+];
+function calcolaRazioneSuini(classe, righe, alimentiPerNome, prezziPerNome, numeroCapi = 1) {
+  const capi = Math.max(1, parseInt(numeroCapi, 10) || 1);
+  const c = classe || {};
+  const kgClasse = n(c.kg_mangime_giorno);
+  const voci_def = [...NUTRIENTI_SUINI];
+  if (n(c.lisina_totale_min_g) !== null) voci_def.push({ chiave: "lisinatot", nome: "Lisina totale", unita: "g", campo: "lisina_totale_g", fisso: n(c.lisina_totale_min_g), principale: false, decimali: 1 });
+  const tot = {}; const mancanti = {}; const contributi = {};
+  voci_def.forEach(x => { tot[x.chiave] = 0; mancanti[x.chiave] = []; contributi[x.chiave] = []; });
+  let costoCapo = 0, kgTot = 0; const prezziMancanti = [], prezziListino = [], prezziModificati = [];
+  const righeCalcolate = righe.map(r => {
+    const a = r.alimento ? alimentiPerNome[r.alimento] : null;
+    const kg = kgTalQuale(r, a);
+    if (!a || kg <= 0) return { ...r, kg: 0, costoCapo: null, kgTutti: null };
+    kgTot += kg;
+    voci_def.forEach(x => {
+      const v = n(a[x.campo]);
+      if (v === null) mancanti[x.chiave].push(a.nome); else tot[x.chiave] += kg * v;
+      contributi[x.chiave].push({ alimento: a.nome, valore: v === null ? null : kg * v });
+    });
+    const p = prezziPerNome[a.nome];
+    const prezzo = p ? n(p.prezzo_euro_t) : null;
+    let costo = null;
+    if (prezzo === null) prezziMancanti.push(a.nome);
+    else {
+      costo = kg * prezzo / 1000; costoCapo += costo;
+      if (p.fonte_prezzo === "listino" || p.livello === "da verificare") prezziListino.push(a.nome);
+      if (p.fonte_prezzo === "modificato") prezziModificati.push(a.nome);
+    }
+    return { ...r, kg, costoCapo: costo, kgTutti: kg * capi, costoTutti: costo === null ? null : costo * capi, prezzoEuroT: prezzo, fonte: p?.livello === "da verificare" ? "listino" : (p?.fonte_prezzo || "mancante"), livello: p?.livello || null };
+  });
+  const soglia = n(c.soglia_eccesso_pct) || 110;
+  const voci = voci_def.map(x => {
+    const fabbisogno = x.fisso !== undefined ? x.fisso : (kgClasse === null || n(c[x.fabb]) === null ? null : kgClasse * n(c[x.fabb]) * x.fattore);
+    const apporto = tot[x.chiave];
+    const pct = fabbisogno && fabbisogno > 0 ? (apporto / fabbisogno) * 100 : null;
+    let stato = "—";
+    if (pct !== null) stato = pct < 100 ? "manca" : (x.principale && pct > soglia ? "eccessivo" : "coperto");
+    const nome = x.chiave === "energia" ? "Energia netta (Mcal)" : x.nome;
+    return { chiave: x.chiave, nome, unita: x.unita, fabbisogno, apporto, pct, stato, soglia, principale: !!x.principale, decimali: x.decimali, incompleta: mancanti[x.chiave], contributi: contributi[x.chiave], mancaQuanto: fabbisogno !== null && apporto < fabbisogno ? fabbisogno - apporto : 0 };
+  });
+  return {
+    specie: "suino",
+    righe: righeCalcolate, voci,
+    sostanzaSeccaKg: null, quotaConcentratoPct: null, totaleKg: kgTot, kgClasse,
+    costi: { capoGiorno: costoCapo, tuttiGiorno: costoCapo * capi, tuttiMese: costoCapo * capi * 30, tuttiAnno: costoCapo * capi * 365, capoAnno: costoCapo * 365, perKgCrescita: n(c.crescita_kg_giorno) ? costoCapo / n(c.crescita_kg_giorno) : null, completo: prezziMancanti.length === 0 },
+    prezziMancanti, prezziListino, prezziModificati, numeroCapi: capi,
   };
 }

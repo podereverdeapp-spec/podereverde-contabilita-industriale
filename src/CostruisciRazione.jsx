@@ -2,24 +2,27 @@ import { useState, useEffect, useMemo } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { formattaNumero } from "./parsingUtils";
-import { calcolaRazione, TIPI_ALIMENTAZIONE, alimentoAmmesso } from "./calcoloRazione";
+import { calcolaRazione, TIPI_ALIMENTAZIONE, alimentoAmmesso, SPECIE, alimentoDellaSpecie } from "./calcoloRazione";
 import { caricaDatiRazioni, righeVuote, righeDaAlimenti, ANNO_CORRENTE as ANNO } from "./RazioniBoviniDati";
-import { GraficoCopertura, TotaleCosto, TabellaFabbisogno, euro, testoQuantita, bottone as btn } from "./RazioneViste";
+import { GraficoCopertura, TotaleCosto, TabellaFabbisogno, euro, testoQuantita, bottone as btn, usePrezziModificabili, CellaPrezzo, NotaPrezzi, AvvisoPrezzi, RigaTotaliRazione } from "./RazioneViste";
 
 // Alimentaria → Razioni Bovini → Costruisci razione (versione 244; nata nella 243).
 // Tipo di alimentazione: libera, naturale (niente mangimi composti) o con mangimi (foraggi, orzo e mangimi);
 // con «Carica la razione di riferimento» si parte dalla razione delle schede del 17/10/2026.
 // Si lavora su un capo; poi numero di capi e box. Le razioni salvate stanno in ci_razioni_salvate,
 // la stessa tabella usata dall'app Podere Verde: ciò che si salva qui si vede anche nell'app, e viceversa.
+// Versione 245: il prezzo di ogni alimento si può cambiare a mano; il prezzo cambiato si salva nella riga
+// della razione (campo prezzo_euro_t dentro alimenti) e si ritrova quando la razione si riapre.
 
 
-export default function CostruisciRazione() {
+export default function CostruisciRazione({ onNavigate }) {
   const [alimenti, setAlimenti] = useState([]);
   const [classi, setClassi] = useState([]);
   const [ambienti, setAmbienti] = useState([]);
   const [prezzi, setPrezzi] = useState({});
   const [salvate, setSalvate] = useState([]);
   const [riferimento, setRiferimento] = useState([]);
+  const [specie, setSpecie] = useState("bovino");
   const [tipo, setTipo] = useState("libera");
   const [caricamento, setCaricamento] = useState(true);
   const [errore, setErrore] = useState(null);
@@ -30,11 +33,12 @@ export default function CostruisciRazione() {
   const [ambiente, setAmbiente] = useState("");
   const [nome, setNome] = useState("");
   const [note, setNote] = useState("");
-  const [righe, setRighe] = useState(righeVuote());
+  const [righe, setRighe] = useState(righeVuote("bovino"));
   const [idAperta, setIdAperta] = useState(null);
+  const [classeMancante, setClasseMancante] = useState(null);
   const [salvando, setSalvando] = useState(false);
 
-  useEffect(() => { carica(); }, []);
+  useEffect(() => { carica(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function carica() {
     setCaricamento(true); setErrore(null);
@@ -42,14 +46,21 @@ export default function CostruisciRazione() {
       const d = await caricaDatiRazioni({ salvate: true });
       setAlimenti(d.alimenti); setClassi(d.classi); setAmbienti(d.ambienti); setPrezzi(d.prezzi);
       setSalvate(d.salvate); setRiferimento(d.riferimento);
-      if (!classe && d.classi.length) setClasse(d.classi[0].classe);
+      if (!classe) { const prima = d.classi.find(c => (c.specie || "bovino") === "bovino"); if (prima) setClasse(prima.classe); }
     } catch (e) { setErrore(e.message); }
     setCaricamento(false);
   }
 
+  const modifica = usePrezziModificabili(prezzi);
   const alimentiPerNome = useMemo(() => Object.fromEntries(alimenti.map(a => [a.nome, a])), [alimenti]);
-  const classeRiga = classi.find(c => c.classe === classe);
-  const ris = useMemo(() => calcolaRazione(classeRiga, righe, alimentiPerNome, prezzi, numeroCapi), [classeRiga, righe, alimentiPerNome, prezzi, numeroCapi]);
+  const classiSpecie = useMemo(() => classi.filter(c => (c.specie || "bovino") === specie), [classi, specie]);
+  const alimentiSpecie = useMemo(() => alimenti.filter(a => alimentoDellaSpecie(a, specie)), [alimenti, specie]);
+  const classeRiga = classiSpecie.find(c => c.classe === classe);
+  function cambiaSpecie(sp) {
+    setSpecie(sp); setRighe(righeVuote(sp)); setIdAperta(null); setMessaggio(null); modifica.ripristinaTutti();
+    const prima = classi.find(c => (c.specie || "bovino") === sp); setClasse(prima ? prima.classe : ""); if (sp === "ovino" && tipo === "mangimi") setTipo("libera"); // ovini: niente mangimi per bovini (rame)
+  }
+  const ris = useMemo(() => calcolaRazione(classeRiga, righe, alimentiPerNome, modifica.prezzi, numeroCapi), [classeRiga, righe, alimentiPerNome, modifica.prezzi, numeroCapi]);
 
   function cambiaRiga(i, campo, valore) {
     setRighe(rs => rs.map((r, j) => (j === i ? { ...r, [campo]: valore, ...(campo === "alimento" && !valore ? { quantita: "" } : {}) } : r)));
@@ -61,24 +72,29 @@ export default function CostruisciRazione() {
     setRighe(rs => rs.map(r => (r.alimento && !alimentoAmmesso(t, alimentiPerNome[r.alimento]) ? { ...r, alimento: "", quantita: "" } : r)));
   }
 
-  const rifClasse = riferimento.find(r => r.tipo_alimentazione === tipo && r.classe === classe);
+  const rifClasse = riferimento.find(r => (r.specie || "bovino") === specie && r.tipo_alimentazione === tipo && r.classe === classe);
   function caricaRiferimento() {
     if (!rifClasse) return;
-    setRighe(righeDaAlimenti(rifClasse.alimenti));
+    setRighe(righeDaAlimenti(rifClasse.alimenti, specie));
     setMessaggio({ tipo: "info", testo: `Caricata la razione di riferimento (${tipo === "naturale" ? "alimentazione naturale" : "alimentazione con mangimi"}) di «${classe}». Ora la può modificare.` + (rifClasse.nota ? " ⚠️ " + rifClasse.nota : "") });
   }
 
   function nuova() {
-    setIdAperta(null); setNome(""); setNote(""); setRighe(righeVuote()); setNumeroCapi(1); setAmbiente(""); setMessaggio(null);
+    setIdAperta(null); setClasseMancante(null); setNome(""); setNote(""); setRighe(righeVuote(specie)); setNumeroCapi(1); setAmbiente(""); setMessaggio(null); modifica.ripristinaTutti();
   }
 
   function apri(id) {
     const r = salvate.find(s => String(s.id) === String(id));
     if (!r) { nuova(); return; }
+    const classeEsiste = classi.some(c => c.classe === r.classe);
+    const sp = classi.find(c => c.classe === r.classe)?.specie || "bovino"; setSpecie(sp); setClasseMancante(classeEsiste ? null : r.classe);
     setIdAperta(r.id); setNome(r.nome || ""); setNote(r.note || ""); setClasse(r.classe); setNumeroCapi(r.numero_capi || 1); setAmbiente(r.ambiente || "");
     setTipo(r.tipo_alimentazione || "libera");
-    setRighe(righeDaAlimenti(r.alimenti));
+    setRighe(righeDaAlimenti(r.alimenti, sp));
+    const salvati = {}; (r.alimenti || []).forEach(x => { if (x.alimento && x.prezzo_euro_t != null) salvati[x.alimento] = x.prezzo_euro_t; });
+    modifica.imposta(salvati);
     setMessaggio({ tipo: "info", testo: `Aperta «${r.nome}» — salvata da ${r.creata_da || "—"} (${r.origine === "app" ? "dall'app" : "dal programma"}).` });
+    if (!classeEsiste) setMessaggio({ tipo: "errore", testo: `La razione «${r.nome}» è della classe «${r.classe}», che non esiste più: la può leggere ma «Salva modifiche» è bloccato (righe e specie potrebbero essere incomplete). Scelga una classe e usi «Salva come nuova».` });
   }
 
   async function salva(comeNuova) {
@@ -89,11 +105,13 @@ export default function CostruisciRazione() {
       const { data: u } = await supabase.auth.getUser();
       const record = {
         nome: nome.trim(), classe, tipo_alimentazione: tipo, numero_capi: Math.max(1, parseInt(numeroCapi, 10) || 1), ambiente: ambiente || null, note: note || null,
-        alimenti: righe.map((r, k) => ({ posizione: k, gruppo: r.gruppo, alimento: r.alimento || null, quantita: r.alimento && r.quantita !== "" ? Number(r.quantita) : null, unita: alimentiPerNome[r.alimento]?.unita_dose || "kg" })).filter(x => x.alimento),
+        alimenti: righe.map((r, k) => ({ posizione: k, gruppo: r.gruppo, alimento: r.alimento || null, quantita: r.alimento && r.quantita !== "" ? Number(r.quantita) : null, unita: alimentiPerNome[r.alimento]?.unita_dose || "kg", ...(ris.righe[k]?.fonte === "modificato" ? { prezzo_euro_t: ris.righe[k].prezzoEuroT } : {}) })).filter(x => x.alimento),
         costo_capo_giorno: ris.costi.completo ? Number(ris.costi.capoGiorno.toFixed(4)) : null,
         anno_prezzi: ANNO, creata_da: u?.user?.email || null, origine: "programma",
       };
       let res;
+      if (!classi.some(c => c.classe === classe)) { setMessaggio({ tipo: "errore", testo: `Scelga una classe che esiste: «${classe}» non c'è più.` }); setSalvando(false); return; }
+      if (idAperta && !comeNuova && classeMancante) { setMessaggio({ tipo: "errore", testo: `La classe «${classeMancante}» non esiste più: «Salva modifiche» è bloccato. Scelga una classe e usi «Salva come nuova».` }); setSalvando(false); return; }
       if (idAperta && !comeNuova) res = await supabase.from("ci_razioni_salvate").update(record).eq("id", idAperta).select().single();
       else res = await supabase.from("ci_razioni_salvate").insert([record]).select().single();
       if (res.error) throw new Error(res.error.message);
@@ -125,7 +143,7 @@ export default function CostruisciRazione() {
     <div style={{ padding: 20, maxWidth: 980, margin: "0 auto" }}>
       <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>🥣 Costruisci razione</h1>
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 16, fontSize: 13 }}>
-        Si lavora su un capo: scelga la classe e gli alimenti, scriva le quantità e guardi le barre riempirsi. Poi scriva il numero di capi e scelga il box. Prezzi: media delle fatture del {ANNO}, pesata sulle quantità acquistate.
+        Si lavora su un capo: scelga la classe e gli alimenti, scriva le quantità e guardi le barre riempirsi. Poi scriva il numero di capi e scelga il box. Prezzi di riferimento: quelli della scheda prezzi (Alimentaria → Controlla prezzi e chiedi preventivi); nella tabella degli alimenti si possono cambiare per fare prove, e il prezzo cambiato si salva con la razione.
       </p>
 
       {/* razioni salvate */}
@@ -138,7 +156,7 @@ export default function CostruisciRazione() {
           </select>
         </div>
         <button onClick={nuova} style={btn(C.muted)}>Nuova</button>
-        <button onClick={() => salva(false)} disabled={salvando} style={btn(C.primary)}>{idAperta ? "Salva modifiche" : "Salva razione"}</button>
+        <button onClick={() => salva(false)} disabled={salvando || (idAperta && classeMancante)} title={idAperta && classeMancante ? "La classe della razione non esiste più" : undefined} style={btn(C.primary)}>{idAperta ? "Salva modifiche" : "Salva razione"}</button>
         {idAperta && <button onClick={() => salva(true)} disabled={salvando} style={btn(C.blue)}>Salva come nuova</button>}
         {idAperta && <button onClick={elimina} style={btn(C.red)}>Elimina</button>}
       </div>
@@ -146,10 +164,12 @@ export default function CostruisciRazione() {
 
       {/* scelte */}
       <div style={{ ...box, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
+        <div><label style={lab}>Specie</label>
+          <select value={specie} onChange={e => cambiaSpecie(e.target.value)} style={sel}>{SPECIE.map(t => <option key={t.valore} value={t.valore}>{t.etichetta}</option>)}</select></div>
         <div><label style={lab}>Tipo di alimentazione</label>
-          <select value={tipo} onChange={e => cambiaTipo(e.target.value)} style={sel}>{TIPI_ALIMENTAZIONE.map(t => <option key={t.valore} value={t.valore}>{t.etichetta}</option>)}</select></div>
+          <select value={tipo} onChange={e => cambiaTipo(e.target.value)} style={sel}>{TIPI_ALIMENTAZIONE.filter(t => !(specie === "ovino" && t.valore === "mangimi")).map(t => <option key={t.valore} value={t.valore}>{t.etichetta}</option>)}</select></div>
         <div><label style={lab}>Classe</label>
-          <select value={classe} onChange={e => setClasse(e.target.value)} style={sel}>{classi.map(c => <option key={c.id}>{c.classe}</option>)}</select></div>
+          <select value={classe} onChange={e => setClasse(e.target.value)} style={sel}>{classiSpecie.map(c => <option key={c.id}>{c.classe}</option>)}</select></div>
         <div><label style={lab}>Numero di capi</label>
           <input type="number" min={1} value={numeroCapi} onChange={e => setNumeroCapi(e.target.value)} style={sel} /></div>
         <div><label style={lab}>Box o ambiente</label>
@@ -158,10 +178,11 @@ export default function CostruisciRazione() {
           <input value={nome} onChange={e => setNome(e.target.value)} placeholder="es. Box 3 – meno orzo" style={sel} /></div>
       </div>
       {classeRiga && <div style={{ fontSize: 12, color: C.muted, marginTop: -8, marginBottom: 12, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-        <span>Peso vivo {formattaNumero(classeRiga.peso_vivo_kg, 0)} kg · crescita {classeRiga.crescita_kg_giorno ? formattaNumero(classeRiga.crescita_kg_giorno, 2) + " kg al giorno" : "—"}</span>
+        <span>{specie === "suino" ? `Mangia ${formattaNumero(classeRiga.kg_mangime_giorno, 2)} kg al giorno per capo` : `Peso vivo ${formattaNumero(classeRiga.peso_vivo_kg, 0)} kg · crescita ${classeRiga.crescita_kg_giorno ? formattaNumero(classeRiga.crescita_kg_giorno, 2) + " kg al giorno" : "—"}`}</span>
         {tipo !== "libera" && <button onClick={caricaRiferimento} disabled={!rifClasse} style={{ ...btn(C.blue), padding: "5px 10px", fontSize: 12 }}>Carica la razione di riferimento</button>}
       </div>}
 
+      <AvvisoPrezzi ris={ris} prezzi={prezzi} onNavigate={onNavigate} />
       <GraficoCopertura ris={ris} soglia={classeRiga?.soglia_eccesso_pct} />
 
       {/* alimenti */}
@@ -174,7 +195,7 @@ export default function CostruisciRazione() {
           <tbody>
             {righe.map((r, i) => {
               const rc = ris.righe[i]; const a = alimentiPerNome[r.alimento];
-              if (!r.alimento && !alimenti.some(x => x.gruppo === r.gruppo && alimentoAmmesso(tipo, x))) return null;
+              if (!r.alimento && !alimentiSpecie.some(x => x.gruppo === r.gruppo && alimentoAmmesso(tipo, x))) return null;
               const grammi = a?.unita_dose === "grammi" || r.gruppo === "Integratore minerale";
               return (
                 <tr key={i} style={{ borderBottom: `1px solid ${C.border}` }}>
@@ -182,13 +203,13 @@ export default function CostruisciRazione() {
                   <td style={{ padding: 6 }}>
                     <select value={r.alimento} onChange={e => cambiaRiga(i, "alimento", e.target.value)} style={sel}>
                       <option value="">—</option>
-                      {alimenti.filter(x => x.gruppo === r.gruppo && alimentoAmmesso(tipo, x)).map(x => <option key={x.id}>{x.nome}</option>)}
+                      {alimentiSpecie.filter(x => x.gruppo === r.gruppo && alimentoAmmesso(tipo, x)).map(x => <option key={x.id}>{x.nome}</option>)}
                     </select>
                   </td>
                   <td style={{ padding: 6, whiteSpace: "nowrap" }}>
                     <input type="number" step={grammi ? 1 : 0.05} min={0} value={r.quantita} disabled={!r.alimento} onChange={e => cambiaRiga(i, "quantita", e.target.value)} style={{ ...sel, width: 90, textAlign: "right" }} /> {grammi ? "g" : "kg"}
                   </td>
-                  <td style={{ padding: 6, textAlign: "right", color: rc?.fonte === "listino" ? "#8A5A00" : C.text }}>{r.alimento ? (rc?.prezzoEuroT ? formattaNumero(rc.prezzoEuroT, 2) + (rc.fonte === "listino" ? " (listino)" : "") : "prezzo mancante") : ""}</td>
+                  <td style={{ padding: 6, textAlign: "right" }}><CellaPrezzo nome={r.alimento} modifica={modifica} /></td>
                   <td style={{ padding: 6, textAlign: "right" }}>{rc?.costoCapo != null ? formattaNumero(rc.costoCapo, 3) : ""}</td>
                   <td style={{ padding: 6, textAlign: "right" }}>{rc?.kg > 0 ? (grammi ? testoQuantita(Number(r.quantita) * ris.numeroCapi, true) : testoQuantita(rc.kgTutti)) : ""}</td>
                   <td style={{ padding: 6, textAlign: "right", fontWeight: 700 }}>{rc?.costoTutti != null ? formattaNumero(rc.costoTutti, 3) : ""}</td>
@@ -203,7 +224,8 @@ export default function CostruisciRazione() {
             <td style={{ padding: 8, textAlign: "right" }}>{euro(ris.costi.tuttiGiorno, 3)}</td>
           </tr></tfoot>
         </table>
-        <div style={{ fontSize: 11.5, color: C.muted, marginTop: 6 }}>Sostanza secca della razione: {formattaNumero(ris.sostanzaSeccaKg, 2)} kg per capo · concentrati sulla sostanza secca: {formattaNumero(ris.quotaConcentratoPct, 0)}%</div>
+        <RigaTotaliRazione ris={ris} />
+        <NotaPrezzi modifica={modifica} />
       </div>
 
       <TotaleCosto ris={ris} />

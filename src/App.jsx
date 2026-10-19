@@ -31,6 +31,7 @@ import CostruisciRazione from "./CostruisciRazione";
 import IstruzioniAlimentaria from "./IstruzioniAlimentaria";
 import RazioniRiferimento from "./RazioniRiferimento";
 import ReportFabbisogniBovini from "./ReportFabbisogniBovini";
+import { ControllaPrezzi, ChiediPreventivi, PreventiviRicevuti } from "./PrezziAlimentaria";
 import PromptEstrazionePDF from "./PromptEstrazionePDF";
 import InserimentoManualeFattura from "./InserimentoManualeFattura";
 import VerificaFattureMancanti from "./VerificaFattureMancanti";
@@ -157,7 +158,12 @@ const MENU = [
   { tipo: "cartella", id: "cart-alimentaria", label: "Alimentaria", icon: "🌾", contenuto: [
     { tipo: "voce", id: "istr-alimentaria", label: "Istruzioni", icon: "📖" },
     { tipo: "voce", id: "costi-quantita-alimentare", label: "Costi e Quantità", icon: "📊" },
-    { tipo: "sottocartella", id: "sub-razioni-bovini", label: "Razioni Bovini", icon: "🐄", voci: [
+    { tipo: "sottocartella", id: "sub-prezzi-preventivi", label: "Controlla prezzi e chiedi preventivi", icon: "💶", voci: [
+      { id: "controlla-prezzi", label: "Controlla prezzi", icon: "💶" },
+      { id: "chiedi-preventivi", label: "Chiedi preventivi", icon: "✉️" },
+      { id: "preventivi-ricevuti", label: "Preventivi ricevuti", icon: "📥" },
+    ]},
+    { tipo: "sottocartella", id: "sub-razioni-bovini", label: "Razioni (bovini, suini e ovini)", icon: "🐄", voci: [
       { id: "razioni-bovini-riferimento", label: "Razioni di riferimento", icon: "📋" },
       { id: "razioni-bovini-report", label: "Report fabbisogni", icon: "📑" },
       { id: "costruisci-razione", label: "Costruisci razione", icon: "🥣" },
@@ -457,10 +463,13 @@ function Programma({ utente }) {
         {tab === "acc-bovini-alimenti" && <AccrescimentoCostiPagina />}
         {tab === "razioni-suini-composizione" && <RazioniSuiniComposizione />}
         {tab === "razioni-suini-consumi" && <RazioniSuiniConsumi />}
-        {tab === "costruisci-razione" && <CostruisciRazione />}
-        {tab === "razioni-bovini-riferimento" && <RazioniRiferimento />}
-        {tab === "razioni-bovini-report" && <ReportFabbisogniBovini />}
+        {tab === "costruisci-razione" && <CostruisciRazione onNavigate={vaiA} />}
+        {tab === "razioni-bovini-riferimento" && <RazioniRiferimento onNavigate={vaiA} />}
+        {tab === "razioni-bovini-report" && <ReportFabbisogniBovini onNavigate={vaiA} />}
         {tab === "istr-alimentaria" && <IstruzioniAlimentaria />}
+        {tab === "controlla-prezzi" && <ControllaPrezzi onNavigate={vaiA} />}
+        {tab === "chiedi-preventivi" && <ChiediPreventivi />}
+        {tab === "preventivi-ricevuti" && <PreventiviRicevuti />}
         {tab === "prompt-estrazione-pdf" && <PromptEstrazionePDF />}
         {tab === "inserimento-manuale" && <InserimentoManualeFattura />}
         {tab === "verifica-fatture-mancanti" && <VerificaFattureMancanti />}
