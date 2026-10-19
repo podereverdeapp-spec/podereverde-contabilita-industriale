@@ -2,15 +2,16 @@ import { useState, useEffect, useMemo } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { formattaNumero } from "./parsingUtils";
-import { GRUPPI_RIGHE, calcolaRazione } from "./calcoloRazione";
+import { calcolaRazione, TIPI_ALIMENTAZIONE, alimentoAmmesso } from "./calcoloRazione";
+import { caricaDatiRazioni, righeVuote, righeDaAlimenti, ANNO_CORRENTE as ANNO } from "./RazioniBoviniDati";
+import { GraficoCopertura, TotaleCosto, TabellaFabbisogno, euro, testoQuantita, bottone as btn } from "./RazioneViste";
 
-// Alimentaria → Costruisci razione (versione 243).
+// Alimentaria → Razioni Bovini → Costruisci razione (versione 244; nata nella 243).
+// Tipo di alimentazione: libera, naturale (niente mangimi composti) o con mangimi (foraggi, orzo e mangimi);
+// con «Carica la razione di riferimento» si parte dalla razione delle schede del 17/10/2026.
 // Si lavora su un capo; poi numero di capi e box. Le razioni salvate stanno in ci_razioni_salvate,
 // la stessa tabella usata dall'app Podere Verde: ciò che si salva qui si vede anche nell'app, e viceversa.
 
-const ANNO = new Date().getFullYear();
-const righeVuote = () => GRUPPI_RIGHE.map(g => ({ gruppo: g.gruppo, etichetta: g.etichetta, alimento: "", quantita: "" }));
-const COLORE = { manca: C.red, coperto: C.green, eccessivo: "#E67E22", "—": C.muted };
 
 export default function CostruisciRazione() {
   const [alimenti, setAlimenti] = useState([]);
@@ -18,6 +19,8 @@ export default function CostruisciRazione() {
   const [ambienti, setAmbienti] = useState([]);
   const [prezzi, setPrezzi] = useState({});
   const [salvate, setSalvate] = useState([]);
+  const [riferimento, setRiferimento] = useState([]);
+  const [tipo, setTipo] = useState("libera");
   const [caricamento, setCaricamento] = useState(true);
   const [errore, setErrore] = useState(null);
   const [messaggio, setMessaggio] = useState(null);
@@ -36,18 +39,10 @@ export default function CostruisciRazione() {
   async function carica() {
     setCaricamento(true); setErrore(null);
     try {
-      const [a, f, amb, pr, rs] = await Promise.all([
-        supabase.from("ci_alimenti_nutrizione").select("*").eq("attivo", true).order("ordine"),
-        supabase.from("ci_fabbisogni_classi").select("*").order("ordine"),
-        supabase.from("ci_ambienti_allevamento").select("*").eq("attivo", true).order("ordine"),
-        supabase.from("ci_v_prezzi_alimenti_anno").select("*").eq("anno", ANNO),
-        supabase.from("ci_razioni_salvate").select("*").order("updated_at", { ascending: false }),
-      ]);
-      for (const r of [a, f, amb, pr, rs]) if (r.error) throw new Error(r.error.message + " — il database ha le strutture della versione 243? (file contabilita_strutture_v243.sql)");
-      setAlimenti(a.data || []); setClassi(f.data || []); setAmbienti(amb.data || []);
-      const mp = {}; (pr.data || []).forEach(p => { mp[p.alimento] = p; }); setPrezzi(mp);
-      setSalvate(rs.data || []);
-      if (!classe && f.data?.length) setClasse(f.data[0].classe);
+      const d = await caricaDatiRazioni({ salvate: true });
+      setAlimenti(d.alimenti); setClassi(d.classi); setAmbienti(d.ambienti); setPrezzi(d.prezzi);
+      setSalvate(d.salvate); setRiferimento(d.riferimento);
+      if (!classe && d.classi.length) setClasse(d.classi[0].classe);
     } catch (e) { setErrore(e.message); }
     setCaricamento(false);
   }
@@ -60,6 +55,19 @@ export default function CostruisciRazione() {
     setRighe(rs => rs.map((r, j) => (j === i ? { ...r, [campo]: valore, ...(campo === "alimento" && !valore ? { quantita: "" } : {}) } : r)));
   }
 
+  // cambiando tipo si tolgono gli alimenti non ammessi
+  function cambiaTipo(t) {
+    setTipo(t);
+    setRighe(rs => rs.map(r => (r.alimento && !alimentoAmmesso(t, alimentiPerNome[r.alimento]) ? { ...r, alimento: "", quantita: "" } : r)));
+  }
+
+  const rifClasse = riferimento.find(r => r.tipo_alimentazione === tipo && r.classe === classe);
+  function caricaRiferimento() {
+    if (!rifClasse) return;
+    setRighe(righeDaAlimenti(rifClasse.alimenti));
+    setMessaggio({ tipo: "info", testo: `Caricata la razione di riferimento (${tipo === "naturale" ? "alimentazione naturale" : "alimentazione con mangimi"}) di «${classe}». Ora la può modificare.` + (rifClasse.nota ? " ⚠️ " + rifClasse.nota : "") });
+  }
+
   function nuova() {
     setIdAperta(null); setNome(""); setNote(""); setRighe(righeVuote()); setNumeroCapi(1); setAmbiente(""); setMessaggio(null);
   }
@@ -68,12 +76,8 @@ export default function CostruisciRazione() {
     const r = salvate.find(s => String(s.id) === String(id));
     if (!r) { nuova(); return; }
     setIdAperta(r.id); setNome(r.nome || ""); setNote(r.note || ""); setClasse(r.classe); setNumeroCapi(r.numero_capi || 1); setAmbiente(r.ambiente || "");
-    const base = righeVuote();
-    (r.alimenti || []).forEach((x, k) => {
-      const pos = Number.isInteger(x.posizione) ? x.posizione : k;
-      if (base[pos]) base[pos] = { ...base[pos], alimento: x.alimento || "", quantita: x.quantita ?? "" };
-    });
-    setRighe(base);
+    setTipo(r.tipo_alimentazione || "libera");
+    setRighe(righeDaAlimenti(r.alimenti));
     setMessaggio({ tipo: "info", testo: `Aperta «${r.nome}» — salvata da ${r.creata_da || "—"} (${r.origine === "app" ? "dall'app" : "dal programma"}).` });
   }
 
@@ -84,7 +88,7 @@ export default function CostruisciRazione() {
     try {
       const { data: u } = await supabase.auth.getUser();
       const record = {
-        nome: nome.trim(), classe, numero_capi: Math.max(1, parseInt(numeroCapi, 10) || 1), ambiente: ambiente || null, note: note || null,
+        nome: nome.trim(), classe, tipo_alimentazione: tipo, numero_capi: Math.max(1, parseInt(numeroCapi, 10) || 1), ambiente: ambiente || null, note: note || null,
         alimenti: righe.map((r, k) => ({ posizione: k, gruppo: r.gruppo, alimento: r.alimento || null, quantita: r.alimento && r.quantita !== "" ? Number(r.quantita) : null, unita: alimentiPerNome[r.alimento]?.unita_dose || "kg" })).filter(x => x.alimento),
         costo_capo_giorno: ris.costi.completo ? Number(ris.costi.capoGiorno.toFixed(4)) : null,
         anno_prezzi: ANNO, creata_da: u?.user?.email || null, origine: "programma",
@@ -110,7 +114,6 @@ export default function CostruisciRazione() {
     setMessaggio({ tipo: "ok", testo: "Razione eliminata." });
   }
 
-  const euro = v => (v === null || v === undefined ? "—" : formattaNumero(v, 2) + " €");
   const box = { background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 16 };
   const sel = { padding: "7px 8px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 13, background: "#FFF8E1", width: "100%" };
   const lab = { fontSize: 12, color: C.muted, display: "block", marginBottom: 3 };
@@ -143,6 +146,8 @@ export default function CostruisciRazione() {
 
       {/* scelte */}
       <div style={{ ...box, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
+        <div><label style={lab}>Tipo di alimentazione</label>
+          <select value={tipo} onChange={e => cambiaTipo(e.target.value)} style={sel}>{TIPI_ALIMENTAZIONE.map(t => <option key={t.valore} value={t.valore}>{t.etichetta}</option>)}</select></div>
         <div><label style={lab}>Classe</label>
           <select value={classe} onChange={e => setClasse(e.target.value)} style={sel}>{classi.map(c => <option key={c.id}>{c.classe}</option>)}</select></div>
         <div><label style={lab}>Numero di capi</label>
@@ -152,29 +157,12 @@ export default function CostruisciRazione() {
         <div><label style={lab}>Nome della razione</label>
           <input value={nome} onChange={e => setNome(e.target.value)} placeholder="es. Box 3 – meno orzo" style={sel} /></div>
       </div>
-      {classeRiga && <div style={{ fontSize: 12, color: C.muted, marginTop: -8, marginBottom: 12 }}>Peso vivo {formattaNumero(classeRiga.peso_vivo_kg, 0)} kg · crescita {classeRiga.crescita_kg_giorno ? formattaNumero(classeRiga.crescita_kg_giorno, 2) + " kg al giorno" : "—"}</div>}
+      {classeRiga && <div style={{ fontSize: 12, color: C.muted, marginTop: -8, marginBottom: 12, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <span>Peso vivo {formattaNumero(classeRiga.peso_vivo_kg, 0)} kg · crescita {classeRiga.crescita_kg_giorno ? formattaNumero(classeRiga.crescita_kg_giorno, 2) + " kg al giorno" : "—"}</span>
+        {tipo !== "libera" && <button onClick={caricaRiferimento} disabled={!rifClasse} style={{ ...btn(C.blue), padding: "5px 10px", fontSize: 12 }}>Carica la razione di riferimento</button>}
+      </div>}
 
-      {/* grafico */}
-      <div style={box}>
-        <div style={{ fontWeight: 700, color: C.primary, marginBottom: 10 }}>Fabbisogno coperto per capo</div>
-        {ris.voci.map(v => {
-          const pct = v.pct === null ? 0 : v.pct;
-          const w = Math.min(pct, 150) / 150 * 100;
-          const col = COLORE[v.stato];
-          const testo = v.pct === null ? "—" : `${Math.round(v.pct)}%` + (v.stato === "manca" ? " — manca" : v.stato === "eccessivo" ? " — ECCESSIVO" : "") + (v.stato === "manca" && v.incompleta?.length ? " (dati incompleti)" : "");
-          return (
-            <div key={v.chiave} style={{ display: "flex", alignItems: "center", gap: 8, margin: "4px 0", fontSize: 12.5 }}>
-              <div style={{ width: 170 }}>{v.nome}</div>
-              <div style={{ flex: 1, height: 13, background: "#EEE", borderRadius: 3, position: "relative" }}>
-                <div style={{ width: `${w}%`, height: "100%", background: col, borderRadius: 3, transition: "width .3s" }} />
-                <div style={{ position: "absolute", left: "66.67%", top: -3, bottom: -3, borderLeft: "2px dashed #333" }} />
-              </div>
-              <div style={{ width: 210, textAlign: "right", fontWeight: 700, color: col }}>{testo}</div>
-            </div>
-          );
-        })}
-        <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>Linea tratteggiata = 100% del fabbisogno · rosso: manca · verde: coperto · arancione: eccessivo (energia e proteine oltre il {classeRiga?.soglia_eccesso_pct || 110}%) · le barre si fermano al 150%.</div>
-      </div>
+      <GraficoCopertura ris={ris} soglia={classeRiga?.soglia_eccesso_pct} />
 
       {/* alimenti */}
       <div style={box}>
@@ -186,6 +174,7 @@ export default function CostruisciRazione() {
           <tbody>
             {righe.map((r, i) => {
               const rc = ris.righe[i]; const a = alimentiPerNome[r.alimento];
+              if (!r.alimento && !alimenti.some(x => x.gruppo === r.gruppo && alimentoAmmesso(tipo, x))) return null;
               const grammi = a?.unita_dose === "grammi" || r.gruppo === "Integratore minerale";
               return (
                 <tr key={i} style={{ borderBottom: `1px solid ${C.border}` }}>
@@ -193,69 +182,37 @@ export default function CostruisciRazione() {
                   <td style={{ padding: 6 }}>
                     <select value={r.alimento} onChange={e => cambiaRiga(i, "alimento", e.target.value)} style={sel}>
                       <option value="">—</option>
-                      {alimenti.filter(x => x.gruppo === r.gruppo).map(x => <option key={x.id}>{x.nome}</option>)}
+                      {alimenti.filter(x => x.gruppo === r.gruppo && alimentoAmmesso(tipo, x)).map(x => <option key={x.id}>{x.nome}</option>)}
                     </select>
                   </td>
                   <td style={{ padding: 6, whiteSpace: "nowrap" }}>
                     <input type="number" step={grammi ? 1 : 0.05} min={0} value={r.quantita} disabled={!r.alimento} onChange={e => cambiaRiga(i, "quantita", e.target.value)} style={{ ...sel, width: 90, textAlign: "right" }} /> {grammi ? "g" : "kg"}
                   </td>
                   <td style={{ padding: 6, textAlign: "right", color: rc?.fonte === "listino" ? "#8A5A00" : C.text }}>{r.alimento ? (rc?.prezzoEuroT ? formattaNumero(rc.prezzoEuroT, 2) + (rc.fonte === "listino" ? " (listino)" : "") : "prezzo mancante") : ""}</td>
-                  <td style={{ padding: 6, textAlign: "right" }}>{rc?.costoCapo != null ? formattaNumero(rc.costoCapo, 2) : ""}</td>
-                  <td style={{ padding: 6, textAlign: "right" }}>{rc?.kg > 0 ? formattaNumero(rc.kgTutti, grammi ? 2 : 1) + " kg" : ""}</td>
-                  <td style={{ padding: 6, textAlign: "right", fontWeight: 700 }}>{rc?.costoTutti != null ? formattaNumero(rc.costoTutti, 2) : ""}</td>
+                  <td style={{ padding: 6, textAlign: "right" }}>{rc?.costoCapo != null ? formattaNumero(rc.costoCapo, 3) : ""}</td>
+                  <td style={{ padding: 6, textAlign: "right" }}>{rc?.kg > 0 ? (grammi ? testoQuantita(Number(r.quantita) * ris.numeroCapi, true) : testoQuantita(rc.kgTutti)) : ""}</td>
+                  <td style={{ padding: 6, textAlign: "right", fontWeight: 700 }}>{rc?.costoTutti != null ? formattaNumero(rc.costoTutti, 3) : ""}</td>
                 </tr>
               );
             })}
           </tbody>
           <tfoot><tr style={{ background: "#DCE8D8", fontWeight: 800 }}>
             <td colSpan={4} style={{ padding: 8 }}>TOTALE COSTO AL GIORNO</td>
-            <td style={{ padding: 8, textAlign: "right" }}>{euro(ris.costi.capoGiorno)}</td>
+            <td style={{ padding: 8, textAlign: "right" }}>{euro(ris.costi.capoGiorno, 3)}</td>
             <td></td>
-            <td style={{ padding: 8, textAlign: "right" }}>{euro(ris.costi.tuttiGiorno)}</td>
+            <td style={{ padding: 8, textAlign: "right" }}>{euro(ris.costi.tuttiGiorno, 3)}</td>
           </tr></tfoot>
         </table>
         <div style={{ fontSize: 11.5, color: C.muted, marginTop: 6 }}>Sostanza secca della razione: {formattaNumero(ris.sostanzaSeccaKg, 2)} kg per capo · concentrati sulla sostanza secca: {formattaNumero(ris.quotaConcentratoPct, 0)}%</div>
       </div>
 
-      {/* TOTALE DEL COSTO */}
-      <div style={{ ...box, background: "#EEF4EC", border: `2px solid ${C.primary}` }}>
-        <div style={{ fontWeight: 800, color: C.primary, fontSize: 17, marginBottom: 10 }}>💶 Totale del costo</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10 }}>
-          {[["Per capo al giorno", ris.costi.capoGiorno], ["Per capo all'anno", ris.costi.capoAnno], [`Per ${ris.numeroCapi} capi al giorno`, ris.costi.tuttiGiorno], [`Per ${ris.numeroCapi} capi al mese (30 giorni)`, ris.costi.tuttiMese], [`Per ${ris.numeroCapi} capi all'anno`, ris.costi.tuttiAnno], ["Per kg di crescita", ris.costi.perKgCrescita]].map(([t, v]) => (
-            <div key={t} style={{ background: "#fff", borderRadius: 10, padding: "10px 12px" }}>
-              <div style={{ fontSize: 12, color: C.muted }}>{t}</div>
-              <div style={{ fontSize: 20, fontWeight: 800, color: C.text }}>{euro(v)}</div>
-            </div>
-          ))}
-        </div>
-        {!ris.costi.completo && <div style={{ color: C.red, fontSize: 12.5, marginTop: 8, fontWeight: 700 }}>⚠️ Nel {ANNO} manca il prezzo di: {ris.prezziMancanti.join(", ")}. Il totale non è completo.</div>}
-        {ris.prezziListino.length > 0 && <div style={{ color: "#8A5A00", fontSize: 12, marginTop: 6 }}>Prezzo di listino, non di fattura: {ris.prezziListino.join(", ")}.</div>}
-      </div>
+      <TotaleCosto ris={ris} />
 
-      {/* dettaglio */}
-      <div style={box}>
-        <div style={{ fontWeight: 700, color: C.primary, marginBottom: 10 }}>Fabbisogno e apporto per capo al giorno</div>
-        <table style={{ fontSize: 12.5 }}>
-          <thead><tr style={{ background: C.primary, color: "#fff" }}>{["Voce", "Fabbisogno", "Apporto", "Copertura", "Esito"].map(h => <th key={h} style={{ padding: 6 }}>{h}</th>)}</tr></thead>
-          <tbody>{ris.voci.map(v => (
-            <tr key={v.chiave} style={{ borderBottom: `1px solid ${C.border}` }}>
-              <td style={{ padding: 6 }}>{v.nome}{v.unita && v.chiave !== "energia" ? ` (${v.unita})` : ""}</td>
-              <td style={{ padding: 6, textAlign: "right" }}>{v.fabbisogno === null ? "—" : formattaNumero(v.fabbisogno, v.decimali)}</td>
-              <td style={{ padding: 6, textAlign: "right" }}>{formattaNumero(v.apporto, v.decimali)}</td>
-              <td style={{ padding: 6, textAlign: "right" }}>{v.pct === null ? "—" : Math.round(v.pct) + "%"}</td>
-              <td style={{ padding: 6, color: COLORE[v.stato], fontWeight: 700 }}>
-                {v.stato === "manca" ? `manca ${formattaNumero(v.mancaQuanto, v.decimali)}` : v.stato === "eccessivo" ? "ECCESSIVO" : v.stato === "coperto" ? "✓ coperto" : "—"}
-                {v.incompleta?.length > 0 && <span style={{ color: "#8A5A00", fontWeight: 400 }}> · non analizzato o non dichiarato in: {v.incompleta.join(", ")}</span>}
-              </td>
-            </tr>))}</tbody>
-        </table>
+      <TabellaFabbisogno ris={ris}>
         <div style={{ marginTop: 10 }}><label style={lab}>Note sulla razione</label>
           <textarea value={note} onChange={e => setNote(e.target.value)} rows={2} style={{ ...sel, fontFamily: "inherit" }} /></div>
-      </div>
+      </TabellaFabbisogno>
     </div>
   );
 }
 
-function btn(colore) {
-  return { background: colore, color: "#fff", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" };
-}

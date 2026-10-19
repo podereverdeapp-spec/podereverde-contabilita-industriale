@@ -1,5 +1,5 @@
 // Calcolo della razione per capo: apporti, fabbisogni, percentuali di copertura e costi.
-// Stesso calcolo nel programma di Contabilità Industriale e nell'app Podere Verde (versione 243).
+// Stesso calcolo nel programma di Contabilità Industriale e nell'app Podere Verde (versione 244).
 // Dati: tabelle ci_alimenti_nutrizione, ci_fabbisogni_classi, vista ci_v_prezzi_alimenti_anno.
 
 export const GRUPPI_RIGHE = [
@@ -30,6 +30,42 @@ const NUTRIENTI = [
   { chiave: "vita", nome: "Vitamina A", unita: "unità", campo: "vitamina_a_ui", decimali: 0 },
 ];
 
+// tipo di alimentazione: «naturale» = foraggi e farine semplici (niente mangimi composti);
+// «mangimi» = foraggi, farina d'orzo e mangimi composti (niente altre farine); «libera» = tutti gli alimenti.
+export const TIPI_ALIMENTAZIONE = [
+  { valore: "libera", etichetta: "Libera (tutti gli alimenti)" },
+  { valore: "naturale", etichetta: "Alimentazione naturale (foraggi e farine)" },
+  { valore: "mangimi", etichetta: "Alimentazione con mangimi (foraggi, orzo e mangimi)" },
+];
+export function alimentoAmmesso(tipo, alimento) {
+  if (!alimento) return false;
+  if (tipo === "naturale") return alimento.gruppo !== "Mangime composto";
+  if (tipo === "mangimi") return alimento.gruppo !== "Proteico" && (alimento.gruppo !== "Energetico" || /orzo/i.test(alimento.nome));
+  return true;
+}
+
+// percentuale da mostrare: senza decimali, ma con i decimali che servono perché il numero
+// non contraddica l'esito (99,9% e non 100% se manca; 110,3% e non 110% se eccessivo)
+export function testoPercentuale(v) {
+  if (!v || v.pct === null || v.pct === undefined) return "—";
+  const fmt = (x, d) => x.toLocaleString("it-IT", { minimumFractionDigits: d, maximumFractionDigits: d }) + "%";
+  if (v.stato === "coperto") return fmt(Math.floor(v.pct), 0);          // coperto: sempre almeno 100%
+  for (let d = 0; d <= 4; d++) {
+    const f = 10 ** d;
+    if (v.stato === "manca") { const x = Math.floor(v.pct * f) / f; if (x < 100) return fmt(x, d); }
+    else if (v.stato === "eccessivo") { const x = Math.ceil(v.pct * f) / f; if (x > v.soglia) return fmt(x, d); }
+    else return fmt(Math.round(v.pct), 0);
+  }
+  return fmt(v.pct, 4);
+}
+
+// quantità che manca: con i decimali della voce, ma mai «0» se manca qualcosa
+export function decimaliMancante(v) {
+  let d = v.decimali || 0;
+  while (d < 4 && v.mancaQuanto > 0 && Math.round(v.mancaQuanto * 10 ** d) === 0) d++;
+  return d;
+}
+
 const n = v => (v === null || v === undefined || v === "" || Number.isNaN(Number(v)) ? null : Number(v));
 
 // kg tal quale di una riga: il Codibloc si scrive in grammi
@@ -49,8 +85,9 @@ export function kgTalQuale(riga, alimento) {
 export function calcolaRazione(classe, righe, alimentiPerNome, prezziPerNome, numeroCapi = 1) {
   const capi = Math.max(1, parseInt(numeroCapi, 10) || 1);
   let ss = 0, ufl = 0, ufv = 0;
-  const tot = {}; const mancanti = {};
-  NUTRIENTI.forEach(x => { tot[x.chiave] = 0; mancanti[x.chiave] = []; });
+  const tot = {}; const mancanti = {}; const contributi = { energia: [] };
+  NUTRIENTI.forEach(x => { tot[x.chiave] = 0; mancanti[x.chiave] = []; contributi[x.chiave] = []; });
+  const energiaUFL = classe?.unita_energia === "UFL";
   let costoCapo = 0; const prezziMancanti = []; const prezziListino = [];
 
   const righeCalcolate = righe.map(r => {
@@ -60,9 +97,12 @@ export function calcolaRazione(classe, righe, alimentiPerNome, prezziPerNome, nu
     ss += kg * (n(a.sostanza_secca_pct) || 0) / 100;
     ufl += kg * (n(a.ufl) || 0);
     ufv += kg * (n(a.ufv) || 0);
+    const e = n(energiaUFL ? a.ufl : a.ufv);
+    contributi.energia.push({ alimento: a.nome, valore: e === null ? null : kg * e });
     NUTRIENTI.forEach(x => {
       const v = n(a[x.campo]);
       if (v === null) mancanti[x.chiave].push(a.nome); else tot[x.chiave] += kg * v;
+      contributi[x.chiave].push({ alimento: a.nome, valore: v === null ? null : kg * v });
     });
     const p = prezziPerNome[a.nome];
     const prezzo = p ? n(p.prezzo_euro_t) : null;
@@ -93,14 +133,14 @@ export function calcolaRazione(classe, righe, alimentiPerNome, prezziPerNome, nu
 
   const voce = (chiave, nome, unita, fabbisogno, apporto, principale, decimali, incompleta) => {
     const pct = fabbisogno && fabbisogno > 0 ? (apporto / fabbisogno) * 100 : null;
+    // esito sul valore esatto (versione 244): 99,9% è «manca», 110,3% è «eccessivo»
     let stato = "—";
     if (pct !== null) {
-      const pr = Math.round(pct);
-      if (pr < 100) stato = "manca";
-      else if (principale && pr > soglia) stato = "eccessivo";
+      if (pct < 100) stato = "manca";
+      else if (principale && pct > soglia) stato = "eccessivo";
       else stato = "coperto";
     }
-    return { chiave, nome, unita, fabbisogno, apporto, pct, stato, principale, decimali, incompleta, mancaQuanto: fabbisogno !== null && apporto < fabbisogno ? fabbisogno - apporto : 0 };
+    return { chiave, nome, unita, fabbisogno, apporto, pct, stato, soglia, principale, decimali, incompleta, contributi: contributi[chiave] || [], mancaQuanto: fabbisogno !== null && apporto < fabbisogno ? fabbisogno - apporto : 0 };
   };
 
   const energiaApporto = c.unita_energia === "UFL" ? ufl : ufv;
