@@ -6,6 +6,8 @@ import { C } from "./style";
 // Come si usa, Attenzione…), ognuna con titolo e blocchi: un testo (stringa o elemento) oppure un elenco
 // { elenco: [...], numerato: true|false }. Le sezioni senza «parti» restano come prima.
 // «A cosa serve» è facoltativo: si usa per pagine e funzioni, non per le sezioni di spiegazione.
+// Versione 249: nei blocchi anche { sottotitolo }, { tabella: [intestazione, ...righe] } e voci di elenco
+// con sottoelenco { testo, sotto: [...] } (istruzioni del Controllo Prezzi di Acquisto).
 const stileTesto = { fontSize: 13, color: C.text, marginTop: 0, marginBottom: 8, lineHeight: 1.6 };
 function Parte({ parte }) {
   return (
@@ -14,8 +16,18 @@ function Parte({ parte }) {
       {(parte.blocchi || []).map((b, k) => {
         if (b && b.elenco) {
           const Lista = b.numerato ? "ol" : "ul";
-          return <Lista key={k} style={{ ...stileTesto, paddingLeft: 20, lineHeight: 1.7 }}>{b.elenco.map((v, i) => <li key={i}>{v}</li>)}</Lista>;
+          return <Lista key={k} style={{ ...stileTesto, paddingLeft: 20, lineHeight: 1.7 }}>{b.elenco.map((v, i) => (v && v.testo
+            ? <li key={i}>{v.testo}<ul style={{ paddingLeft: 18, margin: "2px 0" }}>{v.sotto.map((z, j) => <li key={j}>{z}</li>)}</ul></li>
+            : <li key={i}>{v}</li>))}</Lista>;
         }
+        if (b && b.sottotitolo) return <div key={k} style={{ fontWeight: 700, fontSize: 13, color: C.primary, margin: "10px 0 4px" }}>{b.sottotitolo}</div>;
+        if (b && b.tabella) return (
+          <div key={k} style={{ overflowX: "auto", marginBottom: 10 }}>
+            <table style={{ borderCollapse: "collapse", fontSize: 13, lineHeight: 1.5, width: "100%" }}>
+              <thead><tr>{b.tabella[0].map((t, j) => <th key={j} style={{ textAlign: "left", background: "#E3EDE0", border: `1px solid ${C.border}`, padding: "5px 8px" }}>{t}</th>)}</tr></thead>
+              <tbody>{b.tabella.slice(1).map((r, i) => <tr key={i}>{r.map((t, j) => <td key={j} style={{ verticalAlign: "top", border: `1px solid ${C.border}`, padding: "5px 8px" }}>{t}</td>)}</tr>)}</tbody>
+            </table>
+          </div>);
         return <p key={k} style={stileTesto}>{b}</p>;
       })}
     </div>
