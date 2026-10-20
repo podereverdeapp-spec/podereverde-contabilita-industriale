@@ -65,8 +65,8 @@ function Contenuto({ r }) {
   ];
   return (
     <>
-      <Sezione titolo="In sintesi"><Riquadri voci={riquadri} /></Sezione>
-      <Sezione titolo="In breve">
+      <Sezione titolo="I numeri principali della campagna"><Riquadri voci={riquadri} /></Sezione>
+      <Sezione titolo="Il giudizio sulla campagna">
         <p style={{ background: C.card, border: `1px solid ${C.border}`, borderLeft: `5px solid ${C.primary}`, borderRadius: 8, padding: "12px 16px", margin: 0, fontSize: 14.5, lineHeight: 1.5 }}>{r.giudizio}</p>
       </Sezione>
       <Sezione titolo="Cosa conviene produrre"><Buoni voci={r.buoni} /></Sezione>

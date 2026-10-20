@@ -77,6 +77,7 @@ import ColtClassifiche from "./ColtClassifiche";
 import ColtRegistroLavori from "./ColtRegistroLavori";
 import Ricerca from "./Ricerca";
 import Parametri from "./Parametri";
+import Glossario from "./Glossario";
 import ReportAcquistoAnimali from "./ReportAcquistoAnimali";
 import RegistroControlli from "./RegistroControlli";
 import AbbinamentiFatture from "./AbbinamentiFatture";
@@ -217,6 +218,8 @@ const MENU = [
       { id: "muratella-costi", label: "Contabilità Muratella", icon: "🏛️" },
     ]},
   ]},
+  // Versione 248: Glossario dei termini usati nelle istruzioni (cresce sezione per sezione)
+  { tipo: "voce", id: "glossario", label: "Glossario", icon: "📚" },
   { tipo: "voce", id: "parametri", label: "Parametri", icon: "⚙️" },
 ];
 
@@ -511,6 +514,7 @@ function Programma({ utente }) {
         {tab === "colt-piano" && <ColtPianoCampagna />}
         {tab === "colt-archivio-report" && <ColtArchivioReport />}
         {tab === "ricerca" && <Ricerca />}
+        {tab === "glossario" && <Glossario />}
         {tab === "parametri" && <Parametri />}
         {tab === "istr-controlli" && <IstruzioniControlli />}
         {tab === "registro-controlli" && <RegistroControlli onCambiaAperte={setAnomalieAperte} />}

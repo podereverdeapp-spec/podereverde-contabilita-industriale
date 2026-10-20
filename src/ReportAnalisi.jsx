@@ -93,8 +93,8 @@ function Contenuto({ r, vociAperte, setVociAperte }) {
   return (
     <>
       {parziale && <div style={{ marginTop: 12 }}><Avvisi voci={[["b-arancio", "▲ anno in corso", `Il ${anno} non è finito: i costi e i capi sono quelli registrati fino a oggi, e il confronto con il ${anno - 1} è parziale.`]]} vuoto="" /></div>}
-      <Sezione titolo="In sintesi"><Riquadri voci={riquadri} /></Sezione>
-      <Sezione titolo="In breve">
+      <Sezione titolo="I numeri principali dell'anno"><Riquadri voci={riquadri} /></Sezione>
+      <Sezione titolo="Il giudizio sull'anno">
         <p style={{ background: C.card, border: `1px solid ${C.border}`, borderLeft: `5px solid ${C.primary}`, borderRadius: 8, padding: "12px 16px", margin: 0, fontSize: 14.5, lineHeight: 1.5 }}>{r.giudizio}</p>
       </Sezione>
       <Sezione titolo="Cosa sta andando bene"><Buoni voci={r.buoni} /></Sezione>
