@@ -1,7 +1,7 @@
 import { C } from "./style";
 
-// Versione 261: mostra nel programma un documento di istruzioni scritto in Word (Istruzioni Generali,
-// Istruzioni Carica Fatture Passive, Piano dei Conti). Il testo arriva da istruzioniDati.js, generato
+// Versione 261: mostra nel programma un documento di istruzioni scritto in Word (Istruzioni Carica
+// Fatture Passive, Piano dei Conti). Il testo arriva da istruzioniDati.js, generato
 // dal Word: così il programma e il documento dicono la stessa cosa.
 
 const BASE = import.meta.env.BASE_URL || "/";
