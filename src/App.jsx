@@ -42,7 +42,7 @@ import ImportFattureAcquistoAnimali from "./ImportFattureAcquistoAnimali";
 import RiepilogoCostoAnimali from "./RiepilogoCostoAnimali";
 import PrezzoPareggio from "./PrezzoPareggio";
 import DocumentoIstruzioni from "./DocumentoIstruzioni";
-import { ISTRUZIONI_CARICA_FATTURE, PIANO_DEI_CONTI } from "./istruzioniDati";
+import { ISTRUZIONI_CARICA_FATTURE, PIANO_DEI_CONTI, ISTRUZIONI_COSTI_DIRETTI } from "./istruzioniDati";
 import IstruzioniAnagrafiche from "./IstruzioniAnagrafiche";
 import IstruzioniPrezziAcquisto from "./IstruzioniPrezziAcquisto";
 import IstruzioniAnimali from "./IstruzioniAnimali";
@@ -123,6 +123,7 @@ const MENU = [
       { id: "inserimento-manuale", label: "Inserimento Manuale Fattura", icon: "✍️" },
     ]},
     { tipo: "sottocartella", id: "sub-dati-costi-diretti", label: "2. Carica Costi Diretti (non soggetti a fatturazione)", icon: "💼", voci: [
+      { id: "istr-costi-diretti", label: "Istruzioni Carica Costi Diretti", icon: "📖" },
       { id: "costidiretti", label: "Carica Costi Diretti", icon: "💼" },
     ]},
     // Cartella 3: le pagine (prompt e carico dei cedolini, contributi da versare) si progettano con il Dott. Bizzarri
@@ -350,7 +351,7 @@ function Programma({ utente }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 266</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 268</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -504,6 +505,7 @@ function Programma({ utente }) {
         {tab === "riepilogo-costo-animali" && <RiepilogoCostoAnimali />}
         {tab === "istr-fatture" && <DocumentoIstruzioni doc={ISTRUZIONI_CARICA_FATTURE} />}
         {tab === "piano-dei-conti" && <DocumentoIstruzioni doc={PIANO_DEI_CONTI} />}
+        {tab === "istr-costi-diretti" && <DocumentoIstruzioni doc={ISTRUZIONI_COSTI_DIRETTI} />}
         {tab === "istr-ricerca" && <IstruzioniAnagrafiche />}
         {tab === "istr-prezzi-acquisto" && <IstruzioniPrezziAcquisto />}
         {tab === "istr-animali" && <IstruzioniAnimali />}

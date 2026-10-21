@@ -7,6 +7,19 @@ import { esportaExcel, numeroExcel } from "./esportaExcel";
 const DESTINAZIONI = ["Bovini", "Suini", "Ovini", "Bovini e Ovini", "Bovini e Suini", "Suini e Ovini", "Generali", "Pollame", "Cavalli"];
 const TIPI_COSTO = ["Fisso", "Variabile"];
 
+// Versione 268 (decisione del Dott. Bizzarri del 21/10/2026 ore 12:40–12:47): i costi diretti sono quelli
+// che non arrivano nel cassetto fiscale di Aruba. Si scrivono imponibile, cassa previdenziale e aliquota IVA;
+// il costo per la contabilità industriale è imponibile + cassa, più l'IVA solo se non detraibile.
+// La cassa è soggetta a IVA: IVA = (imponibile + cassa) × aliquota.
+function calcolaImporti(f) {
+  const imponibile = round2(parseFloat(f.imponibile) || 0);
+  const cassa = round2(imponibile * (parseFloat(f.cassa_percentuale) || 0) / 100);
+  const iva = round2((imponibile + cassa) * (parseFloat(f.aliquota_iva) || 0) / 100);
+  const totale = round2(imponibile + cassa + iva);
+  const costo = round2(imponibile + cassa + (f.iva_non_detraibile ? iva : 0));
+  return { imponibile, cassa, iva, totale, costo };
+}
+
 export default function CostiDiretti() {
   const [costi, setCosti] = useState([]);
   const [pianoConti, setPianoConti] = useState([]);
@@ -15,9 +28,11 @@ export default function CostiDiretti() {
   const [salvando, setSalvando] = useState(false);
   const [eliminando, setEliminando] = useState(null);
   const [filtroAnno, setFiltroAnno] = useState("");
+  // Versione 268: correzione di un costo già registrato (id del costo in modifica, null = nuovo costo)
+  const [inModifica, setInModifica] = useState(null);
 
   function vuoto() {
-    return { data: new Date().toISOString().slice(0, 10), area: "Lavoro", centro_costo: "", destinazione: "", tipo_costo: "Fisso", importo: "", descrizione: "", dipendente: "" };
+    return { data: new Date().toISOString().slice(0, 10), area: "Lavoro", centro_costo: "", destinazione: "", tipo_costo: "Fisso", imponibile: "", cassa_percentuale: "", aliquota_iva: "22", iva_non_detraibile: false, descrizione: "", dipendente: "" };
   }
 
   useEffect(() => { carica(); caricaPiano(); }, []);
@@ -26,7 +41,7 @@ export default function CostiDiretti() {
     setLoading(true);
     const { data, error } = await supabase.from("ci_costi_diretti").select("*").order("data", { ascending: false });
     if (error) { alert(`⚠️ Errore nel caricamento:\n\n${error.message}`); setLoading(false); return; }
-    setCosti(numerizzaCampi(data || [], ["importo"]));
+    setCosti(numerizzaCampi(data || [], ["importo", "imponibile", "cassa_importo", "iva", "totale_documento"]));
     setLoading(false);
   }
   async function caricaPiano() {
@@ -38,26 +53,48 @@ export default function CostiDiretti() {
   const centriPerArea = area => pianoConti.filter(p => p.area === area).map(p => p.centro_costo);
 
   async function salva() {
-    if (!form.area || !form.tipo_costo || !form.importo || !form.data) {
-      alert("Compila almeno Data, Area, Tipo di Costo e Importo.");
+    if (!form.area || !form.tipo_costo || form.imponibile === "" || !form.data) {
+      alert("Compila almeno Data, Area, Tipo di Costo e Imponibile.");
       return;
     }
+    const imp = calcolaImporti(form);
     setSalvando(true);
     try {
-      const { error } = await supabase.from("ci_costi_diretti").insert([{
+      const campi = {
         data: form.data, area: form.area, centro_costo: form.centro_costo || null,
         destinazione: form.destinazione || null, tipo_costo: form.tipo_costo,
-        importo: round2(parseFloat(form.importo)), descrizione: form.descrizione || null,
+        importo: imp.costo, imponibile: imp.imponibile,
+        cassa_percentuale: form.cassa_percentuale === "" ? null : parseFloat(form.cassa_percentuale), cassa_importo: imp.cassa,
+        aliquota_iva: form.aliquota_iva === "" ? null : parseFloat(form.aliquota_iva), iva: imp.iva,
+        iva_non_detraibile: !!form.iva_non_detraibile, totale_documento: imp.totale,
+        descrizione: form.descrizione || null,
         dipendente: form.dipendente || null,
-      }]);
+      };
+      const { error } = inModifica
+        ? await supabase.from("ci_costi_diretti").update(campi).eq("id", inModifica)
+        : await supabase.from("ci_costi_diretti").insert([campi]);
       if (error) throw new Error(error.message);
-      setForm(vuoto());
+      setForm(vuoto()); setInModifica(null);
       carica();
     } catch (err) {
       alert(`⚠️ Errore nel salvataggio:\n\n${err.message}`);
     }
     setSalvando(false);
   }
+
+  // Carica nel modulo un costo registrato per correggerlo. Le righe registrate prima della versione 268
+  // non hanno imponibile: si propone l'importo come imponibile, senza cassa e senza IVA (il costo non cambia).
+  function modifica(c) {
+    setInModifica(c.id);
+    setForm({
+      data: c.data, area: c.area, centro_costo: c.centro_costo || "", destinazione: c.destinazione || "", tipo_costo: c.tipo_costo,
+      imponibile: String(c.imponibile ?? c.importo ?? ""), cassa_percentuale: c.cassa_percentuale != null ? String(c.cassa_percentuale) : "",
+      aliquota_iva: c.aliquota_iva != null ? String(c.aliquota_iva) : "", iva_non_detraibile: !!c.iva_non_detraibile,
+      descrizione: c.descrizione || "", dipendente: c.dipendente || "",
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  function annullaModifica() { setInModifica(null); setForm(vuoto()); }
 
   async function elimina(c) {
     if (!window.confirm(`Eliminare questo costo diretto (${c.descrizione || c.area}, ${formattaEuro(c.importo)})? Non si può annullare.`)) return;
@@ -79,7 +116,9 @@ export default function CostiDiretti() {
   function esporta() {
     const righe = filtrati.map(c => ({
       "Data": c.data, "Area": c.area, "Centro di Costo": c.centro_costo, "Destinazione": c.destinazione,
-      "Tipo di Costo": c.tipo_costo, "Importo": numeroExcel(c.importo), "Dipendente": c.dipendente, "Descrizione": c.descrizione,
+      "Tipo di Costo": c.tipo_costo, "Imponibile": numeroExcel(c.imponibile), "Cassa previdenziale %": numeroExcel(c.cassa_percentuale), "Cassa previdenziale": numeroExcel(c.cassa_importo),
+      "Aliquota IVA %": numeroExcel(c.aliquota_iva), "IVA": numeroExcel(c.iva), "IVA non detraibile": c.iva_non_detraibile ? "Sì" : "No", "Totale documento": numeroExcel(c.totale_documento),
+      "Costo per la contabilità industriale": numeroExcel(c.importo), "Dipendente": c.dipendente, "Descrizione": c.descrizione,
     }));
     esportaExcel("CostiDiretti", [{ nome: "Costi Diretti", righe }]);
   }
@@ -94,10 +133,13 @@ export default function CostiDiretti() {
         </button>
       </div>
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 20 }}>
-        Per i costi che non passano da una fattura fornitore — costo del lavoro (buste paga, per dipendente o come totale aggregato) e altri costi simili. Stessa classificazione Area/Centro di Costo/Destinazione/Tipo di Costo usata ovunque nell'app.
+        Per i costi che non arrivano nel cassetto fiscale di Aruba. Il costo per la contabilità industriale è imponibile + cassa previdenziale; l'IVA entra nel costo solo se è segnata come non detraibile. Stessa classificazione Area / Centro di Costo / Destinazione / Tipo di Costo delle fatture.
       </p>
 
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 20 }}>
+      <div style={{ background: C.card, border: `${inModifica ? 2 : 1}px solid ${inModifica ? C.accent : C.border}`, borderRadius: 12, padding: 16, marginBottom: 20 }}>
+        {inModifica && (
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.accent, marginBottom: 10 }}>✏️ Correzione di un costo già registrato: cambiare i campi e premere «💾 Salva la correzione».</div>
+        )}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
           <Campo label="Data">
             <input type="date" value={form.data} onChange={e => setForm(f => ({ ...f, data: e.target.value }))} style={inputStyle} />
@@ -124,8 +166,20 @@ export default function CostiDiretti() {
               {TIPI_COSTO.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </Campo>
-          <Campo label="Importo (€)">
-            <input type="number" value={form.importo} onChange={e => setForm(f => ({ ...f, importo: e.target.value }))} style={inputStyle} />
+          <Campo label="Imponibile (€)">
+            <input type="number" step="0.01" value={form.imponibile} onChange={e => setForm(f => ({ ...f, imponibile: e.target.value }))} style={inputStyle} />
+          </Campo>
+          <Campo label="Cassa previdenziale %">
+            <input type="number" step="0.01" placeholder="se c'è, es. 4" value={form.cassa_percentuale} onChange={e => setForm(f => ({ ...f, cassa_percentuale: e.target.value }))} style={inputStyle} />
+          </Campo>
+          <Campo label="Aliquota IVA %">
+            <input type="number" step="0.01" value={form.aliquota_iva} onChange={e => setForm(f => ({ ...f, aliquota_iva: e.target.value }))} style={inputStyle} />
+          </Campo>
+          <Campo label="IVA non detraibile">
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, paddingTop: 6 }}>
+              <input type="checkbox" checked={!!form.iva_non_detraibile} onChange={e => setForm(f => ({ ...f, iva_non_detraibile: e.target.checked }))} />
+              l'IVA entra nel costo
+            </label>
           </Campo>
           <Campo label="Dipendente (facoltativo)">
             <input type="text" placeholder="Lascia vuoto per un totale aggregato" value={form.dipendente} onChange={e => setForm(f => ({ ...f, dipendente: e.target.value }))} style={inputStyle} />
@@ -134,10 +188,24 @@ export default function CostiDiretti() {
             <input type="text" value={form.descrizione} onChange={e => setForm(f => ({ ...f, descrizione: e.target.value }))} style={inputStyle} />
           </Campo>
         </div>
+        {(() => { const i = calcolaImporti(form); return (
+          <div style={{ marginTop: 12, display: "flex", flexWrap: "wrap", gap: 16, fontSize: 13, background: C.bg, borderRadius: 8, padding: "8px 12px" }}>
+            <span>Imponibile <b>{formattaEuro(i.imponibile)}</b></span>
+            <span>Cassa <b>{formattaEuro(i.cassa)}</b></span>
+            <span>IVA <b>{formattaEuro(i.iva)}</b></span>
+            <span>Totale documento <b>{formattaEuro(i.totale)}</b></span>
+            <span style={{ color: C.primary }}>Costo per la contabilità industriale <b style={{ fontSize: 15 }}>{formattaEuro(i.costo)}</b>{form.iva_non_detraibile ? " (IVA compresa)" : " (senza IVA)"}</span>
+          </div>); })()}
         <button onClick={salva} disabled={salvando}
           style={{ marginTop: 12, background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
-          {salvando ? "Salvataggio..." : "+ Registra costo"}
+          {salvando ? "Salvataggio..." : inModifica ? "💾 Salva la correzione" : "+ Registra costo"}
         </button>
+        {inModifica && (
+          <button onClick={annullaModifica} disabled={salvando}
+            style={{ marginTop: 12, marginLeft: 8, background: "#fff", color: C.muted, border: `1.5px solid ${C.border}`, borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+            Annulla
+          </button>
+        )}
       </div>
 
       <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
@@ -158,9 +226,18 @@ export default function CostiDiretti() {
                 <div style={{ fontSize: 12, color: C.muted }}>
                   {c.data} · {c.tipo_costo}{c.dipendente && ` · ${c.dipendente}`}{c.descrizione && ` · ${c.descrizione}`}
                 </div>
+                {c.imponibile != null && (
+                  <div style={{ fontSize: 12, color: C.muted }}>
+                    Imponibile {formattaEuro(c.imponibile)}{c.cassa_importo ? ` · cassa ${formattaEuro(c.cassa_importo)}` : ""} · IVA {formattaEuro(c.iva || 0)}{c.iva_non_detraibile ? " non detraibile" : ""} · totale documento {formattaEuro(c.totale_documento || 0)}
+                  </div>
+                )}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <span style={{ fontWeight: 800, fontSize: 16, color: C.primary }}>{formattaEuro(c.importo)}</span>
+                <button onClick={() => modifica(c)} disabled={salvando}
+                  style={{ background: "none", border: `1.5px solid ${C.primary}`, color: C.primary, borderRadius: 8, padding: "6px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                  ✏️ Correggi
+                </button>
                 <button onClick={() => elimina(c)} disabled={eliminando === c.id}
                   style={{ background: "none", border: `1.5px solid ${C.red}`, color: C.red, borderRadius: 8, padding: "6px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                   {eliminando === c.id ? "..." : "🗑️"}
