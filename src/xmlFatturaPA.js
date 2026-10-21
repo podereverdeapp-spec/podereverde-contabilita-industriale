@@ -43,8 +43,10 @@ export function generaXmlFattura({ cedente, cliente, numero, data, calcolo, aliq
   // Cessionario: il cliente
   x += `<CessionarioCommittente>\n<DatiAnagrafici>\n`;
   if (pivaCliente) x += `<IdFiscaleIVA>\n` + tag("IdPaese", paeseCliente) + tag("IdCodice", pivaCliente) + `</IdFiscaleIVA>\n`;
-  x += tag("CodiceFiscale", cliente.codice_fiscale || (paeseCliente === "IT" ? pivaCliente : "")) + `<Anagrafica>\n` + tag("Denominazione", cliente.nome) + `</Anagrafica>\n</DatiAnagrafici>\n`;
-  x += `<Sede>\n` + tag("Indirizzo", cliente.indirizzo) + tag("CAP", cliente.cap) + tag("Comune", cliente.citta) + tag("Provincia", paeseCliente === "IT" ? cliente.provincia : "") + tag("Nazione", paeseCliente) + `</Sede>\n`;
+  // Versione 264: il codice fiscale si scrive senza «IT» (scarto Aruba della FPR 9/26)
+  const cfCliente = String(cliente.codice_fiscale || "").replace(/\s/g, "").toUpperCase().replace(/^IT(?=\d{11}$)/, "");
+  x += tag("CodiceFiscale", cfCliente || (paeseCliente === "IT" ? pivaCliente : "")) + `<Anagrafica>\n` + tag("Denominazione", cliente.nome) + `</Anagrafica>\n</DatiAnagrafici>\n`;
+  x += `<Sede>\n` + tag("Indirizzo", cliente.indirizzo) + tag("CAP", cliente.cap) + tag("Comune", cliente.citta) + tag("Provincia", paeseCliente === "IT" ? String(cliente.provincia || "").trim().toUpperCase() : "") + tag("Nazione", paeseCliente) + `</Sede>\n`;
   x += `</CessionarioCommittente>\n</FatturaElettronicaHeader>\n`;
 
   // Corpo

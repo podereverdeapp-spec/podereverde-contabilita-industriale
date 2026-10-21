@@ -340,9 +340,22 @@ export async function assegnaCliente(destinazione, clienteId, nota, nomeScritto)
   }
 }
 
+// Versione 264 (21/10/2026): la fattura FPR 9/26 è stata scartata da Aruba perché la provincia del
+// cliente era «ROMA». La fattura elettronica vuole la sigla di due lettere; il codice fiscale di una
+// società è il numero senza «IT».
+export const provinciaValida = p => /^[A-Z]{2}$/.test(String(p || "").trim().toUpperCase());
+export const codiceFiscalePulito = cf => {
+  const s = String(cf || "").replace(/\s/g, "").toUpperCase();
+  return /^IT\d{11}$/.test(s) ? s.slice(2) : s;
+};
+
 export async function salvaCliente(cliente) {
+  const nazioneCliente = (cliente.nazione || "IT").trim().toUpperCase();
+  if (nazioneCliente === "IT" && (cliente.provincia || "").trim() && !provinciaValida(cliente.provincia)) {
+    throw new Error("Provincia: scrivere la sigla di due lettere (per esempio RM), non il nome della provincia.");
+  }
   const campi = {
-    nome: (cliente.nome || "").trim(), partita_iva: (cliente.partita_iva || "").trim() || null, codice_fiscale: (cliente.codice_fiscale || "").trim() || null,
+    nome: (cliente.nome || "").trim(), partita_iva: (cliente.partita_iva || "").trim() || null, codice_fiscale: codiceFiscalePulito(cliente.codice_fiscale) || null,
     indirizzo: (cliente.indirizzo || "").trim() || null, cap: (cliente.cap || "").trim() || null, citta: (cliente.citta || "").trim() || null,
     provincia: (cliente.provincia || "").trim().toUpperCase() || null, nazione: (cliente.nazione || "IT").trim().toUpperCase(),
     codice_destinatario: (cliente.codice_destinatario || "").trim().toUpperCase() || null, pec: (cliente.pec || "").trim() || null,
@@ -366,6 +379,7 @@ export function datiMancantiCliente(c) {
   if (!c.cap) m.push("CAP");
   if (!c.citta) m.push("comune");
   if ((c.nazione || "IT") === "IT" && !c.provincia) m.push("provincia");
+  else if ((c.nazione || "IT") === "IT" && !provinciaValida(c.provincia)) m.push("provincia come sigla di due lettere (per esempio RM)");
   if (!c.codice_destinatario && !c.pec) m.push("codice destinatario o PEC");
   return m;
 }
