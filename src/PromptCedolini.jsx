@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { C } from "./style";
 
-// Versione 270 (21/10/2026): prompt per il carico dei cedolini, provato con il Dott. Bizzarri sulle buste
+// Versione 270 (21/10/2026; codici di festività e malattia corretti nella 271): prompt per il carico dei cedolini, provato con il Dott. Bizzarri sulle buste
 // paga e sui riepiloghi da gennaio ad agosto 2026 (tutti i controlli tornati). Salvato nella cartella
 // «3. Carica Costi del Lavoro», come il prompt delle fatture passive.
 
@@ -32,12 +32,12 @@ Le voci, riga per riga: codice, descrizione, ore o giorni, base, competenza, tra
 Dalle voci calcola:
 - ore ordinarie: 8001;
 - ore di straordinario: 8025 e 8006;
-- ore di festività godute: 8109, 8108, 8118;
+- ore di festività godute: 8109 e 8118 (la 8108 «FEST. NON GODUTA» è una festività pagata ma non goduta: non va contata);
 - giorni di ferie godute: 8111, 106, 8101;
 - ore di permessi goduti: 8205;
 - ore di ROL goduti: 8116;
-- giorni di malattia: 8350, 8877, 8875;
-- giorni retribuiti: 8212, 8864;
+- giorni di malattia: 8864 «GIORNI RETR. AGR. TIPO M» (le voci 8875, 8877 e 8350 sono le indennità di malattia, in ore o in euro: non contarle come giorni);
+- giorni retribuiti: 8212 (giorni di lavoro, tipo O) più 8864 (giorni di malattia, tipo M);
 - TFR liquidato: 8400 (solo nella busta di chi lascia l'azienda);
 - crediti fiscali anticipati in busta: 9824, 8992, 507, 1117. Non sono costo: l'azienda li recupera con l'F24.
 Se trovi voci di ore o giorni con codici diversi da questi, scrivile nel foglio «Anomalie» con codice e descrizione.
