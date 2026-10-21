@@ -75,7 +75,7 @@ export default function ControlloAnomalie() {
 
   return (
     <div style={{ padding: 20, maxWidth: 1000, margin: "0 auto" }}>
-      <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Controllo Anomalie</h1>
+      <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Fatture Incomplete</h1>
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 20 }}>
         Fatture con totale a zero, senza righe articolo, o con la somma delle righe salvate che non coincide con l'imponibile dichiarato — quest'ultimo caso è il più insidioso: succede quando una fattura viene caricata e alcune righe restano "da classificare" senza mai essere completate, lasciando la fattura silenziosamente incompleta nei report. Se una fattura non ha righe, puoi eliminare il "guscio vuoto" da qui per poterla ricaricare correttamente; se ha righe (anche solo alcune), va completata a mano in Carica Fatture — non viene eliminata automaticamente.
       </p>

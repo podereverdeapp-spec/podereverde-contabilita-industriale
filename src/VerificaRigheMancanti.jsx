@@ -4,6 +4,7 @@ import { esportaExcel } from "./esportaExcel";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { formattaEuro, round2, formattaData } from "./parsingUtils";
+import { CATEGORIE_AMMORTAMENTO, IMPUTAZIONI_CESPITE, creaCespiteDaRiga, anniValidi, percentualeDaAnni } from "./cespitiDaFatture";
 
 // Versione 242: la data letta da Excel si converte con formattaData (giorno italiano), non con toISOString che la portava al giorno prima.
 const oggiLocale = () => formattaData(new Date());
@@ -14,14 +15,7 @@ const AREE_ORDINARIE = [
   "Canoni ed Abbonamenti", "Varie", "Oneri Finanziari", "Orto", "Animali non d'allevamento", "Ammortamenti",
 ];
 const DESTINAZIONI = ["Bovini", "Suini", "Ovini", "Bovini e Ovini", "Bovini e Suini", "Suini e Ovini", "Generali", "Pollame", "Cavalli"];
-const CATEGORIE_AMMORTAMENTO = [
-  "3 - Attrezzatura specifica", "3 - Costruzioni leggere",
-  "5 - Macchinari, apparecchi e attrezzature varie", "5 b - Macchinari, apparecchi e attrezzature varie extra allevamento",
-  "6 - Spese atti notarili", "7 - Animali non oggetto di allevamento",
-  "15 - Autovetture, motoveicoli e simili", "30 – Avviamento",
-  "31 - Spese di costituzione e trasformazione", "34 - Altri oneri pluriennali",
-];
-const MAPPA_SPECIE_CESPITE = { "Bovini": ["Bovini"], "Suini": ["Suini"], "Ovini": ["Ovini"], "Generali": ["Generale"], "Nessuno": [], "Cavalli": ["Cavalli"], "Pollame": ["Pollame"], "Orto": ["Orto"] };
+// Versione 261: categorie, imputazioni e creazione del cespite nel modulo comune cespitiDaFatture.js
 
 function normalizzaTesto(t) { return String(t || "").trim().toLowerCase(); }
 function importoVicino(a, b, tolleranzaPct = 0.02, tolleranzaAssoluta = 0.05) {
@@ -114,7 +108,7 @@ export default function VerificaRigheMancanti() {
     setFormRegistra({
       tipoDestinazione: "fattura", numero: "", data: mappaData ? formattaData(r[mappaData]).slice(0, 10) : oggiLocale(),
       area: "", centro_costo: "", destinazione: "", tipo_costo: "",
-      categoria_ammortamento: "", anni_ammortamento: "5", imputazione: "Generali",
+      categoria_ammortamento: "", anni_ammortamento: "", imputazione: "Generali",
     });
   }
 
@@ -123,6 +117,9 @@ export default function VerificaRigheMancanti() {
     if (!formRegistra.numero.trim()) { alert("Indica il numero fattura."); return; }
     // Versione 235: una riga normale senza Area e Tipo di Costo resterebbe fuori dai costi
     if (formRegistra.tipoDestinazione !== "cespite" && (!formRegistra.area || !formRegistra.tipo_costo)) { alert("Indicare Area e Tipo di Costo: senza, la riga resta fuori dai calcoli dei costi."); return; }
+    if (formRegistra.tipoDestinazione === "cespite" && (!formRegistra.categoria_ammortamento || !formRegistra.imputazione || !anniValidi(formRegistra.anni_ammortamento))) {
+      alert("Per un cespite servono Categoria, Imputazione e Anni di ammortamento (numero intero da 1 a 100)."); return;
+    }
     setSalvandoRegistra(true);
     try {
       const importo = round2(parseFloat(r[mappaImporto]));
@@ -151,18 +148,17 @@ export default function VerificaRigheMancanti() {
           area: "Ammortamenti", centro_costo: null, destinazione: null, tipo_costo: "Ammortizzabile", stato_classificazione: "MANUALE",
         }]).select().single();
         if (eArt) throw new Error(eArt.message);
-        const anni = parseInt(formRegistra.anni_ammortamento) || 5;
-        const { error: eAmm } = await supabase.from("ci_articolo_dettaglio_ammortamento").insert([{
-          articolo_id: art.id, categoria_ammortamento: formRegistra.categoria_ammortamento || null, imputazione: formRegistra.imputazione || null,
-          anno_acquisto: formRegistra.data ? parseInt(String(formRegistra.data).slice(0, 4)) : null, pct_ammortamento: round2(1 / anni * 10000) / 10000, importo_acquisto: importo,
-        }]);
-        if (eAmm) throw new Error(eAmm.message);
-        const { error } = await supabase.from("ci_cespiti").insert([{
-          descrizione, categoria: formRegistra.categoria_ammortamento || null, fornitore_id: r._fornitoreId, fattura_id: fatturaId,
-          data_acquisto: formRegistra.data, costo_acquisto: importo,
-          anni_ammortamento: parseInt(formRegistra.anni_ammortamento) || 5, specie: MAPPA_SPECIE_CESPITE[formRegistra.imputazione] || [],
-        }]);
-        if (error) throw new Error(error.message);
+        // Versione 261: dettaglio, cespite e quote fino all'anno in corso con la funzione comune
+        try {
+          await creaCespiteDaRiga({
+            articoloId: art.id, descrizione, fornitoreId: r._fornitoreId, fatturaId, data: formRegistra.data,
+            importo, categoria: formRegistra.categoria_ammortamento, imputazione: formRegistra.imputazione,
+            anni: formRegistra.anni_ammortamento,
+          });
+        } catch (eC) {
+          await supabase.from("ci_articoli_fattura").delete().eq("id", art.id);
+          throw eC;
+        }
       } else {
         const { error } = await supabase.from("ci_articoli_fattura").insert([{
           fattura_id: fatturaId, descrizione, quantita: 1, prezzo_unitario: importo, totale_riga: importo, aliquota_iva: aliquota, totale_iva: round2(importo * aliquota / 100),
@@ -427,10 +423,13 @@ export default function VerificaRigheMancanti() {
                           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8 }}>
                             <CampoSelectLocale label="Categoria Ammortamento" value={formRegistra.categoria_ammortamento} options={["", ...CATEGORIE_AMMORTAMENTO]}
                               onChange={v => setFormRegistra(prev => ({ ...prev, categoria_ammortamento: v }))} />
-                            <CampoTestoLocale label="Anni Ammortamento" tipo="number" value={formRegistra.anni_ammortamento}
+                            <CampoTestoLocale label="Anni di ammortamento" tipo="number" value={formRegistra.anni_ammortamento}
                               onChange={v => setFormRegistra(prev => ({ ...prev, anni_ammortamento: v }))} />
-                            <CampoSelectLocale label="Imputazione" value={formRegistra.imputazione} options={Object.keys(MAPPA_SPECIE_CESPITE)}
+                            <CampoSelectLocale label="Imputazione" value={formRegistra.imputazione} options={IMPUTAZIONI_CESPITE}
                               onChange={v => setFormRegistra(prev => ({ ...prev, imputazione: v }))} />
+                            {anniValidi(formRegistra.anni_ammortamento) && (
+                              <div style={{ gridColumn: "1 / -1", fontSize: 12, color: C.muted }}>→ quota annua: {percentualeDaAnni(formRegistra.anni_ammortamento).toLocaleString("it-IT")}% del prezzo per {anniValidi(formRegistra.anni_ammortamento)} anni (contabilità industriale, non fiscale).</div>
+                            )}
                           </div>
                         )}
                         <div style={{ display: "flex", gap: 8, marginTop: 10 }}>

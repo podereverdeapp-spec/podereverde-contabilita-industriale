@@ -68,8 +68,8 @@ export default function IstruzioniReportAnalisi() {
               "Il report si basa su due gruppi di dati.",
               <><b>I dati economici</b>, cioè costi e ricavi, registrati nella contabilità industriale tenuta con questo programma:</>,
               { elenco: [
-                <>le fatture di acquisto e le spese senza fattura, in <i>Carica Fatture</i>;</>,
-                <>le fatture di vendita, in <i>Carica Fatture</i> (fatture attive) e in <i>Emissione Fatture</i>;</>,
+                <>le fatture di acquisto e le spese senza fattura, in <i>Carica Dati Contabilità</i>;</>,
+                <>le fatture di vendita, in <i>Carica Dati Contabilità</i> (fatture attive) e in <i>Emissione Fatture</i>;</>,
                 <>il costo annuo di macchine, attrezzature e strutture, in <i>Analisi Costi → Cespiti</i>;</>,
                 <>le spese per le coltivazioni, in <i>Coltivazioni → Fatture Coltivazione</i>.</>,
               ] },
@@ -121,9 +121,9 @@ export default function IstruzioniReportAnalisi() {
             { titolo: "Dati inseriti nel programma", blocchi: [
               <>Nel programma si registrano i <b>costi</b> e i <b>ricavi</b> dell'azienda. Per il report contano tre cose.</>,
               { elenco: [
-                <><b>I costi, attribuiti correttamente.</b> Ogni spesa, con o senza fattura, va registrata indicando a cosa è servita e per quali animali. Se l'attribuzione è sbagliata, il costo finisce sugli animali sbagliati e i risultati non sono più veri. Le spese che servono a tutti gli animali, come il gasolio, si registrano come «Generali»: il programma le divide tra le specie in proporzione agli animali presenti, e per questo il report le indica come «da verificare». Quando si sa a quale specie è servita una spesa, è sempre meglio indicarla. <i>(Vedi le istruzioni di Carica Fatture.)</i></>,
-                <><b>Le quantità acquistate.</b> Per mangimi e foraggi serve sapere anche quanto si è comprato, in chili. Se la fattura riporta sacchi o balle, va indicato una sola volta per ogni prodotto a quanti chili corrispondono. Senza le quantità il report non può dire se si è speso di più perché si è comprato di più o perché il prezzo è salito. <i>(Vedi Carica Fatture → Armonizzare Unità Misura Fatture.)</i></>,
-                <><b>I ricavi.</b> Le vendite di animali e di carne vanno registrate con le fatture di vendita, complete dei chili venduti. Da queste il report ricava il prezzo di vendita al chilo e il margine. <i>(Vedi Carica Fatture → Carica Fatture Attive ed Emissione Fatture.)</i></>,
+                <><b>I costi, attribuiti correttamente.</b> Ogni spesa, con o senza fattura, va registrata indicando a cosa è servita e per quali animali. Se l'attribuzione è sbagliata, il costo finisce sugli animali sbagliati e i risultati non sono più veri. Le spese che servono a tutti gli animali, come il gasolio, si registrano come «Generali»: il programma le divide tra le specie in proporzione agli animali presenti, e per questo il report le indica come «da verificare». Quando si sa a quale specie è servita una spesa, è sempre meglio indicarla. <i>(Vedi le Istruzioni Carica Fatture Passive e il Piano dei Conti, nella cartella Carica Dati Contabilità.)</i></>,
+                <><b>Le quantità acquistate.</b> Per mangimi e foraggi serve sapere anche quanto si è comprato, in chili. Se la fattura riporta sacchi o balle, va indicato una sola volta per ogni prodotto a quanti chili corrispondono. Senza le quantità il report non può dire se si è speso di più perché si è comprato di più o perché il prezzo è salito. <i>(Vedi Carica Dati Contabilità → 2. Sistema i dati caricati → Armonizzare Unità Misura Fatture.)</i></>,
+                <><b>I ricavi.</b> Le vendite di animali e di carne vanno registrate con le fatture di vendita, complete dei chili venduti. Da queste il report ricava il prezzo di vendita al chilo e il margine. <i>(Vedi Carica Dati Contabilità → 1. Carica → Carica Fatture Attive, ed Emissione Fatture.)</i></>,
               ] },
             ] },
             { titolo: "Attenzione", blocchi: [

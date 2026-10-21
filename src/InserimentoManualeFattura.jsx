@@ -3,6 +3,10 @@ import { supabase } from "./supabase";
 import { C } from "./style";
 import { round2, formattaEuro } from "./parsingUtils";
 import { classificaRiga } from "./motoreClassificazione";
+import { CATEGORIE_AMMORTAMENTO, IMPUTAZIONI_CESPITE, creaCespiteDaRiga, anniValidi, percentualeDaAnni } from "./cespitiDaFatture";
+
+// Versione 261: anche qui si possono inserire i cespiti (Area «Ammortamenti»), con gli stessi dati
+// e la stessa funzione del carico massivo: Categoria, Imputazione, Anno acquisto, Anni di ammortamento.
 
 const AREE_ORDINARIE = [
   "Allevamento", "Coltivazione", "Lavoro", "Energia Elettrica", "Acqua", "Consulenze",
@@ -16,6 +20,7 @@ function rigaVuota() {
   return {
     id: crypto.randomUUID(), descrizione: "", quantita: "1", unita_misura: "", prezzo_unitario: "", imponibile: "",
     aliquota_iva: "22", area: "", centro_costo: "", destinazione: "", tipo_costo: "",
+    categoria: "", imputazione: "", annoAcquisto: "", anni: "",
   };
 }
 
@@ -80,6 +85,9 @@ export default function InserimentoManualeFattura() {
           nuova.destinazione = suggerito.destinazione || ""; nuova.tipo_costo = suggerito.tipo_costo || "";
         }
       }
+      // Versione 261: per gli Ammortamenti il Tipo di Costo è sempre «Ammortizzabile»
+      if (nuova.area === "Ammortamenti") nuova.tipo_costo = "Ammortizzabile";
+      else if (nuova.tipo_costo === "Ammortizzabile") nuova.tipo_costo = "";
       return nuova;
     }));
   }
@@ -99,8 +107,14 @@ export default function InserimentoManualeFattura() {
     // Versione 235: senza Area e Tipo di Costo la riga resterebbe fuori dai costi; gli Ammortamenti
     // qui non creerebbero il cespite (si caricano da «Carica Fatture Passive massivamente»)
     if (righe.some(r => !r.area || !r.tipo_costo)) { alert("Ogni riga deve avere Area e Tipo di Costo: senza, resta fuori dai calcoli dei costi."); return; }
-    if (righe.some(r => ["Ammortamenti", "ACQUISTO ANIMALI", "TRASPORTO ANIMALI"].includes(r.area))) {
-      alert("Le righe di Ammortamenti, Acquisto Animali e Trasporto Animali si caricano da «Carica Fatture Passive massivamente»: qui non verrebbero creati il cespite o la riga nel Report Acquisto Animali.");
+    if (righe.some(r => ["ACQUISTO ANIMALI", "TRASPORTO ANIMALI"].includes(r.area))) {
+      alert("Le righe di Acquisto Animali e Trasporto Animali si caricano da «Carica Fatture Passive massivamente»: qui non verrebbe creata la riga nel Report Acquisto Animali.");
+      return;
+    }
+    // Versione 261: una riga di Ammortamenti diventa un cespite; servono i dati del piano di ammortamento
+    const senzaDatiCespite = righe.filter(r => r.area === "Ammortamenti" && (!r.categoria || !r.imputazione || !anniValidi(r.anni)));
+    if (senzaDatiCespite.length) {
+      alert("Per le righe di Ammortamenti servono Categoria, Imputazione e Anni di ammortamento (numero intero da 1 a 100).");
       return;
     }
 
@@ -132,19 +146,34 @@ export default function InserimentoManualeFattura() {
         fatturaId = nuovaFattura.id;
       }
 
-      // 3) Crea ogni riga articolo
+      // 3) Crea ogni riga articolo (e il cespite per le righe di Ammortamenti)
+      let cespitiCreati = 0;
       for (const r of righe) {
         const imponibile = round2(parseFloat(r.imponibile));
         const aliquota = parseFloat(r.aliquota_iva) || 0;
-        const { error } = await supabase.from("ci_articoli_fattura").insert([{
+        const { data: art, error } = await supabase.from("ci_articoli_fattura").insert([{
           fattura_id: fatturaId, descrizione: r.descrizione.trim(),
           quantita: r.quantita !== "" ? parseFloat(r.quantita) : 1, unita_misura: r.unita_misura || null,
           prezzo_unitario: r.prezzo_unitario !== "" ? parseFloat(r.prezzo_unitario) : imponibile,
           totale_riga: imponibile, aliquota_iva: aliquota, totale_iva: round2(imponibile * aliquota / 100),
           area: r.area || null, centro_costo: r.centro_costo || null, destinazione: r.destinazione || null, tipo_costo: r.tipo_costo || null,
           stato_classificazione: "MANUALE",
-        }]);
+        }]).select().single();
         if (error) throw new Error(error.message);
+        if (r.area === "Ammortamenti") {
+          try {
+            await creaCespiteDaRiga({
+              articoloId: art.id, descrizione: r.descrizione.trim(), fornitoreId, fatturaId, data,
+              importo: imponibile, categoria: r.categoria, imputazione: r.imputazione,
+              anni: r.anni, annoAcquisto: r.annoAcquisto,
+            });
+            cespitiCreati++;
+          } catch (eC) {
+            // Senza cespite la riga non deve restare: si cancella (il dettaglio se ne va con lei)
+            await supabase.from("ci_articoli_fattura").delete().eq("id", art.id);
+            throw new Error(`${eC.message}\n\nLa riga «${r.descrizione.trim()}» non è stata salvata.`);
+          }
+        }
       }
 
       // 4) Ricalcola i totali fattura
@@ -154,7 +183,7 @@ export default function InserimentoManualeFattura() {
       const { error: eTot } = await supabase.from("ci_fatture").update({ totale_netto: round2(netto), totale_iva: round2(iva), totale_lordo: round2(netto + iva) }).eq("id", fatturaId);
       if (eTot) throw new Error(`Righe salvate, ma i totali della fattura non sono stati aggiornati: ${eTot.message}`);
 
-      setMessaggioOk(`Fattura ${numero} salvata con ${righe.length} righe.`);
+      setMessaggioOk(`Fattura ${numero} salvata con ${righe.length} righe${cespitiCreati ? `, di cui ${cespitiCreati} come cespite (con le quote fino all'anno in corso)` : ""}. Ricordarsi di aggiornare i costi.`);
       setFornitoreTesto(""); setFornitoreSelezionato(null); setNumero(""); setData(new Date().toISOString().slice(0, 10));
       setRighe([rigaVuota()]);
       await carica();
@@ -170,7 +199,7 @@ export default function InserimentoManualeFattura() {
     <div style={{ padding: 20, maxWidth: 1100, margin: "0 auto" }}>
       <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Inserimento Manuale Fattura</h1>
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 16 }}>
-        Crea una fattura passiva scrivendo tu i dati, senza dover caricare un PDF — stessa struttura e stesso motore di classificazione di Carica Fatture. Per ora pensata per fatture ordinarie (non Ammortamenti, Acquisto Animali o Trasporto Animali, che hanno una gestione a parte).
+        Crea una fattura passiva scrivendo tu i dati, senza dover caricare un PDF — stessa struttura e stesso motore di classificazione di Carica Fatture. Si possono inserire anche i cespiti (Area «Ammortamenti»): il programma crea il cespite e le sue quote. Acquisto Animali e Trasporto Animali si caricano invece da «Carica Fatture Passive massivamente».
       </p>
 
       {loading ? <p style={{ color: C.muted }}>Caricamento...</p> : (
@@ -231,10 +260,28 @@ export default function InserimentoManualeFattura() {
                 <CampoSelect label="Area" value={r.area} options={["", ...AREE_ORDINARIE]} onChange={v => aggiornaRiga(r.id, { area: v, centro_costo: "" })} />
                 <CampoSelect label="Centro di Costo" value={r.centro_costo} options={["", ...centriPerArea(r.area)]} onChange={v => aggiornaRiga(r.id, { centro_costo: v })} />
                 <CampoSelect label="Destinazione" value={r.destinazione} options={["", ...DESTINAZIONI]} onChange={v => aggiornaRiga(r.id, { destinazione: v })} />
-                <CampoSelect label="Tipo di Costo" value={r.tipo_costo} options={["", "Fisso", "Variabile"]} onChange={v => aggiornaRiga(r.id, { tipo_costo: v })} />
+                {r.area === "Ammortamenti"
+                  ? <CampoSelect label="Tipo di Costo" value="Ammortizzabile" options={["Ammortizzabile"]} onChange={() => {}} />
+                  : <CampoSelect label="Tipo di Costo" value={r.tipo_costo} options={["", "Fisso", "Variabile"]} onChange={v => aggiornaRiga(r.id, { tipo_costo: v })} />}
                 <button onClick={() => rimuoviRiga(r.id)} disabled={righe.length === 1}
                   style={{ background: "none", border: "none", cursor: righe.length === 1 ? "not-allowed" : "pointer", fontSize: 16, color: C.red, opacity: righe.length === 1 ? 0.3 : 1 }} title="Rimuovi riga">🗑️</button>
               </div>
+              {r.area === "Ammortamenti" && (
+                <div style={{ marginTop: 10, padding: 10, background: "#EFEAE0", borderRadius: 8 }}>
+                  <div style={{ fontSize: 12, color: C.accent, fontWeight: 700, marginBottom: 8 }}>
+                    📐 Questo costo diventerà un Cespite — completa i dati per il piano di ammortamento:
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 8 }}>
+                    <CampoSelect label="Categoria Ammortamento" value={r.categoria} options={["", ...CATEGORIE_AMMORTAMENTO]} onChange={v => aggiornaRiga(r.id, { categoria: v })} />
+                    <CampoSelect label="Imputazione" value={r.imputazione} options={["", ...IMPUTAZIONI_CESPITE]} onChange={v => aggiornaRiga(r.id, { imputazione: v })} />
+                    <CampoNumero label="Anno acquisto" value={r.annoAcquisto || data.slice(0, 4)} onChange={v => aggiornaRiga(r.id, { annoAcquisto: v })} />
+                    <CampoNumero label="Anni di ammortamento" value={r.anni} onChange={v => aggiornaRiga(r.id, { anni: v })} />
+                  </div>
+                  {anniValidi(r.anni) && (
+                    <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>→ quota annua: {percentualeDaAnni(r.anni).toLocaleString("it-IT")}% del prezzo per {anniValidi(r.anni)} anni. Anni di vita reale del bene in azienda (contabilità industriale, non fiscale).</div>
+                  )}
+                </div>
+              )}
             </div>
           ))}
           <button onClick={aggiungiRiga}

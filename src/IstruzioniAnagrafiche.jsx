@@ -11,7 +11,7 @@ export default function IstruzioniAnagrafiche() {
         <>
           Questa cartella serve a ritrovare le informazioni già caricate: una fattura, una riga di fattura, i dati di un fornitore o di un cliente. Il prezzo pagato per un prodotto nel tempo si trova nella cartella «Controllo Prezzi di Acquisto».
           <br /><br />
-          Attenzione: «Ricerca» non serve solo a guardare, ma permette anche di MODIFICARE fatture, righe e classificazioni, e queste modifiche cambiano i costi. Ogni modifica resta scritta nel «Registro delle Modifiche» (cartella «Controlli»), con chi l'ha fatta e il valore prima e dopo.
+          Attenzione: «Ricerca» non serve solo a guardare, ma permette anche di MODIFICARE fatture, righe e classificazioni, e queste modifiche cambiano i costi. Ogni modifica resta scritta nel «Registro delle Modifiche» (Carica Dati Contabilità → 4. Controllo finale), con chi l'ha fatta e il valore prima e dopo.
         </>
       }
       sezioni={[

@@ -4,20 +4,10 @@ import JSZip from "jszip";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { classificaRiga } from "./motoreClassificazione";
+import { CATEGORIE_AMMORTAMENTO, IMPUTAZIONI_CESPITE, creaCespiteDaRiga, anniDaRiga, percentualeDaAnni } from "./cespitiDaFatture";
 import { round2, numeroRobusto, calcolaImponibile, leggiAliquotaIva, formattaData, formattaEuro, formattaNumero } from "./parsingUtils";
 
-const CATEGORIE_AMMORTAMENTO = [
-  "3 - Attrezzatura specifica",
-  "3 - Costruzioni leggere",
-  "5 - Macchinari, apparecchi e attrezzature varie",
-  "5 b - Macchinari, apparecchi e attrezzature varie extra allevamento",
-  "6 - Spese atti notarili",
-  "7 - Animali non oggetto di allevamento",
-  "15 - Autovetture, motoveicoli e simili",
-  "30 – Avviamento",
-  "31 - Spese di costituzione e trasformazione",
-  "34 - Altri oneri pluriennali",
-];
+// Versione 261: categorie, anni e creazione del cespite nel modulo comune cespitiDaFatture.js
 
 const SPECIE_ACQUISTO = ["Bovini", "Suini", "Ovini", "Piu' specie acquistate insieme"];
 const RAZZE_PER_SPECIE = {
@@ -257,7 +247,7 @@ export default function CaricaFatture() {
         importoMacello: "", importoIngresso: "",
         categoriaAmmortamento: "", imputazioneAmmortamento: "",
         annoAcquistoAmmortamento: new Date(grezza.data || Date.now()).getFullYear() || "",
-        pctAmmortamento: "",
+        anniAmmortamento: "",
         memorizzaRegola: "nessuna", parolaChiaveRegola: "",
         giaCaricata: false,
         nonQuadra: false, dettaglioQuadratura: null,
@@ -340,8 +330,8 @@ export default function CaricaFatture() {
       if ((parseFloat(r.importoMacello) || 0) !== 0 && !r.editTipo) return "Indicare il Tipo di Costo della parte verso il macello (Fisso o Variabile).";
     }
     if (r.editArea === "Ammortamenti") {
-      if (!r.categoriaAmmortamento || !r.imputazioneAmmortamento || !r.pctAmmortamento) {
-        return `Per un Ammortamento servono Categoria, Imputazione e % Ammortamento.`;
+      if (!r.categoriaAmmortamento || !r.imputazioneAmmortamento || !anniDaRiga(r)) {
+        return `Per un Ammortamento servono Categoria, Imputazione e Anni di ammortamento (numero intero da 1 a 100).`;
       }
     }
     if (!r.editArea) return `Manca l'Area.`;
@@ -490,31 +480,13 @@ export default function CaricaFatture() {
         idsSalvati.articoloFatturaId = art.id; idsSalvati.fatturaId = fatturaId;
 
         if (riga.editArea === "Ammortamenti") {
-          const { data: amm, error: eAmm } = await supabase.from("ci_articolo_dettaglio_ammortamento").insert([{
-            articolo_id: art.id, categoria_ammortamento: riga.categoriaAmmortamento || null,
-            imputazione: riga.imputazioneAmmortamento || null,
-            anno_acquisto: riga.annoAcquistoAmmortamento ? parseInt(riga.annoAcquistoAmmortamento) : null,
-            pct_ammortamento: riga.pctAmmortamento ? parseFloat(riga.pctAmmortamento) / 100 : null,
-            importo_acquisto: riga.imponibile,
-          }]).select().single();
-          if (eAmm) throw new Error(eAmm.message);
-          idsSalvati.dettaglioAmmortamentoId = amm.id;
-
-          // Crea davvero il Cespite corrispondente (mancava: prima si salvava solo il
-          // dettaglio di classificazione, mai la riga in ci_cespiti)
-          const mappaSpecie = { "Bovini": ["Bovini"], "Suini": ["Suini"], "Ovini": ["Ovini"], "Generali": ["Generale"], "Nessuno": [], "Cavalli": ["Cavalli"], "Pollame": ["Pollame"], "Orto": ["Orto"] };
-          const specieCespite = mappaSpecie[riga.imputazioneAmmortamento] ?? [];
-          const pct = riga.pctAmmortamento ? parseFloat(riga.pctAmmortamento) : null;
-          const anniAmmortamento = pct ? Math.round(100 / pct) : 5;
-
-          const { data: cespite, error: eCesp } = await supabase.from("ci_cespiti").insert([{
-            descrizione: riga.descrizione, categoria: riga.categoriaAmmortamento || null,
-            fornitore_id: fornitoreId, fattura_id: fatturaId,
-            data_acquisto: riga.data, costo_acquisto: riga.imponibile,
-            anni_ammortamento: anniAmmortamento, specie: specieCespite,
-          }]).select().single();
-          if (eCesp) throw new Error(`Riga salvata ma errore nella creazione del Cespite: ${eCesp.message}`);
-          idsSalvati.cespiteId = cespite.id;
+          // Versione 261: dettaglio, cespite e quote fino all'anno in corso con la funzione comune
+          const creato = await creaCespiteDaRiga({
+            articoloId: art.id, descrizione: riga.descrizione, fornitoreId, fatturaId, data: riga.data,
+            importo: riga.imponibile, categoria: riga.categoriaAmmortamento, imputazione: riga.imputazioneAmmortamento,
+            anni: anniDaRiga(riga), annoAcquisto: riga.annoAcquistoAmmortamento,
+          });
+          idsSalvati.cespiteId = creato.cespiteId;
         }
         await ricalcolaTotaliFattura(fatturaId);
       }
@@ -830,12 +802,12 @@ function RigaFattura({ riga, aree, centriPerArea, regoleArmonizzazione, onChange
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
                 <Select label="Categoria Ammortamento" value={r.categoriaAmmortamento} options={CATEGORIE_AMMORTAMENTO} onChange={v => onChange({ categoriaAmmortamento: v })} />
-                <Select label="Imputazione" value={r.imputazioneAmmortamento} options={["Bovini", "Suini", "Ovini", "Generali", "Cavalli", "Pollame", "Orto", "Nessuno"]} onChange={v => onChange({ imputazioneAmmortamento: v })} />
+                <Select label="Imputazione" value={r.imputazioneAmmortamento} options={IMPUTAZIONI_CESPITE} onChange={v => onChange({ imputazioneAmmortamento: v })} />
                 <Testo label="Anno acquisto" tipo="number" value={r.annoAcquistoAmmortamento} onChange={v => onChange({ annoAcquistoAmmortamento: v })} />
-                <Testo label="% Ammortamento annuo" tipo="number" value={r.pctAmmortamento} onChange={v => onChange({ pctAmmortamento: v })} />
+                <Testo label="Anni di ammortamento" tipo="number" value={r.anniAmmortamento ?? (anniDaRiga(r) || "")} onChange={v => onChange({ anniAmmortamento: v })} />
               </div>
-              {r.pctAmmortamento > 0 && (
-                <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>→ durata stimata: {Math.round(100 / parseFloat(r.pctAmmortamento))} anni</div>
+              {anniDaRiga(r) && (
+                <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>→ quota annua: {percentualeDaAnni(anniDaRiga(r)).toLocaleString("it-IT")}% del prezzo per {anniDaRiga(r)} anni. Anni di vita reale del bene in azienda (contabilità industriale, non fiscale).</div>
               )}
             </div>
           )}

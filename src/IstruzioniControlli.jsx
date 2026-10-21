@@ -1,13 +1,14 @@
 import PaginaIstruzioni from "./PaginaIstruzioni";
 
-// Istruzioni della cartella Controlli (versione 232).
+// Istruzioni dei Controlli (versione 232). Versione 261: la cartella «Controlli» è diventata il gruppo
+// «4. Controllo finale» di «Carica Dati Contabilità»; «Abbinamenti Fatture Acquisto» è nel gruppo «2. Sistema i dati caricati».
 export default function IstruzioniControlli() {
   return (
     <PaginaIstruzioni
-      titolo="Controlli"
+      titolo="Istruzioni dei Controlli"
       introduzione={
         <>
-          Questa cartella controlla che i dati dell'app Podere Verde e della Contabilità siano coerenti, prima che finiscano nei costi degli animali.
+          Il gruppo «4. Controllo finale» della cartella «Carica Dati Contabilità» controlla che i dati dell'app Podere Verde e della Contabilità siano coerenti, prima che finiscano nei costi degli animali.
           I controlli partono da soli all'apertura del programma; quando trovano qualcosa, in cima a ogni pagina compare un avviso rosso con il numero di anomalie da decidere.
           <br /><br />
           Ogni anomalia resta scritta finché non è decisa: una decisione presa non viene riproposta. Accanto a ogni anomalia si vede chi ha inserito o cambiato per ultimo quel dato, dal registro delle modifiche attivo dal 07/10/2026.
@@ -29,7 +30,7 @@ export default function IstruzioniControlli() {
         },
         {
           pagina: "Abbinamenti Fatture Acquisto", icon: "🔗",
-          aCosaServe: "Collega ogni riga delle fatture d'acquisto animali al capo dell'app a cui si riferisce, con il motivo della proposta.",
+          aCosaServe: "Collega ogni riga delle fatture d'acquisto animali al capo dell'app a cui si riferisce, con il motivo della proposta. La pagina si trova in «Carica Dati Contabilità → 2. Sistema i dati caricati».",
           comeSiUsa: [
             "«Proposte sicure»: la matricola scritta in fattura è quella di un capo dell'app. Sotto si leggono i motivi; quelli in rosso sono differenze da guardare (prezzo, data, specie).",
             "«Esamina e conferma» mostra, campo per campo, la scheda dell'app e la fattura: dove la scheda è vuota si può scrivere il dato della fattura; dove sono diversi si sceglie quale tenere. Niente viene salvato prima di «Conferma l'abbinamento».",

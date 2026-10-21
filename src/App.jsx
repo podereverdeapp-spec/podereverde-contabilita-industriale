@@ -41,7 +41,8 @@ import ImportMassivoRiproduttori from "./ImportMassivoRiproduttori";
 import ImportFattureAcquistoAnimali from "./ImportFattureAcquistoAnimali";
 import RiepilogoCostoAnimali from "./RiepilogoCostoAnimali";
 import PrezzoPareggio from "./PrezzoPareggio";
-import IstruzioniFatture from "./IstruzioniFatture";
+import DocumentoIstruzioni from "./DocumentoIstruzioni";
+import { ISTRUZIONI_GENERALI_DATI, ISTRUZIONI_CARICA_FATTURE, PIANO_DEI_CONTI } from "./istruzioniDati";
 import IstruzioniAnagrafiche from "./IstruzioniAnagrafiche";
 import IstruzioniPrezziAcquisto from "./IstruzioniPrezziAcquisto";
 import IstruzioniAnimali from "./IstruzioniAnimali";
@@ -105,24 +106,37 @@ const MENU = [
     { tipo: "voce", id: "articoliprezzi", label: "Articoli & Prezzi", icon: "🏷️" },
     { tipo: "voce", id: "famiglie-prodotto", label: "Famiglie di Prodotto", icon: "🗂️" },
   ]},
-  { tipo: "cartella", id: "cart-controlli", label: "Controlli", icon: "🛡️", contenuto: [
-    { tipo: "voce", id: "istr-controlli", label: "Istruzioni", icon: "📖" },
-    { tipo: "voce", id: "registro-controlli", label: "Registro Controlli", icon: "🛡️" },
-    { tipo: "voce", id: "abbinamenti-fatture", label: "Abbinamenti Fatture Acquisto", icon: "🔗" },
-    { tipo: "voce", id: "registro-modifiche", label: "Registro delle Modifiche", icon: "🕓" },
-  ]},
-  { tipo: "cartella", id: "cart-fatture", label: "Carica Fatture", icon: "📥", contenuto: [
-    { tipo: "voce", id: "istr-fatture", label: "Istruzioni", icon: "📖" },
-    { tipo: "voce", id: "carica", label: "Carica Fatture Passive massivamente", icon: "📥" },
-    { tipo: "voce", id: "inserimento-manuale", label: "Inserimento Manuale Fattura", icon: "✍️" },
-    { tipo: "voce", id: "passive", label: "Fatture Passive", icon: "📄" },
-    { tipo: "voce", id: "attive", label: "Carica Fatture Attive", icon: "💰" },
-    { tipo: "voce", id: "costidiretti", label: "Carica Costi Diretti", icon: "💼" },
-    { tipo: "voce", id: "anomalie", label: "Controllo Anomalie", icon: "🔍" },
-    { tipo: "voce", id: "armonizza", label: "Armonizzare Unità Misura Fatture", icon: "⚖️" },
-    { tipo: "voce", id: "prompt-estrazione-pdf", label: "Prompt per carico Massivo", icon: "🤖" },
-    { tipo: "voce", id: "verifica-fatture-mancanti", label: "Verifica Fatture Mancanti", icon: "🔍" },
-    { tipo: "voce", id: "verifica-righe-mancanti", label: "Verifica Righe Mancanti", icon: "🔎" },
+  // Versione 261 (decisione del Dott. Bizzarri del 21/10/2026): «Carica Fatture» diventa «Carica Dati
+  // Contabilità»; in cima le tre istruzioni, poi le pagine in quattro gruppi nell'ordine del lavoro.
+  // La cartella «Controlli» confluisce nel gruppo «4. Controllo finale»; «Import Fatture Acquisto
+  // Animali» passa qui dalla cartella Animali.
+  { tipo: "cartella", id: "cart-fatture", label: "Carica Dati Contabilità", icon: "📥", contenuto: [
+    { tipo: "voce", id: "istr-generali-dati", label: "Istruzioni Generali", icon: "📖" },
+    { tipo: "voce", id: "istr-fatture", label: "Istruzioni Carica Fatture Passive", icon: "📖" },
+    { tipo: "voce", id: "piano-dei-conti", label: "Piano dei Conti", icon: "🗂️" },
+    { tipo: "sottocartella", id: "sub-dati-carica", label: "1. Carica", icon: "📥", voci: [
+      { id: "prompt-estrazione-pdf", label: "Prompt per carico Massivo", icon: "🤖" },
+      { id: "carica", label: "Carica Fatture Passive massivamente", icon: "📥" },
+      { id: "inserimento-manuale", label: "Inserimento Manuale Fattura", icon: "✍️" },
+      { id: "attive", label: "Carica Fatture Attive", icon: "💰" },
+      { id: "costidiretti", label: "Carica Costi Diretti", icon: "💼" },
+    ]},
+    { tipo: "sottocartella", id: "sub-dati-sistema", label: "2. Sistema i dati caricati", icon: "🧹", voci: [
+      { id: "armonizza", label: "Armonizzare Unità Misura Fatture", icon: "⚖️" },
+      { id: "abbinamenti-fatture", label: "Abbinamenti Fatture Acquisto", icon: "🔗" },
+      { id: "import-fatture-acquisto-animali", label: "Import Fatture Acquisto Animali", icon: "📥" },
+    ]},
+    { tipo: "sottocartella", id: "sub-dati-verifica", label: "3. Verifica che non manchi niente", icon: "🔍", voci: [
+      { id: "verifica-fatture-mancanti", label: "Verifica Fatture Mancanti", icon: "🔍" },
+      { id: "verifica-righe-mancanti", label: "Verifica Righe Mancanti", icon: "🔎" },
+      { id: "anomalie", label: "Fatture Incomplete", icon: "🧾" },
+      { id: "passive", label: "Fatture Passive", icon: "📄" },
+    ]},
+    { tipo: "sottocartella", id: "sub-dati-controllo", label: "4. Controllo finale", icon: "🛡️", voci: [
+      { id: "istr-controlli", label: "Istruzioni dei Controlli", icon: "📖" },
+      { id: "registro-controlli", label: "Registro Controlli", icon: "🛡️" },
+      { id: "registro-modifiche", label: "Registro delle Modifiche", icon: "🕓" },
+    ]},
   ]},
   { tipo: "cartella", id: "cart-emissione-fatture", label: "Emissione Fatture", icon: "🧾", contenuto: [
     { tipo: "voce", id: "istr-emissione-fatture", label: "Istruzioni", icon: "📖" },
@@ -182,7 +196,6 @@ const MENU = [
     { tipo: "voce", id: "riproduttori", label: "Report Riproduttori", icon: "🐄" },
     { tipo: "voce", id: "scheda", label: "Scheda Animale", icon: "🔍" },
     { tipo: "voce", id: "import-massivo-riproduttori", label: "Import Massivo Riproduttori", icon: "📥" },
-    { tipo: "voce", id: "import-fatture-acquisto-animali", label: "Import Fatture Acquisto Animali", icon: "📥" },
     { tipo: "sottocartella", id: "sub-accrescimento-costi", label: "Accrescimento e Costi", icon: "⚖️", voci: [
       { id: "acc-bovini-alimenti", label: "Bovini — Costo per Alimento", icon: "🌾" },
       { id: "performanceeta", label: "Bovini — Performance per Fascia d'Età", icon: "📐" },
@@ -294,7 +307,7 @@ function Programma({ utente }) {
   // cambiati dati che entrano nei costi (fatture, costi diretti, cespiti, animali…)
   const [avvisoCalcoli, setAvvisoCalcoli] = useState(null);
   useEffect(() => { statoCalcoli().then(st => setAvvisoCalcoli(testoAvvisoCalcoli(st))).catch(() => setAvvisoCalcoli(null)); }, [tab]);
-  const AVVISI = { "cart-controlli": anomalieAperte || 0, "registro-controlli": anomalieAperte || 0, "cart-emissione-fatture": daFatturare, "sub-fatturazione-animali": daFatturare, "fatt-animali-da-fatturare": daFatturare, "fatt-animali-prepara": daFatturare };
+  const AVVISI = { "cart-fatture": anomalieAperte || 0, "sub-dati-controllo": anomalieAperte || 0, "registro-controlli": anomalieAperte || 0, "cart-emissione-fatture": daFatturare, "sub-fatturazione-animali": daFatturare, "fatt-animali-da-fatturare": daFatturare, "fatt-animali-prepara": daFatturare };
 
   function vaiA(pageId) {
     setTab(pageId);
@@ -329,7 +342,7 @@ function Programma({ utente }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 244</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 261</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -481,7 +494,9 @@ function Programma({ utente }) {
         {tab === "import-massivo-riproduttori" && <ImportMassivoRiproduttori />}
         {tab === "import-fatture-acquisto-animali" && <ImportFattureAcquistoAnimali />}
         {tab === "riepilogo-costo-animali" && <RiepilogoCostoAnimali />}
-        {tab === "istr-fatture" && <IstruzioniFatture />}
+        {tab === "istr-generali-dati" && <DocumentoIstruzioni doc={ISTRUZIONI_GENERALI_DATI} />}
+        {tab === "istr-fatture" && <DocumentoIstruzioni doc={ISTRUZIONI_CARICA_FATTURE} />}
+        {tab === "piano-dei-conti" && <DocumentoIstruzioni doc={PIANO_DEI_CONTI} />}
         {tab === "istr-ricerca" && <IstruzioniAnagrafiche />}
         {tab === "istr-prezzi-acquisto" && <IstruzioniPrezziAcquisto />}
         {tab === "istr-animali" && <IstruzioniAnimali />}
