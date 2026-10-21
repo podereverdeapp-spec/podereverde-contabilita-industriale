@@ -4,7 +4,7 @@ import JSZip from "jszip";
 import { supabase } from "./supabase";
 import { C } from "./style";
 
-// Versione 271 (21/10/2026): carica l'Excel prodotto con il «Prompt per carico cedolini» e lo zip dei cedolini
+// Versione 271 (21/10/2026; PDF anche da soli e per le buste già caricate nella 272): carica l'Excel prodotto con il «Prompt per carico cedolini» e lo zip dei cedolini
 // divisi per persona. Scrive le tabelle protette del lavoro (ci_dipendenti, ci_costo_lavoro_mensile,
 // ci_cedolino_voci, ci_contributi_da_versare), archivia i PDF nel bucket «buste-paga» e, anno per anno,
 // sostituisce in ci_costi_diretti le righe dell'area Lavoro con un totale per mese, senza nomi, delle sole
@@ -130,18 +130,54 @@ export default function CaricaCostiLavoro() {
     setStato({ giaCaricate, escAnno, costiDiretti: cd || [] });
   }
 
-  async function leggiZip(file) {
+  // Versione 272: si possono scegliere lo zip oppure direttamente i PDF (anche tutti insieme)
+  async function leggiZip(files) {
     setErrore("");
     try {
-      const zip = await JSZip.loadAsync(file);
       const mappa = {};
-      for (const f of Object.values(zip.files)) {
-        if (f.dir || !/\.pdf$/i.test(f.name)) continue;
-        mappa[f.name.split("/").pop()] = await f.async("blob");
+      for (const file of files) {
+        if (/\.pdf$/i.test(file.name)) { mappa[file.name] = file; continue; }
+        const zip = await JSZip.loadAsync(file);
+        for (const f of Object.values(zip.files)) {
+          if (f.dir || !/\.pdf$/i.test(f.name)) continue;
+          mappa[f.name.split("/").pop()] = await f.async("blob");
+        }
       }
+      if (!Object.keys(mappa).length) { setErrore("Nel file scelto non ci sono PDF. Scegliere «Cedolini_AAAA.zip» (con un solo clic e poi «Apri»), oppure i PDF dei cedolini."); setPdf(null); return; }
       setPdf(mappa);
     } catch (e) {
       setErrore("Lo zip non si apre: " + (e.message || e));
+    }
+  }
+
+  // Versione 272: archivia i PDF anche per le buste già caricate, senza toccare i costi
+  async function archiviaPdf(righe, idDaCf) {
+    let n = 0;
+    for (const r of righe) {
+      if (!r.pdf || !r.pdf_percorso || !pdf || !pdf[r.pdf]) continue;
+      setLavoro(`PDF ${r.cognome_nome}, ${MESI[r.mese]} ${r.tipo}…`);
+      const { error } = await supabase.storage.from("buste-paga").upload(r.pdf_percorso, pdf[r.pdf], { upsert: true, contentType: "application/pdf" });
+      if (error) throw new Error(`PDF di ${r.cognome_nome} ${MESI[r.mese]}: ${error.message}`);
+      const { error: e2 } = await supabase.from("ci_costo_lavoro_mensile").update({ pdf_percorso: r.pdf_percorso })
+        .eq("dipendente_id", idDaCf[r.codice_fiscale]).eq("anno", dati.anno).eq("mese", r.mese).eq("tipo", r.tipo);
+      if (e2) throw new Error(`PDF di ${r.cognome_nome} ${MESI[r.mese]}: ${e2.message}`);
+      n++;
+    }
+    return n;
+  }
+
+  async function soloPdf() {
+    setErrore(""); setEsito(null);
+    try {
+      const { data: dip, error } = await supabase.from("ci_dipendenti").select("id, codice_fiscale").in("codice_fiscale", [...new Set(dati.costi.map(r => r.codice_fiscale))]);
+      if (error) throw new Error(error.message);
+      const idDaCf = Object.fromEntries(dip.map(x => [x.codice_fiscale, x.id]));
+      const giaNelProgramma = dati.costi.filter(r => idDaCf[r.codice_fiscale] && stato.giaCaricate.has(`${r.codice_fiscale}|${r.mese}|${r.tipo}`));
+      const n = await archiviaPdf(giaNelProgramma, idDaCf);
+      setLavoro("");
+      setEsito({ soloPdf: true, pdfCaricati: n });
+    } catch (e) {
+      setLavoro(""); setErrore(e.message || String(e));
     }
   }
 
@@ -188,11 +224,11 @@ export default function CaricaCostiLavoro() {
       for (const r of d.costi) {
         if (salta.has(`${r.codice_fiscale}|${r.mese}|${r.tipo}`)) continue;
         setLavoro(`Cedolino ${r.cognome_nome}, ${MESI[r.mese]} ${r.tipo}…`);
-        let percorso = r.pdf_percorso || null;
-        if (pdf && r.pdf && pdf[r.pdf] && percorso) {
-          const { error } = await supabase.storage.from("buste-paga").upload(percorso, pdf[r.pdf], { upsert: true, contentType: "application/pdf" });
+        let percorso = null;
+        if (pdf && r.pdf && pdf[r.pdf] && r.pdf_percorso) {
+          const { error } = await supabase.storage.from("buste-paga").upload(r.pdf_percorso, pdf[r.pdf], { upsert: true, contentType: "application/pdf" });
           if (error) throw new Error(`PDF di ${r.cognome_nome} ${MESI[r.mese]}: ${error.message}`);
-          pdfCaricati++;
+          percorso = r.pdf_percorso; pdfCaricati++;
         }
         const riga = {
           dipendente_id: idDaCf[r.codice_fiscale], anno: d.anno, mese: r.mese, tipo: r.tipo, qualifica: r.qualifica,
@@ -214,6 +250,9 @@ export default function CaricaCostiLavoro() {
         }
         caricate++;
       }
+
+      // versione 272: anche le buste saltate perché già presenti ricevono il loro PDF
+      pdfCaricati += await archiviaPdf(d.costi.filter(r => salta.has(`${r.codice_fiscale}|${r.mese}|${r.tipo}`)), idDaCf);
 
       // 4. contributi da versare
       setLavoro("Contributi da versare…");
@@ -272,12 +311,19 @@ export default function CaricaCostiLavoro() {
       </Riquadro>
 
       <Riquadro titolo="2. Lo zip con i cedolini divisi per persona">
-        <input type="file" accept=".zip" onChange={e => e.target.files[0] && leggiZip(e.target.files[0])} />
+        <input type="file" accept=".zip,.pdf" multiple onChange={e => e.target.files.length && leggiZip([...e.target.files])} />
+        <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Si sceglie «Cedolini_AAAA.zip» con un solo clic e poi «Apri» (con il doppio clic Windows entra dentro lo zip). In alternativa si possono scegliere direttamente tutti i PDF dei cedolini.</div>
         {pdf && <div style={{ marginTop: 8, fontSize: 13 }}>Nello zip ci sono {Object.keys(pdf).length} PDF.</div>}
         {pdf && dati && (pdfMancanti.length
           ? <div style={{ marginTop: 6, fontSize: 13, color: C.red }}>Mancano nello zip {pdfMancanti.length} PDF: {pdfMancanti.map(r => r.pdf).join(", ")}.</div>
           : <div style={{ marginTop: 6, fontSize: 13, color: C.green }}>Ci sono i PDF di tutte le buste dell'Excel.</div>)}
         {!pdf && <div style={{ marginTop: 6, fontSize: 12, color: C.muted }}>Senza lo zip i costi si caricano lo stesso, ma nella consultazione non si potranno aprire i cedolini.</div>}
+        {pdf && dati && stato && stato.giaCaricate.size > 0 && (
+          <button disabled={!!lavoro} onClick={soloPdf}
+            style={{ marginTop: 10, background: C.card, border: `1px solid ${C.primary}`, color: C.primary, borderRadius: 8, padding: "7px 14px", fontWeight: 700, fontSize: 13 }}>
+            📄 Archivia solo i PDF delle {stato.giaCaricate.size} buste già caricate (i costi non cambiano)
+          </button>
+        )}
       </Riquadro>
 
       {errore && <Riquadro colore={C.red} titolo="Attenzione"><div style={{ fontSize: 13 }}>{errore}</div></Riquadro>}
@@ -331,7 +377,12 @@ export default function CaricaCostiLavoro() {
         </Riquadro>
       )}
 
-      {esito && (
+      {esito && esito.soloPdf && (
+        <Riquadro colore={C.green} titolo="PDF archiviati">
+          <div style={{ fontSize: 13 }}>PDF archiviati: {esito.pdfCaricati}. I costi non sono cambiati.</div>
+        </Riquadro>
+      )}
+      {esito && !esito.soloPdf && (
         <Riquadro colore={C.green} titolo="Caricamento completato">
           <div style={{ fontSize: 13, lineHeight: 1.6 }}>
             Buste caricate: {esito.caricate}{esito.saltate ? `; saltate perché già presenti: ${esito.saltate}` : ""}. PDF archiviati: {esito.pdfCaricati}.<br />
