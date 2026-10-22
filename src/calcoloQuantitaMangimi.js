@@ -2,6 +2,8 @@ import { supabase } from "./supabase";
 import { fetchAllPages, round2 } from "./parsingUtils";
 import { caricaDatiGrezziAnno } from "./calcoloReportCosti";
 import { calcolaRigaAggregata } from "./motoreUba";
+// Unità senza peso (versione 276): stesse etichette della pagina «Armonizzare Unità Misura Fatture»
+const UNITA_SENZA_PESO = ["A pezzi (il peso non serve)", "Nessuna quantità (spesa, sconto, servizio)"];
 
 export const CENTRO_COSTO_MANGIMI = "Mangimi";
 const MAPPA_DESTINAZIONE_SPECIE = { "Bovini": "bovino", "Suini": "suino", "Ovini": "ovino", "Generali": "generale", "Bovini e Ovini": "bovinoOvino", "Bovini e Suini": "bovinoSuino", "Suini e Ovini": "suinoOvino" };
@@ -42,6 +44,7 @@ export async function calcolaDatiQuantitaAnno(anno, centroCosto) {
     const chiaveRegola = `${fornitoreId}|${r.descrizione.trim().toLowerCase()}`;
     const regola = mappaRegole.get(chiaveRegola);
 
+    if (regola && !(parseFloat(regola.fattore_kg) > 0) && UNITA_SENZA_PESO.includes(regola.unita_confermata)) return; // armonizzata senza peso (versione 276)
     if (!regola || !regola.fattore_kg) {
       const chiaveSR = chiaveRegola;
       if (!senzaRegola.has(chiaveSR)) senzaRegola.set(chiaveSR, { fornitore: mappaFornitori.get(fornitoreId) || "—", descrizione: r.descrizione, count: 0 });

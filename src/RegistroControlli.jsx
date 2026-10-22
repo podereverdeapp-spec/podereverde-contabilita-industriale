@@ -25,6 +25,7 @@ const CORREZIONI = {
   C1: { tabella: "ci_cespiti", campo: "specie", etichetta: "Imputazione del cespite", tipo: "specie" },
   R1: { tabella: "ci_articoli_fattura", campo: "tipo_costo", etichetta: "Tipo di Costo della riga", tipo: "scelta", scelte: ["Fisso", "Variabile", "Ammortizzabile"] },
   R2: { tabella: "ci_fornitori", campo: "partita_iva", etichetta: "Partita IVA del fornitore", tipo: "testo" },
+  U1: { tabella: "ci_articoli_fattura", campo: "quantita", etichetta: "Quantità della riga (nell'unità della regola)", tipo: "numero" },
 };
 const DOVE_SI_CORREGGE = {
   L2: "Si decide quale dei due lotti è giusto; la correzione del lotto si fa nell'app (o con istruzione diretta del Topo).",

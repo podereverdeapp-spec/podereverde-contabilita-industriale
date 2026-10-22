@@ -8,8 +8,14 @@ import { RicomposizioneFattura } from "./FatturePassive";
 // "Da Armonizzare"; gli altri centri di costo non hanno bisogno di unità armonizzate.
 const CENTRI_CON_QUANTITA = ["Foraggio", "Mangimi", "Integratori alimentari", "Coltivazione Sementi", "Coltivazione Concimi e Fitosanitari", "Gasolio e lubrificanti"];
 
-const UNITA_OPZIONI = ["Kilogrammi", "Tons", "Quintali", "Litri", "Unità", "Rotoballe", "Balle", "Balloni", "Rotoloni"];
-const FATTORE_KG = { Kilogrammi: 1, Tons: 1000, Quintali: 100, Litri: null, Unità: null, Rotoballe: 340, Balle: 340, Balloni: 340, Rotoloni: 340 };
+// Versione 276 (decisione del Dott. Bizzarri del 22/10/2026): due scelte senza peso. «A pezzi» per i beni che si
+// comprano a pezzo e di cui il peso non serve (un filtro, un pallet, un ricambio); «Nessuna quantità» per ciò che
+// non è merce (trasporti, sconti, abbuoni, spese, contributi). La regola si salva con 0 kg: la voce risulta
+// armonizzata, conta zero chili nei report di quantità e il suo costo resta nei costi.
+export const UNITA_SENZA_PESO = ["A pezzi (il peso non serve)", "Nessuna quantità (spesa, sconto, servizio)"];
+const UNITA_OPZIONI = ["Kilogrammi", "Tons", "Quintali", "Litri", "Unità", "Rotoballe", "Balle", "Balloni", "Rotoloni", ...UNITA_SENZA_PESO];
+const FATTORE_KG = { Kilogrammi: 1, Tons: 1000, Quintali: 100, Litri: null, Unità: null, Rotoballe: 340, Balle: 340, Balloni: 340, Rotoloni: 340, [UNITA_SENZA_PESO[0]]: 0, [UNITA_SENZA_PESO[1]]: 0 };
+const regolaValida = g => parseFloat(g.fattore_kg) > 0 || UNITA_SENZA_PESO.includes(g.unita_confermata);
 
 // Similarità testuale semplice (Jaccard su parole) — solo un SUGGERIMENTO da confermare
 // a mano, mai applicata automaticamente.
@@ -66,7 +72,7 @@ export default function DaArmonizzare() {
       // fornitore+prodotto ma in un ALTRO centro di costo (es. Mangimi) non deve
       // "coprire" anche Foraggio — sono due armonizzazioni distinte, ciascuna con
       // il proprio fattore di conversione potenzialmente diverso.
-      const chiaviConRegola = new Set((regoleEsistenti || []).filter(g => g.fattore_kg).map(g => `${g.fornitore_id}|${g.descrizione_prodotto.trim().toLowerCase()}|${g.centro_costo || ""}`));
+      const chiaviConRegola = new Set((regoleEsistenti || []).filter(regolaValida).map(g => `${g.fornitore_id}|${g.descrizione_prodotto.trim().toLowerCase()}|${g.centro_costo || ""}`));
 
       const combinazioni = new Map();
       (righe || []).forEach(r => {
@@ -119,7 +125,7 @@ export default function DaArmonizzare() {
   }
 
   async function modificaRegola(g, unita, fattoreKg, righeUsate) {
-    if (!(fattoreKg > 0)) { alert("Scrivere un numero di chili maggiore di zero."); return; }
+    if (!(fattoreKg > 0) && !UNITA_SENZA_PESO.includes(unita)) { alert("Scrivere un numero di chili maggiore di zero."); return false; }
     if (!window.confirm(`Cambiare la regola di «${g.descrizione_prodotto}» (${nomiFornitori.get(g.fornitore_id) || "fornitore"}, ${g.centro_costo || "senza centro di costo"})?\n\nPrima: ${g.unita_confermata || "—"}, ${g.fattore_kg ?? "—"} kg per unità\nDopo: ${unita}, ${fattoreKg} kg per unità\n\nCambiano i chili di ${righeUsate} righe di fattura, già caricate e future.`)) return false;
     setSalvando(`regola|${g.id}`);
     try {
@@ -356,6 +362,7 @@ function RigaRegolaModifica({ g, fornitore, righe, td, salvando, onSalva, onAnnu
   const [fattore, setFattore] = useState(g.fattore_kg != null ? String(g.fattore_kg) : "");
   const manuale = unita === "Unità" || unita === "Litri";
   const kg = manuale ? parseFloat(String(fattore).replace(",", ".")) : FATTORE_KG[unita];
+  const valido = kg > 0 || UNITA_SENZA_PESO.includes(unita);
   return (
     <tr style={{ background: "#F4F8F5" }}>
       <td style={td}>{fornitore}</td>
@@ -373,8 +380,8 @@ function RigaRegolaModifica({ g, fornitore, righe, td, salvando, onSalva, onAnnu
       </td>
       <td style={{ ...td, textAlign: "right" }}>{righe}</td>
       <td style={{ ...td, whiteSpace: "nowrap" }}>
-        <button onClick={() => onSalva(unita, kg)} disabled={salvando || !(kg > 0)}
-          style={{ background: kg > 0 ? C.primary : C.muted, color: "#fff", border: "none", borderRadius: 6, padding: "4px 10px", fontSize: 11.5, fontWeight: 700, cursor: kg > 0 ? "pointer" : "not-allowed", marginRight: 6 }}>
+        <button onClick={() => onSalva(unita, kg)} disabled={salvando || !valido}
+          style={{ background: valido ? C.primary : C.muted, color: "#fff", border: "none", borderRadius: 6, padding: "4px 10px", fontSize: 11.5, fontWeight: 700, cursor: valido ? "pointer" : "not-allowed", marginRight: 6 }}>
           {salvando ? "Salvataggio…" : "✓ Salva"}
         </button>
         <button onClick={onAnnulla} disabled={salvando}

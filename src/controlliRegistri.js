@@ -37,6 +37,8 @@ export function dataIt(d) {
   return `${g}/${m}/${a}`;
 }
 const STATI_USCITI = ["deceduto", "macellato", "venduto", "uscito", "trasferito"];
+// Centri di costo con quantità tracciate (gli stessi della pagina «Armonizzare Unità Misura Fatture»)
+const CENTRI_CON_QUANTITA = ["Foraggio", "Mangimi", "Integratori alimentari", "Coltivazione Sementi", "Coltivazione Concimi e Fitosanitari", "Gasolio e lubrificanti"];
 
 async function leggi(nome, colonne, filtro) {
   const { data, error } = await fetchAllPages((da, a) => {
@@ -51,7 +53,7 @@ async function leggi(nome, colonne, filtro) {
 // ── I controlli ──────────────────────────────────────────────────────────────────────────
 // Ogni anomalia: { codice, area, tabella, riga_id, titolo, descrizione }
 export async function trovaAnomalie() {
-  const [animali, lotti, eventi, unita, cespiti, report, costiUnita, mandria, righeFatt, fattureTeste, fornitori] = await Promise.all([
+  const [animali, lotti, eventi, unita, cespiti, report, costiUnita, mandria, righeFatt, fattureTeste, fornitori, righeQuantita, regole] = await Promise.all([
     leggi("animali", "id,bdn,nome,specie,sesso,provenienza,stato,nascita,data_ingresso,data_uscita,prezzo_acquisto,numero_fattura,riproduttore"),
     leggi("lotti_suini", "id,codice,codice_lotto,madre_id,padre_id,data_parto,nati_vivi,nati_morti,tipo_provenienza,prezzo_acquisto,numero_fattura,specie"),
     leggi("eventi_riproduttivi", "id,animale_id,tipo_evento,data_evento,padre_id,nati_vivi,nati_morti"),
@@ -63,6 +65,8 @@ export async function trovaAnomalie() {
     leggi("ci_articoli_fattura", "id,fattura_id,descrizione,area,tipo_costo,totale_riga", q => q.or("tipo_costo.is.null,tipo_costo.eq.")),
     leggi("ci_fatture", "id,tipo,numero,data,fornitore_id"),
     leggi("ci_fornitori", "id,nome,partita_iva"),
+    leggi("ci_articoli_fattura", "id,fattura_id,descrizione,centro_costo,quantita,unita_misura,totale_riga", q => q.in("centro_costo", CENTRI_CON_QUANTITA)),
+    leggi("ci_regole_armonizzazione_unita", "id,fornitore_id,descrizione_prodotto,centro_costo,unita_confermata,fattore_kg"),
   ]);
   const perId = new Map(animali.map(a => [a.id, a]));
   const nomeA = id => { const a = perId.get(id); return a ? (a.bdn || a.nome || `capo ${a.id}`) : `capo ${id}`; };
@@ -195,7 +199,38 @@ export async function trovaAnomalie() {
     add("R2", "Fatture", "ci_fornitori", fo.id, `Fornitore «${fo.nome}» senza partita IVA`,
       "Ha fatture registrate. Senza partita IVA viene riconosciuto solo se il nome è scritto esattamente uguale: le sue prossime fatture possono creare un fornitore doppio.");
 
-  return { trovate, nonEseguibili, controlliEseguiti: 18 - nonEseguibili.length * 3 };
+  // U1 – quantità scritta in un'unità diversa da quella della regola di armonizzazione (versione 276, decisione
+  // del Dott. Bizzarri del 22/10/2026): il prezzo al kg della riga è almeno 5 volte più alto o più basso del prezzo al
+  // kg tipico dello stesso prodotto (mediana delle sue righe, se sono almeno 3). Da kg a quintali o da quintali a
+  // tonnellate il prezzo cambia di 10 o 100 volte; le normali variazioni di prezzo restano sotto le 2 volte.
+  const regolaPer = new Map(regole.filter(g => parseFloat(g.fattore_kg) > 0)
+    .map(g => [`${g.fornitore_id}|${(g.descrizione_prodotto || "").trim().toLowerCase()}|${g.centro_costo || ""}`, g]));
+  const gruppi = new Map();
+  for (const r of righeQuantita) {
+    const f = fatturaPerId.get(r.fattura_id);
+    if (!f || f.tipo !== "PASSIVA" || /TRASPORT|SCONTO/i.test(r.descrizione || "")) continue;
+    const g = regolaPer.get(`${f.fornitore_id}|${(r.descrizione || "").trim().toLowerCase()}|${r.centro_costo || ""}`);
+    const q = parseFloat(r.quantita), t = parseFloat(r.totale_riga);
+    if (!g || !(q > 0) || !(t > 0)) continue;
+    const prezzoKg = t / (q * parseFloat(g.fattore_kg));
+    if (!gruppi.has(g.id)) gruppi.set(g.id, { g, righe: [] });
+    gruppi.get(g.id).righe.push({ r, f, prezzoKg });
+  }
+  const euroKg = n => n.toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: n < 1 ? 4 : 2 });
+  for (const { g, righe } of gruppi.values()) {
+    if (righe.length < 3) continue;
+    const ord = righe.map(x => x.prezzoKg).sort((a, b) => a - b);
+    const m = ord.length % 2 ? ord[(ord.length - 1) / 2] : (ord[ord.length / 2 - 1] + ord[ord.length / 2]) / 2;
+    for (const { r, f, prezzoKg } of righe) {
+      if (prezzoKg < 5 * m && prezzoKg > m / 5) continue;
+      add("U1", "Fatture", "ci_articoli_fattura", r.id, `«${r.descrizione}» (${fornitorePerId.get(f.fornitore_id)?.nome || "fornitore ignoto"}): quantità forse in un'unità diversa`,
+        `Fattura ${f.numero} del ${dataIt(f.data)}: quantità ${String(r.quantita).replace(".", ",")} ${r.unita_misura || "(unità non scritta)"}, ${Number(r.totale_riga).toLocaleString("it-IT", { minimumFractionDigits: 2 })} €. ` +
+        `Con la regola «${g.unita_confermata}» (${String(g.fattore_kg).replace(".", ",")} kg per unità) costa ${euroKg(prezzoKg)} €/kg, mentre le ${righe.length} righe di questo prodotto costano di solito ${euroKg(m)} €/kg. ` +
+        "Se la quantità in fattura è in un'altra unità, si corregge qui la quantità della riga; se è sbagliata la regola, si cambia in «Armonizzare Unità Misura Fatture» → «Regole confermate».");
+    }
+  }
+
+  return { trovate, nonEseguibili, controlliEseguiti: 19 - nonEseguibili.length * 3 };
 }
 
 // ── Scrittura nel quaderno e nel diario ─────────────────────────────────────────────────
