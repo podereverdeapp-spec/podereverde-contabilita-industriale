@@ -45,7 +45,7 @@ import ImportFattureAcquistoAnimali from "./ImportFattureAcquistoAnimali";
 import RiepilogoCostoAnimali from "./RiepilogoCostoAnimali";
 import PrezzoPareggio from "./PrezzoPareggio";
 import DocumentoIstruzioni from "./DocumentoIstruzioni";
-import { ISTRUZIONI_CARICA_FATTURE, PIANO_DEI_CONTI, ISTRUZIONI_COSTI_DIRETTI } from "./istruzioniDati";
+import { ISTRUZIONI_CARICA_FATTURE, PIANO_DEI_CONTI, ISTRUZIONI_COSTI_DIRETTI, ISTRUZIONI_COSTI_LAVORO } from "./istruzioniDati";
 import IstruzioniAnagrafiche from "./IstruzioniAnagrafiche";
 import IstruzioniPrezziAcquisto from "./IstruzioniPrezziAcquisto";
 import IstruzioniAnimali from "./IstruzioniAnimali";
@@ -130,7 +130,9 @@ const MENU = [
       { id: "costidiretti", label: "Carica Costi Diretti", icon: "💼" },
     ]},
     // Cartella 3: le pagine si progettano con il Dott. Bizzarri. Versione 270: il prompt per il carico dei cedolini; versione 271: carico e consultazione.
+    // Versione 273: le istruzioni, dal Word approvato dal Dott. Bizzarri il 22/10/2026 alle 11:31.
     { tipo: "sottocartella", id: "sub-dati-lavoro", label: "3. Carica Costi del Lavoro", icon: "👷", voci: [
+      { id: "istr-costi-lavoro", label: "Istruzioni Carica Costi del Lavoro", icon: "📖" },
       { id: "prompt-cedolini", label: "Prompt per carico cedolini", icon: "🤖" },
       { id: "carica-costi-lavoro", label: "Carica Costi del Lavoro", icon: "📥" },
       { id: "consulta-costi-lavoro", label: "Consulta Costi del Lavoro", icon: "🔍" },
@@ -358,7 +360,7 @@ function Programma({ utente }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 272</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 273</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -516,6 +518,7 @@ function Programma({ utente }) {
         {tab === "istr-fatture" && <DocumentoIstruzioni doc={ISTRUZIONI_CARICA_FATTURE} />}
         {tab === "piano-dei-conti" && <DocumentoIstruzioni doc={PIANO_DEI_CONTI} />}
         {tab === "istr-costi-diretti" && <DocumentoIstruzioni doc={ISTRUZIONI_COSTI_DIRETTI} />}
+        {tab === "istr-costi-lavoro" && <DocumentoIstruzioni doc={ISTRUZIONI_COSTI_LAVORO} />}
         {tab === "istr-ricerca" && <IstruzioniAnagrafiche />}
         {tab === "istr-prezzi-acquisto" && <IstruzioniPrezziAcquisto />}
         {tab === "istr-animali" && <IstruzioniAnimali />}
