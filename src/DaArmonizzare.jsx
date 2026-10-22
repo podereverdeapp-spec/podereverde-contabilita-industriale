@@ -6,6 +6,9 @@ import { RicomposizioneFattura } from "./FatturePassive";
 
 // Centri di costo con quantità tracciate per i report — solo questi generano voci
 // "Da Armonizzare"; gli altri centri di costo non hanno bisogno di unità armonizzate.
+// Versione 277: «1 riga di fattura» al singolare, «N righe di fattura» al plurale.
+const righeDiFattura = n => n === 1 ? "1 riga di fattura" : `${n} righe di fattura`;
+
 const CENTRI_CON_QUANTITA = ["Foraggio", "Mangimi", "Integratori alimentari", "Coltivazione Sementi", "Coltivazione Concimi e Fitosanitari", "Gasolio e lubrificanti"];
 
 // Versione 276 (decisione del Dott. Bizzarri del 22/10/2026): due scelte senza peso. «A pezzi» per i beni che si
@@ -126,7 +129,7 @@ export default function DaArmonizzare() {
 
   async function modificaRegola(g, unita, fattoreKg, righeUsate) {
     if (!(fattoreKg > 0) && !UNITA_SENZA_PESO.includes(unita)) { alert("Scrivere un numero di chili maggiore di zero."); return false; }
-    if (!window.confirm(`Cambiare la regola di «${g.descrizione_prodotto}» (${nomiFornitori.get(g.fornitore_id) || "fornitore"}, ${g.centro_costo || "senza centro di costo"})?\n\nPrima: ${g.unita_confermata || "—"}, ${g.fattore_kg ?? "—"} kg per unità\nDopo: ${unita}, ${fattoreKg} kg per unità\n\nCambiano i chili di ${righeUsate} righe di fattura, già caricate e future.`)) return false;
+    if (!window.confirm(`Cambiare la regola di «${g.descrizione_prodotto}» (${nomiFornitori.get(g.fornitore_id) || "fornitore"}, ${g.centro_costo || "senza centro di costo"})?\n\nPrima: ${g.unita_confermata || "—"}, ${g.fattore_kg ?? "—"} kg per unità\nDopo: ${unita}, ${fattoreKg} kg per unità\n\n${righeUsate === 1 ? "Cambiano i chili dell'unica riga di fattura già caricata" : `Cambiano i chili delle ${righeUsate} righe di fattura già caricate`} e di quelle future.`)) return false;
     setSalvando(`regola|${g.id}`);
     try {
       const { data, error } = await supabase.from("ci_regole_armonizzazione_unita").update({ unita_confermata: unita, fattore_kg: fattoreKg }).eq("id", g.id).select("id");
@@ -139,7 +142,7 @@ export default function DaArmonizzare() {
   }
 
   async function eliminaRegola(g, righeUsate) {
-    if (!window.confirm(`Eliminare la regola di «${g.descrizione_prodotto}» (${nomiFornitori.get(g.fornitore_id) || "fornitore"}, ${g.centro_costo || "senza centro di costo"})?\n\nLe ${righeUsate} righe di fattura di questo prodotto escono dai chili finché non si conferma di nuovo l'unità: il prodotto torna tra quelli da armonizzare.`)) return;
+    if (!window.confirm(`Eliminare la regola di «${g.descrizione_prodotto}» (${nomiFornitori.get(g.fornitore_id) || "fornitore"}, ${g.centro_costo || "senza centro di costo"})?\n\n${righeUsate === 1 ? "La riga di fattura di questo prodotto esce" : `Le ${righeUsate} righe di fattura di questo prodotto escono`} dai chili finché non si conferma di nuovo l'unità: il prodotto torna tra quelli da armonizzare.`)) return;
     setSalvando(`regola|${g.id}`);
     try {
       const { error } = await supabase.from("ci_regole_armonizzazione_unita").delete().eq("id", g.id);
@@ -153,9 +156,9 @@ export default function DaArmonizzare() {
 
   return (
     <div style={{ padding: 20, maxWidth: 1100, margin: "0 auto" }}>
-      <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Da Armonizzare</h1>
+      <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Armonizzare Unità Misura Fatture</h1>
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 20 }}>
-        Prodotti nei centri di costo con quantità tracciate (Foraggio, Mangimi, Coltivazione Sementi, Coltivazione Concimi e Fitosanitari, Gasolio e lubrificanti) per cui non è ancora confermata l'unità di misura — necessaria per i report di quantità. Una volta confermata una regola qui, si applica automaticamente a tutte le fatture future dello stesso fornitore e prodotto.
+        Prodotti nei centri di costo con quantità tracciate (Foraggio, Mangimi, Integratori alimentari, Coltivazione Sementi, Coltivazione Concimi e Fitosanitari, Gasolio e lubrificanti) per cui non è ancora confermata l'unità di misura — necessaria per i report di quantità. Una volta confermata una regola qui, si applica automaticamente a tutte le fatture future dello stesso fornitore e prodotto.
       </p>
 
       {!loading && (
@@ -217,7 +220,7 @@ function RigaArmonizza({ c, onConferma, salvando }) {
     <div style={{ background: "#FFF7E6", border: `1.5px solid ${C.yellow}`, borderRadius: 10, padding: 14 }}>
       <div style={{ fontWeight: 700 }}>{c.fornitore} — {c.descrizione}</div>
       <div style={{ fontSize: 12, color: C.muted, marginBottom: 8 }}>
-        Centro di costo: {c.centro_costo} · comparso in {c.count} righe fattura, mai con un'unità confermata.
+        Centro di costo: {c.centro_costo} · comparso in {righeDiFattura(c.count)}, mai con un'unità confermata.
         {" "}
         <button onClick={() => setEspansa(e => !e)}
           style={{ background: "none", border: "none", color: C.blue, textDecoration: "underline", cursor: "pointer", fontSize: 12, padding: 0 }}>
