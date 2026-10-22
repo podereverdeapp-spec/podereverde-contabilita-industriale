@@ -11,6 +11,12 @@
 //  – alla conferma si salvano in scheda_prima i valori della scheda prima della scrittura;
 //  – una proposta scartata («Rifiuta», «Non è questo») si ripristina dal gruppo «Da valutare»;
 //  – una riga «Senza capo» si riapre e torna tra quelle da abbinare.
+// Versione 277 (decisione del Dott. Bizzarri del 22/10/2026): anche i lotti di suini acquistati entrano tra le proposte.
+//  – proposta sicura se il numero di lotto scritto in fattura è il codice del lotto; altrimenti candidati da valutare
+//    (lotti non ancora collegati, entrati entro 120 giorni, punti come per i capi; il prezzo del lotto si confronta
+//    con l'importo della riga, perché è il prezzo di tutto il lotto);
+//  – alla conferma si scrivono sul lotto fornitore, numero e data della fattura e prezzo d'acquisto con le stesse regole
+//    delle schede dei capi (solo dove vuoti, valori diversi affiancati), e l'annullamento li può rimettere come prima.
 import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
@@ -48,6 +54,30 @@ function confronto(r, a, nomeFornitore) {
     { campo: "prezzo_acquisto", etichetta: "Prezzo d'acquisto", scheda: parseFloat(a.prezzo_acquisto) > 0 ? round2(parseFloat(a.prezzo_acquisto)) : "", fattura: prezzo ?? "", uguale: parseFloat(a.prezzo_acquisto) > 0 && prezzo != null && round2(parseFloat(a.prezzo_acquisto)) === prezzo, euro: true },
   ];
 }
+// Lotto di suini acquistato: il prezzo è quello di tutto il lotto, si confronta con l'importo della riga
+const importoRiga = r => parseFloat(r.importo) > 0 ? round2(parseFloat(r.importo)) : null;
+const nomeLotto = lo => lo.codice_lotto || lo.codice;
+function confrontoLotto(r, lo, nomeFornitore) {
+  const imp = importoRiga(r);
+  return [
+    { campo: "fornitore", etichetta: "Fornitore", scheda: lo.fornitore || "", fattura: nomeFornitore || "", uguale: stessoFornitore(lo.fornitore, nomeFornitore) },
+    { campo: "numero_fattura", etichetta: "Numero fattura", scheda: lo.numero_fattura || "", fattura: r.numero_fattura || "", uguale: (lo.numero_fattura || "").trim().toUpperCase() === (r.numero_fattura || "").trim().toUpperCase() },
+    { campo: "data_fattura", etichetta: "Data fattura", scheda: lo.data_fattura || "", fattura: r.data_fattura || "", uguale: lo.data_fattura === r.data_fattura, data: true },
+    { campo: "prezzo_acquisto", etichetta: "Prezzo d'acquisto del lotto", scheda: parseFloat(lo.prezzo_acquisto) > 0 ? round2(parseFloat(lo.prezzo_acquisto)) : "", fattura: imp ?? "", uguale: parseFloat(lo.prezzo_acquisto) > 0 && imp != null && round2(parseFloat(lo.prezzo_acquisto)) === imp, euro: true },
+  ];
+}
+function motiviLotto(r, lo, nomeFornitore, perCodice) {
+  const m = [];
+  if (perCodice) m.push("il numero di lotto scritto in fattura è il codice del lotto");
+  if (stessoFornitore(lo.fornitore, nomeFornitore)) m.push("stesso fornitore");
+  if ((lo.numero_fattura || "").trim() && (lo.numero_fattura || "").trim().toUpperCase() === (r.numero_fattura || "").trim().toUpperCase()) m.push("stesso numero di fattura");
+  const g = giorni(lo.data_parto, r.data_fattura);
+  if (g != null) m.push(g <= 15 ? `entrato ${g} giorni dalla data della fattura` : `ATTENZIONE: entrato a ${g} giorni dalla data della fattura`);
+  const imp = importoRiga(r);
+  if (imp != null && parseFloat(lo.prezzo_acquisto) > 0) m.push(round2(parseFloat(lo.prezzo_acquisto)) === imp ? "stesso prezzo" : `ATTENZIONE: prezzo diverso (lotto ${euro(lo.prezzo_acquisto)}, fattura ${euro(imp)})`);
+  if (specieDi(r.specie) && specieDi(r.specie) !== "suino") m.push(`ATTENZIONE: specie diversa (fattura ${r.specie}, lotto di suini)`);
+  return m;
+}
 function motivi(r, a, nomeFornitore, perMatricola) {
   const m = [];
   if (perMatricola) m.push("la matricola scritta in fattura è quella del capo");
@@ -60,8 +90,12 @@ function motivi(r, a, nomeFornitore, perMatricola) {
   return m;
 }
 
-function PannelloConferma({ r, a, nomeFornitore, motivo, onFatto, onAnnulla }) {
-  const righe = confronto(r, a, nomeFornitore);
+function PannelloConferma({ r, a, lotto, nomeFornitore, motivo, onFatto, onAnnulla }) {
+  // a = capo dell'app (tabella animali) oppure lotto = lotto di suini acquistato (tabella lotti_suini)
+  const ogg = lotto || a;
+  const tabella = lotto ? "lotti_suini" : "animali";
+  const nomeOgg = lotto ? `lotto ${nomeLotto(lotto)}` : (a.bdn || a.nome);
+  const righe = lotto ? confrontoLotto(r, lotto, nomeFornitore) : confronto(r, a, nomeFornitore);
   const [scelte, setScelte] = useState(() => Object.fromEntries(righe.map(x => [x.campo, x.scheda === "" && x.fattura !== "" ? "fattura" : "scheda"])));
   const [salvando, setSalvando] = useState(false);
   const mostra = x => x === "" ? "vuoto" : x;
@@ -70,19 +104,19 @@ function PannelloConferma({ r, a, nomeFornitore, motivo, onFatto, onAnnulla }) {
     const daScrivere = {};
     righe.forEach(x => { if (scelte[x.campo] === "fattura" && x.fattura !== "" && !x.uguale) daScrivere[x.campo] = x.fattura; });
     const elenco = Object.entries(daScrivere).map(([k, v]) => `${righe.find(x => x.campo === k).etichetta}: «${mostra(righe.find(x => x.campo === k).scheda)}» → «${v}»`);
-    if (!window.confirm(`Confermi l'abbinamento?\n\nFattura ${r.numero_fattura || "senza numero"} del ${dataIt(r.data_fattura)} (${euro(r.importo)})\n→ ${a.bdn || a.nome}\n\n${elenco.length ? `Sulla scheda dell'app verrà scritto:\n${elenco.join("\n")}` : "Sulla scheda dell'app non viene scritto niente."}`)) return;
+    if (!window.confirm(`Confermi l'abbinamento?\n\nFattura ${r.numero_fattura || "senza numero"} del ${dataIt(r.data_fattura)} (${euro(r.importo)})\n→ ${nomeOgg}\n\n${elenco.length ? `Sulla scheda dell'app verrà scritto:\n${elenco.join("\n")}` : "Sulla scheda dell'app non viene scritto niente."}`)) return;
     setSalvando(true);
     try {
       if (Object.keys(daScrivere).length) {
-        let q = supabase.from("animali").update(daScrivere).eq("id", a.id);
-        for (const k of Object.keys(daScrivere)) { const v = a[k]; q = (v === null || v === undefined) ? q.is(k, null) : q.eq(k, v); }
+        let q = supabase.from(tabella).update(daScrivere).eq("id", ogg.id);
+        for (const k of Object.keys(daScrivere)) { const v = ogg[k]; q = (v === null || v === undefined) ? q.is(k, null) : q.eq(k, v); }
         const { data, error } = await q.select("id");
         if (error) throw new Error(error.message);
         if (!data || data.length !== 1) throw new Error("La scheda è stata cambiata da qualcun altro nel frattempo (oppure manca il permesso): niente salvato. Ricaricare la pagina.");
       }
-      const prima = Object.fromEntries(Object.keys(daScrivere).map(k => [k, a[k] ?? null]));
+      const prima = Object.fromEntries(Object.keys(daScrivere).map(k => [k, ogg[k] ?? null]));
       const { data: d2, error: e2 } = await supabase.from("ci_report_acquisto_animali").update({
-        animale_id: a.id, stato: "ABBINATO", abbinamento_motivo: motivo, abbinato_at: new Date().toISOString(),
+        ...(lotto ? { lotto_id: lotto.id } : { animale_id: a.id }), stato: "ABBINATO", abbinamento_motivo: motivo, abbinato_at: new Date().toISOString(),
         scheda_prima: Object.keys(prima).length ? prima : null,
       }).eq("id", r.id).is("animale_id", null).is("lotto_id", null).select("id");
       if (e2) throw new Error(e2.message);
@@ -135,21 +169,23 @@ function PannelloAnnulla({ r, a, lotto, onFatto, onChiudi }) {
   const [motivo, setMotivo] = useState("");
   const [salvando, setSalvando] = useState(false);
   const nome = a ? (a.bdn || a.nome) : r.animale_id ? `capo n. ${r.animale_id}` : lotto ? `lotto ${lotto.codice_lotto || lotto.codice}` : `lotto n. ${r.lotto_id}`;
+  const ogg = a || lotto; // scheda dell'app su cui si rimettono i valori (capo o lotto)
+  const tabella = a ? "animali" : "lotti_suini";
 
   async function annulla() {
     if (!motivo.trim()) { alert("Scrivere il motivo dell'annullamento."); return; }
     const daScrivere = {};
-    if (a) CAMPI_SCHEDA.forEach(([k]) => {
+    if (ogg) CAMPI_SCHEDA.forEach(([k]) => {
       const nuovo = scelte[k] === "prima" ? (prima[k] ?? null) : scelte[k] === "svuota" ? null : undefined;
-      if (nuovo !== undefined && (a[k] ?? null) !== nuovo) daScrivere[k] = nuovo;
+      if (nuovo !== undefined && (ogg[k] ?? null) !== nuovo) daScrivere[k] = nuovo;
     });
-    const elenco = Object.entries(daScrivere).map(([k, v]) => `${CAMPI_SCHEDA.find(x => x[0] === k)[1]}: «${mostraValore(k, a[k])}» → «${mostraValore(k, v)}»`);
+    const elenco = Object.entries(daScrivere).map(([k, v]) => `${CAMPI_SCHEDA.find(x => x[0] === k)[1]}: «${mostraValore(k, ogg[k])}» → «${mostraValore(k, v)}»`);
     if (!window.confirm(`Annullare l'abbinamento?\n\nFattura ${r.numero_fattura || "senza numero"} del ${dataIt(r.data_fattura)} (${euro(r.importo)})\n→ ${nome}\n\nLa riga torna da abbinare e ${nome} non verrà più proposto per questa riga (si può ripristinare da «Da valutare»).\n\n${elenco.length ? `Sulla scheda dell'app verrà scritto:\n${elenco.join("\n")}` : "Sulla scheda dell'app non viene scritto niente."}`)) return;
     setSalvando(true);
     try {
-      if (a && Object.keys(daScrivere).length) {
-        let q = supabase.from("animali").update(daScrivere).eq("id", a.id);
-        for (const k of Object.keys(daScrivere)) { const v = a[k]; q = (v === null || v === undefined) ? q.is(k, null) : q.eq(k, v); }
+      if (ogg && Object.keys(daScrivere).length) {
+        let q = supabase.from(tabella).update(daScrivere).eq("id", ogg.id);
+        for (const k of Object.keys(daScrivere)) { const v = ogg[k]; q = (v === null || v === undefined) ? q.is(k, null) : q.eq(k, v); }
         const { data, error } = await q.select("id");
         if (error) throw new Error(error.message);
         if (!data || data.length !== 1) throw new Error("La scheda è stata cambiata da qualcun altro nel frattempo (oppure manca il permesso): niente salvato. Ricaricare la pagina.");
@@ -171,14 +207,14 @@ function PannelloAnnulla({ r, a, lotto, onFatto, onChiudi }) {
 
   return (
     <div style={{ background: "#FDF1F0", border: `1px solid ${C.border}`, borderRadius: 8, padding: 12, marginTop: 10 }}>
-      {a ? (<>
-        <div style={{ fontSize: 12.5, marginBottom: 6 }}>Cosa fare dei dati scritti sulla scheda di <b>{nome}</b> nell'app:</div>
+      {ogg ? (<>
+        <div style={{ fontSize: 12.5, marginBottom: 6 }}>Cosa fare dei dati scritti sulla scheda {a ? "di" : "del"} <b>{nome}</b> nell'app:</div>
         <table style={{ fontSize: 13 }}>
           <thead><tr style={{ color: C.muted, textAlign: "left" }}><th style={{ padding: 4 }}>Campo</th><th style={{ padding: 4 }}>Scheda oggi</th><th style={{ padding: 4 }}>Prima dell'abbinamento</th><th style={{ padding: 4 }}>Cosa fare</th></tr></thead>
           <tbody>{CAMPI_SCHEDA.map(([k, et]) => (
             <tr key={k} style={{ borderTop: `1px solid ${C.border}` }}>
               <td style={{ padding: 4, fontWeight: 700 }}>{et}</td>
-              <td style={{ padding: 4 }}>{mostraValore(k, a[k])}</td>
+              <td style={{ padding: 4 }}>{mostraValore(k, ogg[k])}</td>
               <td style={{ padding: 4 }}>{k in prima ? mostraValore(k, prima[k]) : <span style={{ color: C.muted }}>non scritto da questo abbinamento o non noto</span>}</td>
               <td style={{ padding: 4 }}>
                 <span style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -191,7 +227,7 @@ function PannelloAnnulla({ r, a, lotto, onFatto, onChiudi }) {
             </tr>))}
           </tbody>
         </table>
-      </>) : <div style={{ fontSize: 12.5 }}>{r.animale_id ? "Il capo non si trova più nell'app" : "La riga è collegata a un lotto"}: annullando, si toglie solo il collegamento. I dati nell'app non cambiano.</div>}
+      </>) : <div style={{ fontSize: 12.5 }}>{r.animale_id ? "Il capo non si trova più nell'app" : "Il lotto non si trova più nell'app"}: annullando, si toglie solo il collegamento. I dati nell'app non cambiano.</div>}
       <div style={{ marginTop: 10, fontSize: 12.5 }}>
         Motivo dell'annullamento (obbligatorio):{" "}
         <input value={motivo} onChange={e => setMotivo(e.target.value)} placeholder="es. capo sbagliato, la fattura è di IT…"
@@ -241,6 +277,8 @@ export default function AbbinamentiFatture() {
   const lottoPerId = new Map(lotti.map(x => [x.id, x]));
   const libere = righe.filter(r => !r.animale_id && !r.lotto_id && !["RIFIUTATA", "NON_ABBINABILE"].includes(r.stato));
   const trasporti = libere.filter(r => r.fonte === "TRASPORTO_INGRESSO");
+  const lottiCollegati = new Set(righe.filter(r => r.lotto_id).map(r => r.lotto_id));
+  const perCodiceLotto = new Map(lotti.flatMap(x => [[normBdn(x.codice_lotto), x], [normBdn(x.codice), x]]).filter(([k]) => k));
   const sicure = [], daValutare = [];
   for (const r of libere.filter(r => r.fonte !== "TRASPORTO_INGRESSO")) {
     const nomeF = fornitori.get(r.fornitore_id);
@@ -250,6 +288,12 @@ export default function AbbinamentiFatture() {
       const m = motivi(r, a, nomeF, true);
       if (giaCollegati.has(a.id)) m.push("ATTENZIONE: questo capo è già collegato a un'altra riga di fattura");
       sicure.push({ r, a, nomeF, motivi: m }); continue;
+    }
+    const loS = r.nr_lotto ? perCodiceLotto.get(normBdn(r.nr_lotto)) : null;
+    if (loS && !no.has(`lotto:${loS.id}`)) {
+      const m = motiviLotto(r, loS, nomeF, true);
+      if (lottiCollegati.has(loS.id)) m.push("ATTENZIONE: questo lotto è già collegato a un'altra riga di fattura");
+      sicure.push({ r, lotto: loS, nomeF, motivi: m }); continue;
     }
     // Candidati: capi acquistati, non già collegati, stessa specie se indicata, entrati entro 120 giorni
     const cand = animali.filter(x => x.provenienza === "Acquistato" && !giaCollegati.has(x.id) && !no.has(`animale:${x.id}`)
@@ -261,8 +305,19 @@ export default function AbbinamentiFatture() {
         const p = prezzoRiga(r); if (p != null && round2(parseFloat(x.prezzo_acquisto) || 0) === p) punti += 2;
         if ((x.numero_fattura || "").trim() && (x.numero_fattura || "").trim().toUpperCase() === (r.numero_fattura || "").trim().toUpperCase()) punti += 3;
         return { x, punti };
-      }).filter(c => c.punti >= 3).sort((p, q) => q.punti - p.punti).slice(0, 5);
-    daValutare.push({ r, nomeF, cand });
+      }).filter(c => c.punti >= 3);
+    // Lotti di suini acquistati, non già collegati, entrati entro 120 giorni (solo se la riga non è di un'altra specie)
+    const candLotti = (specieDi(r.specie) && specieDi(r.specie) !== "suino") ? [] : lotti.filter(x => !lottiCollegati.has(x.id) && !no.has(`lotto:${x.id}`)
+      && (giorni(x.data_parto, r.data_fattura) ?? 999) <= 120)
+      .map(x => {
+        let punti = 0;
+        if (stessoFornitore(x.fornitore, nomeF)) punti += 3;
+        const g = giorni(x.data_parto, r.data_fattura); if (g != null) punti += g <= 7 ? 2 : g <= 30 ? 1 : 0;
+        const imp = importoRiga(r); if (imp != null && round2(parseFloat(x.prezzo_acquisto) || 0) === imp) punti += 2;
+        if ((x.numero_fattura || "").trim() && (x.numero_fattura || "").trim().toUpperCase() === (r.numero_fattura || "").trim().toUpperCase()) punti += 3;
+        return { x, lotto: true, punti };
+      }).filter(c => c.punti >= 3);
+    daValutare.push({ r, nomeF, cand: [...cand, ...candLotti].sort((p, q) => q.punti - p.punti).slice(0, 5) });
   }
   const daConfermare = righe.filter(r => (r.animale_id || r.lotto_id) && r.stato !== "ABBINATO");
   const abbinate = righe.filter(r => r.stato === "ABBINATO");
@@ -276,7 +331,7 @@ export default function AbbinamentiFatture() {
     if (error) alert(`⚠️ ${error.message}`); else carica();
   }
   async function nessuno(r) {
-    const motivo = window.prompt("Nessun capo corrisponde: scrivere il motivo (es. «capo mai registrato nell'app»).");
+    const motivo = window.prompt("Nessun capo o lotto corrisponde: scrivere il motivo (es. «capo mai registrato nell'app»).");
     if (!motivo) return;
     const { error } = await supabase.from("ci_report_acquisto_animali").update({ stato: "NON_ABBINABILE", rifiuto_motivo: `${r.rifiuto_motivo ? r.rifiuto_motivo + "\n" : ""}nessun capo — ${motivo} — ${new Date().toLocaleDateString("it-IT")}` }).eq("id", r.id);
     if (error) alert(`⚠️ ${error.message}`); else carica();
@@ -288,7 +343,7 @@ export default function AbbinamentiFatture() {
   }
 
   async function ripristina(r, x) {
-    const nomeC = x.m[1] === "animale" ? (perId.get(Number(x.m[2]))?.bdn || `capo n. ${x.m[2]}`) : `lotto n. ${x.m[2]}`;
+    const nomeC = x.m[1] === "animale" ? (perId.get(Number(x.m[2]))?.bdn || `capo n. ${x.m[2]}`) : (lottoPerId.get(Number(x.m[2])) ? `lotto ${nomeLotto(lottoPerId.get(Number(x.m[2])))}` : `lotto n. ${x.m[2]}`);
     if (!window.confirm(`Ripristinare la proposta ${nomeC} per questa riga?\n\nScartata con il motivo: ${x.m[3]}`)) return;
     const righeTesto = (r.rifiuto_motivo || "").split("\n");
     righeTesto[x.i] = `ripristinata la proposta ${x.m[1]} n. ${x.m[2]} (scartata: ${x.m[3]}) — ${new Date().toLocaleDateString("it-IT")}`;
@@ -310,7 +365,7 @@ export default function AbbinamentiFatture() {
         <div style={{ color: C.muted, fontWeight: 700, marginBottom: 2 }}>Proposte scartate per questa riga:</div>
         {el.map(x => (
           <div key={x.i} style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 3 }}>
-            <span>{x.m[1] === "animale" ? (perId.get(Number(x.m[2]))?.bdn || `capo n. ${x.m[2]}`) : `lotto n. ${x.m[2]}`} — {x.m[3]}</span>
+            <span>{x.m[1] === "animale" ? (perId.get(Number(x.m[2]))?.bdn || `capo n. ${x.m[2]}`) : (lottoPerId.get(Number(x.m[2])) ? `lotto ${nomeLotto(lottoPerId.get(Number(x.m[2])))}` : `lotto n. ${x.m[2]}`)} — {x.m[3]}</span>
             <button onClick={() => ripristina(r, x)} style={{ ...bottone(C.blue, false), padding: "2px 8px", fontSize: 11.5 }}>↩ Ripristina la proposta</button>
           </div>))}
       </div>
@@ -326,6 +381,7 @@ export default function AbbinamentiFatture() {
     </div>
   );
   const Capo = ({ a }) => <span><b>{a.bdn || a.nome}</b>{a.nome && a.bdn ? ` (${a.nome})` : ""} — {a.specie}{a.razza ? `, ${a.razza}` : ""}, entrato il {dataIt(a.data_ingresso)}, {a.stato}</span>;
+  const Lotto = ({ lo }) => <span><b>lotto {nomeLotto(lo)}</b> — suini acquistati da {lo.fornitore || "fornitore non scritto"}, entrati il {dataIt(lo.data_parto)}, prezzo del lotto {euro(lo.prezzo_acquisto)}</span>;
   const scheda = { background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 14px", marginBottom: 10 };
   const VISTE = [["sicure", `Proposte sicure (${sicure.length})`], ["valutare", `Da valutare (${daValutare.length})`], ["confermare", `Già collegate, da confermare (${daConfermare.length})`],
     ["trasporti", `Trasporti (${trasporti.length})`], ["abbinate", `Abbinate (${abbinate.length})`], ["scartate", `Senza capo (${senzaCapo.length})`]];
@@ -333,40 +389,40 @@ export default function AbbinamentiFatture() {
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: 20 }}>
       <h2 style={{ margin: 0, color: C.primary }}>🔗 Abbinamenti Fatture Acquisto</h2>
-      <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>Per ogni riga di fattura d'acquisto il programma propone il capo dell'app e spiega il motivo. Niente viene salvato senza la conferma.</div>
+      <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>Per ogni riga di fattura d'acquisto il programma propone il capo o il lotto di suini dell'app e spiega il motivo. Niente viene salvato senza la conferma.</div>
       <div style={{ display: "flex", gap: 6, marginTop: 14, flexWrap: "wrap" }}>
         {VISTE.map(([k, t]) => <button key={k} onClick={() => setVista(k)} style={{ ...bottone(C.primary, vista === k), padding: "8px 14px" }}>{t}</button>)}
       </div>
       <div style={{ marginTop: 14 }}>
-        {vista === "sicure" && sicure.map(({ r, a, nomeF, motivi: m }) => (
+        {vista === "sicure" && sicure.map(({ r, a, lotto, nomeF, motivi: m }) => { const k = lotto ? `L${lotto.id}` : a.id; return (
           <div key={r.id} style={scheda}>
             <Intestazione r={r} nomeF={nomeF} />
-            <div style={{ marginTop: 6, fontSize: 13 }}>→ Proposta: <Capo a={a} /></div>
+            <div style={{ marginTop: 6, fontSize: 13 }}>→ Proposta: {lotto ? <Lotto lo={lotto} /> : <Capo a={a} />}</div>
             <div style={{ fontSize: 12.5, marginTop: 4 }}>Motivo: {m.map((x, i) => <span key={i} style={{ color: x.startsWith("ATTENZIONE") ? C.red : C.text }}>{i ? "; " : ""}{x}</span>)}</div>
-            {aperto === `${r.id}|${a.id}`
-              ? <PannelloConferma r={r} a={a} nomeFornitore={nomeF} motivo={m.join("; ")} onFatto={() => { setAperto(null); carica(); }} onAnnulla={() => setAperto(null)} />
+            {aperto === `${r.id}|${k}`
+              ? <PannelloConferma r={r} a={a} lotto={lotto} nomeFornitore={nomeF} motivo={m.join("; ")} onFatto={() => { setAperto(null); carica(); }} onAnnulla={() => setAperto(null)} />
               : <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                  <button onClick={() => setAperto(`${r.id}|${a.id}`)} style={bottone(C.green)}>Esamina e conferma</button>
-                  <button onClick={() => rifiuta(r, `animale:${a.id}`)} style={bottone(C.red, false)}>Rifiuta</button>
+                  <button onClick={() => setAperto(`${r.id}|${k}`)} style={bottone(C.green)}>Esamina e conferma</button>
+                  <button onClick={() => rifiuta(r, lotto ? `lotto:${lotto.id}` : `animale:${a.id}`)} style={bottone(C.red, false)}>Rifiuta</button>
                 </div>}
-          </div>))}
+          </div>); })}
         {vista === "valutare" && daValutare.map(({ r, nomeF, cand }) => (
           <div key={r.id} style={scheda}>
             <Intestazione r={r} nomeF={nomeF} />
-            {cand.length === 0 && <div style={{ fontSize: 13, color: C.muted, marginTop: 6 }}>Nessun capo dell'app corrisponde (stesso fornitore o stessa fattura, entrato entro 120 giorni). Può essere un gruppo di capi o un capo mai registrato.</div>}
-            {cand.map(({ x }) => (
-              <div key={x.id} style={{ borderTop: `1px dashed ${C.border}`, marginTop: 8, paddingTop: 8, fontSize: 13 }}>
-                → Candidato: <Capo a={x} />
-                <div style={{ fontSize: 12.5, marginTop: 3 }}>Motivo: {motivi(r, x, nomeF, false).map((t, i) => <span key={i} style={{ color: t.startsWith("ATTENZIONE") ? C.red : C.text }}>{i ? "; " : ""}{t}</span>)}</div>
-                {aperto === `${r.id}|${x.id}`
-                  ? <PannelloConferma r={r} a={x} nomeFornitore={nomeF} motivo={motivi(r, x, nomeF, false).join("; ")} onFatto={() => { setAperto(null); carica(); }} onAnnulla={() => setAperto(null)} />
+            {cand.length === 0 && <div style={{ fontSize: 13, color: C.muted, marginTop: 6 }}>Nessun capo e nessun lotto di suini dell'app corrisponde (stesso fornitore o stessa fattura, entrato entro 120 giorni). Può essere un gruppo di capi o un capo mai registrato.</div>}
+            {cand.map(({ x, lotto }) => { const k = lotto ? `L${x.id}` : x.id; const mm = lotto ? motiviLotto(r, x, nomeF, false) : motivi(r, x, nomeF, false); return (
+              <div key={k} style={{ borderTop: `1px dashed ${C.border}`, marginTop: 8, paddingTop: 8, fontSize: 13 }}>
+                → Candidato: {lotto ? <Lotto lo={x} /> : <Capo a={x} />}
+                <div style={{ fontSize: 12.5, marginTop: 3 }}>Motivo: {mm.map((t, i) => <span key={i} style={{ color: t.startsWith("ATTENZIONE") ? C.red : C.text }}>{i ? "; " : ""}{t}</span>)}</div>
+                {aperto === `${r.id}|${k}`
+                  ? <PannelloConferma r={r} a={lotto ? null : x} lotto={lotto ? x : null} nomeFornitore={nomeF} motivo={mm.join("; ")} onFatto={() => { setAperto(null); carica(); }} onAnnulla={() => setAperto(null)} />
                   : <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-                      <button onClick={() => setAperto(`${r.id}|${x.id}`)} style={bottone(C.green)}>Esamina e conferma</button>
-                      <button onClick={() => rifiuta(r, `animale:${x.id}`)} style={bottone(C.red, false)}>Non è questo</button>
+                      <button onClick={() => setAperto(`${r.id}|${k}`)} style={bottone(C.green)}>Esamina e conferma</button>
+                      <button onClick={() => rifiuta(r, lotto ? `lotto:${x.id}` : `animale:${x.id}`)} style={bottone(C.red, false)}>Non è questo</button>
                     </div>}
-              </div>))}
+              </div>); })}
             <Scartate r={r} />
-            <div style={{ marginTop: 8 }}><button onClick={() => nessuno(r)} style={bottone(C.muted, false)}>Nessun capo corrisponde</button></div>
+            <div style={{ marginTop: 8 }}><button onClick={() => nessuno(r)} style={bottone(C.muted, false)}>Nessun capo o lotto corrisponde</button></div>
           </div>))}
         {vista === "confermare" && daConfermare.map(r => {
           const a = r.animale_id ? perId.get(r.animale_id) : null; const lo = r.lotto_id ? lottoPerId.get(r.lotto_id) : null; const nomeF = fornitori.get(r.fornitore_id);
@@ -379,7 +435,7 @@ export default function AbbinamentiFatture() {
             </div>);
         })}
         {vista === "trasporti" && (<>
-          <div style={{ fontSize: 13, color: C.muted, marginBottom: 10 }}>Le fatture di trasporto non si abbinano a un singolo capo: sono costi d'ingresso. Come entrano nei costi è ancora da decidere.</div>
+          <div style={{ fontSize: 13, color: C.muted, marginBottom: 10 }}>Qui compaiono le parti «Ingresso in allevamento» dei trasporti, divise alla registrazione della fattura (la parte verso il macello va invece nella Lavorazione prodotti allevamento e non entra nel costo degli animali). Decisione del Dott. Bizzarri del 20/10/2026: il trasporto d'ingresso è compreso nel prezzo d'acquisto dei capi. Il suo importo si divide tra i capi di quell'ingresso e si somma al loro prezzo d'acquisto; poi la riga si segna «non abbinabile» con il motivo «trasporto già compreso nel prezzo dei capi», così non si conta due volte.</div>
           {trasporti.map(r => <div key={r.id} style={scheda}><Intestazione r={r} nomeF={fornitori.get(r.fornitore_id)} /></div>)}
         </>)}
         {vista === "abbinate" && abbinate.map(r => {
