@@ -41,7 +41,6 @@ import VerificaFattureMancanti from "./VerificaFattureMancanti";
 import VerificaRigheMancanti from "./VerificaRigheMancanti";
 import ReportCostiQuantitaAlimentare from "./ReportCostiQuantitaAlimentare";
 import ImportMassivoRiproduttori from "./ImportMassivoRiproduttori";
-import ImportFattureAcquistoAnimali from "./ImportFattureAcquistoAnimali";
 import RiepilogoCostoAnimali from "./RiepilogoCostoAnimali";
 import PrezzoPareggio from "./PrezzoPareggio";
 import DocumentoIstruzioni from "./DocumentoIstruzioni";
@@ -112,7 +111,8 @@ const MENU = [
   // Versione 261 (decisione del Dott. Bizzarri del 21/10/2026): «Carica Fatture» diventa «Carica Dati
   // Contabilità»; in cima le tre istruzioni, poi le pagine in quattro gruppi nell'ordine del lavoro.
   // La cartella «Controlli» confluisce nel gruppo «Controllo finale» (n. 6 dalla v265); «Import Fatture Acquisto
-  // Animali» passa qui dalla cartella Animali.
+  // Animali» passa qui dalla cartella Animali; tolta nella versione 274 (decisione del Dott. Bizzarri del 22/10/2026:
+  // serviva durante la costruzione del programma, ora non serve più).
   { tipo: "cartella", id: "cart-fatture", label: "Carica Dati Contabilità", icon: "📥", contenuto: [
     // Versione 265 (decisione del Dott. Bizzarri del 21/10/2026 ore 11:46; le Istruzioni Generali si scrivono
     // alla fine, quando la cartella è completa): sottocartelle per tipo di
@@ -140,7 +140,6 @@ const MENU = [
     { tipo: "sottocartella", id: "sub-dati-sistema", label: "4. Sistema i dati caricati", icon: "🧹", voci: [
       { id: "armonizza", label: "Armonizzare Unità Misura Fatture", icon: "⚖️" },
       { id: "abbinamenti-fatture", label: "Abbinamenti Fatture Acquisto", icon: "🔗" },
-      { id: "import-fatture-acquisto-animali", label: "Import Fatture Acquisto Animali", icon: "📥" },
     ]},
     { tipo: "sottocartella", id: "sub-dati-verifica", label: "5. Verifica che non manchi niente", icon: "🔍", voci: [
       { id: "verifica-fatture-mancanti", label: "Verifica Fatture Mancanti", icon: "🔍" },
@@ -360,7 +359,7 @@ function Programma({ utente }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 273</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 274</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -513,7 +512,6 @@ function Programma({ utente }) {
         {tab === "verifica-righe-mancanti" && <VerificaRigheMancanti />}
         {tab === "costi-quantita-alimentare" && <ReportCostiQuantitaAlimentare />}
         {tab === "import-massivo-riproduttori" && <ImportMassivoRiproduttori />}
-        {tab === "import-fatture-acquisto-animali" && <ImportFattureAcquistoAnimali />}
         {tab === "riepilogo-costo-animali" && <RiepilogoCostoAnimali />}
         {tab === "istr-fatture" && <DocumentoIstruzioni doc={ISTRUZIONI_CARICA_FATTURE} />}
         {tab === "piano-dei-conti" && <DocumentoIstruzioni doc={PIANO_DEI_CONTI} />}
