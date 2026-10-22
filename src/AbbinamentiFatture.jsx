@@ -5,6 +5,12 @@
 //    fornitore, numero e data della fattura e prezzo d'acquisto SOLO dove sono vuoti;
 //  – se la scheda ha già un valore diverso, si mostrano affiancati e si sceglie quale tenere;
 //  – una proposta rifiutata non viene più riproposta.
+// Versione 275 (decisione del Dott. Bizzarri del 22/10/2026: «occorre avere la possibilità di cambiare»):
+//  – un abbinamento confermato si annulla dal gruppo «Abbinate»: la riga torna da abbinare e per i campi della
+//    scheda dell'app si sceglie se lasciarli, rimettere il valore di prima (se noto) o svuotarli;
+//  – alla conferma si salvano in scheda_prima i valori della scheda prima della scrittura;
+//  – una proposta scartata («Rifiuta», «Non è questo») si ripristina dal gruppo «Da valutare»;
+//  – una riga «Senza capo» si riapre e torna tra quelle da abbinare.
 import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
@@ -74,8 +80,10 @@ function PannelloConferma({ r, a, nomeFornitore, motivo, onFatto, onAnnulla }) {
         if (error) throw new Error(error.message);
         if (!data || data.length !== 1) throw new Error("La scheda è stata cambiata da qualcun altro nel frattempo (oppure manca il permesso): niente salvato. Ricaricare la pagina.");
       }
+      const prima = Object.fromEntries(Object.keys(daScrivere).map(k => [k, a[k] ?? null]));
       const { data: d2, error: e2 } = await supabase.from("ci_report_acquisto_animali").update({
         animale_id: a.id, stato: "ABBINATO", abbinamento_motivo: motivo, abbinato_at: new Date().toISOString(),
+        scheda_prima: Object.keys(prima).length ? prima : null,
       }).eq("id", r.id).is("animale_id", null).is("lotto_id", null).select("id");
       if (e2) throw new Error(e2.message);
       if (!d2 || d2.length !== 1) throw new Error("La riga di fattura risulta già abbinata: ricaricare la pagina.");
@@ -113,10 +121,100 @@ function PannelloConferma({ r, a, nomeFornitore, motivo, onFatto, onAnnulla }) {
   );
 }
 
+// Annullamento di un abbinamento confermato (versione 275)
+const CAMPI_SCHEDA = [["fornitore", "Fornitore"], ["numero_fattura", "Numero fattura"], ["data_fattura", "Data fattura"], ["prezzo_acquisto", "Prezzo d'acquisto"]];
+function mostraValore(campo, v) {
+  if (v === null || v === undefined || v === "") return "vuoto";
+  if (campo === "prezzo_acquisto") return euro(v);
+  if (campo === "data_fattura") return dataIt(v);
+  return String(v);
+}
+function PannelloAnnulla({ r, a, lotto, onFatto, onChiudi }) {
+  const prima = r.scheda_prima || {};
+  const [scelte, setScelte] = useState(() => Object.fromEntries(CAMPI_SCHEDA.map(([k]) => [k, k in prima ? "prima" : "lascia"])));
+  const [motivo, setMotivo] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const nome = a ? (a.bdn || a.nome) : r.animale_id ? `capo n. ${r.animale_id}` : lotto ? `lotto ${lotto.codice_lotto || lotto.codice}` : `lotto n. ${r.lotto_id}`;
+
+  async function annulla() {
+    if (!motivo.trim()) { alert("Scrivere il motivo dell'annullamento."); return; }
+    const daScrivere = {};
+    if (a) CAMPI_SCHEDA.forEach(([k]) => {
+      const nuovo = scelte[k] === "prima" ? (prima[k] ?? null) : scelte[k] === "svuota" ? null : undefined;
+      if (nuovo !== undefined && (a[k] ?? null) !== nuovo) daScrivere[k] = nuovo;
+    });
+    const elenco = Object.entries(daScrivere).map(([k, v]) => `${CAMPI_SCHEDA.find(x => x[0] === k)[1]}: «${mostraValore(k, a[k])}» → «${mostraValore(k, v)}»`);
+    if (!window.confirm(`Annullare l'abbinamento?\n\nFattura ${r.numero_fattura || "senza numero"} del ${dataIt(r.data_fattura)} (${euro(r.importo)})\n→ ${nome}\n\nLa riga torna da abbinare e ${nome} non verrà più proposto per questa riga (si può ripristinare da «Da valutare»).\n\n${elenco.length ? `Sulla scheda dell'app verrà scritto:\n${elenco.join("\n")}` : "Sulla scheda dell'app non viene scritto niente."}`)) return;
+    setSalvando(true);
+    try {
+      if (a && Object.keys(daScrivere).length) {
+        let q = supabase.from("animali").update(daScrivere).eq("id", a.id);
+        for (const k of Object.keys(daScrivere)) { const v = a[k]; q = (v === null || v === undefined) ? q.is(k, null) : q.eq(k, v); }
+        const { data, error } = await q.select("id");
+        if (error) throw new Error(error.message);
+        if (!data || data.length !== 1) throw new Error("La scheda è stata cambiata da qualcun altro nel frattempo (oppure manca il permesso): niente salvato. Ricaricare la pagina.");
+      }
+      const chiave = r.animale_id ? `animale:${r.animale_id}` : `lotto:${r.lotto_id}`;
+      const riga = `${chiave} — abbinamento annullato: ${motivo.trim()} — ${new Date().toLocaleDateString("it-IT")}`;
+      let q2 = supabase.from("ci_report_acquisto_animali").update({
+        animale_id: null, lotto_id: null, stato: "DA_ELABORARE", abbinamento_motivo: null, abbinato_at: null, scheda_prima: null,
+        rifiuto_motivo: `${r.rifiuto_motivo ? r.rifiuto_motivo + "\n" : ""}${riga}`,
+      }).eq("id", r.id).eq("stato", "ABBINATO");
+      q2 = r.animale_id ? q2.eq("animale_id", r.animale_id) : q2.eq("lotto_id", r.lotto_id);
+      const { data: d2, error: e2 } = await q2.select("id");
+      if (e2) throw new Error(e2.message);
+      if (!d2 || d2.length !== 1) throw new Error("La riga di fattura è stata cambiata nel frattempo: ricaricare la pagina.");
+      onFatto();
+    } catch (e) { alert(`⚠️ ${e.message}`); }
+    setSalvando(false);
+  }
+
+  return (
+    <div style={{ background: "#FDF1F0", border: `1px solid ${C.border}`, borderRadius: 8, padding: 12, marginTop: 10 }}>
+      {a ? (<>
+        <div style={{ fontSize: 12.5, marginBottom: 6 }}>Cosa fare dei dati scritti sulla scheda di <b>{nome}</b> nell'app:</div>
+        <table style={{ fontSize: 13 }}>
+          <thead><tr style={{ color: C.muted, textAlign: "left" }}><th style={{ padding: 4 }}>Campo</th><th style={{ padding: 4 }}>Scheda oggi</th><th style={{ padding: 4 }}>Prima dell'abbinamento</th><th style={{ padding: 4 }}>Cosa fare</th></tr></thead>
+          <tbody>{CAMPI_SCHEDA.map(([k, et]) => (
+            <tr key={k} style={{ borderTop: `1px solid ${C.border}` }}>
+              <td style={{ padding: 4, fontWeight: 700 }}>{et}</td>
+              <td style={{ padding: 4 }}>{mostraValore(k, a[k])}</td>
+              <td style={{ padding: 4 }}>{k in prima ? mostraValore(k, prima[k]) : <span style={{ color: C.muted }}>non scritto da questo abbinamento o non noto</span>}</td>
+              <td style={{ padding: 4 }}>
+                <span style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <label><input type="radio" checked={scelte[k] === "lascia"} onChange={() => setScelte({ ...scelte, [k]: "lascia" })} /> lascia com'è</label>
+                  {k in prima
+                    ? <label><input type="radio" checked={scelte[k] === "prima"} onChange={() => setScelte({ ...scelte, [k]: "prima" })} /> rimetti il valore di prima</label>
+                    : <label><input type="radio" checked={scelte[k] === "svuota"} onChange={() => setScelte({ ...scelte, [k]: "svuota" })} /> svuota</label>}
+                </span>
+              </td>
+            </tr>))}
+          </tbody>
+        </table>
+      </>) : <div style={{ fontSize: 12.5 }}>{r.animale_id ? "Il capo non si trova più nell'app" : "La riga è collegata a un lotto"}: annullando, si toglie solo il collegamento. I dati nell'app non cambiano.</div>}
+      <div style={{ marginTop: 10, fontSize: 12.5 }}>
+        Motivo dell'annullamento (obbligatorio):{" "}
+        <input value={motivo} onChange={e => setMotivo(e.target.value)} placeholder="es. capo sbagliato, la fattura è di IT…"
+          style={{ padding: "5px 8px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 12.5, width: 380 }} />
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+        <button onClick={annulla} disabled={salvando} style={bottone(C.red)}>{salvando ? "Salvataggio…" : "Annulla l'abbinamento"}</button>
+        <button onClick={onChiudi} style={bottone(C.muted, false)}>Chiudi</button>
+      </div>
+    </div>
+  );
+}
+
+// Proposte scartate di una riga (righe «animale:ID — motivo — data» o «lotto:ID — …» di rifiuto_motivo)
+function scartate(r) {
+  return (r.rifiuto_motivo || "").split("\n").map((testo, i) => ({ i, testo, m: testo.match(/^(animale|lotto):(\d+) — (.*)$/) })).filter(x => x.m);
+}
+
 export default function AbbinamentiFatture() {
   const [dati, setDati] = useState(null);
   const [vista, setVista] = useState("sicure");
   const [aperto, setAperto] = useState(null); // `${rigaId}|${animaleId}`
+  const [annullando, setAnnullando] = useState(null); // id della riga abbinata da annullare
   const [errore, setErrore] = useState("");
 
   async function carica() {
@@ -168,7 +266,7 @@ export default function AbbinamentiFatture() {
   }
   const daConfermare = righe.filter(r => (r.animale_id || r.lotto_id) && r.stato !== "ABBINATO");
   const abbinate = righe.filter(r => r.stato === "ABBINATO");
-  const scartate = righe.filter(r => ["RIFIUTATA", "NON_ABBINABILE"].includes(r.stato));
+  const senzaCapo = righe.filter(r => ["RIFIUTATA", "NON_ABBINABILE"].includes(r.stato));
 
   async function rifiuta(r, chiave) {
     const motivo = window.prompt("Perché questa proposta è sbagliata?");
@@ -189,6 +287,36 @@ export default function AbbinamentiFatture() {
     if (error) alert(`⚠️ ${error.message}`); else carica();
   }
 
+  async function ripristina(r, x) {
+    const nomeC = x.m[1] === "animale" ? (perId.get(Number(x.m[2]))?.bdn || `capo n. ${x.m[2]}`) : `lotto n. ${x.m[2]}`;
+    if (!window.confirm(`Ripristinare la proposta ${nomeC} per questa riga?\n\nScartata con il motivo: ${x.m[3]}`)) return;
+    const righeTesto = (r.rifiuto_motivo || "").split("\n");
+    righeTesto[x.i] = `ripristinata la proposta ${x.m[1]} n. ${x.m[2]} (scartata: ${x.m[3]}) — ${new Date().toLocaleDateString("it-IT")}`;
+    const { data, error } = await supabase.from("ci_report_acquisto_animali").update({ rifiuto_motivo: righeTesto.join("\n") }).eq("id", r.id).eq("rifiuto_motivo", r.rifiuto_motivo).select("id");
+    if (error) alert(`⚠️ ${error.message}`); else if (!data || data.length !== 1) alert("⚠️ La riga è stata cambiata nel frattempo: ricaricare la pagina."); else carica();
+  }
+  async function riapri(r) {
+    const motivo = window.prompt("Perché questa riga va rimessa tra quelle da abbinare?");
+    if (!motivo) return;
+    const { data, error } = await supabase.from("ci_report_acquisto_animali").update({ stato: "DA_ELABORARE", rifiuto_motivo: `${r.rifiuto_motivo ? r.rifiuto_motivo + "\n" : ""}riaperta — ${motivo} — ${new Date().toLocaleDateString("it-IT")}` })
+      .eq("id", r.id).in("stato", ["RIFIUTATA", "NON_ABBINABILE"]).is("animale_id", null).is("lotto_id", null).select("id");
+    if (error) alert(`⚠️ ${error.message}`); else if (!data || data.length !== 1) alert("⚠️ La riga è stata cambiata nel frattempo: ricaricare la pagina."); else carica();
+  }
+  const Scartate = ({ r }) => {
+    const el = scartate(r);
+    if (!el.length) return null;
+    return (
+      <div style={{ marginTop: 8, fontSize: 12.5, background: "#FAFAF8", borderRadius: 6, padding: "6px 10px" }}>
+        <div style={{ color: C.muted, fontWeight: 700, marginBottom: 2 }}>Proposte scartate per questa riga:</div>
+        {el.map(x => (
+          <div key={x.i} style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 3 }}>
+            <span>{x.m[1] === "animale" ? (perId.get(Number(x.m[2]))?.bdn || `capo n. ${x.m[2]}`) : `lotto n. ${x.m[2]}`} — {x.m[3]}</span>
+            <button onClick={() => ripristina(r, x)} style={{ ...bottone(C.blue, false), padding: "2px 8px", fontSize: 11.5 }}>↩ Ripristina la proposta</button>
+          </div>))}
+      </div>
+    );
+  };
+
   const Intestazione = ({ r, nomeF }) => (
     <div style={{ fontSize: 13.5 }}>
       <b>Fattura {r.numero_fattura || "senza numero"}</b> del {dataIt(r.data_fattura)} — {nomeF || "fornitore ignoto"} — <b>{euro(r.importo)}</b>
@@ -200,7 +328,7 @@ export default function AbbinamentiFatture() {
   const Capo = ({ a }) => <span><b>{a.bdn || a.nome}</b>{a.nome && a.bdn ? ` (${a.nome})` : ""} — {a.specie}{a.razza ? `, ${a.razza}` : ""}, entrato il {dataIt(a.data_ingresso)}, {a.stato}</span>;
   const scheda = { background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 14px", marginBottom: 10 };
   const VISTE = [["sicure", `Proposte sicure (${sicure.length})`], ["valutare", `Da valutare (${daValutare.length})`], ["confermare", `Già collegate, da confermare (${daConfermare.length})`],
-    ["trasporti", `Trasporti (${trasporti.length})`], ["abbinate", `Abbinate (${abbinate.length})`], ["scartate", `Senza capo (${scartate.length})`]];
+    ["trasporti", `Trasporti (${trasporti.length})`], ["abbinate", `Abbinate (${abbinate.length})`], ["scartate", `Senza capo (${senzaCapo.length})`]];
 
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: 20 }}>
@@ -237,6 +365,7 @@ export default function AbbinamentiFatture() {
                       <button onClick={() => rifiuta(r, `animale:${x.id}`)} style={bottone(C.red, false)}>Non è questo</button>
                     </div>}
               </div>))}
+            <Scartate r={r} />
             <div style={{ marginTop: 8 }}><button onClick={() => nessuno(r)} style={bottone(C.muted, false)}>Nessun capo corrisponde</button></div>
           </div>))}
         {vista === "confermare" && daConfermare.map(r => {
@@ -257,9 +386,13 @@ export default function AbbinamentiFatture() {
           const a = r.animale_id ? perId.get(r.animale_id) : null; const lo = r.lotto_id ? lottoPerId.get(r.lotto_id) : null;
           return <div key={r.id} style={scheda}><Intestazione r={r} nomeF={fornitori.get(r.fornitore_id)} />
             <div style={{ fontSize: 13, marginTop: 4 }}>→ {a ? <Capo a={a} /> : lo ? `lotto ${lo.codice_lotto || lo.codice}` : "—"} {r.abbinato_at ? `— confermato il ${new Date(r.abbinato_at).toLocaleDateString("it-IT")}` : ""}</div>
-            {r.abbinamento_motivo && <div style={{ fontSize: 12, color: C.muted }}>Motivo: {r.abbinamento_motivo}</div>}</div>;
+            {r.abbinamento_motivo && <div style={{ fontSize: 12, color: C.muted }}>Motivo: {r.abbinamento_motivo}</div>}
+            {annullando === r.id
+              ? <PannelloAnnulla r={r} a={a} lotto={lo} onFatto={() => { setAnnullando(null); carica(); }} onChiudi={() => setAnnullando(null)} />
+              : <div style={{ marginTop: 8 }}><button onClick={() => setAnnullando(r.id)} style={bottone(C.red, false)}>Annulla l'abbinamento…</button></div>}</div>;
         })}
-        {vista === "scartate" && scartate.map(r => <div key={r.id} style={scheda}><Intestazione r={r} nomeF={fornitori.get(r.fornitore_id)} /><div style={{ fontSize: 12, color: C.muted, whiteSpace: "pre-wrap" }}>{r.rifiuto_motivo}</div></div>)}
+        {vista === "scartate" && senzaCapo.map(r => <div key={r.id} style={scheda}><Intestazione r={r} nomeF={fornitori.get(r.fornitore_id)} /><div style={{ fontSize: 12, color: C.muted, whiteSpace: "pre-wrap" }}>{r.rifiuto_motivo}</div>
+          <div style={{ marginTop: 8 }}><button onClick={() => riapri(r)} style={bottone(C.blue, false)}>↩ Rimetti tra le righe da abbinare</button></div></div>)}
       </div>
     </div>
   );
