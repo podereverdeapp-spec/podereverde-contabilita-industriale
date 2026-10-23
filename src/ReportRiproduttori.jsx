@@ -59,7 +59,17 @@ function vivoAl(dataNascita, dataUscitaAnimale, stato, data) {
 // - venduto vivo, o trasferito senza fattura (scambio), con peso: peso vivo × prezzo al kg vivo
 //   (tabella prezzi di riforma);
 // - dati mancanti: null → nessun conguaglio, si tiene la stima (e lo si segnala).
-export function realizzoRealeUscita({ rip, prezzoSchedaCarcassa, prezzoRiformaCarcassa, prezziRiforma, righeVendita }) {
+// Versione 279 (decisione del Dott. Bizzarri del 23/10/2026): riproduttore scambiato con un altro che lo
+// PROSEGUE. Il successore ha nella nota della sua scheda «prosecuzione di <matricola>»: lo scambio non è
+// una vendita, non dà né utile né perdita; il valore del riproduttore uscito (costo rimasto + valore di
+// realizzo stimato) diventa il costo d'ingresso del successore e non passa ai figli.
+export function successoreDi(rip, animali) {
+  const m = String(rip?.bdn || "").trim().toUpperCase();
+  if (!m) return null;
+  return (animali || []).find(a => a.id !== rip.id && new RegExp(`prosecuzione di\\s+[^\\n]*?${m}`, "i").test(String(a.note || ""))) || null;
+}
+export function realizzoRealeUscita({ rip, prezzoSchedaCarcassa, prezzoRiformaCarcassa, prezziRiforma, righeVendita, successore }) {
+  if (successore) return { valore: null, prosecuzione: successore, fonte: `scambiato con ${successore.nome ? successore.nome + " " : ""}${successore.bdn || ""}, che lo prosegue: nessun utile né perdita` };
   const motivo = `${rip.stato || ""} ${rip.motivo_uscita || ""}`.toLowerCase();
   if (motivo.includes("decedut") || motivo.includes("mort")) return { valore: 0, fonte: "morto: nessun ricavo" };
   if (motivo.includes("vend") || motivo.includes("trasferit") || motivo.includes("scambi")) {
@@ -121,6 +131,20 @@ async function distribuisciResiduiUscita({ usciti, tuttiAnimali, tutteUnita, map
 
   for (const u of usciti) {
     const residuoPrima = round2(Math.max(0, u.residuo || 0));
+    // Versione 279: proseguito da un altro riproduttore (scambio) → il suo valore (costo rimasto + realizzo
+    // stimato) è il costo d'ingresso del successore: ai figli non passa nulla, nessun conguaglio.
+    if (u.realizzoReale.prosecuzione) {
+      const s = u.realizzoReale.prosecuzione;
+      const valore = round2(residuoPrima + (u.realizzoStimato || 0));
+      const { error: eP } = await supabase.from("ci_residuo_riproduttore").update({
+        residuo_all_uscita: residuoPrima, conguaglio_uscita: round2(-residuoPrima), residuo_uscita_anno: u.annoUscita,
+        residuo_uscita_destinazione: `Proseguito da ${s.nome ? s.nome + " " : ""}${s.bdn || ""}: il suo valore di ${formattaEuro(valore)} (costo rimasto ${formattaEuro(residuoPrima)} + realizzo stimato ${formattaEuro(u.realizzoStimato || 0)}) è il costo d'ingresso del successore (prezzo nella sua scheda: ${formattaEuro(parseFloat(s.prezzo_acquisto) || 0)})`,
+        valore_realizzo_reale: valore, realizzo_reale_fonte: u.realizzoReale.fonte, anno_uscita: u.annoUscita, conguaglio_applicato: true,
+        residuo_rimanente: 0, updated_at: new Date().toISOString(),
+      }).eq("id", u.residuoId);
+      if (eP) throw new Error(`Errore registrando lo scambio di ${u.rip.bdn}: ${eP.message}`);
+      continue;
+    }
     // Conguaglio: stima − ricavo vero. Ricavato meno del previsto → ai figli passa di più;
     // ricavato di più → passa di meno, mai sotto zero.
     const differenza = u.realizzoReale.valore == null ? 0 : round2(u.realizzoStimato - u.realizzoReale.valore);
@@ -299,6 +323,7 @@ export default function ReportRiproduttori() {
       const etaMinimaAnni = parametriMap.eta_minima_calcolo_peso_storico || 3;
       const realeDi = (rip, rec) => realizzoRealeUscita({
         rip, prezzoSchedaCarcassa: rec.prezzo_vendita_kg_carcassa_reale, prezziRiforma, righeVendita,
+        successore: successoreDi(rip, tuttiAnimali),
         prezzoRiformaCarcassa: parametriMap[PARAMETRI_PREZZO_RIFORMA[rip.specie]] || PREZZO_RIFORMA_PREDEFINITO[rip.specie],
       });
 

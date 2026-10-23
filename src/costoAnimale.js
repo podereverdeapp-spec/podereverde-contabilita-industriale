@@ -26,7 +26,8 @@ export function conteggioUnitaPerLotto(unita) {
 
 // Prezzo di acquisto a capo: animale con matricola comprato, oppure suinetto di un lotto comprato
 export function costoAcquistoUnitario({ animale, unita, lotto, numeroUnitaLotto }) {
-  if (animale) return animale.provenienza === "Acquistato" && !animale.natoConLaMadre ? round2(num(animale.prezzo_acquisto)) : 0;
+  // Versione 279: conta anche il capo «Trasferito» entrato con uno scambio (es. PRINCIPE, prosecuzione di Ornello)
+  if (animale) return (animale.provenienza === "Acquistato" || animale.provenienza === "Trasferito") && !animale.natoConLaMadre ? round2(num(animale.prezzo_acquisto)) : 0;
   if (unita && lotto?.tipo_provenienza === "acquistato") return round2(num(lotto.prezzo_acquisto) / (numeroUnitaLotto || 1));
   return 0;
 }

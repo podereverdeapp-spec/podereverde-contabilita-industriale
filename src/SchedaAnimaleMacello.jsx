@@ -32,7 +32,7 @@ export default function SchedaAnimaleMacello({ animaleId, lottoId, unitaNr, onCl
           .eq("id", animaleId).single();
         if (error) throw new Error(error.message);
         s = { ...a, identificativo: a.bdn || a.nome, razzaFinale: a.razza_calcolata || a.razza,
-          prezzo_acquisto: a.provenienza === "Acquistato" ? (parseFloat(a.prezzo_acquisto) || 0) : 0 };
+          prezzo_acquisto: (a.provenienza === "Acquistato" || a.provenienza === "Trasferito") ? (parseFloat(a.prezzo_acquisto) || 0) : 0 };
         // Capo passato a scheda individuale da un lotto comprato: tiene il costo d'acquisto della sua scheda (versione 278)
         if (a.provenienza === "Acquistato") {
           const codice = (String(a.note || "").match(/da lotto .*?unit[aà]\s+([A-Z0-9]+)/i) || [])[1];

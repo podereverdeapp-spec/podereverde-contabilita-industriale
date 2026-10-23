@@ -34,6 +34,8 @@ export default function ReportCosti({ anno }) {
   const [calcolando, setCalcolando] = useState(false);
   const [risultato, setRisultato] = useState(null);
   const [salvando, setSalvando] = useState(false);
+  // Versione 279: il calcolo mostrato è già salvato? (il pulsante Salva sta accanto a Calcola)
+  const [salvato, setSalvato] = useState(false);
   // Versione 236: se si cambia l'anno, il calcolo fatto per l'anno precedente sparisce dallo schermo,
   // così non si può salvare il calcolo di un anno sopra un altro anno.
   useEffect(() => { setRisultato(null); }, [anno]);
@@ -41,6 +43,7 @@ export default function ReportCosti({ anno }) {
   async function calcola() {
     setCalcolando(true);
     setRisultato(null);
+    setSalvato(false);
     try {
       const [{ data: animali, error: eA }, { data: lotti, error: eL }, { data: suiniLotto, error: eS }] = await Promise.all([
         fetchAllPages((da, a) => supabase.from("animali").select("id,bdn,nome,specie,sesso,nascita,stato,data_uscita,motivo_uscita,data_ingresso,provenienza,razza,riproduttore,madre_id,padre_id").range(da, a)),
@@ -280,6 +283,7 @@ export default function ReportCosti({ anno }) {
       const { data: salvate, error } = await supabase.rpc("ci_salva_costi_anno", { p_anno: anno, p_tasso: tasso, p_righe: righe });
       if (error) throw new Error(`${error.message}${/function|funzione|ci_salva_costi_anno/i.test(error.message) ? "\n\nIl database non ha ancora la funzione della versione 236: lanciare il file contabilita_strutture_v236.sql." : ""}\n\nNiente è stato cambiato: i dati salvati prima sono ancora quelli.`);
       if (salvate !== righe.length) throw new Error(`Salvate ${salvate} righe invece di ${righe.length}: controllare.`);
+      setSalvato(true);
       alert(`✓ Costo salvato per l'anno ${anno}: ${salvate} animali/unità.\n\nRicordarsi di rifare l'elaborazione del «Report Riproduttori».`);
     } catch (err) {
       alert(`⚠️ Errore nel salvataggio:\n\n${err.message}`);
@@ -294,10 +298,18 @@ export default function ReportCosti({ anno }) {
       </p>
 
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 20 }}>
-        <button onClick={calcola} disabled={calcolando}
-          style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-          {calcolando ? "Calcolo..." : "📊 Calcola"}
-        </button>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <button onClick={calcola} disabled={calcolando}
+            style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+            {calcolando ? "Calcolo..." : "📊 Calcola"}
+          </button>
+          {/* Versione 279 (decisione del Dott. Bizzarri del 23/10/2026): Salva accanto a Calcola */}
+          <button onClick={salvaRisultato} disabled={!risultato || salvando || salvato}
+            style={{ background: !risultato ? "#bbb" : salvato ? C.green : "#B86E00", color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: risultato && !salvato ? "pointer" : "default" }}>
+            {salvando ? "Salvataggio..." : salvato ? `✓ Salvato l'anno ${risultato?.anno}` : risultato ? `💾 Salva il calcolo del ${risultato.anno}` : "💾 Salva (prima calcolare)"}
+          </button>
+          {risultato && !salvato && <span style={{ fontSize: 12, fontWeight: 700, color: "#B86E00" }}>Calcolo non ancora salvato: senza salvare non entra nei costi</span>}
+        </div>
         <div style={{ fontSize: 11, color: C.muted, marginTop: 10 }}>
           ⚠️ Semplificazione attuale: il valore di riforma (V(t)) è impostato a 0 — il meccanismo di stima del valore di realizzo dei riproduttori non è ancora costruito (sezione 15 del documento di riferimento).
         </div>
@@ -414,10 +426,6 @@ export default function ReportCosti({ anno }) {
           )}
 
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={salvaRisultato} disabled={salvando}
-              style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 10, padding: "12px 24px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
-              {salvando ? "Salvataggio..." : `💾 Salva questo calcolo per l'anno ${risultato.anno}`}
-            </button>
             <button onClick={esporta}
               style={{ background: C.green, color: "#fff", border: "none", borderRadius: 10, padding: "12px 24px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
               📥 Esporta Excel

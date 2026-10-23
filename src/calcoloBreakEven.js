@@ -153,7 +153,7 @@ export function preparaBase(g) {
     const nato = eNatoDellaMandria(a);
     soggetti.push({ chiave: `a:${a.id}`, tipo: "animale", id: a.id, specie: a.specie, codice: a.bdn || a.nome || `scheda ${a.id}`, sesso: a.sesso,
       nascita: giorno(a.nascita), inizio: giorno(dataIngressoPresenza(a) || a.nascita), uscita: giorno(a.data_uscita), stato: a.stato,
-      riproduttore: !!a.riproduttore || genitori.has(a.id), natoInAzienda: nato, acquistato: !nato && a.provenienza === "Acquistato",
+      riproduttore: !!a.riproduttore || genitori.has(a.id), natoInAzienda: nato, acquistato: !nato && (a.provenienza === "Acquistato" || a.provenienza === "Trasferito"),
       costoAcquisto: costoAcquistoUnitario({ animale: a }), pesoCarcassa: num(a.peso_carcassa), pesoVivo: num(a.peso_vivo_uscita),
       codiceNonValido: /\s/.test(String(a.bdn || "").trim()) });
   }
