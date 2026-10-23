@@ -4,7 +4,7 @@ import { supabase } from "./supabase";
 import { C } from "./style";
 import { numerizzaCampi, formattaEuro, round2, fetchAllPages } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
-import { FUNZIONE_RICERCA, messaggioErroreRicerca, NavigazionePagine, leggiTutteLeTrovate, leggiCapiAcquisto, CapiAcquisto, EtichettaAcquistoAnimali, numeroFattura, leggiRigheFattura, NotaTrasportoAiCapi, NotaCompetenza, PAGINA_COMPETENZA } from "./FatturePassive";
+import { FUNZIONE_RICERCA, messaggioErroreRicerca, NavigazionePagine, leggiTutteLeTrovate, leggiCapiAcquisto, CapiAcquisto, EtichettaAcquistoAnimali, numeroFattura, leggiRigheFattura, NotaTrasportoAiCapi, NotaCompetenza, PAGINA_COMPETENZA, RicomposizioneFattura } from "./FatturePassive";
 
 // Versione 281 (decisione del Dott. Bizzarri del 23/10/2026): la ricerca la fa il database (funzione
 // ci_ricerca_documenti) su TUTTE le fatture e le loro righe, compresi gli acquisti di animali registrati solo
@@ -374,9 +374,13 @@ export default function Ricerca() {
               )}
               {espansa === f.chiave && !f.acquisto_animali && righePerFattura[f.chiave] && (
                 <div style={{ borderTop: `1px solid ${C.border}`, padding: 14 }}>
-                  {righePerFattura[f.chiave].map(r => (
-                    <div key={r.id} style={{ padding: "10px 0", borderTop: `1px solid ${C.border}` }}>
-                      {modificaRigaId === r.id ? (
+                  {/* Versione 285: la fattura ricomposta, uguale a Fatture Passive e Attive, con la classificazione e la matita */}
+                  <RicomposizioneFattura fattura={{ ...f, ci_fornitori: { nome: f.controparte, partita_iva: f.partita_iva } }} righe={righePerFattura[f.chiave]}
+                    azioneRiga={r => (
+                      <button onClick={() => iniziaModificaRiga(r)}
+                        style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13 }} title="Modifica la riga e la sua classificazione">✏️</button>
+                    )}
+                    sostituisciRiga={r => (modificaRigaId === r.id ? (
                         <div>
                           <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
                             <CampoTesto label="Descrizione" value={formModificaRiga.descrizione} onChange={v => setFormModificaRiga(prev => ({ ...prev, descrizione: v }))} />
@@ -407,24 +411,7 @@ export default function Ricerca() {
                             </button>
                           </div>
                         </div>
-                      ) : (
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-                          <div>
-                            <div style={{ fontSize: 13 }}>{r.descrizione}</div>
-                            {r.trasporto_ai_capi > 0 && <NotaTrasportoAiCapi importo={r.trasporto_ai_capi} riga />}
-                            <div style={{ fontSize: 11, color: C.muted }}>
-                              {r.area || "—"} · {r.centro_costo || "—"} · {r.destinazione || "—"} · {r.tipo_costo || "—"}
-                            </div>
-                          </div>
-                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                            <div style={{ fontWeight: 700 }}>{formattaEuro(r.totale_riga)}</div>
-                            <button onClick={() => iniziaModificaRiga(r)}
-                              style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13 }} title="Modifica classificazione">✏️</button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                    ) : null)} />
                 </div>
               )}
             </div>

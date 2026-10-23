@@ -327,12 +327,22 @@ export default function FatturePassive() {
   return <ElencoFattureAPagine tipo="PASSIVA,DA_RICEVERE" titolo="Fatture Passive" etichettaControparte="Fornitore" nomeFile="FatturePassive" conFiltroData />;
 }
 
-export function RicomposizioneFattura({ fattura, righe }) {
+// Versione 285 (decisione del Dott. Bizzarri del 23/10/2026): la fattura ricomposta, uguale in Fatture Passive,
+// Fatture Attive e Ricerca. Per ogni riga: prodotto o bene, unità di misura, quantità, prezzo unitario, imponibile,
+// aliquota IVA, importo IVA e totale della riga; sotto, in piccolo, la classificazione (area · centro di costo ·
+// destinazione · tipo di costo). In fondo imponibile totale, IVA per aliquota e totale della fattura.
+// azioneRiga(r): pulsanti accanto alla riga (in Ricerca la matita ✏️); sostituisciRiga(r): se restituisce qualcosa,
+// la riga è sostituita da quel contenuto (in Ricerca il modulo di modifica).
+const num = v => (v == null || v === "" || !Number.isFinite(Number(v)) ? null : Number(v)); // valore assente o non numerico → null
+const numeroIt = (n, max = 3) => (num(n) == null ? "—" : num(n).toLocaleString("it-IT", { maximumFractionDigits: max }));
+const prezzoIt = n => (num(n) == null ? "—" : formattaEuro(num(n), Math.round(num(n) * 100) === num(n) * 100 ? 2 : 4));
+const classificazione = r => [r.area, r.centro_costo, r.destinazione, r.tipo_costo];
+
+export function RicomposizioneFattura({ fattura, righe, azioneRiga, sostituisciRiga }) {
   const f = fattura;
   const controparte = f.ci_fornitori || f.ci_clienti;
-  const mostraUM = righe.some(r => r.unita_misura);
-  const mostraQuantita = righe.some(r => r.quantita != null);
-  const mostraPrezzoUnit = righe.some(r => r.prezzo_unitario != null);
+  const conClassificazione = righe.some(r => classificazione(r).some(Boolean));
+  const colonne = 8 + (azioneRiga ? 1 : 0);
 
   const imponibileTotale = righe.reduce((s, r) => s + (r.totale_riga || 0), 0);
   const ivaTotale = righe.reduce((s, r) => s + (r.totale_iva || 0), 0);
@@ -341,11 +351,14 @@ export function RicomposizioneFattura({ fattura, righe }) {
   // Raggruppo l'IVA per aliquota, per il riepilogo (una fattura può avere aliquote diverse su righe diverse)
   const ivaPerAliquota = {};
   righe.forEach(r => {
-    const aliq = r.aliquota_iva != null ? r.aliquota_iva : 0;
+    const aliq = num(r.aliquota_iva) ?? 0;
     if (!ivaPerAliquota[aliq]) ivaPerAliquota[aliq] = { imponibile: 0, iva: 0 };
     ivaPerAliquota[aliq].imponibile += r.totale_riga || 0;
     ivaPerAliquota[aliq].iva += r.totale_iva || 0;
   });
+  const titolo = f.tipo === "DA_RICEVERE" ? "Documento da ricevere" : f.tipo === "DA_EMETTERE" ? "Documento da emettere" : "Fattura n.";
+  const th = { padding: "4px 8px", textAlign: "right", whiteSpace: "nowrap" };
+  const td = { padding: "6px 8px", textAlign: "right", whiteSpace: "nowrap", verticalAlign: "top" };
 
   return (
     <div style={{ background: "#FAF8F4", borderRadius: 10, padding: 16 }}>
@@ -356,41 +369,59 @@ export function RicomposizioneFattura({ fattura, righe }) {
           {controparte?.partita_iva && <div style={{ fontSize: 12, color: C.muted }}>P.IVA {controparte.partita_iva}</div>}
         </div>
         <div style={{ textAlign: "right" }}>
-          <div style={{ fontWeight: 700, fontSize: 14 }}>Fattura n. {f.numero}</div>
+          <div style={{ fontWeight: 700, fontSize: 14 }}>{titolo} {f.numero}</div>
           <div style={{ fontSize: 12, color: C.muted }}>del {f.data}</div>
         </div>
       </div>
 
       {/* Righe */}
-      <table style={{ width: "100%", fontSize: 13, marginBottom: 12 }}>
-        <thead>
-          <tr style={{ color: C.muted, textAlign: "left", borderBottom: `1px solid ${C.border}` }}>
-            <th style={{ padding: "4px 8px" }}>Descrizione</th>
-            {mostraUM && <th style={{ padding: "4px 8px", textAlign: "center" }}>U.M.</th>}
-            {mostraQuantita && <th style={{ padding: "4px 8px", textAlign: "right" }}>Quantità</th>}
-            {mostraPrezzoUnit && <th style={{ padding: "4px 8px", textAlign: "right" }}>Prezzo unitario</th>}
-            <th style={{ padding: "4px 8px", textAlign: "right" }}>Imponibile</th>
-          </tr>
-        </thead>
-        <tbody>
-          {righe.map(r => (
-            <tr key={r.id} style={{ borderBottom: `1px solid ${C.border}` }}>
-              <td style={{ padding: "6px 8px" }}>{r.descrizione}{r.trasporto_ai_capi > 0 && <NotaTrasportoAiCapi importo={r.trasporto_ai_capi} riga />}</td>
-              {mostraUM && <td style={{ padding: "6px 8px", textAlign: "center" }}>{r.unita_misura || "—"}</td>}
-              {mostraQuantita && <td style={{ padding: "6px 8px", textAlign: "right" }}>{r.quantita != null ? r.quantita : "—"}</td>}
-              {mostraPrezzoUnit && <td style={{ padding: "6px 8px", textAlign: "right" }}>{r.prezzo_unitario != null ? `${formattaEuro(r.prezzo_unitario)}` : "—"}</td>}
-              <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700 }}>{formattaEuro(r.totale_riga)}</td>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", fontSize: 13, marginBottom: 12 }}>
+          <thead>
+            <tr style={{ color: C.muted, borderBottom: `1px solid ${C.border}` }}>
+              <th style={{ ...th, textAlign: "left" }}>Prodotto o bene</th>
+              <th style={{ ...th, textAlign: "center" }}>Unità di misura</th>
+              <th style={th}>Quantità</th>
+              <th style={th}>Prezzo unitario</th>
+              <th style={th}>Imponibile</th>
+              <th style={th}>Aliquota IVA</th>
+              <th style={th}>Importo IVA</th>
+              <th style={th}>Totale riga</th>
+              {azioneRiga && <th style={th}></th>}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {righe.map(r => {
+              const sostituto = sostituisciRiga ? sostituisciRiga(r) : null;
+              if (sostituto) return <tr key={r.id} style={{ borderBottom: `1px solid ${C.border}` }}><td colSpan={colonne} style={{ padding: "8px" }}>{sostituto}</td></tr>;
+              return (
+                <tr key={r.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+                  <td style={{ padding: "6px 8px", verticalAlign: "top" }}>
+                    {r.descrizione}
+                    {r.trasporto_ai_capi > 0 && <NotaTrasportoAiCapi importo={r.trasporto_ai_capi} riga />}
+                    {conClassificazione && <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{classificazione(r).map(x => x || "—").join(" · ")}</div>}
+                  </td>
+                  <td style={{ ...td, textAlign: "center" }}>{r.unita_misura || "—"}</td>
+                  <td style={td}>{numeroIt(r.quantita)}</td>
+                  <td style={td}>{prezzoIt(r.prezzo_unitario)}</td>
+                  <td style={{ ...td, fontWeight: 700 }}>{formattaEuro(r.totale_riga || 0)}</td>
+                  <td style={td}>{num(r.aliquota_iva) != null ? `${numeroIt(r.aliquota_iva, 2)}%` : "—"}</td>
+                  <td style={td}>{formattaEuro(r.totale_iva || 0)}</td>
+                  <td style={{ ...td, fontWeight: 700 }}>{formattaEuro((r.totale_riga || 0) + (r.totale_iva || 0))}</td>
+                  {azioneRiga && <td style={td}>{azioneRiga(r)}</td>}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
 
       {/* Totali */}
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
         <div style={{ minWidth: 260 }}>
           <RigaTotale label="Imponibile totale" valore={imponibileTotale} />
-          {Object.entries(ivaPerAliquota).map(([aliq, v]) => (
-            <RigaTotale key={aliq} label={`IVA ${aliq}%`} valore={v.iva} muted />
+          {Object.entries(ivaPerAliquota).sort((a, b) => Number(b[0]) - Number(a[0])).map(([aliq, v]) => (
+            <RigaTotale key={aliq} label={`IVA ${numeroIt(aliq, 2)}%`} valore={v.iva} muted />
           ))}
           <div style={{ borderTop: `1.5px solid ${C.primary}`, marginTop: 6, paddingTop: 6 }}>
             <RigaTotale label="Totale fattura" valore={totaleComplessivo} bold />
