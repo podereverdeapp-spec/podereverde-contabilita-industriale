@@ -125,7 +125,7 @@ export async function contaUsciteDaFatturare() {
 export async function caricaUsciteDaFatturare() {
   const [righe, { data: clienti, error: eC }] = await Promise.all([
     capiConPezzi(),
-    supabase.from("ci_clienti").select("id, nome, partita_iva"),
+    fetchAllPages((da, a) => supabase.from("ci_clienti").select("id, nome, partita_iva").order("id").range(da, a)),
   ]);
   if (eC) throw new Error(eC.message);
   const nomiClienti = new Set((clienti || []).map(c => norm(c.nome)));
@@ -162,12 +162,12 @@ export async function caricaUsciteDaFatturare() {
 export async function caricaPreparazione(dataDa, dataA) {
   const [capiTutti, clientiR, aliasR, assegnR, prezziR, attiveR, emesseR] = await Promise.all([
     capiConPezzi(),
-    supabase.from("ci_clienti").select("*").order("nome"),
+    fetchAllPages((da, a) => supabase.from("ci_clienti").select("*").order("nome").order("id").range(da, a)),
     supabase.from("ci_clienti_alias").select("*"),
     supabase.from("ci_uscite_cliente_assegnato").select("*"),
     supabase.from("ci_prezzi_clienti").select("*"),
-    supabase.from("ci_fatture").select("id, numero, data, cliente_id, ci_articoli_fattura(descrizione, prezzo_unitario)").eq("tipo", "ATTIVA").order("data", { ascending: false }),
-    supabase.from("ci_fatture_emesse").select("numero, anno, data").eq("stato", "emessa"),
+    fetchAllPages((da, a) => supabase.from("ci_fatture").select("id, numero, data, cliente_id, ci_articoli_fattura(descrizione, prezzo_unitario)").eq("tipo", "ATTIVA").order("data", { ascending: false }).order("id").range(da, a)),
+    fetchAllPages((da, a) => supabase.from("ci_fatture_emesse").select("numero, anno, data").eq("stato", "emessa").order("id").range(da, a)),
   ]);
   for (const r of [clientiR, aliasR, assegnR, prezziR, attiveR, emesseR]) if (r.error) throw new Error(r.error.message);
 
@@ -292,8 +292,8 @@ function numeroSuccessivo(emesse, attive = []) {
 }
 export async function caricaNumeroProposto() {
   const [e, a] = await Promise.all([
-    supabase.from("ci_fatture_emesse").select("numero, anno").eq("stato", "emessa"),
-    supabase.from("ci_fatture").select("numero, data").eq("tipo", "ATTIVA"),
+    fetchAllPages((da, a) => supabase.from("ci_fatture_emesse").select("numero, anno").eq("stato", "emessa").order("id").range(da, a)),
+    fetchAllPages((da, a) => supabase.from("ci_fatture").select("numero, data").eq("tipo", "ATTIVA").order("id").range(da, a)),
   ]);
   return numeroSuccessivo(e.data || [], a.data || []);
 }

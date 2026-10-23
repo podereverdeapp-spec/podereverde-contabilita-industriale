@@ -4,7 +4,13 @@ export default function IstruzioniCosti() {
   return (
     <PaginaIstruzioni
       titolo="Costi"
-      introduzione="I report che ripartiscono tutti i costi aziendali tra le specie di allevamento, a diversi livelli di dettaglio, e la gestione dei cespiti (beni ammortizzabili) che generano quote di costo pluriennali."
+      introduzione={
+        <>
+          I report che ripartiscono tutti i costi aziendali tra le specie di allevamento, a diversi livelli di dettaglio, e la gestione dei cespiti (beni ammortizzabili) che generano quote di costo pluriennali.
+          <br /><br />
+          <strong>Lettura a pagine</strong> (versione 280, decisione del Dott. Bizzarri del 23/10/2026): il database consegna al massimo 1.000 righe per ogni richiesta. Le pagine di questa cartella che calcolano, controllano o elencano leggono i dati a gruppi di 1.000, uno dopo l'altro, finché non li hanno ricevuti tutti: nessuna fattura, riga o costo resta fuori, anche quando saranno decine di migliaia. Vedi nel Glossario «Lettura a pagine».
+        </>
+      }
       sezioni={[
         {
           pagina: "Report Costi", icon: "📊",

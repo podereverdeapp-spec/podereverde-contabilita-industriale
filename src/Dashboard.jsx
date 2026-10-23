@@ -19,8 +19,8 @@ export default function Dashboard({ onNavigate }) {
     setLoading(true);
     const [{ data: f, error: eF }, { data: fo, error: eFo }, { data: ra, error: eRA }] = await Promise.all([
       fetchAllPages((da, a) => supabase.from("ci_fatture").select("*, ci_fornitori(nome), ci_clienti(nome)").order("data", { ascending: false }).order("id").range(da, a)),
-      supabase.from("ci_fornitori").select("*"),
-      supabase.from("ci_report_acquisto_animali").select("*").eq("stato", "DA_ELABORARE"),
+      fetchAllPages((da, a) => supabase.from("ci_fornitori").select("*").order("id").range(da, a)),
+      fetchAllPages((da, a) => supabase.from("ci_report_acquisto_animali").select("*").eq("stato", "DA_ELABORARE").order("id").range(da, a)),
     ]);
     const errore = eF || eFo || eRA;
     if (errore) {

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
-import { formattaEuro } from "./parsingUtils";
+import { formattaEuro, fetchAllPages, leggiInBlocchi } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
 
 export default function StoricoMuratella({ coloreMuratella }) {
@@ -18,15 +18,15 @@ export default function StoricoMuratella({ coloreMuratella }) {
     setCaricando(true);
     setErrore(null);
     try {
-      const { data: fatture, error: eF } = await supabase.from("muratella_fatture").select("id,data");
+      const { data: fatture, error: eF } = await fetchAllPages((da, a) => supabase.from("muratella_fatture").select("id,data").order("id").range(da, a));
       if (eF) throw new Error(eF.message);
       const mappaAnnoFattura = new Map((fatture || []).map(f => [f.id, new Date(f.data).getFullYear()]));
 
       const idFatture = (fatture || []).map(f => f.id);
       let articoli = [];
       if (idFatture.length > 0) {
-        const { data, error: eA } = await supabase.from("muratella_articoli_fattura")
-          .select("area,centro_costo,totale_riga,fattura_id").in("fattura_id", idFatture);
+        const { data, error: eA } = await leggiInBlocchi(idFatture, (blocco, da, a) => supabase.from("muratella_articoli_fattura")
+          .select("area,centro_costo,totale_riga,fattura_id").in("fattura_id", blocco).order("id").range(da, a));
         if (eA) throw new Error(eA.message);
         articoli = data || [];
       }

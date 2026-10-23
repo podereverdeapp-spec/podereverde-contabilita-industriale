@@ -12,6 +12,8 @@ export default function IstruzioniAnagrafiche() {
           Questa cartella serve a ritrovare le informazioni già caricate: una fattura, una riga di fattura, i dati di un fornitore o di un cliente. Il prezzo pagato per un prodotto nel tempo si trova nella cartella «Controllo Prezzi di Acquisto».
           <br /><br />
           Attenzione: «Ricerca» non serve solo a guardare, ma permette anche di MODIFICARE fatture, righe e classificazioni, e queste modifiche cambiano i costi. Ogni modifica resta scritta nel «Registro delle Modifiche» (Carica Dati Contabilità → 6. Controllo finale), con chi l'ha fatta e il valore prima e dopo.
+          <br /><br />
+          <strong>Lettura a pagine</strong> (versione 280, decisione del Dott. Bizzarri del 23/10/2026): il database consegna al massimo 1.000 righe per ogni richiesta. Le pagine di questa cartella che calcolano, controllano o elencano leggono i dati a gruppi di 1.000, uno dopo l'altro, finché non li hanno ricevuti tutti: nessuna fattura, riga o costo resta fuori, anche quando saranno decine di migliaia. Vedi nel Glossario «Lettura a pagine».
         </>
       }
       sezioni={[

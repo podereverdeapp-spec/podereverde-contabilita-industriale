@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import * as XLSX from "xlsx-js-style";
 import { supabase } from "./supabase";
 import { C } from "./style";
-import { round2, numeroRobusto, calcolaImponibile, leggiAliquotaIva, formattaData, formattaEuro } from "./parsingUtils";
+import { round2, numeroRobusto, calcolaImponibile, leggiAliquotaIva, formattaData, formattaEuro, fetchAllPages, leggiInBlocchi } from "./parsingUtils";
 
 export default function CaricaFattureAttive() {
   const [clienti, setClienti] = useState([]);
@@ -12,7 +12,7 @@ export default function CaricaFattureAttive() {
 
   async function assicuraClienti() {
     if (caricatoClienti) return clienti;
-    const { data, error } = await supabase.from("ci_clienti").select("*");
+    const { data, error } = await fetchAllPages((da, a) => supabase.from("ci_clienti").select("*").order("id").range(da, a));
     if (error) { alert(`⚠️ Errore nel caricamento clienti:\n\n${error.message}`); return []; }
     setClienti(data || []);
     setCaricatoClienti(true);
@@ -70,7 +70,7 @@ export default function CaricaFattureAttive() {
 
     const clienteIds = [...new Set(risultati.map(r => r.cliente_obj?.id).filter(Boolean))];
     if (clienteIds.length > 0) {
-      const { data: fattureEsistenti } = await supabase.from("ci_fatture").select("cliente_id, numero, data").in("cliente_id", clienteIds);
+      const { data: fattureEsistenti } = await leggiInBlocchi(clienteIds, (blocco, da, a) => supabase.from("ci_fatture").select("cliente_id, numero, data").in("cliente_id", blocco).order("id").range(da, a));
       const chiaviEsistenti = new Set((fattureEsistenti || []).map(f => `${f.cliente_id}|${f.numero}|${f.data}`));
       risultati.forEach(r => {
         if (r.cliente_obj) r.giaCaricata = chiaviEsistenti.has(`${r.cliente_obj.id}|${r.numero}|${r.data}`);

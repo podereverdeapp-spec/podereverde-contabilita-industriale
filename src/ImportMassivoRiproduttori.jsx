@@ -2,7 +2,7 @@ import { useState } from "react";
 import * as XLSX from "xlsx-js-style";
 import { supabase } from "./supabase";
 import { C } from "./style";
-import { formattaEuro, round2, fetchAllPages, formattaData } from "./parsingUtils";
+import { formattaEuro, round2, fetchAllPages, formattaData, leggiInBlocchi } from "./parsingUtils";
 import { esportaExcel } from "./esportaExcel";
 import { stimaPesoCarcassaPerEta } from "./motoreRiproduttori";
 
@@ -27,12 +27,12 @@ export default function ImportMassivoRiproduttori() {
       const bdnRiproduttori = riproduttori.map(r => r.bdn).filter(Boolean);
 
       const [{ data: residui }, { data: fattureTrasporto }, { data: fattureAcquisto }] = await Promise.all([
-        supabase.from("ci_residuo_riproduttore").select("*").in("animale_id", idRiproduttori),
+        leggiInBlocchi(idRiproduttori, (blocco, da, a) => supabase.from("ci_residuo_riproduttore").select("*").in("animale_id", blocco).order("id").range(da, a)),
         bdnRiproduttori.length > 0
-          ? supabase.from("ci_report_acquisto_animali").select("*, ci_fornitori(nome)").in("bdn", bdnRiproduttori).eq("fonte", "TRASPORTO_INGRESSO")
+          ? leggiInBlocchi(bdnRiproduttori, (blocco, da, a) => supabase.from("ci_report_acquisto_animali").select("*, ci_fornitori(nome)").in("bdn", blocco).eq("fonte", "TRASPORTO_INGRESSO").order("id").range(da, a))
           : Promise.resolve({ data: [] }),
         bdnRiproduttori.length > 0
-          ? supabase.from("ci_report_acquisto_animali").select("*, ci_fornitori(nome)").in("bdn", bdnRiproduttori).eq("fonte", "ACQUISTO_DIRETTO")
+          ? leggiInBlocchi(bdnRiproduttori, (blocco, da, a) => supabase.from("ci_report_acquisto_animali").select("*, ci_fornitori(nome)").in("bdn", blocco).eq("fonte", "ACQUISTO_DIRETTO").order("id").range(da, a))
           : Promise.resolve({ data: [] }),
       ]);
       const mappaResidui = new Map((residui || []).map(r => [r.animale_id, r]));

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
-import { numerizzaCampi, formattaEuro, round2 } from "./parsingUtils";
+import { numerizzaCampi, formattaEuro, round2, fetchAllPages } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
 
 const DESTINAZIONI = ["Bovini", "Suini", "Ovini", "Bovini e Ovini", "Bovini e Suini", "Suini e Ovini", "Generali", "Pollame", "Cavalli"];
@@ -39,7 +39,7 @@ export default function CostiDiretti() {
 
   async function carica() {
     setLoading(true);
-    const { data, error } = await supabase.from("ci_costi_diretti").select("*").order("data", { ascending: false });
+    const { data, error } = await fetchAllPages((da, a) => supabase.from("ci_costi_diretti").select("*").order("data", { ascending: false }).order("id").range(da, a));
     if (error) { alert(`⚠️ Errore nel caricamento:\n\n${error.message}`); setLoading(false); return; }
     setCosti(numerizzaCampi(data || [], ["importo", "imponibile", "cassa_importo", "iva", "totale_documento"]));
     setLoading(false);

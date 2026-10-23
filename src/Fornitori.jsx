@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "./supabase";
+import { fetchAllPages } from "./parsingUtils";
 import { C } from "./style";
 import { esportaExcel } from "./esportaExcel";
 
@@ -13,10 +14,10 @@ export default function Fornitori() {
 
   async function carica() {
     setLoading(true);
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllPages((da, a) => supabase
       .from("ci_fornitori")
       .select("*")
-      .order("nome");
+      .order("nome").order("id").range(da, a));
     if (error) {
       alert(`⚠️ Errore nel caricamento fornitori:\n\n${error.message}`);
     } else {

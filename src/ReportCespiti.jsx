@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
-import { numerizzaCampi, round2, formattaEuro } from "./parsingUtils";
+import { numerizzaCampi, round2, formattaEuro, fetchAllPages, leggiInBlocchi } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
 
 export default function ReportCespiti() {
@@ -13,14 +13,14 @@ export default function ReportCespiti() {
   async function carica() {
     setLoading(true);
     try {
-      const { data: cespiti, error: eC } = await supabase.from("ci_cespiti").select("*");
+      const { data: cespiti, error: eC } = await fetchAllPages((da, a) => supabase.from("ci_cespiti").select("*").order("id").range(da, a));
       if (eC) throw new Error(eC.message);
       const cespitiNum = numerizzaCampi(cespiti || [], ["costo_acquisto", "anni_ammortamento"]);
 
       const idCespiti = cespitiNum.map(c => c.id);
       let quote = [];
       if (idCespiti.length > 0) {
-        const { data, error: eQ } = await supabase.from("ci_cespiti_ammortamento").select("cespite_id, anno, quota").in("cespite_id", idCespiti);
+        const { data, error: eQ } = await leggiInBlocchi(idCespiti, (blocco, da, a) => supabase.from("ci_cespiti_ammortamento").select("cespite_id, anno, quota").in("cespite_id", blocco).order("id").range(da, a));
         if (eQ) throw new Error(eQ.message);
         quote = numerizzaCampi(data || [], ["quota"]);
       }

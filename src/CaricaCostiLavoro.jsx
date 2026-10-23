@@ -2,6 +2,7 @@ import { useState } from "react";
 import * as XLSX from "xlsx-js-style";
 import JSZip from "jszip";
 import { supabase } from "./supabase";
+import { fetchAllPages, leggiInBlocchi } from "./parsingUtils";
 import { C } from "./style";
 
 // Versione 271 (21/10/2026; PDF anche da soli e per le buste già caricate nella 272): carica l'Excel prodotto con il «Prompt per carico cedolini» e lo zip dei cedolini
@@ -116,12 +117,12 @@ export default function CaricaCostiLavoro() {
 
   async function leggiStato(d) {
     const cf = [...new Set(d.costi.map(r => r.codice_fiscale))];
-    const { data: dip, error: e1 } = await supabase.from("ci_dipendenti").select("id, cognome_nome, codice_fiscale").in("codice_fiscale", cf);
+    const { data: dip, error: e1 } = await leggiInBlocchi(cf, (blocco, da, a) => supabase.from("ci_dipendenti").select("id, cognome_nome, codice_fiscale").in("codice_fiscale", blocco).order("id").range(da, a));
     if (e1) { setErrore("Lettura dei dipendenti non riuscita: " + e1.message + ". Solo l'amministratore e le persone autorizzate possono caricare i costi del lavoro."); return; }
     const ids = (dip || []).map(x => x.id);
-    const { data: gia } = ids.length ? await supabase.from("ci_costo_lavoro_mensile").select("dipendente_id, mese, tipo").eq("anno", d.anno).in("dipendente_id", ids) : { data: [] };
-    const { data: esc } = ids.length ? await supabase.from("ci_dipendenti_esclusioni").select("dipendente_id, dal, al, motivo").in("dipendente_id", ids) : { data: [] };
-    const { data: cd } = await supabase.from("ci_costi_diretti").select("id, data, importo, descrizione").eq("area", "Lavoro").eq("centro_costo", CENTRO_LAVORO).gte("data", `${d.anno}-01-01`).lte("data", `${d.anno}-12-31`).order("data");
+    const { data: gia } = ids.length ? await leggiInBlocchi(ids, (blocco, da, a) => supabase.from("ci_costo_lavoro_mensile").select("dipendente_id, mese, tipo").eq("anno", d.anno).in("dipendente_id", blocco).order("id").range(da, a)) : { data: [] };
+    const { data: esc } = ids.length ? await leggiInBlocchi(ids, (blocco, da, a) => supabase.from("ci_dipendenti_esclusioni").select("dipendente_id, dal, al, motivo").in("dipendente_id", blocco).order("id").range(da, a)) : { data: [] };
+    const { data: cd } = await fetchAllPages((da, a) => supabase.from("ci_costi_diretti").select("id, data, importo, descrizione").eq("area", "Lavoro").eq("centro_costo", CENTRO_LAVORO).gte("data", `${d.anno}-01-01`).lte("data", `${d.anno}-12-31`).order("data").order("id").range(da, a));
     const cfDaId = Object.fromEntries((dip || []).map(x => [x.id, x.codice_fiscale]));
     const giaCaricate = new Set((gia || []).map(g => `${cfDaId[g.dipendente_id]}|${g.mese}|${g.tipo}`));
     const escAnno = {};
@@ -169,7 +170,7 @@ export default function CaricaCostiLavoro() {
   async function soloPdf() {
     setErrore(""); setEsito(null);
     try {
-      const { data: dip, error } = await supabase.from("ci_dipendenti").select("id, codice_fiscale").in("codice_fiscale", [...new Set(dati.costi.map(r => r.codice_fiscale))]);
+      const { data: dip, error } = await leggiInBlocchi(dati.costi.map(r => r.codice_fiscale), (blocco, da, a) => supabase.from("ci_dipendenti").select("id, codice_fiscale").in("codice_fiscale", blocco).order("id").range(da, a));
       if (error) throw new Error(error.message);
       const idDaCf = Object.fromEntries(dip.map(x => [x.codice_fiscale, x.id]));
       const giaNelProgramma = dati.costi.filter(r => idDaCf[r.codice_fiscale] && stato.giaCaricate.has(`${r.codice_fiscale}|${r.mese}|${r.tipo}`));
@@ -268,9 +269,9 @@ export default function CaricaCostiLavoro() {
 
       // 5. costi diretti dell'anno: un totale per mese, senza nomi, delle persone non escluse
       setLavoro("Costi diretti dell'anno…");
-      const { data: tutte, error: e4 } = await supabase.from("ci_costo_lavoro_mensile").select("dipendente_id, mese, costo_totale").eq("anno", d.anno);
+      const { data: tutte, error: e4 } = await fetchAllPages((da, a) => supabase.from("ci_costo_lavoro_mensile").select("dipendente_id, mese, costo_totale").eq("anno", d.anno).order("id").range(da, a));
       if (e4) throw new Error("Rilettura dei costi: " + e4.message);
-      const { data: esc } = await supabase.from("ci_dipendenti_esclusioni").select("dipendente_id, dal, al");
+      const { data: esc } = await fetchAllPages((da, a) => supabase.from("ci_dipendenti_esclusioni").select("dipendente_id, dal, al").order("id").range(da, a));
       const esclusa = (id, mese) => (esc || []).some(e => e.dipendente_id === id && e.dal <= ultimoGiorno(d.anno, mese) && (!e.al || e.al >= `${d.anno}-${String(mese).padStart(2, "0")}-01`));
       const perMese = {};
       for (const t of tutte) {

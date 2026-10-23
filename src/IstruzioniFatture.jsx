@@ -2,6 +2,7 @@ import PaginaIstruzioni from "./PaginaIstruzioni";
 
 // Istruzioni della cartella «Carica Fatture» — aggiornate il 07/10/2026 (versione 233, aggiornate con le correzioni della versione 235) sul
 // comportamento reale delle pagine.
+// Versione 280 (23/10/2026): lettura a pagine nell'introduzione, nelle Fatture Passive e nell'Elenco delle Fatture Attive.
 export default function IstruzioniFatture() {
   return (
     <PaginaIstruzioni
@@ -15,6 +16,8 @@ export default function IstruzioniFatture() {
           Sono queste righe che poi finiscono nei costi degli animali e delle coltivazioni.
           <br /><br />
           La ricerca delle fatture si trova nella cartella «Ricerca: Fatture e Anagrafiche»; il confronto dei prezzi nella cartella «Controllo Prezzi di Acquisto».
+          <br /><br />
+          <strong>Lettura a pagine</strong> (versione 280, decisione del Dott. Bizzarri del 23/10/2026): il database consegna al massimo 1.000 righe per ogni richiesta. Le pagine di questa cartella che calcolano, controllano o elencano leggono i dati a gruppi di 1.000, uno dopo l'altro, finché non li hanno ricevuti tutti: nessuna fattura, riga o costo resta fuori, anche quando saranno decine di migliaia. Vedi nel Glossario «Lettura a pagine».
         </>
       }
       sezioni={[
@@ -50,10 +53,11 @@ export default function IstruzioniFatture() {
           pagina: "Fatture Passive", icon: "📄",
           aCosaServe: "Consultare le fatture di acquisto salvate, dalla più recente.",
           comeSiUsa: [
-            "Cercare per fornitore, numero o partita IVA; filtrare per anno o per una data precisa (✕ toglie la data).",
-            "In alto: quante fatture e il loro totale con i filtri scelti.",
+            "Cercare per fornitore, numero o partita IVA; filtrare per anno o per una data precisa (✕ toglie la data). La ricerca la fa il database su tutte le fatture e parte mezzo secondo dopo l'ultima lettera scritta.",
+            "In alto: quante fatture e il loro totale con i filtri scelti, calcolati dal database su TUTTE le fatture trovate, anche quelle che in quel momento non si vedono.",
+            "Le fatture si vedono a gruppi: «per volta» sceglie 50, 100 o 200. I pulsanti «◀ precedenti» e «successive ▶», sopra e sotto l'elenco, passano al gruppo prima o dopo; tra i pulsanti è scritto quali fatture si stanno vedendo (per esempio «fatture 51–100 di 981»). Cambiando un filtro si riparte dalla prima.",
             "«▼ vedi righe» ricompone la fattura: righe con quantità, prezzo e imponibile, IVA per aliquota e totale.",
-            "«📥 Esporta Excel» scarica l'elenco delle fatture filtrate (fornitore, partita IVA, numero, data, totali).",
+            "«📥 Esporta Excel» scarica TUTTE le fatture trovate con i filtri, non solo il gruppo che si vede (fornitore, partita IVA, numero, data, totali): il programma le legge 1.000 alla volta e sul pulsante si vede l'avanzamento.",
           ],
           note: "Pagina di sola consultazione: la classificazione delle singole righe si vede nella cartella «Ricerca».",
         },
@@ -61,7 +65,7 @@ export default function IstruzioniFatture() {
           pagina: "Carica Fatture Attive", icon: "💰",
           aCosaServe: "Le fatture di vendita: elenco, inserimento di una fattura e caricamento massivo da Excel.",
           comeSiUsa: [
-            "«📋 Elenco»: le fatture di vendita, con ricerca per cliente, numero o partita IVA, filtro per anno, «▼ vedi righe» ed «📥 Esporta Excel».",
+            "«📋 Elenco»: le fatture di vendita, con ricerca per cliente, numero o partita IVA, filtro per anno, «▼ vedi righe» ed «📥 Esporta Excel». Come nelle Fatture Passive, si vedono 50, 100 o 200 fatture per volta con i pulsanti «◀ precedenti» e «successive ▶» sopra e sotto l'elenco; il numero, il totale e l'esportazione riguardano tutte le fatture trovate.",
             "«+ Nuova Fattura»: scegliere il «Cliente» (solo clienti già in anagrafica), numero e data, poi gli articoli (descrizione, quantità, unità di misura, prezzo, aliquota IVA, specie facoltativa) e «💾 Salva fattura».",
             "«📥 Carica Massivo»: file Excel (primo foglio) con le colonne Cliente, P.IVA, Numero, Data, Descrizione, Quantità, U.M., Prezzo unitario, Imponibile, Aliquota IVA, Destinazione (specie, facoltativa). Ogni riga si salva con «💾 Salva questa riga» o tutte con «Salva tutte le rimanenti»; i clienti nuovi vengono creati con nome e partita IVA.",
           ],

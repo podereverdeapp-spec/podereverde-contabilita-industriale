@@ -29,10 +29,10 @@ export async function calcolaDatiQuantitaAnno(anno, centroCosto) {
     righeArticolo = data || [];
   }
 
-  const { data: fornitori } = await supabase.from("ci_fornitori").select("id, nome");
+  const { data: fornitori } = await fetchAllPages((da, a) => supabase.from("ci_fornitori").select("id, nome").order("id").range(da, a));
   const mappaFornitori = new Map((fornitori || []).map(f => [f.id, f.nome]));
 
-  const { data: regole } = await supabase.from("ci_regole_armonizzazione_unita").select("*").eq("centro_costo", centroCosto);
+  const { data: regole } = await fetchAllPages((da, a) => supabase.from("ci_regole_armonizzazione_unita").select("*").eq("centro_costo", centroCosto).order("id").range(da, a));
   const mappaRegole = new Map((regole || []).map(r => [`${r.fornitore_id}|${r.descrizione_prodotto.trim().toLowerCase()}`, r]));
 
   const gruppi = new Map();

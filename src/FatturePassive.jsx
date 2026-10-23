@@ -1,157 +1,187 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { numerizzaCampi, formattaEuro } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
 
-export default function FatturePassive() {
-  const [fatture, setFatture] = useState([]);
+// Versione 280 (decisione del Dott. Bizzarri del 23/10/2026): la consultazione delle fatture si fa «a
+// pagine». Il database consegna al massimo 1.000 righe per richiesta: per questo la pagina NON legge più
+// tutte le fatture in una volta (oltre le 1.000 le più vecchie sarebbero sparite senza avviso). È il
+// database (funzione ci_cerca_fatture, file contabilita_strutture_v280.sql) a cercare, contare e
+// sommare TUTTE le fatture che corrispondono ai filtri; la pagina mostra solo il gruppo richiesto
+// (50, 100 o 200), con i pulsanti «◀ precedenti / successive ▶» in cima e in fondo all'elenco.
+// L'export Excel legge tutte le fatture trovate, 1.000 alla volta, finché non le ha ricevute tutte.
+const GRUPPI = [50, 100, 200];
+
+export function ElencoFattureAPagine({ tipo, titolo, etichettaControparte, nomeFile, conFiltroData = false, coloreTotale = C.primary }) {
+  const [risposta, setRisposta] = useState(null);
   const [righePerFattura, setRighePerFattura] = useState({});
   const [loading, setLoading] = useState(true);
+  const [errore, setErrore] = useState("");
   const [espansa, setEspansa] = useState(null);
   const [cerca, setCerca] = useState("");
+  const [cercaApplicata, setCercaApplicata] = useState("");
   const [filtroAnno, setFiltroAnno] = useState("tutti");
   const [filtroData, setFiltroData] = useState("");
+  const [gruppo, setGruppo] = useState(50);
+  const [inizio, setInizio] = useState(0);
+  const [esportando, setEsportando] = useState("");
 
-  useEffect(() => { carica(); }, []);
+  // la ricerca parte mezzo secondo dopo l'ultima lettera scritta
+  useEffect(() => { const t = setTimeout(() => setCercaApplicata(cerca.trim()), 500); return () => clearTimeout(t); }, [cerca]);
+  // cambiando un filtro o la grandezza del gruppo si riparte dalla prima fattura
+  useEffect(() => { setInizio(0); }, [cercaApplicata, filtroAnno, filtroData, gruppo]);
+  useEffect(() => { carica(); }, [cercaApplicata, filtroAnno, filtroData, gruppo, inizio]);
+
+  const parametri = (offset, limite) => ({
+    p_tipo: tipo, p_anno: filtroAnno === "tutti" ? null : parseInt(filtroAnno), p_data: filtroData || null,
+    p_testo: cercaApplicata || null, p_offset: offset, p_limite: limite,
+  });
 
   async function carica() {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from("ci_fatture")
-      .select("*, ci_fornitori(nome, partita_iva)")
-      .eq("tipo", "PASSIVA")
-      .order("data", { ascending: false });
+    setLoading(true); setErrore("");
+    const { data, error } = await supabase.rpc("ci_cerca_fatture", parametri(inizio, gruppo));
     if (error) {
-      alert(`⚠️ Errore nel caricamento delle fatture:\n\n${error.message}`);
+      setErrore(/ci_cerca_fatture|function|funzione/i.test(error.message)
+        ? `${error.message}\n\nIl database non ha ancora la funzione della versione 280: lanciare il file contabilita_strutture_v280.sql.`
+        : error.message);
+      setRisposta(null);
     } else {
-      setFatture(numerizzaCampi(data || [], ["totale_netto", "totale_iva", "totale_lordo"]));
+      setRisposta({ ...data, fatture: numerizzaCampi(data?.fatture || [], ["totale_netto", "totale_iva", "totale_lordo"]) });
     }
     setLoading(false);
   }
 
   async function espandi(fatturaId) {
-    if (espansa === fatturaId) {
-      setEspansa(null);
-      return;
-    }
+    if (espansa === fatturaId) { setEspansa(null); return; }
     setEspansa(fatturaId);
     if (!righePerFattura[fatturaId]) {
-      const { data, error } = await supabase
-        .from("ci_articoli_fattura")
-        .select("*")
-        .eq("fattura_id", fatturaId)
-        .order("id");
-      if (error) {
-        alert(`⚠️ Errore nel caricamento delle righe:\n\n${error.message}`);
-        return;
-      }
+      const { data, error } = await supabase.from("ci_articoli_fattura").select("*").eq("fattura_id", fatturaId).order("id");
+      if (error) { alert(`⚠️ Errore nel caricamento delle righe:\n\n${error.message}`); return; }
       setRighePerFattura(prev => ({ ...prev, [fatturaId]: numerizzaCampi(data || [], ["quantita", "prezzo_unitario", "totale_riga", "aliquota_iva", "totale_iva"]) }));
     }
   }
 
-  const anniDisponibili = useMemo(() => {
-    return [...new Set(fatture.map(f => new Date(f.data).getFullYear()))].sort((a, b) => b - a);
-  }, [fatture]);
-
-  const filtrate = useMemo(() => {
-    return fatture.filter(f => {
-      if (filtroAnno !== "tutti" && new Date(f.data).getFullYear() !== parseInt(filtroAnno)) return false;
-      if (filtroData && f.data !== filtroData) return false;
-      if (cerca.trim()) {
-        const q = cerca.trim().toLowerCase();
-        const testo = `${f.ci_fornitori?.nome || ""} ${f.numero} ${f.ci_fornitori?.partita_iva || ""}`.toLowerCase();
-        if (!testo.includes(q)) return false;
+  // Export: tutte le fatture trovate, 1.000 alla volta, con l'avanzamento
+  async function esporta() {
+    const totaleTrovate = Number(risposta?.numero || 0);
+    const tutte = [];
+    try {
+      for (let da = 0; ; da += 1000) {
+        setEsportando(`letto ${tutte.length.toLocaleString("it-IT")} di ${totaleTrovate.toLocaleString("it-IT")}`);
+        const { data, error } = await supabase.rpc("ci_cerca_fatture", parametri(da, 1000));
+        if (error) throw new Error(error.message);
+        const blocco = data?.fatture || [];
+        tutte.push(...blocco);
+        if (blocco.length < 1000) break;
       }
-      return true;
-    });
-  }, [fatture, filtroAnno, filtroData, cerca]);
-
-  const totale = filtrate.reduce((s, f) => s + (f.totale_lordo || 0), 0);
-
-  function esporta() {
-    const righeExcel = filtrate.map(f => ({
-      "Fornitore": f.ci_fornitori?.nome, "P.IVA": f.ci_fornitori?.partita_iva, "Numero": f.numero, "Data": f.data,
-      "Totale netto": numeroExcel(f.totale_netto), "Totale IVA": numeroExcel(f.totale_iva), "Totale lordo": numeroExcel(f.totale_lordo),
-    }));
-    esportaExcel("FatturePassive", [{ nome: "Fatture Passive", righe: righeExcel }]);
+      if (tutte.length !== totaleTrovate) throw new Error(`Lette ${tutte.length} fatture invece di ${totaleTrovate}: riprovare.`);
+      const righeExcel = tutte.map(f => ({
+        [etichettaControparte]: f.controparte, "P.IVA": f.partita_iva, "Numero": f.numero, "Data": f.data,
+        "Totale netto": numeroExcel(f.totale_netto), "Totale IVA": numeroExcel(f.totale_iva), "Totale lordo": numeroExcel(f.totale_lordo),
+      }));
+      esportaExcel(nomeFile, [{ nome: titolo, righe: righeExcel }]);
+    } catch (err) {
+      alert(`⚠️ Errore nell'esportazione:\n\n${err.message}`);
+    }
+    setEsportando("");
   }
+
+  const numero = Number(risposta?.numero || 0);
+  const fatture = risposta?.fatture || [];
+  const anni = risposta?.anni || [];
+  const ultima = Math.min(inizio + gruppo, numero);
+
+  const Navigazione = () => numero > 0 && (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "8px 0" }}>
+      <button onClick={() => setInizio(Math.max(0, inizio - gruppo))} disabled={inizio === 0 || loading} style={stilePulsante(inizio === 0)}>◀ precedenti</button>
+      <span style={{ fontSize: 13, color: C.muted }}>fatture {(inizio + 1).toLocaleString("it-IT")}–{ultima.toLocaleString("it-IT")} di {numero.toLocaleString("it-IT")}</span>
+      <button onClick={() => setInizio(inizio + gruppo)} disabled={ultima >= numero || loading} style={stilePulsante(ultima >= numero)}>successive ▶</button>
+      <label style={{ fontSize: 13, color: C.muted, marginLeft: 8 }}>per volta:{" "}
+        <select value={gruppo} onChange={e => setGruppo(parseInt(e.target.value))} style={{ padding: "4px 8px", borderRadius: 6, border: `1.5px solid ${C.border}` }}>
+          {GRUPPI.map(g => <option key={g} value={g}>{g}</option>)}
+        </select>
+      </label>
+    </div>
+  );
 
   return (
     <div style={{ padding: 20, maxWidth: 1200, margin: "0 auto" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-        <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Fatture Passive</h1>
-        <button onClick={esporta}
+        <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>{titolo}</h1>
+        <button onClick={esporta} disabled={!numero || !!esportando}
           style={{ background: C.green, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-          📥 Esporta Excel
+          {esportando ? `📥 Esportazione… ${esportando}` : "📥 Esporta Excel"}
         </button>
       </div>
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 20 }}>
-        {filtrate.length} fatture — totale {formattaEuro(totale)}
+        {risposta ? `${numero.toLocaleString("it-IT")} fatture — totale ${formattaEuro(Number(risposta.totale_lordo || 0))} (calcolato su tutte le fatture trovate, anche quelle non mostrate)` : ""}
       </p>
 
-      <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
-        <input
-          placeholder="Cerca per fornitore, numero o P.IVA..."
-          value={cerca}
-          onChange={e => setCerca(e.target.value)}
-          style={{ flex: 1, minWidth: 200, padding: "8px 12px", borderRadius: 8, border: `1.5px solid ${C.border}`, fontSize: 14 }}
-        />
-        <input
-          type="date"
-          value={filtroData}
-          onChange={e => setFiltroData(e.target.value)}
-          style={{ padding: "8px 12px", borderRadius: 8, border: `1.5px solid ${C.border}`, fontSize: 14 }}
-        />
-        {filtroData && (
-          <button onClick={() => setFiltroData("")} style={{ background: "none", border: `1.5px solid ${C.border}`, borderRadius: 8, padding: "0 10px", cursor: "pointer", color: C.muted }}>✕</button>
+      <div style={{ display: "flex", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
+        <input placeholder={`Cerca per ${etichettaControparte.toLowerCase()}, numero o P.IVA...`} value={cerca} onChange={e => setCerca(e.target.value)}
+          style={{ flex: 1, minWidth: 200, padding: "8px 12px", borderRadius: 8, border: `1.5px solid ${C.border}`, fontSize: 14 }} />
+        {conFiltroData && (
+          <>
+            <input type="date" value={filtroData} onChange={e => setFiltroData(e.target.value)}
+              style={{ padding: "8px 12px", borderRadius: 8, border: `1.5px solid ${C.border}`, fontSize: 14 }} />
+            {filtroData && <button onClick={() => setFiltroData("")} style={{ background: "none", border: `1.5px solid ${C.border}`, borderRadius: 8, padding: "0 10px", cursor: "pointer", color: C.muted }}>✕</button>}
+          </>
         )}
         <select value={filtroAnno} onChange={e => setFiltroAnno(e.target.value)}
           style={{ padding: "8px 12px", borderRadius: 8, border: `1.5px solid ${C.border}`, fontSize: 14 }}>
           <option value="tutti">Tutti gli anni</option>
-          {anniDisponibili.map(a => <option key={a} value={a}>{a}</option>)}
+          {anni.map(a => <option key={a} value={a}>{a}</option>)}
         </select>
       </div>
 
+      {errore && <div style={{ color: C.red, whiteSpace: "pre-wrap", margin: "12px 0", fontWeight: 700 }}>⚠️ {errore}</div>}
+      <Navigazione />
       {loading ? (
         <p style={{ color: C.muted }}>Caricamento...</p>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {filtrate.map(f => (
-            <div key={f.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10 }}>
-              <div
-                onClick={() => espandi(f.id)}
-                style={{ display: "flex", justifyContent: "space-between", padding: 14, cursor: "pointer", flexWrap: "wrap", gap: 8 }}
-              >
-                <div>
-                  <strong>{f.ci_fornitori?.nome || "—"}</strong>
-                  <div style={{ fontSize: 12, color: C.muted }}>
-                    Fatt. {f.numero} del {f.data} {f.ci_fornitori?.partita_iva && `· P.IVA ${f.ci_fornitori.partita_iva}`}
+          {fatture.map(f => {
+            const conControparte = { ...f, ci_fornitori: { nome: f.controparte, partita_iva: f.partita_iva } };
+            return (
+              <div key={f.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10 }}>
+                <div onClick={() => espandi(f.id)} style={{ display: "flex", justifyContent: "space-between", padding: 14, cursor: "pointer", flexWrap: "wrap", gap: 8 }}>
+                  <div>
+                    <strong>{f.controparte || "—"}</strong>
+                    <div style={{ fontSize: 12, color: C.muted }}>
+                      Fatt. {f.numero} del {f.data} {f.partita_iva && `· P.IVA ${f.partita_iva}`}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontWeight: 800, fontSize: 16, color: coloreTotale }}>{formattaEuro(f.totale_lordo)}</div>
+                    <div style={{ fontSize: 11, color: C.muted }}>{espansa === f.id ? "▲ nascondi righe" : "▼ vedi righe"}</div>
                   </div>
                 </div>
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontWeight: 800, fontSize: 16, color: C.primary }}>{formattaEuro(f.totale_lordo)}</div>
-                  <div style={{ fontSize: 11, color: C.muted }}>{espansa === f.id ? "▲ nascondi righe" : "▼ vedi righe"}</div>
-                </div>
+                {espansa === f.id && (
+                  <div style={{ borderTop: `1px solid ${C.border}`, padding: 14 }}>
+                    {!righePerFattura[f.id] ? <p style={{ color: C.muted, fontSize: 13 }}>Caricamento righe...</p>
+                      : righePerFattura[f.id].length === 0 ? <p style={{ color: C.muted, fontSize: 13 }}>Nessuna riga trovata.</p>
+                      : <RicomposizioneFattura fattura={conControparte} righe={righePerFattura[f.id]} />}
+                  </div>
+                )}
               </div>
-              {espansa === f.id && (
-                <div style={{ borderTop: `1px solid ${C.border}`, padding: 14 }}>
-                  {!righePerFattura[f.id] ? (
-                    <p style={{ color: C.muted, fontSize: 13 }}>Caricamento righe...</p>
-                  ) : righePerFattura[f.id].length === 0 ? (
-                    <p style={{ color: C.muted, fontSize: 13 }}>Nessuna riga trovata.</p>
-                  ) : (
-                    <RicomposizioneFattura fattura={f} righe={righePerFattura[f.id]} />
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
-          {filtrate.length === 0 && <p style={{ color: C.muted }}>Nessuna fattura trovata.</p>}
+            );
+          })}
+          {!errore && fatture.length === 0 && <p style={{ color: C.muted }}>Nessuna fattura trovata.</p>}
         </div>
       )}
+      {!loading && <Navigazione />}
     </div>
   );
+}
+
+const stilePulsante = disabilitato => ({
+  background: disabilitato ? "#ddd" : C.primary, color: disabilitato ? "#888" : "#fff", border: "none", borderRadius: 8,
+  padding: "6px 14px", fontSize: 13, fontWeight: 700, cursor: disabilitato ? "default" : "pointer",
+});
+
+export default function FatturePassive() {
+  return <ElencoFattureAPagine tipo="PASSIVA" titolo="Fatture Passive" etichettaControparte="Fornitore" nomeFile="FatturePassive" conFiltroData />;
 }
 
 export function RicomposizioneFattura({ fattura, righe }) {

@@ -56,7 +56,7 @@ export default function DaArmonizzare() {
       const mappaFattureFornitore = new Map((fatture || []).map(f => [f.id, f.fornitore_id]));
       const mappaFattureDettaglio = new Map((fatture || []).map(f => [f.id, f]));
 
-      const { data: fornitori } = await supabase.from("ci_fornitori").select("id, nome");
+      const { data: fornitori } = await fetchAllPages((da, a) => supabase.from("ci_fornitori").select("id, nome").order("id").range(da, a));
       const mappaFornitori = new Map((fornitori || []).map(f => [f.id, f.nome]));
       setNomiFornitori(mappaFornitori);
       const conta = new Map();
@@ -68,7 +68,7 @@ export default function DaArmonizzare() {
       });
       setRighePerRegola(conta);
 
-      const { data: regoleEsistenti, error: eG } = await supabase.from("ci_regole_armonizzazione_unita").select("*");
+      const { data: regoleEsistenti, error: eG } = await fetchAllPages((da, a) => supabase.from("ci_regole_armonizzazione_unita").select("*").order("id").range(da, a));
       if (eG) throw new Error(eG.message);
       setRegole(regoleEsistenti || []);
       // La chiave include il centro di costo: una regola confermata per lo stesso

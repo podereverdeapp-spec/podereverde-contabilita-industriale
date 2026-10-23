@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx-js-style";
 import { supabase } from "./supabase";
+import { fetchAllPages } from "./parsingUtils";
 import { C } from "./style";
 
 // Versione 271 (21/10/2026): consultazione dei costi del lavoro caricati dai cedolini, chiesta dal Dott. Bizzarri:
@@ -63,16 +64,16 @@ export default function ConsultaCostiLavoro() {
 
   useEffect(() => {
     (async () => {
-      const { data, error } = await supabase.from("ci_costo_lavoro_mensile")
-        .select("*, ci_dipendenti(cognome_nome, codice_fiscale)").order("anno").order("mese");
+      const { data, error } = await fetchAllPages((da, a) => supabase.from("ci_costo_lavoro_mensile")
+        .select("*, ci_dipendenti(cognome_nome, codice_fiscale)").order("anno").order("mese").order("id").range(da, a));
       if (error) { setErrore("I dati del lavoro non si possono leggere: " + error.message + ". Sono visibili solo all'amministratore e alle persone autorizzate."); setRighe([]); return; }
       const rr = (data || []).map(r => ({ ...r, cognome_nome: r.ci_dipendenti?.cognome_nome || "?", codice_fiscale: r.ci_dipendenti?.codice_fiscale }));
       setRighe(rr);
       const anni = [...new Set(rr.map(r => r.anno))].sort();
       setAnno(anni[anni.length - 1] || null);
-      const { data: c } = await supabase.from("ci_contributi_da_versare").select("*").order("anno").order("mese");
+      const { data: c } = await fetchAllPages((da, a) => supabase.from("ci_contributi_da_versare").select("*").order("anno").order("mese").order("id").range(da, a));
       setContributi(c || []);
-      const { data: e } = await supabase.from("ci_dipendenti_esclusioni").select("dipendente_id, dal, al, motivo");
+      const { data: e } = await fetchAllPages((da, a) => supabase.from("ci_dipendenti_esclusioni").select("dipendente_id, dal, al, motivo").order("id").range(da, a));
       setEsclusioni(e || []);
     })();
   }, []);

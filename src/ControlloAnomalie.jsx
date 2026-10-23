@@ -32,8 +32,8 @@ export default function ControlloAnomalie() {
       if (eI) throw new Error(eI.message);
       const ingressoPerRiga = new Map();
       (ingressi || []).forEach(x => { if (x.articolo_fattura_id) ingressoPerRiga.set(x.articolo_fattura_id, (ingressoPerRiga.get(x.articolo_fattura_id) || 0) + (parseFloat(x.importo) || 0)); });
-      const { data: fornitori } = await supabase.from("ci_fornitori").select("id, nome");
-      const { data: clienti } = await supabase.from("ci_clienti").select("id, nome");
+      const { data: fornitori } = await fetchAllPages((da, a) => supabase.from("ci_fornitori").select("id, nome").order("id").range(da, a));
+      const { data: clienti } = await fetchAllPages((da, a) => supabase.from("ci_clienti").select("id, nome").order("id").range(da, a));
       const mappaFornitori = new Map((fornitori || []).map(f => [f.id, f.nome]));
       const mappaClienti = new Map((clienti || []).map(c => [c.id, c.nome]));
 

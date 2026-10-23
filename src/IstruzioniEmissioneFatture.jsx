@@ -25,6 +25,8 @@ export default function IstruzioniEmissioneFatture() {
           <br />• <strong>Altre Fatturazioni</strong>: tutte le altre fatture di vendita (riaddebiti, prodotti, servizi, vendite occasionali).
           <br /><br />
           Tutte le fatture emesse dal programma, animali e altre, seguono la stessa numerazione «FPR n/aa» usata in Aruba.
+          <br /><br />
+          <strong>Lettura a pagine</strong> (versione 280, decisione del Dott. Bizzarri del 23/10/2026): il database consegna al massimo 1.000 righe per ogni richiesta. Le pagine di questa cartella che calcolano, controllano o elencano leggono i dati a gruppi di 1.000, uno dopo l'altro, finché non li hanno ricevuti tutti: nessuna fattura, riga o costo resta fuori, anche quando saranno decine di migliaia. Vedi nel Glossario «Lettura a pagine».
         </>
       }
       sezioni={[

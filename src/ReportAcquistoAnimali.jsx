@@ -50,10 +50,10 @@ export default function ReportAcquistoAnimali() {
 
   async function carica() {
     setLoading(true);
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllPages((da, a) => supabase
       .from("ci_report_acquisto_animali")
       .select("*, ci_fornitori(nome)")
-      .order("data_fattura", { ascending: false });
+      .order("data_fattura", { ascending: false }).order("id").range(da, a));
     if (error) {
       alert(`⚠️ Errore nel caricamento:\n\n${error.message}`);
     } else {

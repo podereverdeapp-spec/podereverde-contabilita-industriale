@@ -5,7 +5,7 @@ import { supabase } from "./supabase";
 import { C } from "./style";
 import { classificaRiga } from "./motoreClassificazione";
 import { CATEGORIE_AMMORTAMENTO, IMPUTAZIONI_CESPITE, creaCespiteDaRiga, anniDaRiga, percentualeDaAnni } from "./cespitiDaFatture";
-import { round2, numeroRobusto, calcolaImponibile, leggiAliquotaIva, formattaData, formattaEuro, formattaNumero } from "./parsingUtils";
+import { round2, numeroRobusto, calcolaImponibile, leggiAliquotaIva, formattaData, formattaEuro, formattaNumero, fetchAllPages, leggiInBlocchi } from "./parsingUtils";
 
 // Versione 261: categorie, anni e creazione del cespite nel modulo comune cespitiDaFatture.js
 
@@ -51,11 +51,12 @@ export default function CaricaFatture() {
     setLoadingDati(true);
     const [{ data: f, error: eF }, { data: rf, error: eRF }, { data: rv, error: eRV }, { data: pc, error: ePC }, { data: ra, error: eRA }] =
       await Promise.all([
-        supabase.from("ci_fornitori").select("*"),
-        supabase.from("ci_regole_fornitore_fissa").select("*"),
-        supabase.from("ci_regole_fornitore_variabile").select("*"),
-        supabase.from("ci_piano_dei_conti").select("*").order("area").order("centro_costo"),
-        supabase.from("ci_regole_armonizzazione_unita").select("fornitore_id, descrizione_prodotto"),
+        // Versione 280: letta a pagine (il database consegna al massimo 1.000 righe per richiesta)
+        fetchAllPages((da, a) => supabase.from("ci_fornitori").select("*").order("id").range(da, a)),
+        fetchAllPages((da, a) => supabase.from("ci_regole_fornitore_fissa").select("*").order("id").range(da, a)),
+        fetchAllPages((da, a) => supabase.from("ci_regole_fornitore_variabile").select("*").order("id").range(da, a)),
+        fetchAllPages((da, a) => supabase.from("ci_piano_dei_conti").select("*").order("area").order("centro_costo").order("id").range(da, a)),
+        fetchAllPages((da, a) => supabase.from("ci_regole_armonizzazione_unita").select("fornitore_id, descrizione_prodotto").order("id").range(da, a)),
       ]);
     const errore = eF || eRF || eRV || ePC;
     if (errore) {
@@ -284,8 +285,9 @@ export default function CaricaFatture() {
     const fornitoreIds = [...new Set(risultati.map(r => r.fornitore_obj?.id).filter(Boolean))];
     if (fornitoreIds.length > 0) {
       const [{ data: fattureEsistenti, error }, { data: acquistiEsistenti, error: eAcq }] = await Promise.all([
-        supabase.from("ci_fatture").select("fornitore_id, numero, data").in("fornitore_id", fornitoreIds),
-        supabase.from("ci_report_acquisto_animali").select("fornitore_id, numero_fattura, data_fattura").in("fornitore_id", fornitoreIds),
+        // Versione 280: controllo dei doppioni su TUTTE le fatture dei fornitori, lette a pagine
+        leggiInBlocchi(fornitoreIds, (blocco, da, a) => supabase.from("ci_fatture").select("fornitore_id, numero, data").in("fornitore_id", blocco).order("id").range(da, a)),
+        leggiInBlocchi(fornitoreIds, (blocco, da, a) => supabase.from("ci_report_acquisto_animali").select("fornitore_id, numero_fattura, data_fattura").in("fornitore_id", blocco).order("id").range(da, a)),
       ]);
       if (error || eAcq) {
         alert(`⚠️ Non sono riuscito a controllare i duplicati (procedo comunque, ma verifica a mano):\n\n${(error || eAcq).message}`);
@@ -302,8 +304,8 @@ export default function CaricaFatture() {
         });
       }
 
-      const { data: scartatePrecedenti } = await supabase
-        .from("ci_righe_scartate").select("fornitore_id, descrizione").in("fornitore_id", fornitoreIds);
+      const { data: scartatePrecedenti } = await leggiInBlocchi(fornitoreIds, (blocco, da, a) => supabase
+        .from("ci_righe_scartate").select("fornitore_id, descrizione").in("fornitore_id", blocco).order("id").range(da, a));
       const chiaviScartate = new Set((scartatePrecedenti || []).map(s => `${s.fornitore_id}|${s.descrizione.trim().toLowerCase()}`));
       risultati.forEach(r => {
         if (r.fornitore_obj && chiaviScartate.has(`${r.fornitore_obj.id}|${r.descrizione.trim().toLowerCase()}`)) {
@@ -362,7 +364,7 @@ export default function CaricaFatture() {
 
     const nomePulito = (riga.fornitore || "").trim().toLowerCase();
     if (nomePulito) {
-      const { data: perNome, error } = await supabase.from("ci_fornitori").select("*").order("id");
+      const { data: perNome, error } = await fetchAllPages((da, a) => supabase.from("ci_fornitori").select("*").order("id").range(da, a));
       if (error) throw new Error(`Errore cercando il fornitore: ${error.message}`);
       // Stesso nome: lo riuso solo se non ha una partita IVA diversa da quella della fattura
       const trovato = (perNome || []).find(f => (f.nome || "").trim().toLowerCase() === nomePulito &&
@@ -449,8 +451,8 @@ export default function CaricaFatture() {
           // I CESPITI, non solo quelli dello stesso fornitore — i dati storici possono
           // avere un fornitore collegato in modo diverso o assente, quindi limitare il
           // controllo al solo fornitore corrente perdeva i duplicati reali.
-          const { data: tuttiCespiti } = await supabase.from("ci_cespiti")
-            .select("id,descrizione,data_acquisto,costo_acquisto,fornitore_id");
+          const { data: tuttiCespiti } = await fetchAllPages((da, a) => supabase.from("ci_cespiti")
+            .select("id,descrizione,data_acquisto,costo_acquisto,fornitore_id").order("id").range(da, a));
           const descrizioneNorm = riga.descrizione.trim().toLowerCase();
           const possibiliDuplicati = (tuttiCespiti || []).filter(c => {
             const descNormEsistente = (c.descrizione || "").trim().toLowerCase();

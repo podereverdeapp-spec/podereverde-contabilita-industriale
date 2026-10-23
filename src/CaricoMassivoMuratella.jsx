@@ -2,7 +2,7 @@ import { useState } from "react";
 import * as XLSX from "xlsx-js-style";
 import { supabase } from "./supabase";
 import { C } from "./style";
-import { round2, numeroRobusto, calcolaImponibile, leggiAliquotaIva, formattaData } from "./parsingUtils";
+import { round2, numeroRobusto, calcolaImponibile, leggiAliquotaIva, formattaData, fetchAllPages } from "./parsingUtils";
 import { esportaExcel } from "./esportaExcel";
 
 // Stesso schema colonne del "Prompt per carico Massivo" già usato per estrarre le fatture
@@ -104,7 +104,7 @@ export default function CaricoMassivoMuratella({ coloreMuratella }) {
     }
 
     // Fatture già caricate: stesso numero e stessa data, e stesso fornitore (per partita IVA o per nome)
-    const { data: esistenti } = await supabase.from("muratella_fatture").select("numero, data, fornitore_nome, fornitore_piva");
+    const { data: esistenti } = await fetchAllPages((da, a) => supabase.from("muratella_fatture").select("numero, data, fornitore_nome, fornitore_piva").order("id").range(da, a));
     const chiaviEsistenti = new Set();
     (esistenti || []).forEach(f => {
       if (f.fornitore_piva) chiaviEsistenti.add(`${String(f.numero).trim()}|${f.data}|${pivaPulita(f.fornitore_piva)}`);

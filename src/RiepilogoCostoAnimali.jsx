@@ -39,8 +39,8 @@ export default function RiepilogoCostoAnimali() {
         fetchAllPages((da, a) => supabase.from("lotti_suini").select("id,codice_lotto,codice,tipo_provenienza,prezzo_acquisto,razza_madre,specie,data_parto,madre_id,padre_id").range(da, a)),
         fetchAllPages((da, a) => supabase.from("suini_lotto").select("id,lotto_id,nr,codice_completo,bdn,sesso,stato,data_uscita,motivo_uscita,peso_carcassa,peso_vivo_uscita").range(da, a)),
         fetchAllPages((da, a) => supabase.from("ci_costo_animale_annuale").select("animale_id,lotto_id,unita_nr,anno,costo_mantenimento,costo_nascita_ereditato,quota_residuo_riproduttori,quota_scaricata_su_figli").range(da, a)),
-        supabase.from("ci_dati_vendita_ingrasso").select("*"),
-        supabase.from("ci_residuo_riproduttore").select("animale_id,residuo_rimanente,residuo_uscita_anno"),
+        fetchAllPages((da, a) => supabase.from("ci_dati_vendita_ingrasso").select("*").order("id").range(da, a)),
+        fetchAllPages((da, a) => supabase.from("ci_residuo_riproduttore").select("animale_id,residuo_rimanente,residuo_uscita_anno").order("id").range(da, a)),
       ]);
       for (const [r, cosa] of [[rAnimali, "gli animali"], [rLotti, "i lotti suini"], [rUnita, "i suinetti dei lotti"], [rCosti, "i costi annuali"], [rVendite, "i dati di vendita"], [rResidui, "i riproduttori"]]) {
         if (r.error) throw new Error(`Errore caricando ${cosa}: ${r.error.message}`);

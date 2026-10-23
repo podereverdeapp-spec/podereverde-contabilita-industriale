@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
-import { round2, formattaEuro } from "./parsingUtils";
+import { round2, formattaEuro, fetchAllPages } from "./parsingUtils";
 import { classificaRiga } from "./motoreClassificazione";
 import { CATEGORIE_AMMORTAMENTO, IMPUTAZIONI_CESPITE, creaCespiteDaRiga, anniValidi, percentualeDaAnni } from "./cespitiDaFatture";
 
@@ -44,10 +44,11 @@ export default function InserimentoManualeFattura() {
   async function carica() {
     setLoading(true);
     const [{ data: f }, { data: rf }, { data: rv }, { data: pdc }] = await Promise.all([
-      supabase.from("ci_fornitori").select("*").order("nome"),
-      supabase.from("ci_regole_fornitore_fissa").select("*"),
-      supabase.from("ci_regole_fornitore_variabile").select("*"),
-      supabase.from("ci_piano_dei_conti").select("*").order("area").order("centro_costo"),
+      // Versione 280: letta a pagine (il database consegna al massimo 1.000 righe per richiesta)
+      fetchAllPages((da, a) => supabase.from("ci_fornitori").select("*").order("nome").order("id").range(da, a)),
+      fetchAllPages((da, a) => supabase.from("ci_regole_fornitore_fissa").select("*").order("id").range(da, a)),
+      fetchAllPages((da, a) => supabase.from("ci_regole_fornitore_variabile").select("*").order("id").range(da, a)),
+      fetchAllPages((da, a) => supabase.from("ci_piano_dei_conti").select("*").order("area").order("centro_costo").order("id").range(da, a)),
     ]);
     setFornitori(f || []);
     setRegoleFisse(rf || []);

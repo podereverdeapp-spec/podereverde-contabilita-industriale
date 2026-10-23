@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import * as XLSX from "xlsx-js-style";
 import { supabase } from "./supabase";
 import { C } from "./style";
-import { formattaEuro, formattaData } from "./parsingUtils";
+import { formattaEuro, formattaData, fetchAllPages } from "./parsingUtils";
 
 export default function VerificaFattureMancanti() {
   const [anno, setAnno] = useState(new Date().getFullYear());
@@ -63,9 +63,9 @@ export default function VerificaFattureMancanti() {
     setCaricando(true);
     setErrore(null);
     try {
-      const { data: fattureDb, error } = await supabase
+      const { data: fattureDb, error } = await fetchAllPages((da, a) => supabase
         .from("ci_fatture").select("numero, data, ci_fornitori(nome)").eq("tipo", "PASSIVA")
-        .gte("data", `${anno}-01-01`).lte("data", `${anno}-12-31`);
+        .gte("data", `${anno}-01-01`).lte("data", `${anno}-12-31`).order("id").range(da, a));
       if (error) throw new Error(error.message);
 
       const chiaviDb = new Set((fattureDb || []).map(f => `${normalizzaNumero(f.numero)}|${normalizzaTesto(f.ci_fornitori?.nome)}`));

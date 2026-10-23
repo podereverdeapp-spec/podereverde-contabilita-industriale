@@ -1,7 +1,7 @@
 import { useState, useEffect, Fragment } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
-import { formattaEuro } from "./parsingUtils";
+import { formattaEuro, fetchAllPages, leggiInBlocchi } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
 import CaricoMassivoMuratella from "./CaricoMassivoMuratella";
 import StoricoMuratella from "./StoricoMuratella";
@@ -23,15 +23,15 @@ export default function ContabilitaMuratella() {
     setCaricando(true);
     setErrore(null);
     try {
-      const { data: fattureAnno, error: eF } = await supabase.from("muratella_fatture").select("id,numero,data,fornitore_nome")
-        .gte("data", `${anno}-01-01`).lte("data", `${anno}-12-31`);
+      const { data: fattureAnno, error: eF } = await fetchAllPages((da, a) => supabase.from("muratella_fatture").select("id,numero,data,fornitore_nome")
+        .gte("data", `${anno}-01-01`).lte("data", `${anno}-12-31`).order("id").range(da, a));
       if (eF) throw new Error(eF.message);
       const mappaFatture = new Map((fattureAnno || []).map(f => [f.id, f]));
       const idFatture = (fattureAnno || []).map(f => f.id);
       let articoli = [];
       if (idFatture.length > 0) {
-        const { data, error: eA } = await supabase.from("muratella_articoli_fattura")
-          .select("descrizione,area,centro_costo,tipo_costo,totale_riga,fattura_id").in("fattura_id", idFatture);
+        const { data, error: eA } = await leggiInBlocchi(idFatture, (blocco, da, a) => supabase.from("muratella_articoli_fattura")
+          .select("descrizione,area,centro_costo,tipo_costo,totale_riga,fattura_id").in("fattura_id", blocco).order("id").range(da, a));
         if (eA) throw new Error(eA.message);
         articoli = data || [];
       }

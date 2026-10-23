@@ -3,7 +3,7 @@ import * as XLSX from "xlsx-js-style";
 import { esportaExcel } from "./esportaExcel";
 import { supabase } from "./supabase";
 import { C } from "./style";
-import { formattaEuro, round2, formattaData } from "./parsingUtils";
+import { formattaEuro, round2, formattaData, fetchAllPages, leggiInBlocchi } from "./parsingUtils";
 import { CATEGORIE_AMMORTAMENTO, IMPUTAZIONI_CESPITE, creaCespiteDaRiga, anniValidi, percentualeDaAnni } from "./cespitiDaFatture";
 
 // Versione 242: la data letta da Excel si converte con formattaData (giorno italiano), non con toISOString che la portava al giorno prima.
@@ -54,9 +54,10 @@ export default function VerificaRigheMancanti() {
   const inputRef = useRef(null);
 
   useEffect(() => {
-    supabase.from("ci_piano_dei_conti").select("*").order("area").order("centro_costo").then(({ data }) => setPianoDeiConti(data || []));
-    supabase.from("ci_fatture_escluse_verifica").select("*").then(({ data }) => setFattureEscluse(data || []));
-    supabase.from("ci_fornitori").select("id, nome").then(({ data }) => setFornitoriTutti(data || []));
+    // Versione 280: letta a pagine (il database consegna al massimo 1.000 righe per richiesta)
+    fetchAllPages((da, a) => supabase.from("ci_piano_dei_conti").select("*").order("area").order("centro_costo").order("id").range(da, a)).then(({ data }) => setPianoDeiConti(data || []));
+    fetchAllPages((da, a) => supabase.from("ci_fatture_escluse_verifica").select("*").order("id").range(da, a)).then(({ data }) => setFattureEscluse(data || []));
+    fetchAllPages((da, a) => supabase.from("ci_fornitori").select("id, nome").order("id").range(da, a)).then(({ data }) => setFornitoriTutti(data || []));
   }, []);
 
   function centriPerArea(areaScelta) {
@@ -90,7 +91,7 @@ export default function VerificaRigheMancanti() {
         fornitore_id: r._fornitoreId || null, numero: String(numero), data: mappaData ? String(r[mappaData]).slice(0, 10) : null,
       }]);
       if (error) throw new Error(error.message);
-      const { data } = await supabase.from("ci_fatture_escluse_verifica").select("*");
+      const { data } = await fetchAllPages((da, a) => supabase.from("ci_fatture_escluse_verifica").select("*").order("id").range(da, a));
       setFattureEscluse(data || []);
       // Marco (invece di rimuovere) TUTTE le righe con lo stesso fornitore+numero, non solo questa
       setRisultato(prev => ({
@@ -241,7 +242,7 @@ export default function VerificaRigheMancanti() {
         return d.startsWith(String(anno));
       });
 
-      const { data: fornitori } = await supabase.from("ci_fornitori").select("id, nome");
+      const { data: fornitori } = await fetchAllPages((da, a) => supabase.from("ci_fornitori").select("id, nome").order("id").range(da, a));
       const mappaFornitori = new Map((fornitori || []).map(f => [normalizzaTesto(f.nome), f.id]));
 
       // Per ogni fornitore distinto nelle righe da controllare, carica TUTTI i costi
@@ -254,18 +255,18 @@ export default function VerificaRigheMancanti() {
         if (!fornitoreId) { poolPerFornitore.set(nomeFornitore, null); continue; } // fornitore non trovato in anagrafica
 
         const [{ data: fatture }, { data: cespiti }, { data: acquistiAnimali }] = await Promise.all([
-          supabase.from("ci_fatture").select("id").eq("fornitore_id", fornitoreId).eq("tipo", "PASSIVA")
-            .gte("data", `${anno}-01-01`).lte("data", `${anno}-12-31`),
-          supabase.from("ci_cespiti").select("descrizione, costo_acquisto").eq("fornitore_id", fornitoreId)
-            .gte("data_acquisto", `${anno}-01-01`).lte("data_acquisto", `${anno}-12-31`),
-          supabase.from("ci_report_acquisto_animali").select("specie, razza, importo").eq("fornitore_id", fornitoreId)
-            .gte("data_fattura", `${anno}-01-01`).lte("data_fattura", `${anno}-12-31`),
+          fetchAllPages((da, a) => supabase.from("ci_fatture").select("id").eq("fornitore_id", fornitoreId).eq("tipo", "PASSIVA")
+            .gte("data", `${anno}-01-01`).lte("data", `${anno}-12-31`).order("id").range(da, a)),
+          fetchAllPages((da, a) => supabase.from("ci_cespiti").select("descrizione, costo_acquisto").eq("fornitore_id", fornitoreId)
+            .gte("data_acquisto", `${anno}-01-01`).lte("data_acquisto", `${anno}-12-31`).order("id").range(da, a)),
+          fetchAllPages((da, a) => supabase.from("ci_report_acquisto_animali").select("specie, razza, importo").eq("fornitore_id", fornitoreId)
+            .gte("data_fattura", `${anno}-01-01`).lte("data_fattura", `${anno}-12-31`).order("id").range(da, a)),
         ]);
 
         const idFatture = (fatture || []).map(f => f.id);
         let articoli = [];
         if (idFatture.length > 0) {
-          const { data } = await supabase.from("ci_articoli_fattura").select("descrizione, totale_riga").in("fattura_id", idFatture);
+          const { data } = await leggiInBlocchi(idFatture, (blocco, da, a) => supabase.from("ci_articoli_fattura").select("descrizione, totale_riga").in("fattura_id", blocco).order("id").range(da, a));
           articoli = data || [];
         }
 

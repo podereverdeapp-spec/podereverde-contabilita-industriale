@@ -4,7 +4,13 @@ export default function IstruzioniAnimali() {
   return (
     <PaginaIstruzioni
       titolo="Animali"
-      introduzione="Tutto ciò che riguarda il calcolo dei costi per singolo animale — dalla registrazione dell'acquisto, al calcolo dell'UBA-giorni (la base per ripartire i costi), fino alla scheda che riassume la storia completa di ciascun animale. I dati anagrafici degli animali (nascite, uscite, pesi) restano in podereverdeapp.it: queste pagine leggono da lì, non li registrano."
+      introduzione={
+        <>
+          Tutto ciò che riguarda il calcolo dei costi per singolo animale — dalla registrazione dell'acquisto, al calcolo dell'UBA-giorni (la base per ripartire i costi), fino alla scheda che riassume la storia completa di ciascun animale. I dati anagrafici degli animali (nascite, uscite, pesi) restano in podereverdeapp.it: queste pagine leggono da lì, non li registrano.
+          <br /><br />
+          <strong>Lettura a pagine</strong> (versione 280, decisione del Dott. Bizzarri del 23/10/2026): il database consegna al massimo 1.000 righe per ogni richiesta. Le pagine di questa cartella che calcolano, controllano o elencano leggono i dati a gruppi di 1.000, uno dopo l'altro, finché non li hanno ricevuti tutti: nessuna fattura, riga o costo resta fuori, anche quando saranno decine di migliaia. Vedi nel Glossario «Lettura a pagine».
+        </>
+      }
       sezioni={[
         {
           pagina: "Report Acquisto Animali", icon: "🐄",

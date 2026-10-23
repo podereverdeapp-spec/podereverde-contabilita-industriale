@@ -284,7 +284,7 @@ export default function ReportRiproduttori() {
   }
 
   async function caricaElenco() {
-    const { data } = await supabase.from("ci_residuo_riproduttore").select("*, animali(bdn, nome, specie, stato, provenienza, riproduttore)").order("updated_at", { ascending: false });
+    const { data } = await fetchAllPages((da, a) => supabase.from("ci_residuo_riproduttore").select("*, animali(bdn, nome, specie, stato, provenienza, riproduttore)").order("updated_at", { ascending: false }).order("id").range(da, a));
     // Si mostrano solo gli animali marcati «riproduttore» nell'app: un vecchio record di un capo
     // a cui il segno è stato tolto non viene più ricalcolato e avrebbe valori vecchi o vuoti.
     const genitori = await caricaIdGenitori();
@@ -360,7 +360,7 @@ export default function ReportRiproduttori() {
       const righe = numerizzaCampi(righeCosto || [], ["costo_mantenimento", "costo_nascita_ereditato", "costo_nascita_da_madre", "costo_nascita_da_padre", "quota_scaricata_su_figli", "quota_residuo_riproduttori"]);
       const rigaAnimale = new Map(righe.filter(r => r.animale_id).map(r => [`${r.animale_id}|${r.anno}`, r]));
       const rigaUnita = new Map(righe.filter(r => r.lotto_id).map(r => [`${r.lotto_id}|${r.unita_nr}|${r.anno}`, r]));
-      const { data: residuiEsistenti, error: eR } = await supabase.from("ci_residuo_riproduttore").select("*");
+      const { data: residuiEsistenti, error: eR } = await fetchAllPages((da, a) => supabase.from("ci_residuo_riproduttore").select("*").order("id").range(da, a));
       if (eR) throw new Error(eR.message);
       const residuoPerAnimale = new Map(numerizzaCampi(residuiEsistenti || [], ["costo_acquisto", "costi_crescita_preriproduttiva", "valore_realizzo_stimato", "residuo_totale", "residuo_rimanente"]).map(r => [r.animale_id, r]));
 
