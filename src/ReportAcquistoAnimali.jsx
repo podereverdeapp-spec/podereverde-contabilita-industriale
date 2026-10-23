@@ -17,9 +17,9 @@ export default function ReportAcquistoAnimali() {
 
   useEffect(() => { carica(); caricaAnimaliSenzaCosto(); caricaCompresi(); }, []);
 
-  // Righe il cui prezzo è già compreso in un'altra (deciso il 05/10/2026): capi passati a scheda
-  // individuale da un lotto comprato (contano nella riga del lotto) e vitelli entrati con la madre
-  // (contano nella riga della madre). Restano in elenco ma non entrano nei totali.
+  // Righe con una spiegazione: vitelli entrati con la madre (contano nella riga della madre) e capi
+  // passati a scheda individuale da un lotto comprato. Versione 278 (regola del 23/10/2026): il capo
+  // passato a BDN si porta dietro il suo costo, che è uscito dal lotto, quindi la sua riga CONTA nel totale.
   async function caricaCompresi() {
     const [rA, rL, rU] = await Promise.all([
       fetchAllPages((da, a) => supabase.from("animali").select("id,bdn,provenienza,prezzo_acquisto,madre_id,nascita,data_ingresso,note").range(da, a)),
@@ -32,7 +32,7 @@ export default function ReportAcquistoAnimali() {
     for (const a of normalizzaAnimali(rA.data || [], rL.data || [], rU.data || [])) {
       const chiave = String(a.bdn || "").trim().toUpperCase();
       if (!chiave) continue;
-      if (a.daLottoComprato) m.set(chiave, { escluso: true, testo: `Non conta nel totale: compreso nel lotto ${a.daLottoComprato} (vale la sua parte: ${formattaEuro(a.prezzo_acquisto)})` });
+      if (a.daLottoComprato) m.set(chiave, { escluso: false, testo: `Passato a scheda individuale dal lotto ${a.daLottoComprato}: il suo costo d'acquisto (${formattaEuro(a.prezzoAcquistoNellApp)}) è uscito dal lotto ed è suo` });
       else if (a.natoConLaMadre) m.set(chiave, { escluso: false, testo: `Entrato con la madre ${perId.get(a.madre_id)?.bdn || ""}: nei costi questo importo va alla madre (il vitello è un figlio della mandria)` });
     }
     setCompresi(m);

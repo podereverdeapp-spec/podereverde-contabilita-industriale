@@ -8,16 +8,19 @@ import { round2 } from "./parsingUtils";
 //              + costo di nascita (se nato in azienda: dalla mandria dell'anno di nascita)
 //              + mantenimento di tutti gli anni
 //              + costo rimasto di riproduttori usciti ricevuto
-// Per i suinetti di un lotto comprato il prezzo del lotto si divide per il numero di suinetti
-// del lotto (tutti quelli registrati nel lotto, compresi quelli poi passati a matricola).
+// Per i suinetti di un lotto comprato il prezzo del lotto si divide per i suinetti rimasti nel
+// lotto: quelli passati a scheda individuale (BDN) sono usciti dal lotto e si sono portati dietro
+// il loro costo d'acquisto, che sta nella loro scheda (regola del Dott. Bizzarri del 23/10/2026,
+// versione 278; il Topo diminuisce il prezzo del lotto a ogni passaggio a BDN).
 // Per un riproduttore il totale è quanto è costato all'azienda; la parte già passata ai nati
 // (colonna «messo nella mandria») e quella ancora da recuperare si vedono a parte.
 
 const num = v => parseFloat(v) || 0;
 
+// Versione 278: si contano solo i capi rimasti nel lotto (non quelli passati a scheda individuale)
 export function conteggioUnitaPerLotto(unita) {
   const m = new Map();
-  (unita || []).forEach(u => m.set(u.lotto_id, (m.get(u.lotto_id) || 0) + 1));
+  (unita || []).forEach(u => { if (u.stato !== "registrato_individuale") m.set(u.lotto_id, (m.get(u.lotto_id) || 0) + 1); });
   return m;
 }
 
@@ -122,17 +125,17 @@ export function applicaNatiConLaMadre(animali) {
 // Nato della mandria: nato in azienda oppure entrato con la madre
 export const eNatoDellaMandria = a => !!a && (a.provenienza === "Nato in azienda" || !!a.natoConLaMadre);
 
-// ── Capi passati a scheda individuale da un LOTTO COMPRATO (deciso il 05/10/2026) ────────────
-// Il prezzo del lotto si divide per il numero di capi del lotto (compresi quelli poi passati a
-// scheda individuale). Il capo con la scheda individuale vale la sua parte del lotto, anche se
-// nell'app ha un prezzo di acquisto diverso: così il totale non supera mai la fattura del lotto.
-// Il capo si riconosce dalla matricola del suinetto nel lotto, oppure dal codice del suinetto
-// scritto nella nota della scheda («Da lotto … unità <codice>»).
+// ── Capi passati a scheda individuale da un LOTTO COMPRATO ──────────────────────────────────
+// Versione 278 (regola del Dott. Bizzarri del 23/10/2026, sostituisce quella del 05/10/2026):
+// il capo passato a BDN esce dal lotto e si porta dietro il suo costo d'acquisto, scritto nella
+// sua scheda; il prezzo del lotto è già diminuito della stessa somma (lo fa il Topo nell'app).
+// Il capo tiene quindi il prezzo della sua scheda: qui lo si riconosce solo per indicare da quale
+// lotto viene. Si riconosce dalla matricola del suinetto nel lotto, oppure dal codice del
+// suinetto scritto nella nota della scheda («Da lotto … unità <codice>»).
 export function applicaAcquistoDaLotto(animali, lotti, unita) {
   const lista = animali || [];
   const lottiComprati = new Map((lotti || []).filter(l => l.tipo_provenienza === "acquistato").map(l => [l.id, l]));
   if (!lottiComprati.size) return lista;
-  const nUnita = conteggioUnitaPerLotto(unita);
   const perMatricola = new Map(), perCodice = new Map();
   for (const u of unita || []) {
     if (u.stato !== "registrato_individuale" || !lottiComprati.has(u.lotto_id)) continue;
@@ -148,8 +151,7 @@ export function applicaAcquistoDaLotto(animali, lotti, unita) {
     }
     if (!u) return a;
     const l = lottiComprati.get(u.lotto_id);
-    const quota = round2(num(l.prezzo_acquisto) / (nUnita.get(l.id) || 1));
-    return { ...a, daLottoComprato: l.codice_lotto || l.codice, prezzoAcquistoNellApp: num(a.prezzo_acquisto), prezzo_acquisto: quota };
+    return { ...a, daLottoComprato: l.codice_lotto || l.codice, prezzoAcquistoNellApp: num(a.prezzo_acquisto) };
   });
 }
 

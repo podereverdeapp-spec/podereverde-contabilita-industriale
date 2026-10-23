@@ -33,7 +33,7 @@ export default function SchedaAnimaleMacello({ animaleId, lottoId, unitaNr, onCl
         if (error) throw new Error(error.message);
         s = { ...a, identificativo: a.bdn || a.nome, razzaFinale: a.razza_calcolata || a.razza,
           prezzo_acquisto: a.provenienza === "Acquistato" ? (parseFloat(a.prezzo_acquisto) || 0) : 0 };
-        // Capo passato a scheda individuale da un lotto comprato: vale la sua parte del lotto
+        // Capo passato a scheda individuale da un lotto comprato: tiene il costo d'acquisto della sua scheda (versione 278)
         if (a.provenienza === "Acquistato") {
           const codice = (String(a.note || "").match(/da lotto .*?unit[aà]\s+([A-Z0-9]+)/i) || [])[1];
           const filtro = [a.bdn ? `bdn.eq.${a.bdn}` : null, codice ? `codice_completo.eq.${codice}` : null].filter(Boolean).join(",");
@@ -44,7 +44,7 @@ export default function SchedaAnimaleMacello({ animaleId, lottoId, unitaNr, onCl
               const { data: l } = await supabase.from("lotti_suini").select("id,codice_lotto,codice,tipo_provenienza,prezzo_acquisto").eq("id", u.lotto_id).maybeSingle();
               const { data: tutte } = await supabase.from("suini_lotto").select("id,lotto_id,nr,bdn,codice_completo,stato").eq("lotto_id", u.lotto_id);
               const x = l ? applicaAcquistoDaLotto([a], [l], tutte || [])[0] : null;
-              if (x?.daLottoComprato) s = { ...s, prezzo_acquisto: x.prezzo_acquisto, provenienzaTesto: `Acquistato nel lotto ${x.daLottoComprato}: vale la sua parte del lotto (nell'app ${formattaEuro(x.prezzoAcquistoNellApp)})` };
+              if (x?.daLottoComprato) s = { ...s, provenienzaTesto: `Acquistato nel lotto ${x.daLottoComprato}, passato a scheda individuale: il suo costo d'acquisto (${formattaEuro(x.prezzoAcquistoNellApp)}) è uscito dal lotto ed è nella sua scheda` };
             }
           }
         }
@@ -67,7 +67,8 @@ export default function SchedaAnimaleMacello({ animaleId, lottoId, unitaNr, onCl
           .eq("lotto_id", lottoId).eq("nr", unitaNr).single();
         if (error) throw new Error(error.message);
         const { data: lotto } = await supabase.from("lotti_suini").select("*").eq("id", lottoId).single();
-        const { count: numeroUnitaLotto } = await supabase.from("suini_lotto").select("id", { count: "exact", head: true }).eq("lotto_id", lottoId);
+        // Versione 278: si contano solo i capi rimasti nel lotto (non quelli passati a scheda individuale)
+        const { count: numeroUnitaLotto } = await supabase.from("suini_lotto").select("id", { count: "exact", head: true }).eq("lotto_id", lottoId).or("stato.is.null,stato.neq.registrato_individuale");
         const acquistato = lotto?.tipo_provenienza === "acquistato";
         const prezzoAcquistoUnitario = acquistato && lotto?.prezzo_acquisto ? round2(lotto.prezzo_acquisto / (numeroUnitaLotto || 1)) : 0;
         s = { ...u, specie: lotto?.specie || "suino", razzaFinale: lotto?.razza_madre, provenienza: lotto?.tipo_provenienza === "acquistato" ? "Acquistato" : "Nato in azienda",
