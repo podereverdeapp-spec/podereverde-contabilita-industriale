@@ -14,7 +14,33 @@ import { esportaExcel, numeroExcel } from "./esportaExcel";
 // Acquisto Animali: una «fattura» per fornitore, numero e data, con i capi come righe e l'IVA non registrata.
 // Versione 283 (decisione del 23/10/2026): le fatture di trasporto d'ingresso la cui riga vale 0 (il trasporto è
 // attribuito ai capi nel Report Acquisto Animali, per non contarlo due volte) mostrano l'importo del trasporto.
+// Versione 284 (decisione del 23/10/2026): compaiono anche i documenti di competenza con Muratella («da ricevere»
+// tra le passive, «da emettere» tra le attive), con la spiegazione che rimanda alla pagina «Rapporti con Muratella».
 export const GRUPPI = [50, 100, 200];
+export const DOCUMENTO_DI_COMPETENZA = t => t === "DA_RICEVERE" || t === "DA_EMETTERE";
+export const PAGINA_COMPETENZA = "«Fatture da Ricevere e da Emettere → Rapporti con Muratella»";
+
+export const EtichettaCompetenza = ({ tipo }) => (
+  <span style={{ fontSize: 11, fontWeight: 700, color: C.blue, background: "#E4EEF5", borderRadius: 6, padding: "1px 6px", marginRight: 8 }}>
+    🗂️ {tipo === "DA_RICEVERE" ? "Da ricevere" : "Da emettere"}
+  </span>
+);
+
+// Spiegazione dei documenti di competenza e dei loro collegamenti con la fattura vera
+export function NotaCompetenza({ f }) {
+  if (DOCUMENTO_DI_COMPETENZA(f.tipo)) return (
+    <div style={{ fontSize: 11.5, color: C.blue, marginTop: 2, maxWidth: 700 }}>
+      Documento di competenza, non è una fattura {f.tipo === "DA_RICEVERE" ? "arrivata" : "emessa"}: per capire cosa contiene e come si conta nei costi occorre leggere il rinvio alla pagina {PAGINA_COMPETENZA}.
+      {" "}{f.collegamento ? `Collegato alla ${f.collegamento}.` : "Non ancora collegato alla fattura vera."}
+    </div>
+  );
+  if (f.regolarizzazione_di) return (
+    <div style={{ fontSize: 11.5, color: C.blue, marginTop: 2, maxWidth: 700 }}>
+      🔗 Fattura vera del documento di competenza «{f.collegamento || f.regolarizzazione_di}»: non si conta di nuovo nei costi. Leggere il rinvio alla pagina {PAGINA_COMPETENZA}.
+    </div>
+  );
+  return null;
+}
 export const FUNZIONE_RICERCA = "ci_ricerca_documenti";
 
 export function messaggioErroreRicerca(error) {
@@ -197,6 +223,7 @@ export function ElencoFattureAPagine({ tipo, titolo, etichettaControparte, nomeF
         [etichettaControparte]: f.controparte, "P.IVA": f.partita_iva, "Numero": f.numero, "Data": f.data,
         "Totale netto": numeroExcel(f.totale_netto), "Totale IVA": f.acquisto_animali ? "non registrata" : numeroExcel(f.totale_iva),
         "Totale lordo": numeroExcel(f.totale_lordo), "Acquisto animali": f.acquisto_animali ? "sì" : "",
+        "Documento di competenza": f.tipo === "DA_RICEVERE" ? "da ricevere" : f.tipo === "DA_EMETTERE" ? "da emettere" : "",
       }));
       esportaExcel(nomeFile, [{ nome: titolo, righe: righeExcel }]);
     } catch (err) {
@@ -223,6 +250,7 @@ export function ElencoFattureAPagine({ tipo, titolo, etichettaControparte, nomeF
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 20 }}>
         {risposta ? `${numero.toLocaleString("it-IT")} fatture — totale ${formattaEuro(Number(risposta.totale_lordo || 0))} (calcolato su tutte le fatture trovate, anche quelle non mostrate)` : ""}
         {numeroAnimali > 0 && <><br />di cui {numeroAnimali.toLocaleString("it-IT")} acquisti di animali: {formattaEuro(Number(risposta.totale_acquisti_animali || 0))} (solo l'importo dei capi: l'IVA non è registrata)</>}
+        {Number(risposta?.numero_competenza || 0) > 0 && <><br />🗂️ di cui {Number(risposta.numero_competenza).toLocaleString("it-IT")} documenti di competenza («{tipo.includes("DA_RICEVERE") ? "da ricevere" : "da emettere"}»): {formattaEuro(Number(risposta.totale_competenza || 0))} — leggere il rinvio alla pagina {PAGINA_COMPETENZA}</>}
         {Number(risposta?.numero_trasporti_ai_capi || 0) > 0 && <><br />🚚 trasporti attribuiti ai capi: {formattaEuro(Number(risposta.totale_trasporti_ai_capi || 0))} in {Number(risposta.numero_trasporti_ai_capi).toLocaleString("it-IT")} fatture (non compresi nel totale qui sopra: le loro righe valgono 0 e l'importo è nel Report Acquisto Animali)</>}
       </p>
 
@@ -257,11 +285,13 @@ export function ElencoFattureAPagine({ tipo, titolo, etichettaControparte, nomeF
                 <div onClick={() => espandi(f)} style={{ display: "flex", justifyContent: "space-between", padding: 14, cursor: "pointer", flexWrap: "wrap", gap: 8 }}>
                   <div>
                     {f.acquisto_animali && <EtichettaAcquistoAnimali />}
+                    {DOCUMENTO_DI_COMPETENZA(f.tipo) && <EtichettaCompetenza tipo={f.tipo} />}
                     <strong>{f.controparte || "—"}</strong>
                     <div style={{ fontSize: 12, color: C.muted }}>
                       Fatt. {numeroFattura(f)} del {f.data} {f.partita_iva && `· P.IVA ${f.partita_iva}`}
                     </div>
                     {Number(f.trasporto_ai_capi) > 0 && <NotaTrasportoAiCapi importo={Number(f.trasporto_ai_capi)} />}
+                    <NotaCompetenza f={f} />
                   </div>
                   <div style={{ textAlign: "right" }}>
                     <div style={{ fontWeight: 800, fontSize: 16, color: coloreTotale }}>{formattaEuro(f.totale_lordo)}</div>
@@ -294,7 +324,7 @@ const stilePulsante = disabilitato => ({
 });
 
 export default function FatturePassive() {
-  return <ElencoFattureAPagine tipo="PASSIVA" titolo="Fatture Passive" etichettaControparte="Fornitore" nomeFile="FatturePassive" conFiltroData />;
+  return <ElencoFattureAPagine tipo="PASSIVA,DA_RICEVERE" titolo="Fatture Passive" etichettaControparte="Fornitore" nomeFile="FatturePassive" conFiltroData />;
 }
 
 export function RicomposizioneFattura({ fattura, righe }) {

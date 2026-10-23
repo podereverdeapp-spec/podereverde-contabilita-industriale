@@ -5,5 +5,6 @@ import { C } from "./style";
 // Fatture Passive. Il database cerca, conta e somma TUTTE le fatture emesse che corrispondono ai filtri;
 // la pagina ne mostra 50, 100 o 200 per volta e l'export Excel le legge tutte, 1.000 alla volta.
 export default function FattureAttive() {
-  return <ElencoFattureAPagine tipo="ATTIVA" titolo="Fatture Attive" etichettaControparte="Cliente" nomeFile="FattureAttive" coloreTotale={C.green} />;
+  // Versione 284: anche i documenti «da emettere» a Muratella (documenti di competenza)
+  return <ElencoFattureAPagine tipo="ATTIVA,DA_EMETTERE" titolo="Fatture Attive" etichettaControparte="Cliente" nomeFile="FattureAttive" coloreTotale={C.green} />;
 }

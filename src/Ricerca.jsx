@@ -4,7 +4,7 @@ import { supabase } from "./supabase";
 import { C } from "./style";
 import { numerizzaCampi, formattaEuro, round2, fetchAllPages } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
-import { FUNZIONE_RICERCA, messaggioErroreRicerca, NavigazionePagine, leggiTutteLeTrovate, leggiCapiAcquisto, CapiAcquisto, EtichettaAcquistoAnimali, numeroFattura, leggiRigheFattura, NotaTrasportoAiCapi } from "./FatturePassive";
+import { FUNZIONE_RICERCA, messaggioErroreRicerca, NavigazionePagine, leggiTutteLeTrovate, leggiCapiAcquisto, CapiAcquisto, EtichettaAcquistoAnimali, numeroFattura, leggiRigheFattura, NotaTrasportoAiCapi, NotaCompetenza, PAGINA_COMPETENZA } from "./FatturePassive";
 
 // Versione 281 (decisione del Dott. Bizzarri del 23/10/2026): la ricerca la fa il database (funzione
 // ci_ricerca_documenti) su TUTTE le fatture e le loro righe, compresi gli acquisti di animali registrati solo
@@ -251,6 +251,7 @@ export default function Ricerca() {
           <Campo label="Tipo">
             <select value={tipo} onChange={e => setTipo(e.target.value)} style={selectStyle}>
               <option value="tutte">Tutte</option><option value="PASSIVA">Solo acquisti</option><option value="ATTIVA">Solo vendite</option>
+              <option value="DA_RICEVERE">Da ricevere (documenti di competenza)</option><option value="DA_EMETTERE">Da emettere (documenti di competenza)</option>
             </select>
           </Campo>
           <Campo label="Area">
@@ -298,6 +299,7 @@ export default function Ricerca() {
             <><br /><strong style={{ color: C.primary }}>di cui righe con {[area && `area «${area}»`, centroCosto && `centro di costo «${centroCosto}»`, destinazione && `destinazione «${destinazione}»`, tipoCosto && `tipo di costo «${tipoCosto}»`].filter(Boolean).join(", ")}: {formattaEuro(Number(risposta.totale_righe_scelte || 0))}</strong></>
           )}
           {numeroAnimali > 0 && <><br />di cui {numeroAnimali.toLocaleString("it-IT")} acquisti di animali: {formattaEuro(Number(risposta.totale_acquisti_animali || 0))} (solo l'importo dei capi: l'IVA non è registrata)</>}
+          {Number(risposta.numero_competenza || 0) > 0 && <><br />🗂️ di cui {Number(risposta.numero_competenza).toLocaleString("it-IT")} documenti di competenza (da ricevere o da emettere): {formattaEuro(Number(risposta.totale_competenza || 0))} — leggere il rinvio alla pagina {PAGINA_COMPETENZA}</>}
           {Number(risposta.numero_trasporti_ai_capi || 0) > 0 && <><br />🚚 trasporti attribuiti ai capi: {formattaEuro(Number(risposta.totale_trasporti_ai_capi || 0))} in {Number(risposta.numero_trasporti_ai_capi).toLocaleString("it-IT")} fatture (non compresi nel totale delle fatture: le loro righe valgono 0 e l'importo è nel Report Acquisto Animali{risposta.totale_righe_scelte != null ? "; è invece compreso nel «di cui righe»" : ""})</>}
         </p>
       )}
@@ -355,6 +357,7 @@ export default function Ricerca() {
                           style={{ cursor: "pointer" }} title="Modifica fornitore/numero/data">✏️</span>}
                       </div>
                       {Number(f.trasporto_ai_capi) > 0 && <NotaTrasportoAiCapi importo={Number(f.trasporto_ai_capi)} />}
+                      <NotaCompetenza f={f} />
                     </>
                   )}
                 </div>
