@@ -171,6 +171,18 @@ export function ControllaPrezzi({ onNavigate }) {
 }
 
 // ───────────────────────────── 2. Chiedi preventivi ─────────────────────────────
+// Versione 282 (decisione del Dott. Bizzarri del 23/10/2026): per ogni alimento si sceglie l'unità di misura con
+// cui chiedere il preventivo. Accanto c'è un consiglio, che non vincola; l'unità si può scrivere liberamente
+// (barattoli, secchi, blocchi…). Il testo della richiesta chiede il prezzo per l'unità indicata.
+export const UNITA_PREVENTIVO = ["tonnellate", "quintali", "chilogrammi", "sacchi da 25 kg", "balloni", "rotoballe", "blocchi", "secchi", "barattoli", "litri", "confezioni"];
+const UNITA_DI_PESO = ["tonnellate", "quintali", "chilogrammi"];
+// Consiglio sull'unità di misura secondo il gruppo dell'alimento (non vincolante)
+export function consiglioUnita(gruppo) {
+  if (gruppo === "Foraggio") return { unita: "tonnellate", perche: "i prezzi del programma sono in euro per tonnellata; se il fornitore vende a balloni, chiedere anche il peso di un ballone" };
+  if (gruppo === "Integratore minerale") return { unita: "chilogrammi", perche: "si comprano in piccole quantità; se si vende a sacchi o a blocchi, chiedere il peso di ciascuno" };
+  return { unita: "tonnellate", perche: "i prezzi del programma sono in euro per tonnellata: così il preventivo si confronta subito" };
+}
+
 export function ChiediPreventivi() {
   const [righe, setRighe] = useState([]);
   const [richieste, setRichieste] = useState([]);
@@ -195,18 +207,33 @@ export function ChiediPreventivi() {
   useEffect(() => {
     carica();
     const pre = leggiPrescelti();
-    if (pre.length) { setScelti(Object.fromEntries(pre.map(a => [a, { quantita: "", confezione: "sfuso" }]))); scriviPrescelti([]); }
+    if (pre.length) { setScelti(Object.fromEntries(pre.map(a => [a, { quantita: "", unita: null, confezione: "sfuso" }]))); scriviPrescelti([]); }
   }, []);
 
+  const gruppoDi = useMemo(() => Object.fromEntries(righe.map(r => [r.alimento, r.gruppo])), [righe]);
+  // unità scelta; se non è mai stata toccata vale il consiglio
+  const unitaDi = (a, x) => (x.unita === null || x.unita === undefined ? consiglioUnita(gruppoDi[a]).unita : x.unita).trim();
   const elenco = Object.entries(scelti);
   const testo = useMemo(() => {
-    const voci = elenco.map(([a, x]) => `- ${a}${x.quantita ? `: ${x.quantita} tonnellate` : ""}, ${x.confezione}`).join("\n");
-    return `Oggetto: richiesta di preventivo – Podere Verde Società Agricola\n\nBuongiorno${fornitore ? " " + fornitore : ""},\n\nvi chiediamo un preventivo per la fornitura dei seguenti prodotti:\n${voci || "- (scegliere gli alimenti)"}\n\nConsegna: ${luogo || "—"}.\nVi preghiamo di indicare: prezzo in euro per tonnellata IVA esclusa, reso in azienda (oppure franco vostro magazzino, con il costo del trasporto a parte), quantità minima, tempi di consegna, validità dell'offerta e, per i mangimi, il cartellino con i componenti analitici.\n\nCordiali saluti,\nDott. Filippo Bizzarri\nPodere Verde Società Agricola`;
-  }, [elenco, fornitore, luogo]);
+    const voci = elenco.map(([a, x]) => {
+      const u = unitaDi(a, x);
+      return `- ${a}${x.quantita ? `: ${x.quantita} ${u}` : u ? ` (prezzo per ${u})` : ""}, ${x.confezione}`;
+    }).join("\n");
+    const unita = [...new Set(elenco.map(([a, x]) => unitaDi(a, x)).filter(Boolean))];
+    const prezzoPer = unita.length === 1 && unita[0] === "tonnellate" ? "prezzo in euro per tonnellata IVA esclusa"
+      : "prezzo in euro IVA esclusa per l'unità di misura indicata per ogni prodotto";
+    const pesoConfezioni = unita.some(u => !UNITA_DI_PESO.includes(u)) ? " e, per sacchi, balloni, blocchi, secchi, barattoli o altre confezioni, il peso o il contenuto di ciascuna" : "";
+    return `Oggetto: richiesta di preventivo – Podere Verde Società Agricola\n\nBuongiorno${fornitore ? " " + fornitore : ""},\n\nvi chiediamo un preventivo per la fornitura dei seguenti prodotti:\n${voci || "- (scegliere gli alimenti)"}\n\nConsegna: ${luogo || "—"}.\nVi preghiamo di indicare: ${prezzoPer}, reso in azienda (oppure franco vostro magazzino, con il costo del trasporto a parte), quantità minima, tempi di consegna, validità dell'offerta${pesoConfezioni} e, per i mangimi, il cartellino con i componenti analitici.\n\nCordiali saluti,\nDott. Filippo Bizzarri\nPodere Verde Società Agricola`;
+  }, [elenco, fornitore, luogo, gruppoDi]);
 
   async function salva() {
     if (!fornitore.trim() || elenco.length === 0) { setMsg({ tipo: "errore", testo: "Scriva il fornitore e scelga almeno un alimento." }); return; }
-    const { error } = await supabase.from("ci_richieste_preventivo").insert([{ fornitore: fornitore.trim(), contatto: contatto || null, alimenti: elenco.map(([a, x]) => ({ alimento: a, quantita_t: x.quantita === "" ? null : Number(x.quantita), confezione: x.confezione })), luogo_consegna: luogo || null, testo, inserito_da: await utente() }]);
+    const senzaUnita = elenco.filter(([a, x]) => !unitaDi(a, x)).map(([a]) => a);
+    if (senzaUnita.length) { setMsg({ tipo: "errore", testo: `Scriva l'unità di misura per: ${senzaUnita.join(", ")}.` }); return; }
+    const { error } = await supabase.from("ci_richieste_preventivo").insert([{ fornitore: fornitore.trim(), contatto: contatto || null, alimenti: elenco.map(([a, x]) => {
+      const u = unitaDi(a, x), q = x.quantita === "" ? null : Number(x.quantita);
+      return { alimento: a, quantita: q, unita: u, quantita_t: u === "tonnellate" ? q : null, confezione: x.confezione };
+    }), luogo_consegna: luogo || null, testo, inserito_da: await utente() }]);
     if (error) { setMsg({ tipo: "errore", testo: error.message }); return; }
     setMsg({ tipo: "ok", testo: `Richiesta a ${fornitore} registrata (stato «preparata»). Copi il testo e lo invii; poi segni «inviata».` });
     carica();
@@ -226,20 +253,31 @@ export function ChiediPreventivi() {
       <div style={riquadro}>
         <div style={{ fontWeight: 700, color: C.primary, marginBottom: 8 }}>Alimenti</div>
         <table style={{ fontSize: 12.5 }}>
-          <thead><tr style={{ background: C.primary, color: "#fff" }}>{["", "Alimento", "Prezzo oggi", "Quantità in tonnellate", "Confezione"].map(h => <th key={h} style={{ padding: 6, textAlign: "left" }}>{h}</th>)}</tr></thead>
+          <thead><tr style={{ background: C.primary, color: "#fff" }}>{["", "Alimento", "Prezzo oggi", "Quantità", "Unità di misura", "Confezione"].map(h => <th key={h} style={{ padding: 6, textAlign: "left" }}>{h}</th>)}</tr></thead>
           <tbody>{righe.map(r => {
             const s = scelti[r.alimento];
             return (
               <tr key={r.alimento} style={{ borderBottom: `1px solid ${C.border}` }}>
-                <td style={{ padding: 6 }}><input type="checkbox" checked={!!s} onChange={e => setScelti(x => { const y = { ...x }; if (e.target.checked) y[r.alimento] = { quantita: "", confezione: "sfuso" }; else delete y[r.alimento]; return y; })} /></td>
+                <td style={{ padding: 6 }}><input type="checkbox" checked={!!s} onChange={e => setScelti(x => { const y = { ...x }; if (e.target.checked) y[r.alimento] = { quantita: "", unita: null, confezione: "sfuso" }; else delete y[r.alimento]; return y; })} /></td>
                 <td style={{ padding: 6 }}>{r.alimento}</td>
                 <td style={{ padding: 6, color: COLORE_LIVELLO[r.livello], fontWeight: 700 }}>{TESTO_LIVELLO[r.livello]}</td>
                 <td style={{ padding: 6 }}>{s && <input type="number" min={0} step={0.1} value={s.quantita} onChange={e => setScelti(x => ({ ...x, [r.alimento]: { ...x[r.alimento], quantita: e.target.value } }))} style={{ ...campo, width: 110 }} />}</td>
+                <td style={{ padding: 6 }}>{s && (() => {
+                  const consiglio = consiglioUnita(r.gruppo);
+                  return (
+                    <div>
+                      <input list="unita-preventivo" value={s.unita === null || s.unita === undefined ? consiglio.unita : s.unita} placeholder="scriva l'unità"
+                        onChange={e => setScelti(x => ({ ...x, [r.alimento]: { ...x[r.alimento], unita: e.target.value } }))} style={{ ...campo, width: 160 }} />
+                      <div style={{ fontSize: 11, color: C.muted, marginTop: 2, maxWidth: 260 }}>Consiglio: {consiglio.unita} — {consiglio.perche}. Si può scrivere qualsiasi unità (barattoli, secchi…).</div>
+                    </div>
+                  );
+                })()}</td>
                 <td style={{ padding: 6 }}>{s && <select value={s.confezione} onChange={e => setScelti(x => ({ ...x, [r.alimento]: { ...x[r.alimento], confezione: e.target.value } }))} style={{ ...campo, width: 120 }}>{["sfuso", "sacchi", "balloni", "altro"].map(o => <option key={o}>{o}</option>)}</select>}</td>
               </tr>
             );
           })}</tbody>
         </table>
+        <datalist id="unita-preventivo">{UNITA_PREVENTIVO.map(u => <option key={u} value={u} />)}</datalist>
       </div>
       <div style={{ ...riquadro, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
         <div><label style={etichetta}>Fornitore</label><input value={fornitore} onChange={e => setFornitore(e.target.value)} placeholder="es. Cooperativa Ceri" style={campo} /></div>
@@ -263,7 +301,9 @@ export function ChiediPreventivi() {
             <tr key={q.id} style={{ borderBottom: `1px solid ${C.border}` }}>
               <td style={{ padding: 6 }}>{data(q.data_richiesta)}</td>
               <td style={{ padding: 6 }}>{q.fornitore}{q.contatto ? <div style={{ fontSize: 11.5, color: C.muted }}>{q.contatto}</div> : null}</td>
-              <td style={{ padding: 6 }}>{(q.alimenti || []).map(a => a.alimento + (a.quantita_t ? ` (${formattaNumero(a.quantita_t, 1)} t, ${a.confezione})` : ` (${a.confezione})`)).join("; ")}</td>
+              <td style={{ padding: 6 }}>{(q.alimenti || []).map(a => a.alimento + (a.unita
+                ? ` (${a.quantita != null ? `${formattaNumero(a.quantita, 1)} ` : "prezzo per "}${a.unita}, ${a.confezione})`
+                : a.quantita_t ? ` (${formattaNumero(a.quantita_t, 1)} t, ${a.confezione})` : ` (${a.confezione})`)).join("; ")}</td>
               <td style={{ padding: 6 }}><select value={q.stato} onChange={e => cambiaStato(q.id, e.target.value)} style={{ ...campo, width: 150 }}>{["preparata", "inviata", "risposta ricevuta", "annullata"].map(o => <option key={o}>{o}</option>)}</select></td>
             </tr>))}</tbody>
         </table>}
