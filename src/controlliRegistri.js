@@ -182,7 +182,7 @@ export async function trovaAnomalie() {
   const daConfermare = report.filter(r => (r.animale_id || r.lotto_id) && r.stato !== "ABBINATO");
   if (daConfermare.length)
     add("F2", "Fatture acquisto", "ci_report_acquisto_animali", "", `${daConfermare.length} righe già collegate a un capo ma mai confermate`,
-      "Si confermano dalla pagina «Abbinamenti Fatture Acquisto», sezione «Già collegate».");
+      "Si confermano dalla pagina «Abbinamenti Fatture Acquisto», gruppo «Già collegate, da confermare».");
 
   // R1 – righe di fatture d'acquisto senza Tipo di Costo (restano fuori dai calcoli dei costi)
   const fatturaPerId = new Map(fattureTeste.map(f => [f.id, f]));

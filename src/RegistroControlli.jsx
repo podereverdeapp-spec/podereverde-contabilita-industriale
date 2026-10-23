@@ -32,7 +32,7 @@ const DOVE_SI_CORREGGE = {
   P1: "Il lotto mancante si crea nell'app.", P2: "L'evento di parto mancante si registra nell'app.",
   P3: "Si decide quale dei due parti è giusto; la correzione si fa nell'app.",
   C2: "Le righe le pulisce il ricalcolo dei costi.", C3: "Si riempie con l'elaborazione della pagina «Report Riproduttori».",
-  F1: "Pagina «Abbinamenti Fatture Acquisto».", F2: "Pagina «Abbinamenti Fatture Acquisto», sezione «Già collegate».",
+  F1: "Pagina «Abbinamenti Fatture Acquisto».", F2: "Pagina «Abbinamenti Fatture Acquisto», gruppo «Già collegate, da confermare».",
 };
 const SPECIE_CESPITE = { "Generale": ["Generale"], "Bovini": ["Bovini"], "Suini": ["Suini"], "Ovini": ["Ovini"], "Cavalli": ["Cavalli"], "Pollame": ["Pollame"], "Orto": ["Orto"] };
 
