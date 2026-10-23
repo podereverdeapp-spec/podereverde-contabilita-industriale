@@ -3,6 +3,7 @@ import { etichettaTipo } from "./documentiCompetenza";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { numerizzaCampi, formattaEuro, fetchAllPages } from "./parsingUtils";
+import { dataIt } from "./FatturePassive";
 
 // Versione 277 (decisione del Dott. Bizzarri del 22/10/2026):
 //  – una fattura di trasporto a zero NON è incompleta se la sua parte «Ingresso in allevamento» ha un importo
@@ -10,6 +11,8 @@ import { numerizzaCampi, formattaEuro, fetchAllPages } from "./parsingUtils";
 //  – una fattura che vale davvero zero si segna «✓ È giusta così (vale zero)»: nelle note resta «verificata: vale zero»
 //    con la data e la fattura non viene più segnalata.
 const SEGNO_ZERO = "verificata: vale zero";
+// Versione 290: le letture a pagine hanno un ordine fisso (per id): senza ordine il database può saltare o
+// ripetere righe da un gruppo di 1.000 all'altro (le fatture sono più di 1.000). Date in forma italiana.
 
 export default function ControlloAnomalie() {
   const [anomalie, setAnomalie] = useState(null);
@@ -22,13 +25,13 @@ export default function ControlloAnomalie() {
     setLoading(true);
     try {
       const { data: fatture, error: eF } = await fetchAllPages((da, a) => supabase
-        .from("ci_fatture").select("id, numero, data, tipo, fornitore_id, cliente_id, totale_netto, totale_iva, totale_lordo, note").range(da, a));
+        .from("ci_fatture").select("id, numero, data, tipo, fornitore_id, cliente_id, totale_netto, totale_iva, totale_lordo, note").order("id").range(da, a));
       if (eF) throw new Error(eF.message);
       const { data: righe, error: eR } = await fetchAllPages((da, a) => supabase
-        .from("ci_articoli_fattura").select("id, fattura_id, totale_riga, aliquota_iva, area").range(da, a));
+        .from("ci_articoli_fattura").select("id, fattura_id, totale_riga, aliquota_iva, area").order("id").range(da, a));
       if (eR) throw new Error(eR.message);
       const { data: ingressi, error: eI } = await fetchAllPages((da, a) => supabase
-        .from("ci_report_acquisto_animali").select("articolo_fattura_id, importo").eq("fonte", "TRASPORTO_INGRESSO").range(da, a));
+        .from("ci_report_acquisto_animali").select("id, articolo_fattura_id, importo").eq("fonte", "TRASPORTO_INGRESSO").order("id").range(da, a));
       if (eI) throw new Error(eI.message);
       const ingressoPerRiga = new Map();
       (ingressi || []).forEach(x => { if (x.articolo_fattura_id) ingressoPerRiga.set(x.articolo_fattura_id, (ingressoPerRiga.get(x.articolo_fattura_id) || 0) + (parseFloat(x.importo) || 0)); });
@@ -72,7 +75,7 @@ export default function ControlloAnomalie() {
   }
 
   async function segnaZero(f) {
-    if (!window.confirm(`Confermi che la fattura ${f.numero} del ${f.data} (${f.controparte || "controparte sconosciuta"}) vale davvero zero?\n\nNelle note della fattura verrà scritto «${SEGNO_ZERO}» con la data di oggi e la fattura non verrà più segnalata.`)) return;
+    if (!window.confirm(`Confermi che la fattura ${f.numero} del ${dataIt(f.data)} (${f.controparte || "controparte sconosciuta"}) vale davvero zero?\n\nNelle note della fattura verrà scritto «${SEGNO_ZERO}» con la data di oggi e la fattura non verrà più segnalata.`)) return;
     const testo = `${f.note ? f.note + "\n" : ""}${SEGNO_ZERO} (${new Date().toLocaleDateString("it-IT")})`;
     let q = supabase.from("ci_fatture").update({ note: testo }).eq("id", f.id).eq("totale_lordo", 0);
     q = f.note ? q.eq("note", f.note) : q.is("note", null);
@@ -87,7 +90,7 @@ export default function ControlloAnomalie() {
       alert("Questa fattura ha righe articolo associate — non la elimino automaticamente per non perdere dati. Controllala a mano.");
       return;
     }
-    if (!window.confirm(`Eliminare il "guscio vuoto" della fattura ${f.numero} del ${f.data} (${f.controparte || "controparte sconosciuta"})? Non ha righe articolo, quindi non si perde nulla. Dopo l'eliminazione potrai ricaricarla correttamente.`)) return;
+    if (!window.confirm(`Eliminare il "guscio vuoto" della fattura ${f.numero} del ${dataIt(f.data)} (${f.controparte || "controparte sconosciuta"})? Non ha righe articolo, quindi non si perde nulla. Dopo l'eliminazione potrai ricaricarla correttamente.`)) return;
     setEliminando(f.id);
     try {
       const { error } = await supabase.from("ci_fatture").delete().eq("id", f.id);
@@ -117,7 +120,7 @@ export default function ControlloAnomalie() {
                     {etichettaTipo(f.tipo)}
                   </span>
                   <strong>{f.controparte || "—"}</strong>
-                  <div style={{ fontSize: 12, color: C.muted }}>Fatt. {f.numero} del {f.data} · {f.nRighe === 1 ? "1 riga" : `${f.nRighe} righe`}</div>
+                  <div style={{ fontSize: 12, color: C.muted }}>Fatt. {f.numero} del {dataIt(f.data)} · {f.nRighe === 1 ? "1 riga" : `${f.nRighe} righe`}</div>
                   <div style={{ fontSize: 12, color: C.red, fontWeight: 700, marginTop: 4 }}>{f.problemi.join(" · ")}</div>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>

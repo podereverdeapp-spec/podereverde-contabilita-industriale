@@ -3,7 +3,10 @@ import * as XLSX from "xlsx-js-style";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { formattaEuro, formattaData, fetchAllPages } from "./parsingUtils";
+import { dataIt } from "./FatturePassive"; // versione 290: le date del file si mostrano gg/mm/aaaa
 
+// Versione 290: il confronto usa anche gli acquisti di animali (registrati solo nel Report Acquisto Animali),
+// letti dalla stessa vista di Fatture Passive; prima risultavano sempre mancanti. Corretta la nota in fondo.
 export default function VerificaFattureMancanti() {
   const [anno, setAnno] = useState(new Date().getFullYear());
   const [righeExcel, setRigheExcel] = useState([]);
@@ -64,11 +67,11 @@ export default function VerificaFattureMancanti() {
     setErrore(null);
     try {
       const { data: fattureDb, error } = await fetchAllPages((da, a) => supabase
-        .from("ci_fatture").select("numero, data, ci_fornitori(nome)").eq("tipo", "PASSIVA")
-        .gte("data", `${anno}-01-01`).lte("data", `${anno}-12-31`).order("id").range(da, a));
+        .from("ci_v_ricerca_documenti").select("chiave, numero, data, controparte, acquisto_animali").eq("tipo", "PASSIVA")
+        .gte("data", `${anno}-01-01`).lte("data", `${anno}-12-31`).order("chiave").range(da, a));
       if (error) throw new Error(error.message);
 
-      const chiaviDb = new Set((fattureDb || []).map(f => `${normalizzaNumero(f.numero)}|${normalizzaTesto(f.ci_fornitori?.nome)}`));
+      const chiaviDb = new Set((fattureDb || []).map(f => `${normalizzaNumero(f.numero)}|${normalizzaTesto(f.controparte)}`));
       const chiaviDbSoloNumero = new Set((fattureDb || []).map(f => normalizzaNumero(f.numero)));
 
       const righeAnno = righeExcel.filter(r => {
@@ -83,7 +86,7 @@ export default function VerificaFattureMancanti() {
         return !chiaviDbSoloNumero.has(numero); // se non c'è mappatura fornitore, confronta solo per numero
       });
 
-      setRisultato({ totaleExcel: righeAnno.length, totaleDb: (fattureDb || []).length, mancanti });
+      setRisultato({ totaleExcel: righeAnno.length, totaleDb: (fattureDb || []).length, animaliDb: (fattureDb || []).filter(f => f.acquisto_animali).length, mancanti });
     } catch (err) {
       setErrore(err.message);
     }
@@ -129,7 +132,7 @@ export default function VerificaFattureMancanti() {
       {risultato && (
         <div>
           <p style={{ fontSize: 13, color: C.muted }}>
-            Nel file (anno {anno}): {risultato.totaleExcel} fatture · Nel database (anno {anno}): {risultato.totaleDb} fatture
+            Nel file (anno {anno}): {risultato.totaleExcel} fatture · Nel database (anno {anno}): {risultato.totaleDb} fatture{risultato.animaliDb > 0 ? `, di cui ${risultato.animaliDb} acquisti di animali` : ""}
           </p>
           {risultato.mancanti.length === 0 ? (
             <div style={{ background: "#E8F3EA", border: `1px solid ${C.green}`, borderRadius: 8, padding: "10px 16px", fontSize: 13 }}>
@@ -148,7 +151,7 @@ export default function VerificaFattureMancanti() {
                   <tbody>
                     {risultato.mancanti.map((r, i) => (
                       <tr key={i} style={{ borderTop: `1px solid ${C.border}` }}>
-                        {colonne.map(c => <td key={c} style={{ padding: "6px 10px" }}>{String(r[c] ?? "")}</td>)}
+                        {colonne.map(c => <td key={c} style={{ padding: "6px 10px" }}>{r[c] instanceof Date ? dataIt(formattaData(r[c])) : String(r[c] ?? "")}</td>)}
                       </tr>
                     ))}
                   </tbody>
@@ -159,7 +162,7 @@ export default function VerificaFattureMancanti() {
         </div>
       )}
       <p style={{ fontSize: 11, color: C.muted, marginTop: 12 }}>
-        Il confronto è per Numero fattura (e Fornitore, se indicato) — normalizzato per ignorare zeri iniziali, spazi e maiuscole/minuscole. Senza la colonna Fornitore, confronta solo per numero (meno preciso, può dare falsi positivi se due fornitori diversi hanno lo stesso numero fattura).
+        Il confronto è per Numero fattura (e Fornitore, se indicato), senza badare a zeri iniziali, spazi, barre, trattini e maiuscole/minuscole. Comprende anche gli acquisti di animali registrati nel Report Acquisto Animali. Senza la colonna Fornitore confronta solo il numero: se un altro fornitore ha una fattura con lo stesso numero, una fattura mancante può sfuggire. Con la colonna Fornitore il nome deve essere scritto come nell'anagrafica del programma.
       </p>
     </div>
   );

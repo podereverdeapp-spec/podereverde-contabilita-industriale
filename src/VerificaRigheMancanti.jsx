@@ -4,6 +4,7 @@ import { esportaExcel } from "./esportaExcel";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { formattaEuro, round2, formattaData, fetchAllPages, leggiInBlocchi } from "./parsingUtils";
+import { dataIt } from "./FatturePassive";
 import { CATEGORIE_AMMORTAMENTO, IMPUTAZIONI_CESPITE, creaCespiteDaRiga, anniValidi, percentualeDaAnni } from "./cespitiDaFatture";
 
 // Versione 242: la data letta da Excel si converte con formattaData (giorno italiano), non con toISOString che la portava al giorno prima.
@@ -18,6 +19,10 @@ const DESTINAZIONI = ["Bovini", "Suini", "Ovini", "Bovini e Ovini", "Bovini e Su
 // Versione 261: categorie, imputazioni e creazione del cespite nel modulo comune cespitiDaFatture.js
 
 function normalizzaTesto(t) { return String(t || "").trim().toLowerCase(); }
+// Versione 290: numero della fattura senza zeri iniziali, spazi, barre, trattini e maiuscole (come in Verifica Fatture Mancanti)
+function normalizzaNumero(n) { return String(n || "").trim().toLowerCase().replace(/^0+/, "").replace(/[\/\-\s]/g, ""); }
+// partita IVA senza spazi e senza il prefisso «IT»
+function normalizzaPiva(p) { return String(p || "").toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/^IT(?=\d{11}$)/, ""); }
 function importoVicino(a, b, tolleranzaPct = 0.02, tolleranzaAssoluta = 0.05) {
   const x = parseFloat(a), y = parseFloat(b);
   if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
@@ -223,7 +228,9 @@ export default function VerificaRigheMancanti() {
         setMappaQuantita(trovaColonna(["quantit"]) || "");
         setMappaUnitaMisura(trovaColonna(["u.m.", "unit"]) || "");
         setMappaPrezzoUnitario(trovaColonna(["prezzo"]) || "");
-        setMappaAliquotaIva(trovaColonna(["aliquota", "iva"]) || "");
+        // Versione 290: prima si cercava «aliquota» o «iva» e veniva scelta la colonna «P.IVA»; ora prima «aliquota»,
+        // poi una colonna con «iva» che non sia la partita IVA
+        setMappaAliquotaIva(trovaColonna(["aliquota"]) || Object.keys(dati[0]).find(c => /iva/i.test(c) && !/p\.?\s*iva|partita/i.test(c)) || "");
       } catch (err) {
         setErrore(`Impossibile leggere il file: ${err.message}`);
       }
@@ -241,60 +248,85 @@ export default function VerificaRigheMancanti() {
         const d = String(formattaData(r[mappaData]) || r[mappaData]);
         return d.startsWith(String(anno));
       });
+      // Versione 290: le righe da 0 € (solo descrizione: DDT, IBAN, diciture) nel programma non si salvano: non si confrontano
+      const righeDaControllare = righeAnno.filter(r => Math.abs(parseFloat(r[mappaImporto]) || 0) >= 0.005);
 
-      const { data: fornitori } = await fetchAllPages((da, a) => supabase.from("ci_fornitori").select("id, nome").order("id").range(da, a));
+      const { data: fornitori } = await fetchAllPages((da, a) => supabase.from("ci_fornitori").select("id, nome, partita_iva").order("id").range(da, a));
       const mappaFornitori = new Map((fornitori || []).map(f => [normalizzaTesto(f.nome), f.id]));
+      // Versione 290: il fornitore si riconosce anche dalla partita IVA, se la colonna è indicata
+      const mappaPartiteIva = new Map((fornitori || []).filter(f => normalizzaPiva(f.partita_iva)).map(f => [normalizzaPiva(f.partita_iva), f.id]));
+      const fornitoreDi = r => (mappaPiva && mappaPartiteIva.get(normalizzaPiva(r[mappaPiva]))) || mappaFornitori.get(normalizzaTesto(r[mappaFornitore])) || null;
 
-      // Per ogni fornitore distinto nelle righe da controllare, carica TUTTI i costi
-      // registrati per lui nell'anno, nelle 3 tabelle possibili — poi confronta
-      const fornitoriDaControllare = [...new Set(righeAnno.map(r => normalizzaTesto(r[mappaFornitore])))];
-      const poolPerFornitore = new Map(); // nomeNormalizzato -> [{descrizione, importo}]
-
-      for (const nomeFornitore of fornitoriDaControllare) {
-        const fornitoreId = mappaFornitori.get(nomeFornitore);
-        if (!fornitoreId) { poolPerFornitore.set(nomeFornitore, null); continue; } // fornitore non trovato in anagrafica
-
-        const [{ data: fatture }, { data: cespiti }, { data: acquistiAnimali }] = await Promise.all([
-          fetchAllPages((da, a) => supabase.from("ci_fatture").select("id").eq("fornitore_id", fornitoreId).eq("tipo", "PASSIVA")
+      // Per ogni fornitore riconosciuto, TUTTO ciò che è registrato per lui nell'anno: righe delle fatture,
+      // cespiti, acquisti di animali e trasporti d'ingresso (Report Acquisto Animali)
+      const idFornitori = [...new Set(righeDaControllare.map(fornitoreDi).filter(Boolean))];
+      const datiPerFornitore = new Map();
+      for (const fornitoreId of idFornitori) {
+        const [{ data: fatture }, { data: cespiti }, { data: report }] = await Promise.all([
+          fetchAllPages((da, a) => supabase.from("ci_fatture").select("id, numero").eq("fornitore_id", fornitoreId).eq("tipo", "PASSIVA")
             .gte("data", `${anno}-01-01`).lte("data", `${anno}-12-31`).order("id").range(da, a)),
           fetchAllPages((da, a) => supabase.from("ci_cespiti").select("descrizione, costo_acquisto").eq("fornitore_id", fornitoreId)
             .gte("data_acquisto", `${anno}-01-01`).lte("data_acquisto", `${anno}-12-31`).order("id").range(da, a)),
-          fetchAllPages((da, a) => supabase.from("ci_report_acquisto_animali").select("specie, razza, importo").eq("fornitore_id", fornitoreId)
+          fetchAllPages((da, a) => supabase.from("ci_report_acquisto_animali").select("specie, razza, importo, fonte, numero_fattura, articolo_fattura_id").eq("fornitore_id", fornitoreId)
             .gte("data_fattura", `${anno}-01-01`).lte("data_fattura", `${anno}-12-31`).order("id").range(da, a)),
         ]);
 
         const idFatture = (fatture || []).map(f => f.id);
         let articoli = [];
         if (idFatture.length > 0) {
-          const { data } = await leggiInBlocchi(idFatture, (blocco, da, a) => supabase.from("ci_articoli_fattura").select("descrizione, totale_riga").in("fattura_id", blocco).order("id").range(da, a));
+          const { data } = await leggiInBlocchi(idFatture, (blocco, da, a) => supabase.from("ci_articoli_fattura").select("id, fattura_id, descrizione, totale_riga").in("fattura_id", blocco).order("id").range(da, a));
           articoli = data || [];
         }
-
-        const pool = [
-          ...articoli.map(a => ({ descrizione: a.descrizione, importo: a.totale_riga })),
-          ...(cespiti || []).map(c => ({ descrizione: c.descrizione, importo: c.costo_acquisto })),
-          ...(acquistiAnimali || []).map(a => ({ descrizione: `${a.specie || ""} ${a.razza || ""}`.trim() || "Acquisto animali", importo: a.importo })),
-        ];
-        poolPerFornitore.set(nomeFornitore, pool);
+        // totale di ogni fattura nel programma: le sue righe più la parte «ingresso in allevamento» dei trasporti
+        const fatturaDellaRiga = new Map(articoli.map(a => [a.id, a.fattura_id]));
+        const totalePerFattura = new Map();
+        articoli.forEach(a => totalePerFattura.set(a.fattura_id, (totalePerFattura.get(a.fattura_id) || 0) + (parseFloat(a.totale_riga) || 0)));
+        (report || []).filter(x => x.fonte === "TRASPORTO_INGRESSO" && fatturaDellaRiga.has(x.articolo_fattura_id)).forEach(x => {
+          const fid = fatturaDellaRiga.get(x.articolo_fattura_id);
+          totalePerFattura.set(fid, (totalePerFattura.get(fid) || 0) + (parseFloat(x.importo) || 0));
+        });
+        datiPerFornitore.set(fornitoreId, {
+          pool: [
+            ...articoli.map(a => ({ descrizione: a.descrizione, importo: a.totale_riga })),
+            ...(cespiti || []).map(c => ({ descrizione: c.descrizione, importo: c.costo_acquisto })),
+            ...(report || []).map(a => ({ descrizione: `${a.specie || ""} ${a.razza || ""}`.trim() || "Acquisto animali", importo: a.importo })),
+          ],
+          // numeri delle fatture d'acquisto di animali registrate nel Report
+          numeriAnimali: new Set((report || []).filter(x => x.fonte !== "TRASPORTO_INGRESSO" && x.numero_fattura).map(x => normalizzaNumero(x.numero_fattura))),
+          // numero della fattura → totale nel programma
+          totaliPerNumero: new Map((fatture || []).map(f => [normalizzaNumero(f.numero), totalePerFattura.get(f.id) || 0])),
+        });
       }
+
+      // totale di ogni fattura del file (fornitore + numero), per i confronti sul totale
+      const totaleFileFattura = new Map();
+      if (mappaNumero) righeDaControllare.forEach(r => {
+        const k = `${fornitoreDi(r)}|${normalizzaNumero(r[mappaNumero])}`;
+        totaleFileFattura.set(k, (totaleFileFattura.get(k) || 0) + (parseFloat(r[mappaImporto]) || 0));
+      });
 
       const escluse = new Set(fattureEscluse.map(f => `${f.fornitore_id}|${normalizzaTesto(f.numero)}`));
 
       const mancanti = [];
       const fornitoriNonTrovati = new Set();
-      righeAnno.forEach(r => {
-        const nomeFornitore = normalizzaTesto(r[mappaFornitore]);
-        const fornitoreId = mappaFornitori.get(nomeFornitore);
-        const pool = poolPerFornitore.get(nomeFornitore);
-        if (pool === null) { fornitoriNonTrovati.add(r[mappaFornitore]); mancanti.push({ ...r, _motivo: "Fornitore non trovato in anagrafica", _fornitoreId: null }); return; }
+      righeDaControllare.forEach(r => {
+        const fornitoreId = fornitoreDi(r);
+        if (!fornitoreId) { fornitoriNonTrovati.add(r[mappaFornitore]); mancanti.push({ ...r, _motivo: "Fornitore non trovato in anagrafica", _fornitoreId: null }); return; }
+        const dati = datiPerFornitore.get(fornitoreId);
         const importoRiga = r[mappaImporto];
-        const trovata = (pool || []).some(p => importoVicino(p.importo, importoRiga));
-        if (trovata) return; // già registrata, non compare tra le mancanti
+        if (dati.pool.some(p => importoVicino(p.importo, importoRiga))) return; // già registrata
+        if (mappaNumero) {
+          const numero = normalizzaNumero(r[mappaNumero]);
+          // acquisto di animali: basta che la fattura sia nel Report (i prezzi dei capi possono comprendere i trasporti)
+          if (numero && dati.numeriAnimali.has(numero)) return;
+          // fattura registrata con le righe divise in modo diverso (es. trasporto: macello + ingresso): si confronta il totale
+          if (numero && dati.totaliPerNumero.has(numero) && importoVicino(dati.totaliPerNumero.get(numero), totaleFileFattura.get(`${fornitoreId}|${numero}`))) return;
+        }
         const nonDaRegistrare = mappaNumero && escluse.has(`${fornitoreId}|${normalizzaTesto(r[mappaNumero])}`);
         mancanti.push({ ...r, _motivo: "Nessun importo corrispondente trovato", _fornitoreId: fornitoreId, _nonDaRegistrare: !!nonDaRegistrare });
       });
 
-      setRisultato({ totaleControllate: righeAnno.length, mancanti, fornitoriNonTrovati: [...fornitoriNonTrovati] });
+      setRisultato({ totaleControllate: righeDaControllare.length, righeAZero: righeAnno.length - righeDaControllare.length, mancanti, fornitoriNonTrovati: [...fornitoriNonTrovati] });
     } catch (err) {
       setErrore(err.message);
     }
@@ -331,7 +363,7 @@ export default function VerificaRigheMancanti() {
           ) : (
             fattureEscluse.map(f => (
               <div key={f.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${C.border}`, fontSize: 13 }}>
-                <span>{fornitoriTutti.find(x => x.id === f.fornitore_id)?.nome || "Fornitore sconosciuto"} — n. {f.numero}{f.data ? ` — ${f.data}` : ""}</span>
+                <span>{fornitoriTutti.find(x => x.id === f.fornitore_id)?.nome || "Fornitore sconosciuto"} — n. {f.numero}{f.data ? ` — ${dataIt(f.data)}` : ""}</span>
                 <button onClick={() => rimuoviEsclusione(f.id)}
                   style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: C.red }}>
                   ✕ Rimuovi esclusione
@@ -352,6 +384,8 @@ export default function VerificaRigheMancanti() {
             <CampoMappa label="Importo (obbligatorio)" value={mappaImporto} colonne={colonne} onChange={setMappaImporto} />
             <CampoMappa label="Descrizione (informativa)" value={mappaDescrizione} colonne={colonne} onChange={setMappaDescrizione} />
             <CampoMappa label="Data (per filtrare l'anno)" value={mappaData} colonne={colonne} onChange={setMappaData} />
+            <CampoMappa label="P.IVA (consigliata: riconosce il fornitore anche con il nome scritto diversamente)" value={mappaPiva} colonne={colonne} onChange={setMappaPiva} />
+            <CampoMappa label="Numero fattura (consigliato: serve per acquisti di animali e trasporti)" value={mappaNumero} colonne={colonne} onChange={setMappaNumero} />
           </div>
           <button onClick={confrontaRighe} disabled={caricando}
             style={{ marginTop: 12, background: C.green, color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
@@ -362,8 +396,6 @@ export default function VerificaRigheMancanti() {
             Colonne aggiuntive, usate solo per esportare le righe mancanti verso Carica Fatture (opzionali — rilevate da sole se presenti):
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8 }}>
-            <CampoMappa label="P.IVA" value={mappaPiva} colonne={colonne} onChange={setMappaPiva} />
-            <CampoMappa label="Numero fattura" value={mappaNumero} colonne={colonne} onChange={setMappaNumero} />
             <CampoMappa label="Quantità" value={mappaQuantita} colonne={colonne} onChange={setMappaQuantita} />
             <CampoMappa label="U.M." value={mappaUnitaMisura} colonne={colonne} onChange={setMappaUnitaMisura} />
             <CampoMappa label="Prezzo unitario" value={mappaPrezzoUnitario} colonne={colonne} onChange={setMappaPrezzoUnitario} />
@@ -374,7 +406,7 @@ export default function VerificaRigheMancanti() {
 
       {risultato && (
         <div>
-          <p style={{ fontSize: 13, color: C.muted }}>{risultato.totaleControllate} righe controllate</p>
+          <p style={{ fontSize: 13, color: C.muted }}>{risultato.totaleControllate} righe controllate{risultato.righeAZero > 0 ? ` · ${risultato.righeAZero} righe da 0 € non confrontate (solo descrizione: nel programma non si salvano)` : ""}</p>
           {risultato.fornitoriNonTrovati.length > 0 && (
             <div style={{ background: "#FFF2DC", border: `1px solid ${C.yellow}`, borderRadius: 8, padding: "10px 16px", fontSize: 13, marginBottom: 10 }}>
               ⚠️ Fornitori del file non trovati in anagrafica (controlla il nome esatto): {risultato.fornitoriNonTrovati.join(", ")}
@@ -488,7 +520,7 @@ export default function VerificaRigheMancanti() {
         </div>
       )}
       <p style={{ fontSize: 11, color: C.muted, marginTop: 12 }}>
-        Il confronto principale è per importo (tolleranza ~2%, dato che l'imponibile può essere arrotondato diversamente tra l'estrazione e la registrazione) — la descrizione è mostrata a titolo informativo, non è richiesta per il match, dato che classificando una riga la descrizione può cambiare leggermente.
+        Il confronto principale è per importo (tolleranza ~2%, dato che l'imponibile può essere arrotondato diversamente tra l'estrazione e la registrazione) — la descrizione è mostrata a titolo informativo, non è richiesta per il match, dato che classificando una riga la descrizione può cambiare leggermente. Le righe da 0 € non si confrontano. Il fornitore si riconosce dalla partita IVA (se la colonna è indicata) o dal nome scritto come in anagrafica. Con la colonna Numero fattura: una riga di un acquisto di animali risulta registrata se la sua fattura è nel Report Acquisto Animali (il prezzo dei capi può comprendere il trasporto); una riga di una fattura registrata con le righe divise in modo diverso (per esempio un trasporto diviso tra macello e ingresso in allevamento) risulta registrata se il totale della fattura nel file e nel programma coincide.
       </p>
     </div>
   );
