@@ -4,7 +4,7 @@ import { supabase } from "./supabase";
 import { C } from "./style";
 import { numerizzaCampi, formattaEuro, round2, fetchAllPages } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
-import { FUNZIONE_RICERCA, messaggioErroreRicerca, NavigazionePagine, leggiTutteLeTrovate, leggiCapiAcquisto, CapiAcquisto, EtichettaAcquistoAnimali, numeroFattura, leggiRigheFattura, NotaTrasportoAiCapi, NotaCompetenza, PAGINA_COMPETENZA, RicomposizioneFattura } from "./FatturePassive";
+import { FUNZIONE_RICERCA, messaggioErroreRicerca, NavigazionePagine, leggiTutteLeTrovate, leggiCapiAcquisto, CapiAcquisto, EtichettaAcquistoAnimali, numeroFattura, leggiRigheFattura, NotaTrasportoAiCapi, NotaCompetenza, PAGINA_COMPETENZA, RicomposizioneFattura, dataIt, eNotaDiCredito, EtichettaNotaDiCredito } from "./FatturePassive";
 
 // Versione 281 (decisione del Dott. Bizzarri del 23/10/2026): la ricerca la fa il database (funzione
 // ci_ricerca_documenti) su TUTTE le fatture e le loro righe, compresi gli acquisti di animali registrati solo
@@ -299,6 +299,7 @@ export default function Ricerca() {
             <><br /><strong style={{ color: C.primary }}>di cui righe con {[area && `area «${area}»`, centroCosto && `centro di costo «${centroCosto}»`, destinazione && `destinazione «${destinazione}»`, tipoCosto && `tipo di costo «${tipoCosto}»`].filter(Boolean).join(", ")}: {formattaEuro(Number(risposta.totale_righe_scelte || 0))}</strong></>
           )}
           {numeroAnimali > 0 && <><br />di cui {numeroAnimali.toLocaleString("it-IT")} acquisti di animali: {formattaEuro(Number(risposta.totale_acquisti_animali || 0))} (solo l'importo dei capi: l'IVA non è registrata)</>}
+          {Number(risposta.numero_note_credito || 0) > 0 && <><br /><span style={{ color: C.red }}>↩️ di cui {Number(risposta.numero_note_credito).toLocaleString("it-IT")} note di credito: {formattaEuro(Number(risposta.totale_note_credito || 0))} (già sottratte dal totale)</span></>}
           {Number(risposta.numero_competenza || 0) > 0 && <><br />🗂️ di cui {Number(risposta.numero_competenza).toLocaleString("it-IT")} documenti di competenza (da ricevere o da emettere): {formattaEuro(Number(risposta.totale_competenza || 0))} — leggere il rinvio alla pagina {PAGINA_COMPETENZA}</>}
           {Number(risposta.numero_trasporti_ai_capi || 0) > 0 && <><br />🚚 trasporti attribuiti ai capi: {formattaEuro(Number(risposta.totale_trasporti_ai_capi || 0))} in {Number(risposta.numero_trasporti_ai_capi).toLocaleString("it-IT")} fatture (non compresi nel totale delle fatture: le loro righe valgono 0 e l'importo è nel Report Acquisto Animali{risposta.totale_righe_scelte != null ? "; è invece compreso nel «di cui righe»" : ""})</>}
         </p>
@@ -346,9 +347,10 @@ export default function Ricerca() {
                     </div>
                   ) : (
                     <>
+                      {eNotaDiCredito(f) && <EtichettaNotaDiCredito />}
                       <strong>{f.controparte || "—"}</strong>
                       <div style={{ fontSize: 12, color: C.muted }}>
-                        Fatt. {numeroFattura(f)} del {f.data}{f.note && ` · ${f.note}`}
+                        {eNotaDiCredito(f) ? "Nota di credito" : "Fatt."} {numeroFattura(f)} del {dataIt(f.data)}{f.note && ` · ${f.note}`}
                         {" "}{!f.acquisto_animali && <span onClick={e => {
                           e.stopPropagation(); setModificaFatturaId(f.id);
                           const fo = fornitori.find(x => x.id === f.fornitore_id);
@@ -362,7 +364,7 @@ export default function Ricerca() {
                   )}
                 </div>
                 <div style={{ textAlign: "right" }}>
-                  <div style={{ fontWeight: 800, fontSize: 16, color: C.primary }}>{formattaEuro(f.totale_lordo)}</div>
+                  <div style={{ fontWeight: 800, fontSize: 16, color: eNotaDiCredito(f) ? C.red : C.primary }}>{formattaEuro(f.totale_lordo)}</div>
                   {f.acquisto_animali && <div style={{ fontSize: 11, color: C.muted }}>IVA non registrata</div>}
                   <div style={{ fontSize: 11, color: C.muted }}>{espansa === f.chiave ? "▲ nascondi" : "▼ dettaglio"}</div>
                 </div>

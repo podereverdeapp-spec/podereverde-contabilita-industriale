@@ -16,7 +16,14 @@ import { esportaExcel, numeroExcel } from "./esportaExcel";
 // attribuito ai capi nel Report Acquisto Animali, per non contarlo due volte) mostrano l'importo del trasporto.
 // Versione 284 (decisione del 23/10/2026): compaiono anche i documenti di competenza con Muratella («da ricevere»
 // tra le passive, «da emettere» tra le attive), con la spiegazione che rimanda alla pagina «Rapporti con Muratella».
+// Versione 287 (decisione del 23/10/2026): le note di credito (totale negativo) sono segnate «↩️ Nota di credito»
+// con l'importo in rosso, e le date si leggono all'italiana (gg/mm/aaaa).
 export const GRUPPI = [50, 100, 200];
+export const dataIt = d => { const s = String(d || "").slice(0, 10); const [a, m, g] = s.split("-"); return g ? `${g}/${m}/${a}` : s || "—"; };
+export const eNotaDiCredito = f => (f.tipo === "PASSIVA" || f.tipo === "ATTIVA") && Number(f.totale_lordo) < 0;
+export const EtichettaNotaDiCredito = () => (
+  <span style={{ fontSize: 11, fontWeight: 700, color: C.red, background: "#FBE5E2", borderRadius: 6, padding: "1px 6px", marginRight: 8 }}>↩️ Nota di credito</span>
+);
 export const DOCUMENTO_DI_COMPETENZA = t => t === "DA_RICEVERE" || t === "DA_EMETTERE";
 export const PAGINA_COMPETENZA = "«Fatture da Ricevere e da Emettere → Rapporti con Muratella»";
 
@@ -109,13 +116,11 @@ export const NotaTrasportoAiCapi = ({ importo, riga = false }) => (
 );
 
 // I capi di un acquisto di animali (stesso fornitore, numero e data; solo quelli senza riga in una fattura)
+// Versione 288: si leggono dalla vista ci_v_ricerca_capi_acquistati, la stessa che fa i totali, così le righe
+// «non abbinabili» che ripetono la fattura intera (e i doppioni) non compaiono e non si contano due volte.
 export async function leggiCapiAcquisto(f) {
-  let q = supabase.from("ci_report_acquisto_animali").select("id, bdn, nr_lotto, specie, razza, quantita, prezzo_unitario, importo, stato, note")
-    .eq("fonte", "ACQUISTO_DIRETTO").is("articolo_fattura_id", null);
-  q = f.fornitore_id == null ? q.is("fornitore_id", null) : q.eq("fornitore_id", f.fornitore_id);
-  q = f.numero == null ? q.is("numero_fattura", null) : q.eq("numero_fattura", f.numero);
-  q = f.data == null ? q.is("data_fattura", null) : q.eq("data_fattura", f.data);
-  const { data, error } = await q.order("id");
+  const { data, error } = await supabase.from("ci_v_ricerca_capi_acquistati").select("id, bdn, nr_lotto, specie, razza, importo, note")
+    .eq("chiave", f.chiave).order("id");
   if (error) throw new Error(error.message);
   return numerizzaCampi(data || [], ["quantita", "prezzo_unitario", "importo"]);
 }
@@ -251,6 +256,7 @@ export function ElencoFattureAPagine({ tipo, titolo, etichettaControparte, nomeF
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 20 }}>
         {risposta ? `${numero.toLocaleString("it-IT")} fatture — totale ${formattaEuro(Number(risposta.totale_lordo || 0))} (calcolato su tutte le fatture trovate, anche quelle non mostrate)` : ""}
         {numeroAnimali > 0 && <><br />di cui {numeroAnimali.toLocaleString("it-IT")} acquisti di animali: {formattaEuro(Number(risposta.totale_acquisti_animali || 0))} (solo l'importo dei capi: l'IVA non è registrata)</>}
+        {Number(risposta?.numero_note_credito || 0) > 0 && <><br /><span style={{ color: C.red }}>↩️ di cui {Number(risposta.numero_note_credito).toLocaleString("it-IT")} note di credito: {formattaEuro(Number(risposta.totale_note_credito || 0))} (già sottratte dal totale)</span></>}
         {Number(risposta?.numero_competenza || 0) > 0 && <><br />🗂️ di cui {Number(risposta.numero_competenza).toLocaleString("it-IT")} documenti di competenza («{tipo.includes("DA_RICEVERE") ? "da ricevere" : "da emettere"}»): {formattaEuro(Number(risposta.totale_competenza || 0))} — leggere il rinvio alla pagina {PAGINA_COMPETENZA}</>}
         {Number(risposta?.numero_trasporti_ai_capi || 0) > 0 && <><br />🚚 trasporti attribuiti ai capi: {formattaEuro(Number(risposta.totale_trasporti_ai_capi || 0))} in {Number(risposta.numero_trasporti_ai_capi).toLocaleString("it-IT")} fatture (non compresi nel totale qui sopra: le loro righe valgono 0 e l'importo è nel Report Acquisto Animali)</>}
       </p>
@@ -287,15 +293,16 @@ export function ElencoFattureAPagine({ tipo, titolo, etichettaControparte, nomeF
                   <div>
                     {f.acquisto_animali && <EtichettaAcquistoAnimali />}
                     {DOCUMENTO_DI_COMPETENZA(f.tipo) && <EtichettaCompetenza tipo={f.tipo} />}
+                    {eNotaDiCredito(f) && <EtichettaNotaDiCredito />}
                     <strong>{f.controparte || "—"}</strong>
                     <div style={{ fontSize: 12, color: C.muted }}>
-                      Fatt. {numeroFattura(f)} del {f.data} {f.partita_iva && `· P.IVA ${f.partita_iva}`}
+                      {eNotaDiCredito(f) ? "Nota di credito" : "Fatt."} {numeroFattura(f)} del {dataIt(f.data)} {f.partita_iva && `· P.IVA ${f.partita_iva}`}
                     </div>
                     {Number(f.trasporto_ai_capi) > 0 && <NotaTrasportoAiCapi importo={Number(f.trasporto_ai_capi)} />}
                     <NotaCompetenza f={f} />
                   </div>
                   <div style={{ textAlign: "right" }}>
-                    <div style={{ fontWeight: 800, fontSize: 16, color: coloreTotale }}>{formattaEuro(f.totale_lordo)}</div>
+                    <div style={{ fontWeight: 800, fontSize: 16, color: eNotaDiCredito(f) ? C.red : coloreTotale }}>{formattaEuro(f.totale_lordo)}</div>
                     {f.acquisto_animali && <div style={{ fontSize: 11, color: C.muted }}>IVA non registrata</div>}
                     <div style={{ fontSize: 11, color: C.muted }}>{espansa === f.chiave ? "▲ nascondi righe" : "▼ vedi righe"}</div>
                   </div>
@@ -357,7 +364,8 @@ export function RicomposizioneFattura({ fattura, righe, azioneRiga, sostituisciR
     ivaPerAliquota[aliq].imponibile += r.totale_riga || 0;
     ivaPerAliquota[aliq].iva += r.totale_iva || 0;
   });
-  const titolo = f.tipo === "DA_RICEVERE" ? "Documento da ricevere" : f.tipo === "DA_EMETTERE" ? "Documento da emettere" : "Fattura n.";
+  const titolo = f.tipo === "DA_RICEVERE" ? "Documento da ricevere" : f.tipo === "DA_EMETTERE" ? "Documento da emettere"
+    : (Number(f.totale_lordo) < 0 || (f.totale_lordo == null && totaleComplessivo < 0)) ? "Nota di credito n." : "Fattura n.";
   const th = { padding: "4px 8px", textAlign: "right", whiteSpace: "nowrap" };
   const td = { padding: "6px 8px", textAlign: "right", whiteSpace: "nowrap", verticalAlign: "top" };
 
@@ -371,7 +379,7 @@ export function RicomposizioneFattura({ fattura, righe, azioneRiga, sostituisciR
         </div>
         <div style={{ textAlign: "right" }}>
           <div style={{ fontWeight: 700, fontSize: 14 }}>{titolo} {f.numero}</div>
-          <div style={{ fontSize: 12, color: C.muted }}>del {f.data}</div>
+          <div style={{ fontSize: 12, color: C.muted }}>del {dataIt(f.data)}</div>
         </div>
       </div>
 
