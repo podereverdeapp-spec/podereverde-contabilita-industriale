@@ -57,6 +57,7 @@ export default function IstruzioniFatture() {
             "In alto: quante fatture e il loro totale con i filtri scelti, calcolati dal database su TUTTE le fatture trovate, anche quelle che in quel momento non si vedono.",
             "Le fatture si vedono a gruppi: «per volta» sceglie 50, 100 o 200. I pulsanti «◀ precedenti» e «successive ▶», sopra e sotto l'elenco, passano al gruppo prima o dopo; tra i pulsanti è scritto quali fatture si stanno vedendo (per esempio «fatture 51–100 di 981»). Cambiando un filtro si riparte dalla prima.",
             "«▼ vedi righe» ricompone la fattura: righe con quantità, prezzo e imponibile, IVA per aliquota e totale.",
+            "Compaiono anche gli acquisti di animali registrati solo nel Report Acquisto Animali, segnati «🐄 Acquisto animali»: una fattura per fornitore, numero e data («senza numero» se il numero non è registrato). Il totale è l'importo dei capi e l'IVA non è registrata; in alto si legge «di cui … acquisti di animali». «▼ vedi righe» mostra i capi con matricola o lotto e prezzo; si correggono nella pagina «Report Acquisto Animali».",
             "«📥 Esporta Excel» scarica TUTTE le fatture trovate con i filtri, non solo il gruppo che si vede (fornitore, partita IVA, numero, data, totali): il programma le legge 1.000 alla volta e sul pulsante si vede l'avanzamento.",
           ],
           note: "Pagina di sola consultazione: la classificazione delle singole righe si vede nella cartella «Ricerca».",

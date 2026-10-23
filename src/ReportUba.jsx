@@ -4,6 +4,7 @@ import { C } from "./style";
 import { calcolaReportUba } from "./motoreUba";
 import { formattaNumero, fetchAllPages } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
+import { NavigazionePagine } from "./FatturePassive";
 
 // ─── COMPONENTE ───
 
@@ -13,6 +14,11 @@ export default function ReportUba({ onVediScheda }) {
   const [calcolando, setCalcolando] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [importiPrecedenti, setImportiPrecedenti] = useState([]);
+  // Versione 281 (decisione del 23/10/2026): elenco dei capi a pagine, 50, 100 o 200 per volta; riepiloghi,
+  // salvataggio ed export restano su tutti i capi.
+  const [gruppo, setGruppo] = useState(50);
+  const [inizio, setInizio] = useState(0);
+  useEffect(() => { setInizio(0); }, [righe, gruppo]);
 
   useEffect(() => { caricaImportiPrecedenti(); }, []);
   async function caricaImportiPrecedenti() {
@@ -219,6 +225,7 @@ export default function ReportUba({ onVediScheda }) {
           )}
 
           <p style={{ fontSize: 12, color: C.muted, marginTop: 0, marginBottom: 8 }}>Clicca su una riga per aprire la Scheda Animale con lo storico costo completo.</p>
+          <NavigazionePagine numero={righe.length} inizio={inizio} gruppo={gruppo} setInizio={setInizio} setGruppo={setGruppo} cosa="capi" />
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", marginBottom: 16, maxHeight: 400, overflowY: "auto" }}>
             <table style={{ width: "100%", fontSize: 12 }}>
               <thead style={{ position: "sticky", top: 0, background: C.primary, color: "#fff" }}>
@@ -228,8 +235,8 @@ export default function ReportUba({ onVediScheda }) {
                 </tr>
               </thead>
               <tbody>
-                {righe.map((r, i) => (
-                  <tr key={i} onClick={() => onVediScheda && r.bdn && onVediScheda(r.bdn)}
+                {righe.slice(inizio, inizio + gruppo).map((r, i) => (
+                  <tr key={inizio + i} onClick={() => onVediScheda && r.bdn && onVediScheda(r.bdn)}
                     style={{ borderTop: `1px solid ${C.border}`, cursor: onVediScheda ? "pointer" : "default" }}>
                     <td style={td}>{r.bdn || "—"}</td>
                     <td style={td}>{r.specie}</td>
@@ -246,6 +253,7 @@ export default function ReportUba({ onVediScheda }) {
             </table>
 
           </div>
+          <NavigazionePagine numero={righe.length} inizio={inizio} gruppo={gruppo} setInizio={setInizio} setGruppo={setGruppo} cosa="capi" />
 
           <button onClick={salvaReport} disabled={salvando}
             style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 10, padding: "12px 24px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>

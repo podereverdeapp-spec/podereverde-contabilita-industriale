@@ -117,7 +117,8 @@ export default function IstruzioniPrezziAcquisto() {
             <>Nella casella <b>«Cerca per descrizione o fornitore/cliente...»</b> scrivere una parola del prodotto o il nome del fornitore.</>,
             <>Nel primo menu scegliere <b>«Solo acquisti»</b>.</>,
             <>Cliccare sul prodotto. Si aprono il grafico del prezzo fattura per fattura, il grafico del prezzo medio di ogni anno e l'elenco di tutte le righe di fattura.</>,
-            <>Per avere tutto in un file, premere <b>«📥 Esporta Excel»</b>.</>] },
+            <>Per avere tutto in un file, premere <b>«📥 Esporta Excel»</b>.</>,
+            <>L'elenco si vede a gruppi di 50, 100 o 200 articoli (<b>«per volta»</b>), con i pulsanti <b>«◀ precedenti»</b> e <b>«successive ▶»</b> sopra e sotto; la ricerca, l'ordinamento e l'export riguardano tutti gli articoli. Lo stesso vale per l'elenco delle descrizioni in <i>Famiglie di Prodotto</i>.</>] },
           <><b>Come leggere l'elenco:</b></>,
           { numerato: false, elenco: [
             <>prezzo recente <b>rosso con ⚠️</b>: è il prezzo più alto mai pagato per quel prodotto;</>,

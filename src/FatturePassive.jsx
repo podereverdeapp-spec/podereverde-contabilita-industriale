@@ -1,17 +1,111 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { numerizzaCampi, formattaEuro } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
 
 // Versione 280 (decisione del Dott. Bizzarri del 23/10/2026): la consultazione delle fatture si fa «a
-// pagine». Il database consegna al massimo 1.000 righe per richiesta: per questo la pagina NON legge più
-// tutte le fatture in una volta (oltre le 1.000 le più vecchie sarebbero sparite senza avviso). È il
-// database (funzione ci_cerca_fatture, file contabilita_strutture_v280.sql) a cercare, contare e
-// sommare TUTTE le fatture che corrispondono ai filtri; la pagina mostra solo il gruppo richiesto
-// (50, 100 o 200), con i pulsanti «◀ precedenti / successive ▶» in cima e in fondo all'elenco.
-// L'export Excel legge tutte le fatture trovate, 1.000 alla volta, finché non le ha ricevute tutte.
-const GRUPPI = [50, 100, 200];
+// pagine». Il database consegna al massimo 1.000 righe per richiesta: la pagina NON legge più tutte le
+// fatture in una volta. È il database a cercare, contare e sommare TUTTE le fatture che corrispondono ai
+// filtri; la pagina mostra solo il gruppo richiesto (50, 100 o 200), con i pulsanti «◀ precedenti /
+// successive ▶» in cima e in fondo all'elenco. L'export Excel legge tutte le fatture trovate, 1.000 alla volta.
+// Versione 281 (decisione del 23/10/2026): la ricerca la fa la funzione ci_ricerca_documenti (file
+// contabilita_strutture_v281.sql), che comprende anche gli acquisti di animali registrati solo nel Report
+// Acquisto Animali: una «fattura» per fornitore, numero e data, con i capi come righe e l'IVA non registrata.
+export const GRUPPI = [50, 100, 200];
+export const FUNZIONE_RICERCA = "ci_ricerca_documenti";
+
+export function messaggioErroreRicerca(error) {
+  return /ci_ricerca_documenti|function|funzione/i.test(error.message)
+    ? `${error.message}\n\nIl database non ha ancora la funzione della versione 281: lanciare il file contabilita_strutture_v281.sql.`
+    : error.message;
+}
+
+// Numero della fattura come si mostra: gli acquisti di animali senza numero restano riconoscibili
+export const numeroFattura = f => (f.numero ? f.numero : "senza numero");
+
+// Pulsanti «◀ precedenti / successive ▶» e scelta di quante fatture vedere per volta (sopra e sotto l'elenco)
+export function NavigazionePagine({ numero, inizio, gruppo, setInizio, setGruppo, loading, cosa = "fatture" }) {
+  if (!numero) return null;
+  const ultima = Math.min(inizio + gruppo, numero);
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "8px 0" }}>
+      <button onClick={() => setInizio(Math.max(0, inizio - gruppo))} disabled={inizio === 0 || loading} style={stilePulsante(inizio === 0)}>◀ precedenti</button>
+      <span style={{ fontSize: 13, color: C.muted }}>{cosa} {(inizio + 1).toLocaleString("it-IT")}–{ultima.toLocaleString("it-IT")} di {numero.toLocaleString("it-IT")}</span>
+      <button onClick={() => setInizio(inizio + gruppo)} disabled={ultima >= numero || loading} style={stilePulsante(ultima >= numero)}>successive ▶</button>
+      <label style={{ fontSize: 13, color: C.muted, marginLeft: 8 }}>per volta:{" "}
+        <select value={gruppo} onChange={e => setGruppo(parseInt(e.target.value))} style={{ padding: "4px 8px", borderRadius: 6, border: `1.5px solid ${C.border}` }}>
+          {GRUPPI.map(g => <option key={g} value={g}>{g}</option>)}
+        </select>
+      </label>
+    </div>
+  );
+}
+
+// Legge TUTTE le fatture trovate (1.000 alla volta) per l'esportazione; avanzamento(testo) mostra a che punto è
+export async function leggiTutteLeTrovate(parametri, totaleTrovate, avanzamento) {
+  const tutte = [];
+  for (let da = 0; ; da += 1000) {
+    avanzamento(`letto ${tutte.length.toLocaleString("it-IT")} di ${Number(totaleTrovate).toLocaleString("it-IT")}`);
+    const { data, error } = await supabase.rpc(FUNZIONE_RICERCA, { ...parametri, p_offset: da, p_limite: 1000 });
+    if (error) throw new Error(error.message);
+    const blocco = data?.fatture || [];
+    tutte.push(...blocco);
+    if (blocco.length < 1000) break;
+  }
+  if (tutte.length !== Number(totaleTrovate)) throw new Error(`Lette ${tutte.length} fatture invece di ${totaleTrovate}: riprovare.`);
+  return tutte;
+}
+
+// I capi di un acquisto di animali (stesso fornitore, numero e data; solo quelli senza riga in una fattura)
+export async function leggiCapiAcquisto(f) {
+  let q = supabase.from("ci_report_acquisto_animali").select("id, bdn, nr_lotto, specie, razza, quantita, prezzo_unitario, importo, stato, note")
+    .eq("fonte", "ACQUISTO_DIRETTO").is("articolo_fattura_id", null);
+  q = f.fornitore_id == null ? q.is("fornitore_id", null) : q.eq("fornitore_id", f.fornitore_id);
+  q = f.numero == null ? q.is("numero_fattura", null) : q.eq("numero_fattura", f.numero);
+  q = f.data == null ? q.is("data_fattura", null) : q.eq("data_fattura", f.data);
+  const { data, error } = await q.order("id");
+  if (error) throw new Error(error.message);
+  return numerizzaCampi(data || [], ["quantita", "prezzo_unitario", "importo"]);
+}
+
+export function CapiAcquisto({ capi }) {
+  const totale = capi.reduce((s, c) => s + (c.importo || 0), 0);
+  return (
+    <div>
+      <div style={{ fontSize: 12, color: C.muted, marginBottom: 8 }}>
+        Acquisto di animali registrato nel Report Acquisto Animali: l'IVA non è registrata. I dati si correggono nella pagina «Report Acquisto Animali».
+      </div>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, marginBottom: 8 }}>
+        <thead>
+          <tr style={{ borderBottom: `1.5px solid ${C.border}`, color: C.muted, fontSize: 12 }}>
+            <th style={{ padding: "4px 8px", textAlign: "left" }}>Matricola o lotto</th>
+            <th style={{ padding: "4px 8px", textAlign: "left" }}>Specie</th>
+            <th style={{ padding: "4px 8px", textAlign: "left" }}>Razza</th>
+            <th style={{ padding: "4px 8px", textAlign: "left" }}>Note</th>
+            <th style={{ padding: "4px 8px", textAlign: "right" }}>Importo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {capi.map(c => (
+            <tr key={c.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+              <td style={{ padding: "6px 8px" }}>{c.bdn || c.nr_lotto || "—"}</td>
+              <td style={{ padding: "6px 8px" }}>{c.specie || "—"}</td>
+              <td style={{ padding: "6px 8px" }}>{c.razza || "—"}</td>
+              <td style={{ padding: "6px 8px", fontSize: 12, color: C.muted }}>{c.note || ""}</td>
+              <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700 }}>{formattaEuro(c.importo)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div style={{ textAlign: "right", fontWeight: 800 }}>Totale dei capi: {formattaEuro(totale)}</div>
+    </div>
+  );
+}
+
+export const EtichettaAcquistoAnimali = () => (
+  <span style={{ fontSize: 11, fontWeight: 700, color: C.accent, background: "#F3ECE2", borderRadius: 6, padding: "1px 6px", marginRight: 8 }}>🐄 Acquisto animali</span>
+);
 
 export function ElencoFattureAPagine({ tipo, titolo, etichettaControparte, nomeFile, conFiltroData = false, coloreTotale = C.primary }) {
   const [risposta, setRisposta] = useState(null);
@@ -26,6 +120,7 @@ export function ElencoFattureAPagine({ tipo, titolo, etichettaControparte, nomeF
   const [gruppo, setGruppo] = useState(50);
   const [inizio, setInizio] = useState(0);
   const [esportando, setEsportando] = useState("");
+  const ultimaRichiesta = useRef(0); // conta solo la risposta dell'ultima ricerca partita
 
   // la ricerca parte mezzo secondo dopo l'ultima lettera scritta
   useEffect(() => { const t = setTimeout(() => setCercaApplicata(cerca.trim()), 500); return () => clearTimeout(t); }, [cerca]);
@@ -39,12 +134,12 @@ export function ElencoFattureAPagine({ tipo, titolo, etichettaControparte, nomeF
   });
 
   async function carica() {
+    const n = ++ultimaRichiesta.current;
     setLoading(true); setErrore("");
-    const { data, error } = await supabase.rpc("ci_cerca_fatture", parametri(inizio, gruppo));
+    const { data, error } = await supabase.rpc(FUNZIONE_RICERCA, parametri(inizio, gruppo));
+    if (n !== ultimaRichiesta.current) return; // nel frattempo è partita una ricerca più recente
     if (error) {
-      setErrore(/ci_cerca_fatture|function|funzione/i.test(error.message)
-        ? `${error.message}\n\nIl database non ha ancora la funzione della versione 280: lanciare il file contabilita_strutture_v280.sql.`
-        : error.message);
+      setErrore(messaggioErroreRicerca(error));
       setRisposta(null);
     } else {
       setRisposta({ ...data, fatture: numerizzaCampi(data?.fatture || [], ["totale_netto", "totale_iva", "totale_lordo"]) });
@@ -52,33 +147,32 @@ export function ElencoFattureAPagine({ tipo, titolo, etichettaControparte, nomeF
     setLoading(false);
   }
 
-  async function espandi(fatturaId) {
-    if (espansa === fatturaId) { setEspansa(null); return; }
-    setEspansa(fatturaId);
-    if (!righePerFattura[fatturaId]) {
-      const { data, error } = await supabase.from("ci_articoli_fattura").select("*").eq("fattura_id", fatturaId).order("id");
-      if (error) { alert(`⚠️ Errore nel caricamento delle righe:\n\n${error.message}`); return; }
-      setRighePerFattura(prev => ({ ...prev, [fatturaId]: numerizzaCampi(data || [], ["quantita", "prezzo_unitario", "totale_riga", "aliquota_iva", "totale_iva"]) }));
+  async function espandi(f) {
+    if (espansa === f.chiave) { setEspansa(null); return; }
+    setEspansa(f.chiave);
+    if (righePerFattura[f.chiave]) return;
+    try {
+      if (f.acquisto_animali) {
+        const capi = await leggiCapiAcquisto(f);
+        setRighePerFattura(prev => ({ ...prev, [f.chiave]: capi }));
+      } else {
+        const { data, error } = await supabase.from("ci_articoli_fattura").select("*").eq("fattura_id", f.id).order("id");
+        if (error) throw new Error(error.message);
+        setRighePerFattura(prev => ({ ...prev, [f.chiave]: numerizzaCampi(data || [], ["quantita", "prezzo_unitario", "totale_riga", "aliquota_iva", "totale_iva"]) }));
+      }
+    } catch (err) {
+      alert(`⚠️ Errore nel caricamento delle righe:\n\n${err.message}`);
     }
   }
 
   // Export: tutte le fatture trovate, 1.000 alla volta, con l'avanzamento
   async function esporta() {
-    const totaleTrovate = Number(risposta?.numero || 0);
-    const tutte = [];
     try {
-      for (let da = 0; ; da += 1000) {
-        setEsportando(`letto ${tutte.length.toLocaleString("it-IT")} di ${totaleTrovate.toLocaleString("it-IT")}`);
-        const { data, error } = await supabase.rpc("ci_cerca_fatture", parametri(da, 1000));
-        if (error) throw new Error(error.message);
-        const blocco = data?.fatture || [];
-        tutte.push(...blocco);
-        if (blocco.length < 1000) break;
-      }
-      if (tutte.length !== totaleTrovate) throw new Error(`Lette ${tutte.length} fatture invece di ${totaleTrovate}: riprovare.`);
+      const tutte = await leggiTutteLeTrovate(parametri(0, 1000), risposta?.numero || 0, setEsportando);
       const righeExcel = tutte.map(f => ({
         [etichettaControparte]: f.controparte, "P.IVA": f.partita_iva, "Numero": f.numero, "Data": f.data,
-        "Totale netto": numeroExcel(f.totale_netto), "Totale IVA": numeroExcel(f.totale_iva), "Totale lordo": numeroExcel(f.totale_lordo),
+        "Totale netto": numeroExcel(f.totale_netto), "Totale IVA": f.acquisto_animali ? "non registrata" : numeroExcel(f.totale_iva),
+        "Totale lordo": numeroExcel(f.totale_lordo), "Acquisto animali": f.acquisto_animali ? "sì" : "",
       }));
       esportaExcel(nomeFile, [{ nome: titolo, righe: righeExcel }]);
     } catch (err) {
@@ -90,20 +184,8 @@ export function ElencoFattureAPagine({ tipo, titolo, etichettaControparte, nomeF
   const numero = Number(risposta?.numero || 0);
   const fatture = risposta?.fatture || [];
   const anni = risposta?.anni || [];
-  const ultima = Math.min(inizio + gruppo, numero);
-
-  const Navigazione = () => numero > 0 && (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "8px 0" }}>
-      <button onClick={() => setInizio(Math.max(0, inizio - gruppo))} disabled={inizio === 0 || loading} style={stilePulsante(inizio === 0)}>◀ precedenti</button>
-      <span style={{ fontSize: 13, color: C.muted }}>fatture {(inizio + 1).toLocaleString("it-IT")}–{ultima.toLocaleString("it-IT")} di {numero.toLocaleString("it-IT")}</span>
-      <button onClick={() => setInizio(inizio + gruppo)} disabled={ultima >= numero || loading} style={stilePulsante(ultima >= numero)}>successive ▶</button>
-      <label style={{ fontSize: 13, color: C.muted, marginLeft: 8 }}>per volta:{" "}
-        <select value={gruppo} onChange={e => setGruppo(parseInt(e.target.value))} style={{ padding: "4px 8px", borderRadius: 6, border: `1.5px solid ${C.border}` }}>
-          {GRUPPI.map(g => <option key={g} value={g}>{g}</option>)}
-        </select>
-      </label>
-    </div>
-  );
+  const numeroAnimali = Number(risposta?.numero_acquisti_animali || 0);
+  const navigazione = <NavigazionePagine numero={numero} inizio={inizio} gruppo={gruppo} setInizio={setInizio} setGruppo={setGruppo} loading={loading} />;
 
   return (
     <div style={{ padding: 20, maxWidth: 1200, margin: "0 auto" }}>
@@ -116,6 +198,7 @@ export function ElencoFattureAPagine({ tipo, titolo, etichettaControparte, nomeF
       </div>
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 20 }}>
         {risposta ? `${numero.toLocaleString("it-IT")} fatture — totale ${formattaEuro(Number(risposta.totale_lordo || 0))} (calcolato su tutte le fatture trovate, anche quelle non mostrate)` : ""}
+        {numeroAnimali > 0 && <><br />di cui {numeroAnimali.toLocaleString("it-IT")} acquisti di animali: {formattaEuro(Number(risposta.totale_acquisti_animali || 0))} (solo l'importo dei capi: l'IVA non è registrata)</>}
       </p>
 
       <div style={{ display: "flex", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
@@ -136,32 +219,36 @@ export function ElencoFattureAPagine({ tipo, titolo, etichettaControparte, nomeF
       </div>
 
       {errore && <div style={{ color: C.red, whiteSpace: "pre-wrap", margin: "12px 0", fontWeight: 700 }}>⚠️ {errore}</div>}
-      <Navigazione />
+      {navigazione}
       {loading ? (
         <p style={{ color: C.muted }}>Caricamento...</p>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {fatture.map(f => {
             const conControparte = { ...f, ci_fornitori: { nome: f.controparte, partita_iva: f.partita_iva } };
+            const righe = righePerFattura[f.chiave];
             return (
-              <div key={f.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10 }}>
-                <div onClick={() => espandi(f.id)} style={{ display: "flex", justifyContent: "space-between", padding: 14, cursor: "pointer", flexWrap: "wrap", gap: 8 }}>
+              <div key={f.chiave} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10 }}>
+                <div onClick={() => espandi(f)} style={{ display: "flex", justifyContent: "space-between", padding: 14, cursor: "pointer", flexWrap: "wrap", gap: 8 }}>
                   <div>
+                    {f.acquisto_animali && <EtichettaAcquistoAnimali />}
                     <strong>{f.controparte || "—"}</strong>
                     <div style={{ fontSize: 12, color: C.muted }}>
-                      Fatt. {f.numero} del {f.data} {f.partita_iva && `· P.IVA ${f.partita_iva}`}
+                      Fatt. {numeroFattura(f)} del {f.data} {f.partita_iva && `· P.IVA ${f.partita_iva}`}
                     </div>
                   </div>
                   <div style={{ textAlign: "right" }}>
                     <div style={{ fontWeight: 800, fontSize: 16, color: coloreTotale }}>{formattaEuro(f.totale_lordo)}</div>
-                    <div style={{ fontSize: 11, color: C.muted }}>{espansa === f.id ? "▲ nascondi righe" : "▼ vedi righe"}</div>
+                    {f.acquisto_animali && <div style={{ fontSize: 11, color: C.muted }}>IVA non registrata</div>}
+                    <div style={{ fontSize: 11, color: C.muted }}>{espansa === f.chiave ? "▲ nascondi righe" : "▼ vedi righe"}</div>
                   </div>
                 </div>
-                {espansa === f.id && (
+                {espansa === f.chiave && (
                   <div style={{ borderTop: `1px solid ${C.border}`, padding: 14 }}>
-                    {!righePerFattura[f.id] ? <p style={{ color: C.muted, fontSize: 13 }}>Caricamento righe...</p>
-                      : righePerFattura[f.id].length === 0 ? <p style={{ color: C.muted, fontSize: 13 }}>Nessuna riga trovata.</p>
-                      : <RicomposizioneFattura fattura={conControparte} righe={righePerFattura[f.id]} />}
+                    {!righe ? <p style={{ color: C.muted, fontSize: 13 }}>Caricamento righe...</p>
+                      : righe.length === 0 ? <p style={{ color: C.muted, fontSize: 13 }}>Nessuna riga trovata.</p>
+                      : f.acquisto_animali ? <CapiAcquisto capi={righe} />
+                      : <RicomposizioneFattura fattura={conControparte} righe={righe} />}
                   </div>
                 )}
               </div>
@@ -170,7 +257,7 @@ export function ElencoFattureAPagine({ tipo, titolo, etichettaControparte, nomeF
           {!errore && fatture.length === 0 && <p style={{ color: C.muted }}>Nessuna fattura trovata.</p>}
         </div>
       )}
-      {!loading && <Navigazione />}
+      {!loading && navigazione}
     </div>
   );
 }

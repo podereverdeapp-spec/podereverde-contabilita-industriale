@@ -9,6 +9,7 @@ import { fetchAllPages } from "./parsingUtils";
 import { normalizza, it, data, UNITA, CENTRI_PRODOTTO } from "./calcoloVariazionePrezzi";
 import { RIFERIMENTI } from "./riferimentiEsterni";
 import { Sezione, stileTabella as T } from "./ReportAnalisiParti";
+import { NavigazionePagine } from "./FatturePassive";
 
 const NOMI_UNITA = { tonnellata: "tonnellata", quintale: "quintale", kg: "kg", litro: "litro", pezzo: "pezzo", importo: "importo a fattura" };
 const ESCLUSA = "escludi";
@@ -31,6 +32,11 @@ export default function FamiglieProdotto() {
   const [nuova, setNuova] = useState({ nome: "", unita: "tonnellata", prodotto_mercato: "", caratteristiche: "" });
   const [modifiche, setModifiche] = useState({});
   const [salvando, setSalvando] = useState(false);
+  // Versione 281 (decisione del 23/10/2026): elenco a pagine (50, 100 o 200 descrizioni per volta) al posto
+  // delle sole prime 300.
+  const [gruppo, setGruppo] = useState(50);
+  const [inizio, setInizio] = useState(0);
+  useEffect(() => { setInizio(0); }, [filtro, cerca, gruppo]);
 
   async function carica() {
     setErrore(null);
@@ -107,6 +113,8 @@ export default function FamiglieProdotto() {
     return !cerca || x.n.includes(cerca.toLowerCase()) || x.fornitori.toLowerCase().includes(cerca.toLowerCase());
   });
   const daAssegnare = descrizioni.filter(x => !mappa.has(x.n)).length;
+  // se assegnando le descrizioni l'elenco si accorcia, si resta sull'ultima pagina che esiste
+  const inizioValido = visibili.length === 0 ? 0 : Math.min(inizio, Math.floor((visibili.length - 1) / gruppo) * gruppo);
   const campo = { padding: "5px 8px", borderRadius: 6, border: `1px solid ${C.border}`, fontSize: 13, fontFamily: FONT, boxSizing: "border-box" };
 
   return (
@@ -127,9 +135,10 @@ export default function FamiglieProdotto() {
           <input placeholder="Cerca descrizione o fornitore" value={cerca} onChange={e => setCerca(e.target.value)} style={{ ...campo, minWidth: 260 }} />
           <span style={{ fontSize: 12.5, color: C.muted, alignSelf: "center" }}>{visibili.length} descrizioni</span>
         </div>
+        <NavigazionePagine numero={visibili.length} inizio={inizioValido} gruppo={gruppo} setInizio={setInizio} setGruppo={setGruppo} cosa="descrizioni" />
         <div style={{ overflowX: "auto" }}><table style={T.tabella}>
           <thead><tr><th style={T.thSx}>Descrizione in fattura</th><th style={T.thSx}>Centro di costo</th><th style={T.thSx}>Fornitori</th><th style={T.th}>Spesa totale</th><th style={T.th}>Ultima fattura</th><th style={T.thSx}>Famiglia</th></tr></thead>
-          <tbody>{visibili.slice(0, 300).map(x => {
+          <tbody>{visibili.slice(inizioValido, inizioValido + gruppo).map(x => {
             const m = mappa.get(x.n);
             const valore = !m ? "" : m.famiglia_id ? String(m.famiglia_id) : ESCLUSA;
             return (
@@ -146,7 +155,7 @@ export default function FamiglieProdotto() {
               </tr>);
           })}</tbody>
         </table></div>
-        {visibili.length > 300 && <p style={{ fontSize: 12.5, color: C.muted }}>Sono mostrate le prime 300: usare la ricerca per trovare le altre.</p>}
+        <NavigazionePagine numero={visibili.length} inizio={inizioValido} gruppo={gruppo} setInizio={setInizio} setGruppo={setGruppo} cosa="descrizioni" />
       </Sezione>
 
       <Sezione titolo={`Famiglie (${famiglie.length})`} sottotitolo="Unità = come si mostra il prezzo (il calcolo è sempre in € al kg o al litro). Prodotto di mercato = il listino di confronto. Le caratteristiche tecniche finiscono nel testo di ricerca dei fornitori.">

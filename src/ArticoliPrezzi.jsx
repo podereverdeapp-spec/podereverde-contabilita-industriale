@@ -4,6 +4,7 @@ import { supabase } from "./supabase";
 import { C } from "./style";
 import { numerizzaCampi, formattaEuro, formattaNumero, fetchAllPages, round2 } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
+import { NavigazionePagine } from "./FatturePassive";
 
 // Normalizzazione nome prodotto: minuscolo, spazi multipli ridotti a uno, tolti gli spazi
 // ai bordi — così "MANGIME BOVINI" e "Mangime  Bovini" finiscono nello stesso gruppo.
@@ -68,6 +69,11 @@ export default function ArticoliPrezzi() {
   const [modificaClassifica, setModificaClassifica] = useState(null); // chiave gruppo in modifica
   const [formClassifica, setFormClassifica] = useState({});
   const [salvandoClassifica, setSalvandoClassifica] = useState(false);
+  // Versione 281 (decisione del 23/10/2026): elenco a pagine (50, 100 o 200 articoli per volta) al posto dei
+  // soli primi 300; ricerca, ordinamento ed export restano su tutti gli articoli.
+  const [gruppo, setGruppo] = useState(50);
+  const [inizio, setInizio] = useState(0);
+  useEffect(() => { setInizio(0); }, [cerca, filtroTipo, ordinamento, gruppo]);
 
   useEffect(() => { carica(); }, []);
 
@@ -238,6 +244,7 @@ export default function ArticoliPrezzi() {
           <option value="peggior_fornitore">Fornitore con aumento peggiore per prodotto</option>
         </select>
       </div>
+      <NavigazionePagine numero={filtrati.length} inizio={inizio} gruppo={gruppo} setInizio={setInizio} setGruppo={setGruppo} loading={loading} cosa="articoli" />
 
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
         <table style={{ width: "100%", fontSize: 13 }}>
@@ -254,8 +261,8 @@ export default function ArticoliPrezzi() {
             </tr>
           </thead>
           <tbody>
-            {filtrati.slice(0, 300).map((g, i) => {
-              const chiave = g.descrizione + i;
+            {filtrati.slice(inizio, inizio + gruppo).map((g, i) => {
+              const chiave = g.descrizione + (inizio + i);
               return (
                 <Fragment key={chiave}>
                   <tr onClick={() => setEspanso(espanso === chiave ? null : chiave)}
@@ -352,7 +359,7 @@ export default function ArticoliPrezzi() {
             })}
           </tbody>
         </table>
-        {filtrati.length > 300 && <div style={{ padding: 10, textAlign: "center", color: C.muted, fontSize: 12 }}>... e altri {filtrati.length - 300} articoli — affina la ricerca per vederli</div>}
+        <NavigazionePagine numero={filtrati.length} inizio={inizio} gruppo={gruppo} setInizio={setInizio} setGruppo={setGruppo} loading={loading} cosa="articoli" />
         {filtrati.length === 0 && <p style={{ padding: 16, color: C.muted }}>Nessun articolo trovato.</p>}
       </div>
     </div>

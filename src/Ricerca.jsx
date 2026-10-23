@@ -1,8 +1,18 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { etichettaTipo } from "./documentiCompetenza";
 import { supabase } from "./supabase";
-import { C } from "./style";import { numerizzaCampi, formattaEuro, round2, fetchAllPages } from "./parsingUtils";
+import { C } from "./style";
+import { numerizzaCampi, formattaEuro, round2, fetchAllPages } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
+import { FUNZIONE_RICERCA, messaggioErroreRicerca, NavigazionePagine, leggiTutteLeTrovate, leggiCapiAcquisto, CapiAcquisto, EtichettaAcquistoAnimali, numeroFattura } from "./FatturePassive";
+
+// Versione 281 (decisione del Dott. Bizzarri del 23/10/2026): la ricerca la fa il database (funzione
+// ci_ricerca_documenti) su TUTTE le fatture e le loro righe, compresi gli acquisti di animali registrati solo
+// nel Report Acquisto Animali. La pagina non scarica più tutte le fatture: mostra 50, 100 o 200 fatture per
+// volta con «◀ precedenti / successive ▶» sopra e sotto l'elenco; numero e totali sono calcolati su tutte le
+// fatture trovate. Con un filtro di classificazione (area, centro di costo, destinazione, tipo di costo) una
+// fattura è trovata se ha almeno UNA riga con tutte le classificazioni scelte, e si mostra anche il totale
+// delle sole righe scelte.
 
 const AREE_ORDINARIE = [
   "Allevamento", "Coltivazione", "Lavoro", "Energia Elettrica", "Acqua", "Consulenze",
@@ -13,9 +23,14 @@ const DESTINAZIONI = ["Bovini", "Suini", "Ovini", "Bovini e Ovini", "Bovini e Su
 const UNITA_OPZIONI = ["", "Unità", "Tons", "Quintali", "Kilogrammi", "Litri", "Balloni", "Rotoballe", "Rotoli", "Balle", "Rotoloni"];
 
 export default function Ricerca() {
-  const [fatture, setFatture] = useState([]);
-  const [articoli, setArticoli] = useState([]);
+  const [risposta, setRisposta] = useState(null);
+  const [errore, setErrore] = useState("");
+  const [gruppo, setGruppo] = useState(50);
+  const [inizio, setInizio] = useState(0);
+  const [esportando, setEsportando] = useState("");
+  const [testoApplicato, setTestoApplicato] = useState("");
   const [loading, setLoading] = useState(true);
+  const ultimaRichiesta = useRef(0); // conta solo la risposta dell'ultima ricerca partita
   const [espansa, setEspansa] = useState(null);
   const [righePerFattura, setRighePerFattura] = useState({});
   const [pianoDeiConti, setPianoDeiConti] = useState([]);
@@ -38,23 +53,38 @@ export default function Ricerca() {
   const [importoMin, setImportoMin] = useState("");
   const [importoMax, setImportoMax] = useState("");
 
-  useEffect(() => { carica(); }, []);
+  useEffect(() => { caricaAnagrafiche(); }, []);
+  // il testo si applica mezzo secondo dopo l'ultima lettera scritta
+  useEffect(() => { const t = setTimeout(() => setTestoApplicato(testo.trim()), 500); return () => clearTimeout(t); }, [testo]);
+  // cambiando un filtro o la grandezza del gruppo si riparte dalla prima fattura
+  const filtri = [testoApplicato, tipo, area, centroCosto, destinazione, tipoCosto, anno, dataDa, dataA, importoMin, importoMax];
+  useEffect(() => { setInizio(0); }, [...filtri, gruppo]);
+  useEffect(() => { cerca(); }, [...filtri, gruppo, inizio]);
 
-  async function carica() {
-    setLoading(true);
-    const { data: f, error: eF } = await fetchAllPages((da, a) =>
-      supabase.from("ci_fatture").select("*, ci_fornitori(nome), ci_clienti(nome)").order("data", { ascending: false }).order("id").range(da, a));
-    if (eF) { alert(`⚠️ Errore nel caricamento fatture:\n\n${eF.message}`); setLoading(false); return; }
-    const { data: a, error: eA } = await fetchAllPages((da, aa) =>
-      supabase.from("ci_articoli_fattura").select("fattura_id, descrizione, area, centro_costo, destinazione, tipo_costo, totale_riga").order("id").range(da, aa));
-    if (eA) { alert(`⚠️ Errore nel caricamento articoli:\n\n${eA.message}`); setLoading(false); return; }
-    const { data: pdc } = await supabase.from("ci_piano_dei_conti").select("*").order("area").order("centro_costo");
+  // Piano dei conti (per i menu) e fornitori (per la modifica delle fatture), letti a pagine
+  async function caricaAnagrafiche() {
+    const { data: pdc } = await fetchAllPages((da, aa) => supabase.from("ci_piano_dei_conti").select("*").order("area").order("centro_costo").order("id").range(da, aa));
     setPianoDeiConti(pdc || []);
     const { data: forn } = await fetchAllPages((da, aa) => supabase.from("ci_fornitori").select("id, nome, partita_iva, codice_fiscale").order("nome").order("id").range(da, aa));
     setFornitori(forn || []);
+  }
 
-    setFatture(numerizzaCampi(f || [], ["totale_netto", "totale_iva", "totale_lordo"]));
-    setArticoli(numerizzaCampi(a || [], ["totale_riga"]));
+  const numeroOppureNull = v => (v === "" || isNaN(parseFloat(v)) ? null : parseFloat(v));
+  const parametri = (offset, limite) => ({
+    p_tipo: tipo === "tutte" ? null : tipo, p_testo: testoApplicato || null, p_cerca_righe: true,
+    p_area: area || null, p_centro_costo: centroCosto || null, p_destinazione: destinazione || null, p_tipo_costo: tipoCosto || null,
+    p_anno: anno ? parseInt(anno) : null, p_data_da: dataDa || null, p_data_a: dataA || null,
+    p_importo_min: numeroOppureNull(importoMin), p_importo_max: numeroOppureNull(importoMax),
+    p_offset: offset, p_limite: limite,
+  });
+
+  async function cerca() {
+    const n = ++ultimaRichiesta.current;
+    setLoading(true); setErrore("");
+    const { data, error } = await supabase.rpc(FUNZIONE_RICERCA, parametri(inizio, gruppo));
+    if (n !== ultimaRichiesta.current) return; // nel frattempo è partita una ricerca più recente
+    if (error) { setErrore(messaggioErroreRicerca(error)); setRisposta(null); }
+    else setRisposta({ ...data, fatture: numerizzaCampi(data?.fatture || [], ["totale_netto", "totale_iva", "totale_lordo"]) });
     setLoading(false);
   }
 
@@ -66,7 +96,7 @@ export default function Ricerca() {
     // Versione 235: riepilogo e conferma prima di scrivere; la P.IVA e il codice fiscale di un
     // fornitore non vengono mai cancellati lasciando vuoto il campo (si cancellano solo se confermato).
     const fo = fornitori.find(x => String(x.id) === String(formModificaFattura.fornitore_id));
-    const f0 = fatture.find(x => x.id === fatturaId);
+    const f0 = risultati.find(x => x.id === fatturaId);
     const pivaVuota = fo && fo.partita_iva && !(formModificaFattura.partita_iva || "").trim();
     const cfVuoto = fo && fo.codice_fiscale && !(formModificaFattura.codice_fiscale || "").trim();
     let cancellaPiva = false, cancellaCf = false;
@@ -92,14 +122,11 @@ export default function Ricerca() {
         if (eForn) throw new Error(eForn.message);
       }
 
-      const nomeFornitore = formModificaFattura.nome_fornitore || fornitori.find(fo => fo.id === formModificaFattura.fornitore_id)?.nome;
-      setFatture(prev => prev.map(f => f.id === fatturaId
-        ? { ...f, numero: formModificaFattura.numero, data: formModificaFattura.data, fornitore_id: formModificaFattura.fornitore_id, ci_fornitori: nomeFornitore ? { nome: nomeFornitore } : f.ci_fornitori }
-        : f));
       setFornitori(prev => prev.map(fo => fo.id === formModificaFattura.fornitore_id
         ? { ...fo, nome: formModificaFattura.nome_fornitore || fo.nome, partita_iva: nuovaPiva, codice_fiscale: nuovoCf }
         : fo));
       setModificaFatturaId(null);
+      cerca(); // l'elenco si rilegge dal database con i dati nuovi
     } catch (err) {
       alert(`⚠️ Errore nel salvataggio:\n\n${err.message}`);
     }
@@ -115,7 +142,7 @@ export default function Ricerca() {
 
   async function salvaModificaRiga(rigaId, fatturaId) {
     // Versione 235: riepilogo dei campi cambiati e conferma prima di scrivere
-    const r0 = (righePerFattura[fatturaId] || []).find(x => x.id === rigaId) || {};
+    const r0 = (righePerFattura["F" + fatturaId] || []).find(x => x.id === rigaId) || {};
     const etichette = { descrizione: "Descrizione", quantita: "Quantità", unita_misura: "U.M.", prezzo_unitario: "Prezzo unitario", totale_riga: "Importo", aliquota_iva: "Aliquota IVA %", area: "Area", centro_costo: "Centro di Costo", destinazione: "Destinazione", tipo_costo: "Tipo di Costo" };
     const cambi = Object.entries(etichette).filter(([k]) => String(r0[k] ?? "") !== String(formModificaRiga[k] ?? "") && !(Number(r0[k]) === Number(formModificaRiga[k]) && String(formModificaRiga[k]) !== ""))
       .map(([k, t]) => `${t}: «${r0[k] ?? ""}» → «${formModificaRiga[k] ?? ""}»`);
@@ -123,7 +150,7 @@ export default function Ricerca() {
     // quantità e prezzo unitario non possono essere vuoti nel database
     if (formModificaRiga.quantita === "" || isNaN(parseFloat(formModificaRiga.quantita))) { alert("Indicare la Quantità."); return; }
     if (formModificaRiga.prezzo_unitario === "" || isNaN(parseFloat(formModificaRiga.prezzo_unitario))) { alert("Indicare il Prezzo unitario."); return; }
-    if (fatture.find(x => x.id === fatturaId)?.tipo === "PASSIVA" && !formModificaRiga.tipo_costo) { alert("Indicare il Tipo di Costo: senza, la riga resta fuori dai calcoli dei costi."); return; }
+    if (risultati.find(x => x.id === fatturaId)?.tipo === "PASSIVA" && !formModificaRiga.tipo_costo) { alert("Indicare il Tipo di Costo: senza, la riga resta fuori dai calcoli dei costi."); return; }
     if (!window.confirm(`Confermi la modifica della riga?\n\n${cambi.join("\n")}\n\nI totali della fattura verranno ricalcolati.`)) return;
     setSalvandoRiga(rigaId);
     try {
@@ -140,101 +167,81 @@ export default function Ricerca() {
       if (error) throw new Error(error.message);
       setModificaRigaId(null);
       setFormModificaRiga({});
-      // Ricarico solo le righe di questa fattura, e l'elenco leggero usato per i filtri
+      // Ricarico le righe di questa fattura
       const { data } = await supabase.from("ci_articoli_fattura").select("*").eq("fattura_id", fatturaId).order("id");
-      setRighePerFattura(prev => ({ ...prev, [fatturaId]: numerizzaCampi(data || [], ["quantita", "prezzo_unitario", "totale_riga", "aliquota_iva", "totale_iva"]) }));
-      const { data: a } = await fetchAllPages((da, aa) => supabase.from("ci_articoli_fattura").select("fattura_id, descrizione, area, centro_costo, destinazione, tipo_costo, totale_riga").order("id").range(da, aa));
-      setArticoli(numerizzaCampi(a || [], ["totale_riga"]));
+      setRighePerFattura(prev => ({ ...prev, ["F" + fatturaId]: numerizzaCampi(data || [], ["quantita", "prezzo_unitario", "totale_riga", "aliquota_iva", "totale_iva"]) }));
       // Ricalcolo i totali della fattura, dato che l'importo della riga può essere cambiato
       const righeFattura = (data || []);
       const netto = righeFattura.reduce((s, x) => s + (parseFloat(x.totale_riga) || 0), 0);
       const iva = righeFattura.reduce((s, x) => s + (parseFloat(x.totale_iva) || 0), 0);
       const { error: eTot } = await supabase.from("ci_fatture").update({ totale_netto: round2(netto), totale_iva: round2(iva), totale_lordo: round2(netto + iva) }).eq("id", fatturaId);
       if (eTot) throw new Error(`Riga salvata, ma i totali della fattura non sono stati aggiornati: ${eTot.message}`);
-      setFatture(prev => prev.map(x => x.id === fatturaId ? { ...x, totale_netto: round2(netto), totale_iva: round2(iva), totale_lordo: round2(netto + iva) } : x));
+      cerca(); // numero, totali ed elenco si rileggono dal database
     } catch (err) {
       alert(`⚠️ Errore nel salvataggio:\n\n${err.message}`);
     }
     setSalvandoRiga(null);
   }
 
-  const articoliPerFattura = useMemo(() => {
-    const mappa = new Map();
-    articoli.forEach(a => {
-      if (!mappa.has(a.fattura_id)) mappa.set(a.fattura_id, []);
-      mappa.get(a.fattura_id).push(a);
-    });
-    return mappa;
-  }, [articoli]);
 
-  const risultati = useMemo(() => {
-    const q = testo.trim().toLowerCase();
-    return fatture.filter(f => {
-      if (tipo !== "tutte" && f.tipo !== tipo) return false;
-      if (anno && new Date(f.data).getFullYear() !== parseInt(anno)) return false;
-      if (dataDa && f.data < dataDa) return false;
-      if (dataA && f.data > dataA) return false;
-      if (importoMin && f.totale_lordo < parseFloat(importoMin)) return false;
-      if (importoMax && f.totale_lordo > parseFloat(importoMax)) return false;
+  const risultati = risposta?.fatture || [];
+  const numeroTrovate = Number(risposta?.numero || 0);
+  const numeroAnimali = Number(risposta?.numero_acquisti_animali || 0);
 
-      const righeFattura = articoliPerFattura.get(f.id) || [];
-      if (area && !righeFattura.some(r => r.area === area)) return false;
-      if (centroCosto && !righeFattura.some(r => r.centro_costo === centroCosto)) return false;
-      if (destinazione && !righeFattura.some(r => r.destinazione === destinazione)) return false;
-      if (tipoCosto && !righeFattura.some(r => r.tipo_costo === tipoCosto)) return false;
-
-      if (q) {
-        const controparte = (f.ci_fornitori?.nome || f.ci_clienti?.nome || "").toLowerCase();
-        const testoFattura = `${f.numero} ${controparte} ${f.note || ""}`.toLowerCase();
-        const matchFattura = testoFattura.includes(q);
-        const matchArticolo = righeFattura.some(r => (r.descrizione || "").toLowerCase().includes(q));
-        if (!matchFattura && !matchArticolo) return false;
+  async function espandi(f) {
+    if (espansa === f.chiave) { setEspansa(null); return; }
+    setEspansa(f.chiave);
+    if (righePerFattura[f.chiave]) return;
+    try {
+      if (f.acquisto_animali) {
+        const capi = await leggiCapiAcquisto(f);
+        setRighePerFattura(prev => ({ ...prev, [f.chiave]: capi }));
+      } else {
+        const { data, error } = await supabase.from("ci_articoli_fattura").select("*").eq("fattura_id", f.id).order("id");
+        if (error) throw new Error(error.message);
+        setRighePerFattura(prev => ({ ...prev, [f.chiave]: numerizzaCampi(data || [], ["quantita", "prezzo_unitario", "totale_riga", "aliquota_iva", "totale_iva"]) }));
       }
-      return true;
-    });
-  }, [fatture, articoliPerFattura, testo, tipo, area, centroCosto, destinazione, tipoCosto, anno, dataDa, dataA, importoMin, importoMax]);
-
-  async function espandi(fatturaId) {
-    if (espansa === fatturaId) { setEspansa(null); return; }
-    setEspansa(fatturaId);
-    if (!righePerFattura[fatturaId]) {
-      const { data, error } = await supabase.from("ci_articoli_fattura").select("*").eq("fattura_id", fatturaId).order("id");
-      if (error) { alert(`⚠️ Errore nel caricamento delle righe:\n\n${error.message}`); return; }
-      setRighePerFattura(prev => ({ ...prev, [fatturaId]: numerizzaCampi(data || [], ["quantita", "prezzo_unitario", "totale_riga", "aliquota_iva", "totale_iva"]) }));
+    } catch (err) {
+      alert(`⚠️ Errore nel caricamento delle righe:\n\n${err.message}`);
     }
   }
 
-  function esporta() {
-    const righeExcel = risultati.map(f => ({
-      "Tipo": etichettaTipo(f.tipo), "Controparte": f.ci_fornitori?.nome || f.ci_clienti?.nome,
-      "Numero": f.numero, "Data": f.data, "Totale netto": numeroExcel(f.totale_netto),
-      "Totale IVA": numeroExcel(f.totale_iva), "Totale lordo": numeroExcel(f.totale_lordo), "Note": f.note,
-    }));
-    esportaExcel("Ricerca", [{ nome: "Risultati", righe: righeExcel }]);
+  // Export: TUTTE le fatture trovate, lette 1.000 alla volta
+  async function esporta() {
+    try {
+      const tutte = await leggiTutteLeTrovate(parametri(0, 1000), numeroTrovate, setEsportando);
+      const righeExcel = tutte.map(f => ({
+        "Tipo": f.acquisto_animali ? "ACQUISTO ANIMALI" : etichettaTipo(f.tipo), "Controparte": f.controparte,
+        "Numero": f.numero, "Data": f.data, "Totale netto": numeroExcel(f.totale_netto),
+        "Totale IVA": f.acquisto_animali ? "non registrata" : numeroExcel(f.totale_iva), "Totale lordo": numeroExcel(f.totale_lordo), "Note": f.note,
+      }));
+      esportaExcel("Ricerca", [{ nome: "Risultati", righe: righeExcel }]);
+    } catch (err) {
+      alert(`⚠️ Errore nell'esportazione:\n\n${err.message}`);
+    }
+    setEsportando("");
   }
 
-  const totaleRisultati = risultati.reduce((s, f) => s + (f.totale_lordo || 0), 0);
-  const totaleRigheCentroCosto = useMemo(() => {
-    if (!centroCosto) return null;
-    const idFattureRisultati = new Set(risultati.map(f => f.id));
-    return articoli
-      .filter(a => a.centro_costo === centroCosto && idFattureRisultati.has(a.fattura_id))
-      .reduce((s, a) => s + (a.totale_riga || 0), 0);
-  }, [centroCosto, articoli, risultati]);
-  const anniDisponibili = useMemo(() => [...new Set(fatture.map(f => new Date(f.data).getFullYear()))].sort((a, b) => b - a), [fatture]);
-  const centriCostoDisponibili = useMemo(() => [...new Set(articoli.map(a => a.centro_costo).filter(Boolean))].sort(), [articoli]);
+  // Menu dei filtri: aree e centri di costo dal Piano dei Conti (comprese «ACQUISTO ANIMALI» e «TRASPORTO ANIMALI»)
+  const areeDisponibili = useMemo(() => {
+    const dalPiano = [...new Set(pianoDeiConti.map(p => p.area).filter(Boolean))];
+    return [...AREE_ORDINARIE.filter(a => dalPiano.includes(a)), ...dalPiano.filter(a => !AREE_ORDINARIE.includes(a)).sort()];
+  }, [pianoDeiConti]);
+  const centriCostoDisponibili = useMemo(() => [...new Set(pianoDeiConti.filter(p => !area || p.area === area).map(p => p.centro_costo).filter(Boolean))].sort(), [pianoDeiConti, area]);
+  const anniDisponibili = risposta?.anni || [];
+  const navigazione = <NavigazionePagine numero={numeroTrovate} inizio={inizio} gruppo={gruppo} setInizio={setInizio} setGruppo={setGruppo} loading={loading} />;
 
   return (
     <div style={{ padding: 20, maxWidth: 1300, margin: "0 auto" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
         <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Ricerca</h1>
-        <button onClick={esporta}
+        <button onClick={esporta} disabled={!numeroTrovate || !!esportando}
           style={{ background: C.green, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-          📥 Esporta Excel
+          {esportando ? `📥 Esportazione… ${esportando}` : "📥 Esporta Excel"}
         </button>
       </div>
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 20 }}>
-        Ricerca trasversale su numero, controparte, descrizione articoli e note — con filtri per tipo, area, specie, periodo e importo.
+        Ricerca trasversale su numero, controparte, descrizione articoli e note (per gli acquisti di animali anche matricola, lotto e razza) — con filtri per tipo, area, specie, periodo e importo.
       </p>
 
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 16 }}>
@@ -248,9 +255,9 @@ export default function Ricerca() {
             </select>
           </Campo>
           <Campo label="Area">
-            <select value={area} onChange={e => setArea(e.target.value)} style={selectStyle}>
+            <select value={area} onChange={e => { setArea(e.target.value); setCentroCosto(""); }} style={selectStyle}>
               <option value="">Tutte</option>
-              {AREE_ORDINARIE.map(a => <option key={a} value={a}>{a}</option>)}
+              {areeDisponibili.map(a => <option key={a} value={a}>{a}</option>)}
             </select>
           </Campo>
           <Campo label="Centro di Costo">
@@ -284,23 +291,31 @@ export default function Ricerca() {
         </div>
       </div>
 
-      <p style={{ color: C.muted, fontSize: 13, marginBottom: 12 }}>{risultati.length} fatture trovate — totale {formattaEuro(totaleRisultati)}
-        {totaleRigheCentroCosto != null && (
-          <strong style={{ color: C.primary }}> · Solo "{centroCosto}": {formattaEuro(totaleRigheCentroCosto)}</strong>
-        )}
-      </p>
+      {errore && <div style={{ color: C.red, whiteSpace: "pre-wrap", margin: "12px 0", fontWeight: 700 }}>⚠️ {errore}</div>}
+      {risposta && (
+        <p style={{ color: C.muted, fontSize: 13, marginBottom: 12 }}>
+          {numeroTrovate.toLocaleString("it-IT")} fatture trovate — totale delle fatture trovate {formattaEuro(Number(risposta.totale_lordo || 0))} (calcolato su tutte, anche quelle non mostrate)
+          {risposta.totale_righe_scelte != null && (
+            <><br /><strong style={{ color: C.primary }}>di cui righe con {[area && `area «${area}»`, centroCosto && `centro di costo «${centroCosto}»`, destinazione && `destinazione «${destinazione}»`, tipoCosto && `tipo di costo «${tipoCosto}»`].filter(Boolean).join(", ")}: {formattaEuro(Number(risposta.totale_righe_scelte || 0))}</strong></>
+          )}
+          {numeroAnimali > 0 && <><br />di cui {numeroAnimali.toLocaleString("it-IT")} acquisti di animali: {formattaEuro(Number(risposta.totale_acquisti_animali || 0))} (solo l'importo dei capi: l'IVA non è registrata)</>}
+        </p>
+      )}
+      {navigazione}
 
       {loading ? (
         <p style={{ color: C.muted }}>Caricamento...</p>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {risultati.slice(0, 200).map(f => (
-            <div key={f.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10 }}>
-              <div onClick={() => espandi(f.id)} style={{ display: "flex", justifyContent: "space-between", padding: 14, cursor: "pointer", flexWrap: "wrap", gap: 8 }}>
+          {risultati.map(f => (
+            <div key={f.chiave} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10 }}>
+              <div onClick={() => espandi(f)} style={{ display: "flex", justifyContent: "space-between", padding: 14, cursor: "pointer", flexWrap: "wrap", gap: 8 }}>
                 <div>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: f.tipo === "ATTIVA" ? C.green : C.blue, marginRight: 8 }}>
-                    {etichettaTipo(f.tipo)}
-                  </span>
+                  {f.acquisto_animali ? <EtichettaAcquistoAnimali /> : (
+                    <span style={{ fontSize: 11, fontWeight: 700, color: f.tipo === "ATTIVA" ? C.green : C.blue, marginRight: 8 }}>
+                      {etichettaTipo(f.tipo)}
+                    </span>
+                  )}
                   {modificaFatturaId === f.id ? (
                     <div onClick={e => e.stopPropagation()} style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", marginTop: 4 }}>
                       <select value={formModificaFattura.fornitore_id || ""} onChange={e => {
@@ -329,27 +344,33 @@ export default function Ricerca() {
                     </div>
                   ) : (
                     <>
-                      <strong>{f.ci_fornitori?.nome || f.ci_clienti?.nome || "—"}</strong>
+                      <strong>{f.controparte || "—"}</strong>
                       <div style={{ fontSize: 12, color: C.muted }}>
-                        Fatt. {f.numero} del {f.data}{f.note && ` · ${f.note}`}
-                        {" "}<span onClick={e => {
+                        Fatt. {numeroFattura(f)} del {f.data}{f.note && ` · ${f.note}`}
+                        {" "}{!f.acquisto_animali && <span onClick={e => {
                           e.stopPropagation(); setModificaFatturaId(f.id);
                           const fo = fornitori.find(x => x.id === f.fornitore_id);
                           setFormModificaFattura({ numero: f.numero, data: f.data, fornitore_id: f.fornitore_id, nome_fornitore: fo?.nome || "", partita_iva: fo?.partita_iva || "", codice_fiscale: fo?.codice_fiscale || "" });
                         }}
-                          style={{ cursor: "pointer" }} title="Modifica fornitore/numero/data">✏️</span>
+                          style={{ cursor: "pointer" }} title="Modifica fornitore/numero/data">✏️</span>}
                       </div>
                     </>
                   )}
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <div style={{ fontWeight: 800, fontSize: 16, color: C.primary }}>{formattaEuro(f.totale_lordo)}</div>
-                  <div style={{ fontSize: 11, color: C.muted }}>{espansa === f.id ? "▲ nascondi" : "▼ dettaglio"}</div>
+                  {f.acquisto_animali && <div style={{ fontSize: 11, color: C.muted }}>IVA non registrata</div>}
+                  <div style={{ fontSize: 11, color: C.muted }}>{espansa === f.chiave ? "▲ nascondi" : "▼ dettaglio"}</div>
                 </div>
               </div>
-              {espansa === f.id && righePerFattura[f.id] && (
+              {espansa === f.chiave && f.acquisto_animali && righePerFattura[f.chiave] && (
                 <div style={{ borderTop: `1px solid ${C.border}`, padding: 14 }}>
-                  {righePerFattura[f.id].map(r => (
+                  <CapiAcquisto capi={righePerFattura[f.chiave]} />
+                </div>
+              )}
+              {espansa === f.chiave && !f.acquisto_animali && righePerFattura[f.chiave] && (
+                <div style={{ borderTop: `1px solid ${C.border}`, padding: 14 }}>
+                  {righePerFattura[f.chiave].map(r => (
                     <div key={r.id} style={{ padding: "10px 0", borderTop: `1px solid ${C.border}` }}>
                       {modificaRigaId === r.id ? (
                         <div>
@@ -403,10 +424,10 @@ export default function Ricerca() {
               )}
             </div>
           ))}
-          {risultati.length > 200 && <p style={{ color: C.muted, fontSize: 12, textAlign: "center" }}>... e altre {risultati.length - 200} fatture — affina la ricerca per vederle</p>}
-          {risultati.length === 0 && <p style={{ color: C.muted }}>Nessun risultato.</p>}
+          {!errore && risultati.length === 0 && <p style={{ color: C.muted }}>Nessun risultato.</p>}
         </div>
       )}
+      {!loading && navigazione}
     </div>
   );
 }

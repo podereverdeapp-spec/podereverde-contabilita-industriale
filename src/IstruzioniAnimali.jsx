@@ -29,7 +29,7 @@ export default function IstruzioniAnimali() {
             "Il report include automaticamente solo gli animali davvero presenti in quell'anno: chi era già in azienda al 1° gennaio, chi è nato durante l'anno, chi è uscito durante l'anno (qualunque motivo), e chi era ancora presente al 31 dicembre.",
             "La colonna \"Stato\" mostra la situazione reale dell'animale (Attivo, Venduto, Macellato, Deceduto, Trasferito...) — evidenziata in rosso quando si tratta di un'uscita improduttiva (senza corrispettivo per l'azienda, es. morte).",
             "Un riproduttore (marcato «riproduttore» nell'app) morto, scambiato o trasferito ha ricavo zero se è morto, ma il suo costo non si spalma sugli animali da ingrasso come quello di un vitellone morto: va alla mandria e quindi ai nati, compresi i figli nati dopo la sua morte (vedi Report Riproduttori, punti 9 e 10).",
-            "Clicca su un animale nell'elenco per aprire direttamente la sua Scheda Animale.",
+            "Clicca su un animale nell'elenco per aprire direttamente la sua Scheda Animale. L'elenco si vede a gruppi di 50, 100 o 200 capi («per volta»), con i pulsanti «◀ precedenti» e «successive ▶» sopra e sotto; i riepiloghi, il salvataggio e l'export riguardano sempre tutti i capi.",
             "Usa \"📥 Esporta Excel\" per il dettaglio completo, comprensivo anche della classificazione tecnica interna (colonna \"Categoria contabile\").",
           ],
         },
@@ -39,6 +39,7 @@ export default function IstruzioniAnimali() {
           comeSiUsa: [
             "Scegli la specie (Bovini, Suini, Ovini) e la categoria: «Da macello» (tutti gli animali non riproduttori e i suinetti dei lotti) oppure «Riproduttori».",
             "Filtra per stato (tutti, in azienda, usciti) e, se vuoi, per anno: scrivendo un anno vedi solo gli animali presenti in azienda in quell'anno (come faceva la Consultazione Animali per Anno). Puoi anche cercare una matricola.",
+            "La tabella si vede a gruppi di 50, 100 o 200 capi («per volta»), con i pulsanti «◀ precedenti» e «successive ▶» sopra e sotto; i totali e l'export riguardano sempre tutti i capi che corrispondono ai filtri.",
             "In alto i totali: numero di capi, costo totale e, per gli animali da macello venduti con il prezzo, valore di vendita e margine; per i riproduttori, quanto hanno già messo nella mandria (passato ai nati) e quanto resta da recuperare.",
             "Colonne degli animali da macello: costo di acquisto o di nascita, mantenimento, costo rimasto di riproduttori usciti (in arancione), costo totale, peso della carcassa (reale, oppure stimato per chi è in azienda), costo al kg di carcassa, valore di vendita, margine (verde se positivo, rosso se negativo).",
             "Clicca una riga per aprire la scheda: Scheda Riproduttore per i riproduttori, Scheda Animale per tutti gli altri.",

@@ -44,9 +44,10 @@ export default function IstruzioniControlli() {
           pagina: "Registro delle Modifiche", icon: "🕓",
           aCosaServe: "Chi ha inserito, cambiato o cancellato cosa, quando, con il valore prima e dopo, nelle tabelle dell'app (animali, lotti, parti, coltivazioni, gasolio…) e in quelle della Contabilità (fatture, cespiti, fornitori, parametri…).",
           comeSiUsa: [
-            "Filtrare per tabella, persona, numero del record o data.",
+            "Filtrare per tabella, persona, numero del record (scriverlo e premere Invio o «Cerca») o data: i filtri li applica il database su TUTTO il registro.",
+            "Le righe si vedono a gruppi: «per volta» sceglie 50, 100 o 200; i pulsanti «◀ precedenti» e «successive ▶», sopra e sotto la tabella, passano al gruppo prima o dopo. Tra i pulsanti è scritto quante sono in tutto (versione 281: prima si vedevano solo le ultime 1.000).",
             "Le modifiche fatte senza un utente dell'app compaiono come «scrittura diretta sul database» (correzioni tecniche) o «app, senza utente collegato».",
-            "«Esporta Excel» scarica le righe mostrate.",
+            "«Esporta Excel» scarica TUTTE le righe trovate con i filtri, lette 1.000 alla volta.",
           ],
           note: "Il registro esiste dal 07/10/2026: per i dati più vecchi l'autore non è noto.",
         },

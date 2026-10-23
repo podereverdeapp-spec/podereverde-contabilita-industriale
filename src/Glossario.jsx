@@ -3,7 +3,7 @@
 // rimandano le istruzioni già approvate.
 // Versione 261 (21/10/2026): 16 voci, quelle richiamate dalle Istruzioni Carica Fatture Passive e dal
 // Piano dei Conti (stesso testo del documento Word «Glossario»). Nei testi **parola** = grassetto.
-// Versione 280 (23/10/2026): voce «Lettura a pagine».
+// Versione 280 (23/10/2026): voce «Lettura a pagine». Versione 281: estesa alle altre pagine di consultazione.
 import { C } from "./style";
 
 const VOCI = [
@@ -71,11 +71,11 @@ const VOCI = [
     termine: "Lettura a pagine",
     testi: [
       "Il database consegna al massimo **1.000 righe** per ogni richiesta. Per non perdere niente il programma legge i dati **a pagine**: chiede le prime 1.000 righe, poi le 1.000 successive, e così via finché non le ha ricevute tutte.",
-      "Nelle pagine di **consultazione** (Fatture Passive, Fatture Attive) si vedono 50, 100 o 200 fatture per volta, con i pulsanti «◀ precedenti» e «successive ▶» sopra e sotto l'elenco; la ricerca, il numero delle fatture e i totali li calcola però il database su **tutte** le fatture trovate, anche quelle che non si vedono, e l'export Excel le scarica tutte.",
+      "Nelle pagine di **consultazione** (Fatture Passive, Fatture Attive, Ricerca, Registro delle Modifiche, Articoli & Prezzi, Famiglie di Prodotto, Riepilogo Costo Animali, Report UBA) si vedono 50, 100 o 200 righe per volta, con i pulsanti «◀ precedenti» e «successive ▶» sopra e sotto l'elenco; la ricerca, il numero e i totali sono però calcolati su **tutte** le righe trovate, anche quelle che non si vedono, e l'export Excel le scarica tutte.",
       "Nelle pagine di **calcolo e di controllo** (per esempio Report Costi, Report Riproduttori, Controllo Anomalie, Verifica Fatture Mancanti) la lettura a pagine è automatica: i conti si fanno sempre su tutti i dati.",
       "Esempio: oggi le righe di fattura sono 2.297; il programma fa tre richieste (righe 1–1.000, 1.001–2.000, 2.001–2.297) e le mette insieme.",
     ],
-    dove: "Fatture Passive; Fatture Attive; Istruzioni Carica Fatture, Costi, Animali, Emissione Fatture, Ricerca: Fatture e Anagrafiche",
+    dove: "Fatture Passive; Fatture Attive; Ricerca; Registro delle Modifiche; Istruzioni Carica Fatture, Costi, Animali, Emissione Fatture, Ricerca: Fatture e Anagrafiche",
   },
   {
     termine: "Margine di un capo",

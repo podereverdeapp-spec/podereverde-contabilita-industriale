@@ -8,6 +8,7 @@ import { conteggioUnitaPerLotto, costoAcquistoUnitario, costoAnimale, righePerSo
 import { caricaRigheVendita, uscitaTrasferimento } from "./venditeDaFatture";
 import SchedaRiproduttore from "./SchedaRiproduttore";
 import SchedaAnimaleMacello from "./SchedaAnimaleMacello";
+import { NavigazionePagine } from "./FatturePassive";
 
 // Riepilogo Costo Animali: TUTTI gli animali (riproduttori, animali da macello, suinetti nei
 // lotti), con il loro costo calcolato in un solo modo (costoAnimale.js). Cliccando una riga si
@@ -27,6 +28,11 @@ export default function RiepilogoCostoAnimali() {
   const [anno, setAnno] = useState("");
   const [cerca, setCerca] = useState("");
   const [selezionato, setSelezionato] = useState(null);
+  // Versione 281 (decisione del 23/10/2026): tabella a pagine, 50, 100 o 200 capi per volta; i totali e l'export
+  // restano calcolati su tutti i capi che corrispondono ai filtri.
+  const [gruppo, setGruppo] = useState(50);
+  const [inizio, setInizio] = useState(0);
+  useEffect(() => { setInizio(0); }, [specie, categoria, statoFiltro, anno, cerca, gruppo]);
 
   useEffect(() => { carica(); }, []);
 
@@ -252,6 +258,7 @@ export default function RiepilogoCostoAnimali() {
             )}
           </div>
 
+          <NavigazionePagine numero={visibili.length} inizio={inizio} gruppo={gruppo} setInizio={setInizio} setGruppo={setGruppo} cosa="capi" />
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflowX: "auto" }}>
             <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
               <thead style={{ background: C.primary, color: "#fff" }}>
@@ -272,7 +279,7 @@ export default function RiepilogoCostoAnimali() {
               </thead>
               <tbody>
                 {visibili.length === 0 && <tr><td colSpan={14} style={{ ...td, color: C.muted }}>Nessun animale con questi filtri.</td></tr>}
-                {visibili.map(r => (
+                {visibili.slice(inizio, inizio + gruppo).map(r => (
                   <tr key={r.chiave} onClick={() => setSelezionato(r)} style={{ borderTop: `1px solid ${C.border}`, cursor: "pointer" }}>
                     <td style={{ ...td, fontWeight: 700 }}>{r.identificativo}
                       {r.riproduttoreDaiParti && <div style={{ fontSize: 10, color: "#8A6D00", background: "#FFF3CD", borderRadius: 4, padding: "1px 4px", marginTop: 2, fontWeight: 700 }}>manca il segno nell'app</div>}
@@ -313,6 +320,7 @@ export default function RiepilogoCostoAnimali() {
               </tbody>
             </table>
           </div>
+          <NavigazionePagine numero={visibili.length} inizio={inizio} gruppo={gruppo} setInizio={setInizio} setGruppo={setGruppo} cosa="capi" />
         </>
       )}
 
