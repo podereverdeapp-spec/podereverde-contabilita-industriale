@@ -181,7 +181,8 @@ export function ElencoFattureAPagine({ tipo, titolo, etichettaControparte, nomeF
 
   const parametri = (offset, limite) => ({
     p_tipo: tipo, p_anno: filtroAnno === "tutti" ? null : parseInt(filtroAnno), p_data: filtroData || null,
-    p_testo: cercaApplicata || null, p_offset: offset, p_limite: limite,
+    // versione 286: la ricerca cerca anche nelle descrizioni delle righe, nelle note e, per gli acquisti di animali, nella matricola
+    p_testo: cercaApplicata || null, p_cerca_righe: true, p_offset: offset, p_limite: limite,
   });
 
   async function carica() {
@@ -255,7 +256,7 @@ export function ElencoFattureAPagine({ tipo, titolo, etichettaControparte, nomeF
       </p>
 
       <div style={{ display: "flex", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
-        <input placeholder={`Cerca per ${etichettaControparte.toLowerCase()}, numero o P.IVA...`} value={cerca} onChange={e => setCerca(e.target.value)}
+        <input placeholder={`Cerca per ${etichettaControparte.toLowerCase()}, numero, P.IVA, prodotto, note o matricola...`} value={cerca} onChange={e => setCerca(e.target.value)}
           style={{ flex: 1, minWidth: 200, padding: "8px 12px", borderRadius: 8, border: `1.5px solid ${C.border}`, fontSize: 14 }} />
         {conFiltroData && (
           <>
