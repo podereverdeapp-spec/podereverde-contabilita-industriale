@@ -4,7 +4,7 @@ import { supabase } from "./supabase";
 import { C } from "./style";
 import { numerizzaCampi, formattaEuro, round2, fetchAllPages } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
-import { FUNZIONE_RICERCA, messaggioErroreRicerca, NavigazionePagine, leggiTutteLeTrovate, leggiCapiAcquisto, CapiAcquisto, EtichettaAcquistoAnimali, numeroFattura } from "./FatturePassive";
+import { FUNZIONE_RICERCA, messaggioErroreRicerca, NavigazionePagine, leggiTutteLeTrovate, leggiCapiAcquisto, CapiAcquisto, EtichettaAcquistoAnimali, numeroFattura, leggiRigheFattura, NotaTrasportoAiCapi } from "./FatturePassive";
 
 // Versione 281 (decisione del Dott. Bizzarri del 23/10/2026): la ricerca la fa il database (funzione
 // ci_ricerca_documenti) su TUTTE le fatture e le loro righe, compresi gli acquisti di animali registrati solo
@@ -167,9 +167,9 @@ export default function Ricerca() {
       if (error) throw new Error(error.message);
       setModificaRigaId(null);
       setFormModificaRiga({});
-      // Ricarico le righe di questa fattura
-      const { data } = await supabase.from("ci_articoli_fattura").select("*").eq("fattura_id", fatturaId).order("id");
-      setRighePerFattura(prev => ({ ...prev, ["F" + fatturaId]: numerizzaCampi(data || [], ["quantita", "prezzo_unitario", "totale_riga", "aliquota_iva", "totale_iva"]) }));
+      // Ricarico le righe di questa fattura (con il trasporto attribuito ai capi, versione 283)
+      const data = await leggiRigheFattura(fatturaId);
+      setRighePerFattura(prev => ({ ...prev, ["F" + fatturaId]: data }));
       // Ricalcolo i totali della fattura, dato che l'importo della riga può essere cambiato
       const righeFattura = (data || []);
       const netto = righeFattura.reduce((s, x) => s + (parseFloat(x.totale_riga) || 0), 0);
@@ -197,9 +197,8 @@ export default function Ricerca() {
         const capi = await leggiCapiAcquisto(f);
         setRighePerFattura(prev => ({ ...prev, [f.chiave]: capi }));
       } else {
-        const { data, error } = await supabase.from("ci_articoli_fattura").select("*").eq("fattura_id", f.id).order("id");
-        if (error) throw new Error(error.message);
-        setRighePerFattura(prev => ({ ...prev, [f.chiave]: numerizzaCampi(data || [], ["quantita", "prezzo_unitario", "totale_riga", "aliquota_iva", "totale_iva"]) }));
+        const righe = await leggiRigheFattura(f.id);
+        setRighePerFattura(prev => ({ ...prev, [f.chiave]: righe }));
       }
     } catch (err) {
       alert(`⚠️ Errore nel caricamento delle righe:\n\n${err.message}`);
@@ -299,6 +298,7 @@ export default function Ricerca() {
             <><br /><strong style={{ color: C.primary }}>di cui righe con {[area && `area «${area}»`, centroCosto && `centro di costo «${centroCosto}»`, destinazione && `destinazione «${destinazione}»`, tipoCosto && `tipo di costo «${tipoCosto}»`].filter(Boolean).join(", ")}: {formattaEuro(Number(risposta.totale_righe_scelte || 0))}</strong></>
           )}
           {numeroAnimali > 0 && <><br />di cui {numeroAnimali.toLocaleString("it-IT")} acquisti di animali: {formattaEuro(Number(risposta.totale_acquisti_animali || 0))} (solo l'importo dei capi: l'IVA non è registrata)</>}
+          {Number(risposta.numero_trasporti_ai_capi || 0) > 0 && <><br />🚚 trasporti attribuiti ai capi: {formattaEuro(Number(risposta.totale_trasporti_ai_capi || 0))} in {Number(risposta.numero_trasporti_ai_capi).toLocaleString("it-IT")} fatture (non compresi nel totale delle fatture: le loro righe valgono 0 e l'importo è nel Report Acquisto Animali{risposta.totale_righe_scelte != null ? "; è invece compreso nel «di cui righe»" : ""})</>}
         </p>
       )}
       {navigazione}
@@ -354,6 +354,7 @@ export default function Ricerca() {
                         }}
                           style={{ cursor: "pointer" }} title="Modifica fornitore/numero/data">✏️</span>}
                       </div>
+                      {Number(f.trasporto_ai_capi) > 0 && <NotaTrasportoAiCapi importo={Number(f.trasporto_ai_capi)} />}
                     </>
                   )}
                 </div>
@@ -407,6 +408,7 @@ export default function Ricerca() {
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
                           <div>
                             <div style={{ fontSize: 13 }}>{r.descrizione}</div>
+                            {r.trasporto_ai_capi > 0 && <NotaTrasportoAiCapi importo={r.trasporto_ai_capi} riga />}
                             <div style={{ fontSize: 11, color: C.muted }}>
                               {r.area || "—"} · {r.centro_costo || "—"} · {r.destinazione || "—"} · {r.tipo_costo || "—"}
                             </div>

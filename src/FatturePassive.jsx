@@ -12,6 +12,8 @@ import { esportaExcel, numeroExcel } from "./esportaExcel";
 // Versione 281 (decisione del 23/10/2026): la ricerca la fa la funzione ci_ricerca_documenti (file
 // contabilita_strutture_v281.sql), che comprende anche gli acquisti di animali registrati solo nel Report
 // Acquisto Animali: una «fattura» per fornitore, numero e data, con i capi come righe e l'IVA non registrata.
+// Versione 283 (decisione del 23/10/2026): le fatture di trasporto d'ingresso la cui riga vale 0 (il trasporto è
+// attribuito ai capi nel Report Acquisto Animali, per non contarlo due volte) mostrano l'importo del trasporto.
 export const GRUPPI = [50, 100, 200];
 export const FUNZIONE_RICERCA = "ci_ricerca_documenti";
 
@@ -56,6 +58,29 @@ export async function leggiTutteLeTrovate(parametri, totaleTrovate, avanzamento)
   if (tutte.length !== Number(totaleTrovate)) throw new Error(`Lette ${tutte.length} fatture invece di ${totaleTrovate}: riprovare.`);
   return tutte;
 }
+
+// Righe di una fattura, con il trasporto d'ingresso attribuito ai capi accanto alle righe che valgono 0
+export async function leggiRigheFattura(fatturaId) {
+  const { data, error } = await supabase.from("ci_articoli_fattura").select("*").eq("fattura_id", fatturaId).order("id");
+  if (error) throw new Error(error.message);
+  const righe = numerizzaCampi(data || [], ["quantita", "prezzo_unitario", "totale_riga", "aliquota_iva", "totale_iva"]);
+  const aZero = righe.filter(r => !r.totale_riga).map(r => r.id);
+  if (aZero.length) {
+    const { data: tr, error: eT } = await supabase.from("ci_report_acquisto_animali").select("articolo_fattura_id, importo")
+      .eq("fonte", "TRASPORTO_INGRESSO").in("articolo_fattura_id", aZero);
+    if (eT) throw new Error(eT.message);
+    const perRiga = {};
+    (tr || []).forEach(t => { perRiga[t.articolo_fattura_id] = (perRiga[t.articolo_fattura_id] || 0) + (parseFloat(t.importo) || 0); });
+    righe.forEach(r => { if (perRiga[r.id] > 0) r.trasporto_ai_capi = perRiga[r.id]; });
+  }
+  return righe;
+}
+
+export const NotaTrasportoAiCapi = ({ importo, riga = false }) => (
+  <div style={{ fontSize: 11.5, color: C.accent, marginTop: 2 }}>
+    🚚 trasporto {formattaEuro(importo)} attribuito ai capi (Report Acquisto Animali){riga ? ": la riga vale 0 per non contarlo due volte" : ""}
+  </div>
+);
 
 // I capi di un acquisto di animali (stesso fornitore, numero e data; solo quelli senza riga in una fattura)
 export async function leggiCapiAcquisto(f) {
@@ -156,9 +181,8 @@ export function ElencoFattureAPagine({ tipo, titolo, etichettaControparte, nomeF
         const capi = await leggiCapiAcquisto(f);
         setRighePerFattura(prev => ({ ...prev, [f.chiave]: capi }));
       } else {
-        const { data, error } = await supabase.from("ci_articoli_fattura").select("*").eq("fattura_id", f.id).order("id");
-        if (error) throw new Error(error.message);
-        setRighePerFattura(prev => ({ ...prev, [f.chiave]: numerizzaCampi(data || [], ["quantita", "prezzo_unitario", "totale_riga", "aliquota_iva", "totale_iva"]) }));
+        const righe = await leggiRigheFattura(f.id);
+        setRighePerFattura(prev => ({ ...prev, [f.chiave]: righe }));
       }
     } catch (err) {
       alert(`⚠️ Errore nel caricamento delle righe:\n\n${err.message}`);
@@ -199,6 +223,7 @@ export function ElencoFattureAPagine({ tipo, titolo, etichettaControparte, nomeF
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 20 }}>
         {risposta ? `${numero.toLocaleString("it-IT")} fatture — totale ${formattaEuro(Number(risposta.totale_lordo || 0))} (calcolato su tutte le fatture trovate, anche quelle non mostrate)` : ""}
         {numeroAnimali > 0 && <><br />di cui {numeroAnimali.toLocaleString("it-IT")} acquisti di animali: {formattaEuro(Number(risposta.totale_acquisti_animali || 0))} (solo l'importo dei capi: l'IVA non è registrata)</>}
+        {Number(risposta?.numero_trasporti_ai_capi || 0) > 0 && <><br />🚚 trasporti attribuiti ai capi: {formattaEuro(Number(risposta.totale_trasporti_ai_capi || 0))} in {Number(risposta.numero_trasporti_ai_capi).toLocaleString("it-IT")} fatture (non compresi nel totale qui sopra: le loro righe valgono 0 e l'importo è nel Report Acquisto Animali)</>}
       </p>
 
       <div style={{ display: "flex", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
@@ -236,6 +261,7 @@ export function ElencoFattureAPagine({ tipo, titolo, etichettaControparte, nomeF
                     <div style={{ fontSize: 12, color: C.muted }}>
                       Fatt. {numeroFattura(f)} del {f.data} {f.partita_iva && `· P.IVA ${f.partita_iva}`}
                     </div>
+                    {Number(f.trasporto_ai_capi) > 0 && <NotaTrasportoAiCapi importo={Number(f.trasporto_ai_capi)} />}
                   </div>
                   <div style={{ textAlign: "right" }}>
                     <div style={{ fontWeight: 800, fontSize: 16, color: coloreTotale }}>{formattaEuro(f.totale_lordo)}</div>
@@ -319,7 +345,7 @@ export function RicomposizioneFattura({ fattura, righe }) {
         <tbody>
           {righe.map(r => (
             <tr key={r.id} style={{ borderBottom: `1px solid ${C.border}` }}>
-              <td style={{ padding: "6px 8px" }}>{r.descrizione}</td>
+              <td style={{ padding: "6px 8px" }}>{r.descrizione}{r.trasporto_ai_capi > 0 && <NotaTrasportoAiCapi importo={r.trasporto_ai_capi} riga />}</td>
               {mostraUM && <td style={{ padding: "6px 8px", textAlign: "center" }}>{r.unita_misura || "—"}</td>}
               {mostraQuantita && <td style={{ padding: "6px 8px", textAlign: "right" }}>{r.quantita != null ? r.quantita : "—"}</td>}
               {mostraPrezzoUnit && <td style={{ padding: "6px 8px", textAlign: "right" }}>{r.prezzo_unitario != null ? `${formattaEuro(r.prezzo_unitario)}` : "—"}</td>}
