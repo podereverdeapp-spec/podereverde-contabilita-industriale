@@ -46,7 +46,7 @@ import ImportMassivoRiproduttori from "./ImportMassivoRiproduttori";
 import RiepilogoCostoAnimali from "./RiepilogoCostoAnimali";
 import PrezzoPareggio from "./PrezzoPareggio";
 import DocumentoIstruzioni from "./DocumentoIstruzioni";
-import { ISTRUZIONI_CARICA_FATTURE, PIANO_DEI_CONTI, ISTRUZIONI_COSTI_DIRETTI, ISTRUZIONI_COSTI_LAVORO, ISTRUZIONI_SISTEMA_DATI, ISTRUZIONI_VERIFICA } from "./istruzioniDati";
+import { ISTRUZIONI_CARICA_FATTURE, PIANO_DEI_CONTI, ISTRUZIONI_COSTI_DIRETTI, ISTRUZIONI_COSTI_LAVORO, ISTRUZIONI_SISTEMA_DATI, ISTRUZIONI_VERIFICA, ISTRUZIONI_REGISTRO_MODIFICHE } from "./istruzioniDati";
 import IstruzioniAnagrafiche from "./IstruzioniAnagrafiche";
 import IstruzioniPrezziAcquisto from "./IstruzioniPrezziAcquisto";
 import IstruzioniAnimali from "./IstruzioniAnimali";
@@ -160,7 +160,6 @@ const MENU = [
     { tipo: "sottocartella", id: "sub-dati-controllo", label: "6. Controllo finale", icon: "🛡️", voci: [
       { id: "istr-controlli", label: "Istruzioni dei Controlli", icon: "📖" },
       { id: "registro-controlli", label: "Registro Controlli", icon: "🛡️" },
-      { id: "registro-modifiche", label: "Registro delle Modifiche", icon: "🕓" },
     ]},
   ]},
   { tipo: "cartella", id: "cart-emissione-fatture", label: "Emissione Fatture", icon: "🧾", contenuto: [
@@ -257,6 +256,12 @@ const MENU = [
     { tipo: "sottocartella", id: "sub-muratella", label: "Muratella S.r.l.", icon: "🏛️", voci: [
       { id: "muratella-costi", label: "Contabilità Muratella", icon: "🏛️" },
     ]},
+  ]},
+  // Versione 294 (decisione del Dott. Bizzarri del 24/10/2026 ore 16:02): il Registro delle Modifiche esce da
+  // «6. Controllo finale» e diventa una cartella del menu principale, con le sue istruzioni.
+  { tipo: "cartella", id: "cart-registro-modifiche", label: "Registro delle modifiche", icon: "🕓", contenuto: [
+    { tipo: "voce", id: "istr-registro-modifiche", label: "Istruzioni", icon: "📖" },
+    { tipo: "voce", id: "registro-modifiche", label: "Registro delle Modifiche", icon: "🕓" },
   ]},
   // Versione 248: Glossario dei termini usati nelle istruzioni (cresce sezione per sezione)
   { tipo: "voce", id: "glossario", label: "Glossario", icon: "📚" },
@@ -369,7 +374,7 @@ function Programma({ utente }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 293</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 294</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -568,6 +573,7 @@ function Programma({ utente }) {
         {tab === "istr-controlli" && <IstruzioniControlli />}
         {tab === "registro-controlli" && <RegistroControlli onCambiaAperte={setAnomalieAperte} />}
         {tab === "abbinamenti-fatture" && <AbbinamentiFatture />}
+        {tab === "istr-registro-modifiche" && <DocumentoIstruzioni doc={ISTRUZIONI_REGISTRO_MODIFICHE} />}
         {tab === "registro-modifiche" && <RegistroModifiche />}
       </main>
     </div>
