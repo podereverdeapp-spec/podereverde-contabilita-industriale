@@ -34,6 +34,7 @@ import RazioniRiferimento from "./RazioniRiferimento";
 import ReportFabbisogniBovini from "./ReportFabbisogniBovini";
 import { ControllaPrezzi, ChiediPreventivi, PreventiviRicevuti } from "./PrezziAlimentaria";
 import PromptEstrazionePDF from "./PromptEstrazionePDF";
+import PromptCaricoAruba from "./PromptCaricoAruba";
 import PromptCedolini from "./PromptCedolini";
 import CaricaCostiLavoro from "./CaricaCostiLavoro";
 import ConsultaCostiLavoro from "./ConsultaCostiLavoro";
@@ -123,6 +124,8 @@ const MENU = [
     { tipo: "sottocartella", id: "sub-dati-fatture-passive", label: "1. Carica Fatture Passive", icon: "📥", voci: [
       { id: "istr-fatture", label: "Istruzioni Carica Fatture Passive", icon: "📖" },
       { id: "prompt-estrazione-pdf", label: "Prompt per carico Massivo", icon: "🤖" },
+      // Versione 293: il carico diretto da Aruba con Claude (decisione del Dott. Bizzarri del 24/10/2026)
+      { id: "prompt-carico-aruba", label: "Prompt per carico da Aruba", icon: "🌐" },
       { id: "carica", label: "Carica Fatture Passive massivamente", icon: "📥" },
       { id: "inserimento-manuale", label: "Inserimento Manuale Fattura", icon: "✍️" },
       // Versione 292: i PDF delle fatture nel programma (decisione del Dott. Bizzarri del 24/10/2026)
@@ -366,7 +369,7 @@ function Programma({ utente }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 292</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 293</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -511,6 +514,7 @@ function Programma({ utente }) {
         {tab === "chiedi-preventivi" && <ChiediPreventivi />}
         {tab === "preventivi-ricevuti" && <PreventiviRicevuti />}
         {tab === "prompt-estrazione-pdf" && <PromptEstrazionePDF />}
+        {tab === "prompt-carico-aruba" && <PromptCaricoAruba />}
         {tab === "prompt-cedolini" && <PromptCedolini />}
         {tab === "carica-costi-lavoro" && <CaricaCostiLavoro />}
         {tab === "consulta-costi-lavoro" && <ConsultaCostiLavoro />}
