@@ -46,7 +46,7 @@ import ImportMassivoRiproduttori from "./ImportMassivoRiproduttori";
 import RiepilogoCostoAnimali from "./RiepilogoCostoAnimali";
 import PrezzoPareggio from "./PrezzoPareggio";
 import DocumentoIstruzioni from "./DocumentoIstruzioni";
-import { ISTRUZIONI_CARICA_FATTURE, PIANO_DEI_CONTI, ISTRUZIONI_COSTI_DIRETTI, ISTRUZIONI_COSTI_LAVORO, ISTRUZIONI_SISTEMA_DATI, ISTRUZIONI_VERIFICA, ISTRUZIONI_REGISTRO_MODIFICHE } from "./istruzioniDati";
+import { ISTRUZIONI_CARICA_FATTURE, PIANO_DEI_CONTI, ISTRUZIONI_COSTI_DIRETTI, ISTRUZIONI_COSTI_LAVORO, ISTRUZIONI_SISTEMA_DATI, ISTRUZIONI_VERIFICA, ISTRUZIONI_REGISTRO_MODIFICHE, ISTRUZIONI_CONTROLLI } from "./istruzioniDati";
 import IstruzioniAnagrafiche from "./IstruzioniAnagrafiche";
 import IstruzioniPrezziAcquisto from "./IstruzioniPrezziAcquisto";
 import IstruzioniAnimali from "./IstruzioniAnimali";
@@ -87,7 +87,7 @@ import ReportAcquistoAnimali from "./ReportAcquistoAnimali";
 import RegistroControlli from "./RegistroControlli";
 import AbbinamentiFatture from "./AbbinamentiFatture";
 import RegistroModifiche from "./RegistroModifiche";
-import IstruzioniControlli from "./IstruzioniControlli";
+// Versione 295: le Istruzioni dei Controlli vengono dal Word «Istruzioni_Controllo_finale_v295» (IstruzioniControlli.jsx non è più usata)
 import AccessoProgramma, { useSessione, esci } from "./AccessoProgramma";
 import { eseguiControlli, contaAnomalieAperte } from "./controlliRegistri";
 import { statoCalcoli, testoAvvisoCalcoli } from "./statoCalcoli";
@@ -374,7 +374,7 @@ function Programma({ utente }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 294</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 295</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -570,7 +570,7 @@ function Programma({ utente }) {
         {tab === "ricerca" && <Ricerca />}
         {tab === "glossario" && <Glossario />}
         {tab === "parametri" && <Parametri />}
-        {tab === "istr-controlli" && <IstruzioniControlli />}
+        {tab === "istr-controlli" && <DocumentoIstruzioni doc={ISTRUZIONI_CONTROLLI} />}
         {tab === "registro-controlli" && <RegistroControlli onCambiaAperte={setAnomalieAperte} />}
         {tab === "abbinamenti-fatture" && <AbbinamentiFatture />}
         {tab === "istr-registro-modifiche" && <DocumentoIstruzioni doc={ISTRUZIONI_REGISTRO_MODIFICHE} />}
