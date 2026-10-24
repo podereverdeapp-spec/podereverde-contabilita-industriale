@@ -3,6 +3,7 @@ import { supabase } from "./supabase";
 import { C } from "./style";
 import { fetchAllPages } from "./parsingUtils";
 import { RicomposizioneFattura } from "./FatturePassive";
+import { PdfDelDocumento } from "./pdfFatture"; // versione 292: il PDF della fattura
 
 // Centri di costo con quantità tracciate per i report — solo questi generano voci
 // "Da Armonizzare"; gli altri centri di costo non hanno bisogno di unità armonizzate.
@@ -249,6 +250,7 @@ function RigaArmonizza({ c, onConferma, salvando }) {
                         style={{ background: "none", border: `1px solid ${C.blue}`, color: C.blue, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
                         {fatturaAperta === o.fattura_id ? "▲ chiudi" : "📄 apri fattura"}
                       </button>
+                      {" "}<PdfDelDocumento doc={{ id: o.fattura_id, data: o.data }} />
                     </td>
                   </tr>
                   {fatturaAperta === o.fattura_id && (

@@ -4,6 +4,7 @@ import { supabase } from "./supabase";
 import { C } from "./style";
 import { numerizzaCampi, formattaEuro, fetchAllPages } from "./parsingUtils";
 import { dataIt } from "./FatturePassive";
+import { PulsantePdf, leggiPdfDi } from "./pdfFatture"; // versione 292: il PDF della fattura
 
 // Versione 277 (decisione del Dott. Bizzarri del 22/10/2026):
 //  – una fattura di trasporto a zero NON è incompleta se la sua parte «Ingresso in allevamento» ha un importo
@@ -18,6 +19,7 @@ export default function ControlloAnomalie() {
   const [anomalie, setAnomalie] = useState(null);
   const [loading, setLoading] = useState(true);
   const [eliminando, setEliminando] = useState(null);
+  const [pdfMappa, setPdfMappa] = useState({});
 
   useEffect(() => { carica(); }, []);
 
@@ -68,6 +70,7 @@ export default function ControlloAnomalie() {
       });
       trovate.sort((a, b) => new Date(b.data) - new Date(a.data));
       setAnomalie(trovate);
+      leggiPdfDi(trovate).then(setPdfMappa).catch(() => setPdfMappa({}));
     } catch (err) {
       alert(`⚠️ Errore nel controllo anomalie:\n\n${err.message}`);
     }
@@ -125,6 +128,7 @@ export default function ControlloAnomalie() {
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <span style={{ fontWeight: 800, fontSize: 16, color: C.text }}>{formattaEuro(f.totale_lordo)}</span>
+                  {f.tipo !== "DA_RICEVERE" && f.tipo !== "DA_EMETTERE" && <PulsantePdf doc={f} pdf={pdfMappa[`F${f.id}`]} onCaricato={(k, r) => setPdfMappa(m => ({ ...m, [k]: r }))} />}
                   {f.aZero && f.nRighe > 0 && (
                     <button onClick={() => segnaZero(f)}
                       style={{ background: "none", border: `1.5px solid ${C.green}`, color: C.green, borderRadius: 8, padding: "6px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>

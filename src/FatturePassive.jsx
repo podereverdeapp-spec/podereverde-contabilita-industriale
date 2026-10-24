@@ -3,6 +3,7 @@ import { supabase } from "./supabase";
 import { C } from "./style";
 import { numerizzaCampi, formattaEuro } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
+import { PulsantePdf, leggiPdfDi, chiaveDoc } from "./pdfFatture"; // versione 292: il PDF di ogni fattura
 
 // Versione 280 (decisione del Dott. Bizzarri del 23/10/2026): la consultazione delle fatture si fa «a
 // pagine». Il database consegna al massimo 1.000 righe per richiesta: la pagina NON legge più tutte le
@@ -176,6 +177,7 @@ export function ElencoFattureAPagine({ tipo, titolo, etichettaControparte, nomeF
   const [gruppo, setGruppo] = useState(50);
   const [inizio, setInizio] = useState(0);
   const [esportando, setEsportando] = useState("");
+  const [pdfMappa, setPdfMappa] = useState({}); // versione 292: chiave del documento → PDF caricato
   const ultimaRichiesta = useRef(0); // conta solo la risposta dell'ultima ricerca partita
 
   // la ricerca parte mezzo secondo dopo l'ultima lettera scritta
@@ -199,7 +201,9 @@ export function ElencoFattureAPagine({ tipo, titolo, etichettaControparte, nomeF
       setErrore(messaggioErroreRicerca(error));
       setRisposta(null);
     } else {
-      setRisposta({ ...data, fatture: numerizzaCampi(data?.fatture || [], ["totale_netto", "totale_iva", "totale_lordo"]) });
+      const fatture = numerizzaCampi(data?.fatture || [], ["totale_netto", "totale_iva", "totale_lordo"]);
+      setRisposta({ ...data, fatture });
+      leggiPdfDi(fatture).then(m => { if (n === ultimaRichiesta.current) setPdfMappa(m); }).catch(() => setPdfMappa({}));
     }
     setLoading(false);
   }
@@ -304,6 +308,7 @@ export function ElencoFattureAPagine({ tipo, titolo, etichettaControparte, nomeF
                   <div style={{ textAlign: "right" }}>
                     <div style={{ fontWeight: 800, fontSize: 16, color: eNotaDiCredito(f) ? C.red : coloreTotale }}>{formattaEuro(f.totale_lordo)}</div>
                     {f.acquisto_animali && <div style={{ fontSize: 11, color: C.muted }}>IVA non registrata</div>}
+                    {!DOCUMENTO_DI_COMPETENZA(f.tipo) && <div style={{ margin: "4px 0" }}><PulsantePdf doc={f} pdf={pdfMappa[chiaveDoc(f)]} compatto onCaricato={(k, r) => setPdfMappa(m => ({ ...m, [k]: r }))} /></div>}
                     <div style={{ fontSize: 11, color: C.muted }}>{espansa === f.chiave ? "▲ nascondi righe" : "▼ vedi righe"}</div>
                   </div>
                 </div>

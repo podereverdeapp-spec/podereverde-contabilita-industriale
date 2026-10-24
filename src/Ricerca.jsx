@@ -4,6 +4,7 @@ import { supabase } from "./supabase";
 import { C } from "./style";
 import { numerizzaCampi, formattaEuro, round2, fetchAllPages } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
+import { PulsantePdf, leggiPdfDi, chiaveDoc } from "./pdfFatture"; // versione 292: il PDF di ogni fattura
 import { FUNZIONE_RICERCA, messaggioErroreRicerca, NavigazionePagine, leggiTutteLeTrovate, leggiCapiAcquisto, CapiAcquisto, EtichettaAcquistoAnimali, numeroFattura, leggiRigheFattura, NotaTrasportoAiCapi, NotaCompetenza, PAGINA_COMPETENZA, RicomposizioneFattura, dataIt, eNotaDiCredito, EtichettaNotaDiCredito } from "./FatturePassive";
 
 // Versione 281 (decisione del Dott. Bizzarri del 23/10/2026): la ricerca la fa il database (funzione
@@ -24,6 +25,7 @@ const UNITA_OPZIONI = ["", "Unità", "Tons", "Quintali", "Kilogrammi", "Litri", 
 
 export default function Ricerca() {
   const [risposta, setRisposta] = useState(null);
+  const [pdfMappa, setPdfMappa] = useState({}); // versione 292
   const [errore, setErrore] = useState("");
   const [gruppo, setGruppo] = useState(50);
   const [inizio, setInizio] = useState(0);
@@ -84,7 +86,11 @@ export default function Ricerca() {
     const { data, error } = await supabase.rpc(FUNZIONE_RICERCA, parametri(inizio, gruppo));
     if (n !== ultimaRichiesta.current) return; // nel frattempo è partita una ricerca più recente
     if (error) { setErrore(messaggioErroreRicerca(error)); setRisposta(null); }
-    else setRisposta({ ...data, fatture: numerizzaCampi(data?.fatture || [], ["totale_netto", "totale_iva", "totale_lordo"]) });
+    else {
+      const fatture = numerizzaCampi(data?.fatture || [], ["totale_netto", "totale_iva", "totale_lordo"]);
+      setRisposta({ ...data, fatture });
+      leggiPdfDi(fatture).then(m => { if (n === ultimaRichiesta.current) setPdfMappa(m); }).catch(() => setPdfMappa({}));
+    }
     setLoading(false);
   }
 
@@ -366,6 +372,7 @@ export default function Ricerca() {
                 <div style={{ textAlign: "right" }}>
                   <div style={{ fontWeight: 800, fontSize: 16, color: eNotaDiCredito(f) ? C.red : C.primary }}>{formattaEuro(f.totale_lordo)}</div>
                   {f.acquisto_animali && <div style={{ fontSize: 11, color: C.muted }}>IVA non registrata</div>}
+                  {f.tipo !== "DA_RICEVERE" && f.tipo !== "DA_EMETTERE" && <div style={{ margin: "4px 0" }}><PulsantePdf doc={f} pdf={pdfMappa[chiaveDoc(f)]} compatto onCaricato={(k, r) => setPdfMappa(m => ({ ...m, [k]: r }))} /></div>}
                   <div style={{ fontSize: 11, color: C.muted }}>{espansa === f.chiave ? "▲ nascondi" : "▼ dettaglio"}</div>
                 </div>
               </div>

@@ -22,6 +22,7 @@ import { supabase } from "./supabase";
 import { C } from "./style";
 import { fetchAllPages, round2 } from "./parsingUtils";
 import { dataIt } from "./controlliRegistri";
+import { PulsantePdfRigaReport } from "./pdfFatture"; // versione 292: il PDF della fattura
 
 const bottone = (colore, pieno = true) => ({ background: pieno ? colore : "transparent", color: pieno ? "#fff" : colore, border: `1.5px solid ${colore}`, borderRadius: 8, padding: "6px 12px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" });
 const euro = n => n == null || n === "" || isNaN(Number(n)) ? "—" : `${Number(n).toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
@@ -375,6 +376,7 @@ export default function AbbinamentiFatture() {
   const Intestazione = ({ r, nomeF }) => (
     <div style={{ fontSize: 13.5 }}>
       <b>Fattura {r.numero_fattura || "senza numero"}</b> del {dataIt(r.data_fattura)} — {nomeF || "fornitore ignoto"} — <b>{euro(r.importo)}</b>
+      <PulsantePdfRigaReport riga={r} />
       {r.quantita && parseFloat(r.quantita) !== 1 ? ` (${r.quantita} capi a ${euro(r.prezzo_unitario)})` : ""}
       {r.bdn ? ` — matricola in fattura ${r.bdn}` : ""}{r.specie ? ` — ${r.specie}` : ""}{r.razza ? `, ${r.razza}` : ""}
       {r.note && <div style={{ fontSize: 12, color: C.muted }}>Nota: {r.note}</div>}

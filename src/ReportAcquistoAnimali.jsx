@@ -4,6 +4,7 @@ import { C } from "./style";
 import { numerizzaCampi, formattaEuro, fetchAllPages } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
 import { normalizzaAnimali } from "./costoAnimale";
+import { PulsantePdfRigaReport } from "./pdfFatture"; // versione 292: il PDF della fattura
 
 export default function ReportAcquistoAnimali() {
   const [righe, setRighe] = useState([]);
@@ -239,7 +240,7 @@ export default function ReportAcquistoAnimali() {
                   <strong>{r.ci_fornitori?.nome || "—"}</strong>
                   {" · "}{r.fonte === "TRASPORTO_INGRESSO" ? "Trasporto ingresso" : "Acquisto diretto"}
                   <div style={{ fontSize: 12, color: C.muted }}>
-                    Fatt. {r.numero_fattura || "—"} del {r.data_fattura}
+                    Fatt. {r.numero_fattura || "—"} del {r.data_fattura}<PulsantePdfRigaReport riga={r} />
                     {r.specie && ` · ${r.specie}`}{r.razza && ` (${r.razza})`}
                     {r.destinazione_acquisto && ` · ${r.destinazione_acquisto}`}
                     {r.bdn && ` · BDN ${r.bdn}`}{r.nr_lotto && ` · Lotto ${r.nr_lotto}`}

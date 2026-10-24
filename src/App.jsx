@@ -19,6 +19,7 @@ import ReportRiproduttori from "./ReportRiproduttori";
 import ArticoliPrezzi from "./ArticoliPrezzi";
 import CostiDiretti from "./CostiDiretti";
 import ControlloAnomalie from "./ControlloAnomalie";
+import CaricaPdfFatture from "./CaricaPdfFatture";
 import DaArmonizzare from "./DaArmonizzare";
 import PerformanceEta from "./PerformanceEta";
 import PerformanceEtaMaschi from "./PerformanceEtaMaschi";
@@ -44,7 +45,7 @@ import ImportMassivoRiproduttori from "./ImportMassivoRiproduttori";
 import RiepilogoCostoAnimali from "./RiepilogoCostoAnimali";
 import PrezzoPareggio from "./PrezzoPareggio";
 import DocumentoIstruzioni from "./DocumentoIstruzioni";
-import { ISTRUZIONI_CARICA_FATTURE, PIANO_DEI_CONTI, ISTRUZIONI_COSTI_DIRETTI, ISTRUZIONI_COSTI_LAVORO, ISTRUZIONI_SISTEMA_DATI } from "./istruzioniDati";
+import { ISTRUZIONI_CARICA_FATTURE, PIANO_DEI_CONTI, ISTRUZIONI_COSTI_DIRETTI, ISTRUZIONI_COSTI_LAVORO, ISTRUZIONI_SISTEMA_DATI, ISTRUZIONI_VERIFICA } from "./istruzioniDati";
 import IstruzioniAnagrafiche from "./IstruzioniAnagrafiche";
 import IstruzioniPrezziAcquisto from "./IstruzioniPrezziAcquisto";
 import IstruzioniAnimali from "./IstruzioniAnimali";
@@ -124,6 +125,8 @@ const MENU = [
       { id: "prompt-estrazione-pdf", label: "Prompt per carico Massivo", icon: "🤖" },
       { id: "carica", label: "Carica Fatture Passive massivamente", icon: "📥" },
       { id: "inserimento-manuale", label: "Inserimento Manuale Fattura", icon: "✍️" },
+      // Versione 292: i PDF delle fatture nel programma (decisione del Dott. Bizzarri del 24/10/2026)
+      { id: "carica-pdf-fatture", label: "Carica PDF delle Fatture", icon: "📎" },
     ]},
     { tipo: "sottocartella", id: "sub-dati-costi-diretti", label: "2. Carica Costi Diretti (non soggetti a fatturazione)", icon: "💼", voci: [
       { id: "istr-costi-diretti", label: "Istruzioni Carica Costi Diretti", icon: "📖" },
@@ -143,7 +146,9 @@ const MENU = [
       { id: "armonizza", label: "Armonizzare Unità Misura Fatture", icon: "⚖️" },
       { id: "abbinamenti-fatture", label: "Abbinamenti Fatture Acquisto", icon: "🔗" },
     ]},
+    // Versione 291: le istruzioni, dal Word approvato dal Dott. Bizzarri il 24/10/2026.
     { tipo: "sottocartella", id: "sub-dati-verifica", label: "5. Verifica che non manchi niente", icon: "🔍", voci: [
+      { id: "istr-verifica", label: "Istruzioni Verifica che non manchi niente", icon: "📖" },
       { id: "verifica-fatture-mancanti", label: "Verifica Fatture Mancanti", icon: "🔍" },
       { id: "verifica-righe-mancanti", label: "Verifica Righe Mancanti", icon: "🔎" },
       { id: "anomalie", label: "Fatture Incomplete", icon: "🧾" },
@@ -361,7 +366,7 @@ function Programma({ utente }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 290</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 292</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -520,6 +525,8 @@ function Programma({ utente }) {
         {tab === "istr-costi-diretti" && <DocumentoIstruzioni doc={ISTRUZIONI_COSTI_DIRETTI} />}
         {tab === "istr-costi-lavoro" && <DocumentoIstruzioni doc={ISTRUZIONI_COSTI_LAVORO} />}
         {tab === "istr-sistema-dati" && <DocumentoIstruzioni doc={ISTRUZIONI_SISTEMA_DATI} />}
+        {tab === "istr-verifica" && <DocumentoIstruzioni doc={ISTRUZIONI_VERIFICA} />}
+        {tab === "carica-pdf-fatture" && <CaricaPdfFatture />}
         {tab === "istr-ricerca" && <IstruzioniAnagrafiche />}
         {tab === "istr-prezzi-acquisto" && <IstruzioniPrezziAcquisto />}
         {tab === "istr-animali" && <IstruzioniAnimali />}
