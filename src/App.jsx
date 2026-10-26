@@ -88,6 +88,8 @@ import ColtGrafici from "./ColtGrafici";
 import ColtClassifiche from "./ColtClassifiche";
 import ColtRegistroLavori from "./ColtRegistroLavori";
 import Ricerca from "./Ricerca";
+import RegistroComunicazioni from "./RegistroComunicazioni";
+import CompletaAnagraficheAruba from "./CompletaAnagraficheAruba";
 import Parametri from "./Parametri";
 import Glossario from "./Glossario";
 import ReportAcquistoAnimali from "./ReportAcquistoAnimali";
@@ -203,9 +205,13 @@ const MENU = [
   ]},
   { tipo: "cartella", id: "cart-ricerca", label: "Ricerca: Fatture e Anagrafiche", icon: "🔎", contenuto: [
     { tipo: "voce", id: "istr-ricerca", label: "Istruzioni", icon: "📖" },
-    { tipo: "voce", id: "ricerca", label: "Ricerca", icon: "🔎" },
+    { tipo: "voce", id: "ricerca", label: "Ricerca Fatture", icon: "🔎" },
+    // Versione 304 (decisioni del Dott. Bizzarri del 26/10/2026): anagrafiche modificabili, Registro delle Comunicazioni,
+    // completamento delle anagrafiche dai file di Aruba
     { tipo: "voce", id: "fornitori", label: "Fornitori", icon: "🏢" },
     { tipo: "voce", id: "clienti", label: "Clienti", icon: "🤝" },
+    { tipo: "voce", id: "registro-comunicazioni", label: "Registro delle Comunicazioni", icon: "✉️" },
+    { tipo: "voce", id: "completa-anagrafiche", label: "Completa le Anagrafiche da Aruba", icon: "🧾" },
   ]},
   { tipo: "cartella", id: "cart-costi", label: "Analisi Costi", icon: "📊", contenuto: [
     { tipo: "voce", id: "istr-costi", label: "Istruzioni", icon: "📖" },
@@ -399,7 +405,7 @@ function Programma({ utente }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 303</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 304</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -609,6 +615,8 @@ function Programma({ utente }) {
         {tab === "colt-piano" && <ColtPianoCampagna />}
         {tab === "colt-archivio-report" && <ColtArchivioReport />}
         {tab === "ricerca" && <Ricerca />}
+        {tab === "registro-comunicazioni" && <RegistroComunicazioni />}
+        {tab === "completa-anagrafiche" && <CompletaAnagraficheAruba />}
         {tab === "glossario" && <Glossario />}
         {tab === "parametri" && <Parametri />}
         {tab === "istr-controlli" && <DocumentoIstruzioni doc={ISTRUZIONI_CONTROLLI} />}
