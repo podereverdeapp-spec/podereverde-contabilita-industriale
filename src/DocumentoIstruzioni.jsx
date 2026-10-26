@@ -68,11 +68,13 @@ function Blocco({ b, k, inTabella }) {
   return <p style={stile}><Runs r={b.r} /></p>;
 }
 
-export default function DocumentoIstruzioni({ doc }) {
+// Versione 296: «incorporato» = documento dentro un'altra pagina (lo studio nel Report di Analisi dei bovini):
+// senza il titolo grande e senza margini propri.
+export default function DocumentoIstruzioni({ doc, incorporato = false }) {
   const indice = doc.blocchi.map((b, k) => ({ b, k })).filter(x => x.b.t === "h1");
   return (
-    <div style={{ padding: 20, maxWidth: 960, margin: "0 auto" }}>
-      <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 12 }}>📖 {doc.titolo}</h1>
+    <div style={incorporato ? {} : { padding: 20, maxWidth: 960, margin: "0 auto" }}>
+      {!incorporato && <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 12 }}>📖 {doc.titolo}</h1>}
       {indice.length >= 2 && (
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 14px", marginBottom: 18 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: C.muted, marginBottom: 4 }}>In questo documento</div>

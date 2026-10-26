@@ -110,9 +110,32 @@ export function Critiche({ voci, grafico }) {
             </Riga>
             <Riga titolo="Cosa fare"><ul style={{ margin: 0, paddingLeft: 18 }}>{x.fare.map((t, j) => <li key={j}>{t}</li>)}</ul></Riga>
             {x.vale && <Riga titolo="Quanto vale">{x.vale}</Riga>}
+            {x.rinvioStudio && <RinvioStudio />}
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+// Versione 296: porta alla parte in coda al report (sezione che si ricalcola e studio di ottobre 2026)
+export function vaiA(id) {
+  const el = document.getElementById(id);
+  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// Versione 296 (decisione del Dott. Bizzarri del 26/10/2026): in fondo alla criticità «Un vitello nato in
+// azienda costa più di uno comprato già svezzato», rinvio allo studio «Acquistare o far nascere?»
+function RinvioStudio() {
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", justifyContent: "space-between", marginTop: 10, background: "#FBF0D9", border: "1px solid #E9C979", borderRadius: 8, padding: "10px 14px" }}>
+      <span style={{ fontSize: 14, color: "#8A5A00", fontWeight: 700 }}>
+        <span style={{ fontSize: 18, marginRight: 6 }}>⚠️</span>Leggere bene lo studio a cui si rinvia: «Acquistare o far nascere?»
+      </span>
+      <button onClick={() => vaiA("studio-acquistare-o-far-nascere")}
+        style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 6, padding: "7px 14px", fontSize: 13.5, fontWeight: 700 }}>
+        Vai allo studio ↓
+      </button>
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { C, FONT } from "./style";
 import { caricaDatiReport, analisiSpecie, AREE, AREE_KG, GRUPPI, gruppoDi, it, SOGLIA_SEGNALE } from "./calcoloReportAnalisi";
 import { Intestazione, Sezione, Riquadri, Buoni, Critiche, Segnali, Avvisi, BarreOrdinate, Cascata, COLORI_GRUPPO, SALE, stileTabella as T } from "./ReportAnalisiParti";
+import StudioBovini from "./StudioBovini"; // versione 296: «Acquistare o far nascere?» in coda al report dei bovini
 
 const ora = () => new Date().toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 const coloreArea = a => COLORI_GRUPPO[a] || COLORI_GRUPPO[gruppoDi(a)];
@@ -57,6 +58,7 @@ export default function ReportAnalisi({ specie }) {
       {r && r.errore && <div style={{ background: "#F8E1DE", color: "#9B2C20", padding: 10, borderRadius: 8, marginTop: 10 }}>Errore nel calcolo: {r.errore}</div>}
       {r && r.vuoto && <p style={{ color: C.muted, marginTop: 16 }}>{r.motivo}</p>}
       {r && !r.vuoto && !r.errore && <Contenuto r={r} vociAperte={vociAperte} setVociAperte={setVociAperte} />}
+      {dati && specie === "bovino" && <StudioBovini dati={dati} />}
     </div>
   );
 }

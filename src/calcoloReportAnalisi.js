@@ -71,7 +71,7 @@ async function tutte(tabella, colonne, ordine = "id") {
 
 export async function caricaDatiReport() {
   const base = await caricaDatiBase();
-  const [articoli, fatture, fornitori, regole, cespiti, pesate, mandriaIntera] = await Promise.all([
+  const [articoli, fatture, fornitori, regole, cespiti, pesate, mandriaIntera, razze] = await Promise.all([
     tutte("ci_articoli_fattura", "id, fattura_id, descrizione, quantita, totale_riga, area, centro_costo, destinazione"),
     tutte("ci_fatture", "id, data, tipo, numero, fornitore_id, regolarizzazione_di"),
     tutte("ci_fornitori", "id, nome"),
@@ -79,6 +79,7 @@ export async function caricaDatiReport() {
     tutte("ci_cespiti", "id, descrizione, specie"),
     supabase.from("pesate_storico").select("id").limit(1).then(r => (r.data || []).length, () => null),
     tutte("ci_costo_nascita_mandria", "id, specie, anno, nati, costo_mandria, costo_nascita_per_nato, riproduttori_in_carriera, riproduttori_senza_figli, mantenimento_riproduttori, quota_residuo_riproduttori"),
+    tutte("animali", "id, razza"), // versione 296: razza delle vacche da controllare
   ]);
   // il riepilogo della mandria letto per intero (nati, costo per nato): il Break Even ne legge solo due colonne
   base.mandria = new Map(mandriaIntera.map(m => [`${m.specie}|${m.anno}`, m]));
@@ -97,7 +98,7 @@ export async function caricaDatiReport() {
     riga.kg = riga.servizio ? 0 : riga.quantita * riga.fattoreKg;
     acquisti.push(riga);
   }
-  return { base, acquisti, vendite, cespiti: new Map(cespiti.map(c => [c.id, c])), pesate };
+  return { base, acquisti, vendite, cespiti: new Map(cespiti.map(c => [c.id, c])), pesate, razze: new Map(razze.map(r => [r.id, r.razza || ""])) };
 }
 
 // ── Costi dell'anno per area e per voce di conto ───────────────────────────────────────────────
@@ -185,7 +186,8 @@ function classiEta(capi, specie) {
 }
 
 // ── Prezzo di vendita dalle fatture attive ─────────────────────────────────────────────────────
-function prezzoVendita(dati, specie, anno) {
+// Versione 296: esportata anche per la sezione «Acquistare o far nascere?» dei bovini
+export function prezzoVendita(dati, specie, anno) {
   const dest = NOMI[specie].Plurale;
   const righe = dati.vendite.filter(v => (v.destinazione || "").trim() === dest && v.quantita > 0);
   const anni = [...new Set(righe.map(r => r.anno))].sort();
@@ -375,7 +377,7 @@ export function analisiSpecie(dati, specie, anno) {
     const adulte0 = rip.adulte(anno), ip = rip.interparto(anno), sp = rip.senzaParto(anno);
     const rif = RIFERIMENTI.vitelloRistallo, inc = rif.incrociNazionali, lim = rif.limousineNazionali;
     const minR = inc.pesoMin * inc.prezzoMin, maxR = lim.pesoMax * lim.prezzoMax, cn = num(m0.costo_nascita_per_nato);
-    if (cn > maxR) critiche.push({ peso: (cn - maxR) * num(m0.nati), liv: "alta", stato: m1 && cn < num(m1.costo_nascita_per_nato) ? "migliora, ma resta alto" : "peggiora", t: "Un vitello nato in azienda costa più di uno comprato già svezzato",
+    if (cn > maxR) critiche.push({ peso: (cn - maxR) * num(m0.nati), liv: "alta", stato: m1 && cn < num(m1.costo_nascita_per_nato) ? "migliora, ma resta alto" : "peggiora", t: "Un vitello nato in azienda costa più di uno comprato già svezzato", rinvioStudio: true, // versione 296: rinvio allo studio in coda al report
       serie: [anno - 3, anno - 2, anno - 1, anno].map(y => rip.mandria(y)).filter(Boolean).map(m => [String(m.anno), `${it(num(m.costo_nascita_per_nato))} €`]), etichetta: "costo di nascita di un vitello (Report Riproduttori)",
       dato: `Nel ${anno} il mantenimento delle vacche e dei tori (${it(num(m0.costo_mandria))} €) diviso per ${num(m0.nati)} vitelli nati vivi dà ${it(cn)} € a vitello alla nascita.`,
       costo: `Sul ${rif.fonte} un vitello da ristallo incrocio nazionale di ${inc.pesoMin}–${inc.pesoMax} kg vale ${it(inc.prezzoMin)}–${it(inc.prezzoMax)} € al kg vivo, cioè circa ${it(minR, 0)}–${it(inc.pesoMax * inc.prezzoMax, 0)} €; un Limousine nazionale di ${lim.pesoMin}–${lim.pesoMax} kg circa ${it(lim.pesoMin * lim.prezzoMin, 0)}–${it(maxR, 0)} €.`,
