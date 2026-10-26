@@ -423,10 +423,20 @@ export default function QuandoMacellare() {
     const d = oggi();
     return base.soggetti.filter(s => s.specie === specie && !s.riproduttore && base.presenteIl(s, d) && s.nascita).map(s => {
       const eta = mesiTra(s.nascita, d), mesi = mesiTra(s.inizio || s.nascita, d);
-      const fasce = s.acquistato ? gruppi.comprati : gruppi.nati, best = migliore(fasce);
+      const fasce = s.acquistato ? gruppi.comprati : gruppi.nati; let best = migliore(fasce);
       let stato, testo;
       if (!best) { stato = "grigio"; testo = "Troppo pochi capi usciti dello stesso gruppo per un'indicazione."; }
-      else if (best.alMese < 0) { stato = "grigio"; testo = `Al prezzo scelto il suo gruppo perde a ogni età: decidere con il Prezzo di Pareggio e il Break Even.`; }
+      // Versione 310 (decisione del Dott. Bizzarri del 26/10/2026, ore 22:10): se il gruppo perde a ogni età, il semaforo indica
+      // la fascia che perde meno («la meno peggio»), in arancione e mai in verde. Quando si perde si guarda la perdita A CAPO,
+      // non quella al mese: divisa per più mesi, la perdita di un capo tenuto a lungo sembrerebbe più piccola mentre è più grande.
+      else if (best.alMese < 0) {
+        const valide = fasce.filter(f => f.n >= CAPI_MINIMI);
+        best = valide.reduce((m, f) => (f.guadagno > m.guadagno ? f : m), valide[0]);
+        const perdita = `perdita di ${formattaEuro(-best.guadagno, 0)} a capo`;
+        if (eta < best.da) { stato = "arancioneCrescere"; testo = `Si perde a ogni età. La fascia che perde meno è ${best.nome} (${perdita}): mancano ${formattaNumero(best.da - eta, 1)} mesi.`; }
+        else if (eta < best.a) { stato = "arancioneOra"; testo = `Si perde a ogni età, ma è nella fascia che perde meno (${best.nome}, ${perdita}): uscire ora limita la perdita.`; }
+        else { stato = "arancioneOltre"; testo = `Si perde a ogni età e ha superato la fascia che perde meno (${best.nome}, ${perdita}): tenerlo ancora aumenta la perdita.`; }
+      }
       else if (eta < best.da) { stato = "giallo"; testo = `Da crescere: alla fascia migliore (${best.nome}) mancano ${formattaNumero(best.da - eta, 1)} mesi.`; }
       else if (eta < best.a) { stato = "verde"; testo = `Pronto: è nella fascia migliore (${best.nome}).`; }
       else { stato = "rosso"; testo = `Oltre la fascia migliore (${best.nome}): ogni mese in più rende meno.`; }
@@ -434,9 +444,10 @@ export default function QuandoMacellare() {
     }).sort((a, b) => b.eta - a.eta);
   }, [base, specie, gruppi]);
 
-  const ordineStato = { rosso: 0, verde: 1, giallo: 2, grigio: 3 };
-  const coloreStato = { verde: C.green, giallo: "#B98900", rosso: C.red, grigio: C.muted };
-  const nomeStato = { verde: "● Pronto", giallo: "● Da crescere", rosso: "● Oltre", grigio: "● Nessuna indicazione" };
+  const ARANCIONE_S = "#D2691E";
+  const ordineStato = { rosso: 0, arancioneOltre: 1, verde: 2, arancioneOra: 3, giallo: 4, arancioneCrescere: 5, grigio: 6 };
+  const coloreStato = { verde: C.green, giallo: "#B98900", rosso: C.red, arancioneOltre: ARANCIONE_S, arancioneOra: ARANCIONE_S, arancioneCrescere: ARANCIONE_S, grigio: C.muted };
+  const nomeStato = { rosso: "● Oltre", verde: "● Pronto", giallo: "● Da crescere", arancioneOltre: "● Meno peggio: oltre", arancioneOra: "● Meno peggio: uscire ora", arancioneCrescere: "● Meno peggio: da crescere", grigio: "● Nessuna indicazione" };
   const scheda = { background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 16 };
   const linguetta = att => ({ background: att ? C.primary : "#fff", color: att ? "#fff" : C.primary, border: `1.5px solid ${C.primary}`, borderRadius: 6, padding: "6px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer" });
   const nomeSpecie = SPECIE.find(s => s.id === specie).nome;
@@ -491,9 +502,9 @@ export default function QuandoMacellare() {
       {base && vista === "stalla" && (
         <div style={scheda}>
           <div style={{ fontWeight: 800, color: C.primary, fontSize: 15, marginBottom: 4 }}>{nomeSpecie} da macello in stalla oggi: {inStalla.length}</div>
-          <p style={{ fontSize: 12.5, color: C.muted, marginTop: 0 }}>Il semaforo confronta l'età del capo con la fascia più conveniente del suo gruppo (nati in azienda o comprati), al prezzo scelto. Prima i capi oltre la fascia, poi quelli pronti.</p>
+          <p style={{ fontSize: 12.5, color: C.muted, marginTop: 0 }}>Il semaforo confronta l'età del capo con la fascia più conveniente del suo gruppo (nati in azienda o comprati), al prezzo scelto. Prima i capi oltre la fascia, poi quelli pronti. Se al prezzo scelto il gruppo perde a ogni età, il semaforo è arancione e indica la fascia che perde meno («meno peggio»): uscire lì limita la perdita, non dà un guadagno.</p>
           <div style={{ display: "flex", gap: 14, fontSize: 12.5, marginBottom: 8, flexWrap: "wrap" }}>
-            {Object.keys(nomeStato).map(k => <span key={k} style={{ color: coloreStato[k], fontWeight: 700 }}>{nomeStato[k]}: {inStalla.filter(c => c.stato === k).length}</span>)}
+            {Object.keys(nomeStato).filter(k => !k.startsWith("arancione") || inStalla.some(c => c.stato === k)).map(k => <span key={k} style={{ color: coloreStato[k], fontWeight: 700 }}>{nomeStato[k]}: {inStalla.filter(c => c.stato === k).length}</span>)}
           </div>
           <table style={{ width: "100%", fontSize: 12.5 }}>
             <thead><tr style={{ color: C.muted }}>{["Capo", "Sesso", "Provenienza", "Età", "Mesi in azienda", "Costo finora", "Semaforo", "Perché"].map(t => <th key={t} style={{ textAlign: ["Età", "Mesi in azienda", "Costo finora"].includes(t) ? "right" : "left", padding: "4px 6px" }}>{t}</th>)}</tr></thead>
