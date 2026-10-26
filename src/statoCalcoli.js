@@ -42,8 +42,9 @@ export async function statoCalcoli() {
   }
 
   // Anno a cui si riferisce ogni modifica (null = può riguardare tutti gli anni)
-  const idFatture = new Set(), idRighe = new Set(), idCosti = new Set(), idQuote = new Set();
+  const idFatture = new Set(), idRighe = new Set(), idCosti = new Set(), idQuote = new Set(), idAnimali = new Set();
   modifiche.forEach(m => {
+    if (m.tabella === "animali") idAnimali.add(Number(m.riga_id));
     if (m.tabella === "ci_fatture") idFatture.add(Number(m.riga_id));
     if (m.tabella === "ci_articoli_fattura") idRighe.add(Number(m.riga_id));
     if (m.tabella === "ci_costi_diretti") idCosti.add(Number(m.riga_id));
@@ -61,6 +62,27 @@ export async function statoCalcoli() {
   const fatture = await leggiMappa("ci_fatture", "id, data, tipo", idFatture);
   const costi = await leggiMappa("ci_costi_diretti", "id, data", idCosti);
   const quote = await leggiMappa("ci_cespiti_ammortamento", "id, anno", idQuote);
+  const schede = await leggiMappa("animali", "id, nascita, data_ingresso, data_uscita", idAnimali);
+
+  // Versione 308 (Report Costi rivisto con il Dott. Bizzarri il 26/10/2026): non tutto ciò che cambia entra nei costi.
+  // - Le fatture di VENDITA non entrano nel Report Costi: contano solo per il Report Riproduttori (ricavo dei capi venduti).
+  // - I parametri non entrano nel Report Costi: i prezzi di riforma contano solo per il Report Riproduttori; gli altri
+  //   (indirizzi mail, ecc.) per nessuno dei due.
+  // - Un animale cambia i costi solo degli anni in cui era presente (dalla nascita o dall'ingresso all'uscita).
+  const tipoFattura = m => {
+    const v = { ...(m.prima || {}), ...(m.dopo || {}) };
+    if (m.tabella === "ci_fatture") return v.tipo || fatture.get(Number(m.riga_id))?.tipo || null;
+    if (m.tabella === "ci_articoli_fattura") return fatture.get(Number(v.fattura_id || righe.get(Number(m.riga_id))?.fattura_id))?.tipo || null;
+    return null;
+  };
+  const eVendita = m => tipoFattura(m) === "ATTIVA";
+  const eParametroRiforma = m => /^prezzo_riforma/.test(String(m.riga_id || ""));
+  const anniAnimale = m => {
+    const v = { ...(schede.get(Number(m.riga_id)) || {}), ...(m.prima || {}), ...(m.dopo || {}) };
+    const da = annoDi(v.data_ingresso || v.nascita), a = annoDi(v.data_uscita) || new Date().getFullYear(); // presenza: dall'ingresso (o dalla nascita) all'uscita
+    if (!da) return null;
+    const l = []; for (let x = da; x <= a; x++) l.push(x); return l;
+  };
 
   function annoModifica(m) {
     const v = { ...(m.prima || {}), ...(m.dopo || {}) };
@@ -70,7 +92,8 @@ export async function statoCalcoli() {
     if (m.tabella === "ci_costi_diretti") return annoDi(v.data || costi.get(id)?.data);
     if (m.tabella === "ci_cespiti_ammortamento") return v.anno ?? quote.get(id)?.anno ?? null;
     if (m.tabella === "ci_ripartizione_lavoro") return v.anno ?? null;
-    return null; // animali, lotti, cespiti, parametri: possono cambiare i costi di più anni
+    if (m.tabella === "animali") return anniAnimale(m);
+    return null; // lotti, cespiti: possono cambiare i costi di più anni
   }
 
   const risultato = anni.map(anno => {
@@ -78,8 +101,9 @@ export async function statoCalcoli() {
     if (ms(salvatoAt) < ms(INIZIO_REGISTRO)) return { anno, salvatoAt, stato: "sconosciuto", dettaglio: [] };
     const conta = {};
     modifiche.filter(m => ms(m.quando) > ms(salvatoAt)).forEach(m => {
+      if (eVendita(m) || m.tabella === "ci_parametri") return; // non entrano nel Report Costi (versione 308)
       const a = annoModifica(m);
-      if (a === null || a === anno) conta[m.tabella] = (conta[m.tabella] || 0) + 1;
+      if (a === null || a === anno || (Array.isArray(a) && a.includes(anno))) conta[m.tabella] = (conta[m.tabella] || 0) + 1;
     });
     const dettaglio = Object.entries(conta).map(([t, n]) => `${n} ${TABELLE[t]}`);
     return { anno, salvatoAt, stato: dettaglio.length ? "da_rifare" : "aggiornato", dettaglio };
@@ -87,10 +111,14 @@ export async function statoCalcoli() {
 
   // Report Riproduttori: va rifatto se un anno è stato salvato dopo l'ultima elaborazione (o se non c'è)
   const ultimoSalvataggio = anni.length ? [...salvati.values()].sort((a, b) => ms(a) - ms(b)).slice(-1)[0] : null;
-  const riproduttori = {
-    elaboratoAt: riproduttoriAt,
-    daRifare: !!ultimoSalvataggio && (!riproduttoriAt || ms(riproduttoriAt) < ms(ultimoSalvataggio)),
-  };
+  // Versione 308: va rifatto anche se dopo l'ultima elaborazione sono cambiate fatture di vendita o prezzi di riforma
+  const dopoRiproduttori = riproduttoriAt ? modifiche.filter(m => ms(m.quando) > ms(riproduttoriAt)) : [];
+  const vendite = dopoRiproduttori.filter(eVendita).length, prezziRiforma = dopoRiproduttori.filter(eParametroRiforma).length;
+  const motivi = [];
+  if (!!ultimoSalvataggio && (!riproduttoriAt || ms(riproduttoriAt) < ms(ultimoSalvataggio))) motivi.push("costi degli anni salvati dopo");
+  if (vendite) motivi.push(`${vendite} cambiamenti nelle fatture di vendita`);
+  if (prezziRiforma) motivi.push(`${prezziRiforma} prezzi di riforma cambiati`);
+  const riproduttori = { elaboratoAt: riproduttoriAt, daRifare: motivi.length > 0, motivi };
   return { anni: risultato, riproduttori };
 }
 

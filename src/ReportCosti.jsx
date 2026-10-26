@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, Fragment } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { calcolaReportUba } from "./motoreUba";
@@ -6,7 +6,10 @@ import { numerizzaCampi, round2, formattaEuro, formattaNumero, fetchAllPages, le
 import { esportaExcel, numeroExcel } from "./esportaExcel";
 import { caricaRipartizioneLavoro, applicaRipartizioneLavoro } from "./ripartizioneLavoro";
 import { confermaRicalcoloConAnomalie } from "./controlliRegistri";
-import { chiaveQuotaCespite, eLavorazioneCarni, riepilogoCompetenza } from "./calcoloReportCosti";
+import { chiaveQuotaCespite, eLavorazioneCarni, riepilogoCompetenza, calcolaDatiPerAreaCentro } from "./calcoloReportCosti";
+import { caricaDatiBase } from "./calcoloBreakEven";
+import { calcolaStalla, prezziDaFatture } from "./calcoloStalla";
+import { PARAMETRI_PREZZO_RIFORMA, PREZZO_RIFORMA_PREDEFINITO } from "./ReportRiproduttori";
 import { leggiFattureNeiCosti } from "./documentiCompetenza";
 
 // Mappa tra il nome specie usato nel motore UBA (minuscolo) e quello usato come
@@ -38,7 +41,17 @@ export default function ReportCosti({ anno }) {
   const [salvato, setSalvato] = useState(false);
   // Versione 236: se si cambia l'anno, il calcolo fatto per l'anno precedente sparisce dallo schermo,
   // così non si può salvare il calcolo di un anno sopra un altro anno.
-  useEffect(() => { setRisultato(null); }, [anno]);
+  useEffect(() => { setRisultato(null); setDettaglio(null); setStalla(null); }, [anno]);
+  // Versione 308 (decisioni del Dott. Bizzarri del 26/10/2026, ore 18:54–19:14): una sola pagina per l'anno.
+  // Il calcolo e il salvataggio non cambiano; si aggiungono la composizione per Area e Centro di Costo (stesso calcolo
+  // della vecchia pagina «Per Area e Centro di Costo») e gli animali in stalla con il loro costo e il loro valore stimato.
+  const [dettaglio, setDettaglio] = useState(null);
+  const [stalla, setStalla] = useState(null);
+  const [prezzi, setPrezzi] = useState({});
+  const [erroreExtra, setErroreExtra] = useState("");
+  const [espansi, setEspansi] = useState({});
+  const [inUba, setInUba] = useState(false);
+  const [mostraCalcolo, setMostraCalcolo] = useState(false);
 
   async function calcola() {
     setCalcolando(true);
@@ -223,6 +236,25 @@ export default function ReportCosti({ anno }) {
       });
 
       setRisultato({ anno, costiOrdinari, costoAmmortamenti, costiTotali, valoreRiformaTotale, tasso, perSpecie, costoPerAnimale, righeUba, costiAltreSpecie, competenza });
+      // Versione 308: composizione per Area e Centro di Costo, animali in stalla e prezzi proposti (un errore qui non ferma il calcolo)
+      setErroreExtra("");
+      try {
+        const [dati, base, daFatture, { data: par }] = await Promise.all([
+          calcolaDatiPerAreaCentro(anno), caricaDatiBase(), prezziDaFatture(anno),
+          supabase.from("ci_parametri").select("chiave, valore").in("chiave", Object.values(PARAMETRI_PREZZO_RIFORMA)),
+        ]);
+        setDettaglio(dati);
+        setStalla({ ...(await calcolaStalla(base, anno)), daFatture });
+        const riforma = Object.fromEntries((par || []).map(r => [r.chiave, r.valore]));
+        setPrezzi(p => {
+          const n = { ...p };
+          for (const sp of ["bovino", "suino", "ovino"]) {
+            if (n[`m_${sp}`] === undefined) n[`m_${sp}`] = daFatture[sp] ? String(daFatture[sp].prezzo).replace(".", ",") : "";
+            if (n[`r_${sp}`] === undefined) n[`r_${sp}`] = String(riforma[PARAMETRI_PREZZO_RIFORMA[sp]] ?? PREZZO_RIFORMA_PREDEFINITO[sp]).replace(".", ",");
+          }
+          return n;
+        });
+      } catch (e) { setErroreExtra(e.message); }
     } catch (err) {
       alert(`⚠️ Errore nel calcolo:\n\n${err.message}`);
     }
@@ -291,145 +323,281 @@ export default function ReportCosti({ anno }) {
     setSalvando(false);
   }
 
-  return (
-    <div style={{ padding: 20, maxWidth: 1000, margin: "0 auto" }}>
-      <p style={{ color: C.muted, marginTop: 0, marginBottom: 20 }}>
-        Tasso €/UBA-giorno (formula aggressiva: i costi degli animali improduttivi si ridistribuiscono sui produttivi/riproduttori) e allocazione per specie/animale.
-      </p>
+  // ── Versione 308: presentazione in una sola pagina, in parole semplici ──────────────────────
+  const NOMI = { bovino: "Bovini", suino: "Suini", ovino: "Ovini" };
+  const SPECIE_ORDINE = ["bovino", "suino", "ovino"];
+  const giorniAnno = a => ((a % 4 === 0 && a % 100 !== 0) || a % 400 === 0 ? 366 : 365);
+  // giorni dell'anno trascorsi (per l'anno in corso fino a oggi): servono a dire quante UBA in media c'erano
+  const giorniPeriodo = a => {
+    const oggi = new Date();
+    if (a < oggi.getFullYear()) return giorniAnno(a);
+    return Math.max(1, Math.round((Date.UTC(oggi.getFullYear(), oggi.getMonth(), oggi.getDate()) - Date.UTC(a, 0, 1)) / 86400000) + 1);
+  };
+  const num = v => { const n = parseFloat(String(v ?? "").replace(/\./g, "").replace(",", ".")); return Number.isFinite(n) ? n : null; };
+  const th = { padding: "6px 8px", textAlign: "right", color: C.muted, fontSize: 12, fontWeight: 700 };
+  const td = { padding: "6px 8px", textAlign: "right", fontSize: 13 };
+  const scheda = { background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 16 };
+  const titolo = { fontSize: 15, fontWeight: 800, color: C.primary, marginBottom: 4 };
+  const spiega = { fontSize: 12.5, color: C.muted, marginTop: 0, marginBottom: 10, lineHeight: 1.5 };
 
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 20 }}>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <button onClick={calcola} disabled={calcolando}
-            style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-            {calcolando ? "Calcolo..." : "📊 Calcola"}
-          </button>
-          {/* Versione 279 (decisione del Dott. Bizzarri del 23/10/2026): Salva accanto a Calcola */}
-          <button onClick={salvaRisultato} disabled={!risultato || salvando || salvato}
-            style={{ background: !risultato ? "#bbb" : salvato ? C.green : "#B86E00", color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: risultato && !salvato ? "pointer" : "default" }}>
-            {salvando ? "Salvataggio..." : salvato ? `✓ Salvato l'anno ${risultato?.anno}` : risultato ? `💾 Salva il calcolo del ${risultato.anno}` : "💾 Salva (prima calcolare)"}
-          </button>
-          {risultato && !salvato && <span style={{ fontSize: 12, fontWeight: 700, color: "#B86E00" }}>Calcolo non ancora salvato: senza salvare non entra nei costi</span>}
-        </div>
-        <div style={{ fontSize: 11, color: C.muted, marginTop: 10 }}>
-          ⚠️ Semplificazione attuale: il valore di riforma (V(t)) è impostato a 0 — il meccanismo di stima del valore di realizzo dei riproduttori non è ancora costruito (sezione 15 del documento di riferimento).
-        </div>
+  // Sezione 2: le righe per Area con i centesimi quadrati sul risultato della sezione 1 (solo presentazione:
+  // le due tabelle arrotondano in punti diversi e potevano differire di un centesimo)
+  const righeAree = (() => {
+    if (!risultato || !dettaglio) return null;
+    const gruppi = dettaglio.gruppi.map(g => ({ ...g, valori: Object.fromEntries(SPECIE_ORDINE.map(sp => [sp, g.riga.perSpecie[sp].costoAllocato])) }));
+    for (const sp of SPECIE_ORDINE) {
+      const atteso = risultato.perSpecie.find(r => r.specie === sp)?.costoAllocatoTotale || 0;
+      const somma = round2(gruppi.reduce((t, g) => t + g.valori[sp], 0));
+      const diff = round2(atteso - somma);
+      if (diff !== 0 && Math.abs(diff) <= 0.05 && gruppi.length) {
+        const g = gruppi.reduce((m, x) => (x.valori[sp] > m.valori[sp] ? x : m), gruppi[0]);
+        g.valori[sp] = round2(g.valori[sp] + diff);
+      }
+    }
+    return gruppi.map(g => ({ ...g, totale: round2(SPECIE_ORDINE.reduce((t, sp) => t + g.valori[sp], 0)) })).filter(g => g.totale !== 0);
+  })();
+  const ubaSpecie = sp => risultato?.perSpecie.find(r => r.specie === sp)?.ubaGiorniSpProduttivi || 0;
+  const ubaTotale = () => SPECIE_ORDINE.reduce((t, sp) => t + ubaSpecie(sp), 0);
+  // un importo, in euro o in euro per UBA all'anno
+  const mostra = (valore, uba) => (inUba ? (uba > 0 ? formattaEuro(valore / uba * 365, 2) : "—") : formattaEuro(valore));
+
+  return (
+    <div style={{ padding: 20, maxWidth: 1100, margin: "0 auto" }}>
+      <div style={{ ...scheda, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <button onClick={calcola} disabled={calcolando}
+          style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+          {calcolando ? "Calcolo..." : `📊 Calcola il ${anno}`}
+        </button>
+        {/* Versione 279 (decisione del Dott. Bizzarri del 23/10/2026): Salva accanto a Calcola */}
+        <button onClick={salvaRisultato} disabled={!risultato || salvando || salvato}
+          style={{ background: !risultato ? "#bbb" : salvato ? C.green : "#B86E00", color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: risultato && !salvato ? "pointer" : "default" }}>
+          {salvando ? "Salvataggio..." : salvato ? `✓ Salvato l'anno ${risultato?.anno}` : risultato ? `💾 Salva il calcolo del ${risultato.anno}` : "💾 Salva (prima calcolare)"}
+        </button>
+        {risultato && !salvato && <span style={{ fontSize: 12, fontWeight: 700, color: "#B86E00" }}>Calcolo non ancora salvato: senza salvare non entra nei costi dei capi</span>}
+        {risultato && <button onClick={esporta} style={{ marginLeft: "auto", background: C.green, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>📥 Esporta Excel</button>}
       </div>
+
+      {!risultato && !calcolando && <p style={spiega}>Scegliere l'anno e premere «Calcola»: il programma divide tutti i costi dell'anno tra bovini, suini e ovini e mostra quanto costa ogni specie, di cosa è fatto il costo, che cosa resta fuori e quanto valgono gli animali in stalla.</p>}
 
       {risultato && (
         <>
-          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 16 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: C.muted, marginBottom: 10 }}>RIEPILOGO AZIENDALE — ANNO {risultato.anno}</div>
-            <Riga label="Costi ordinari (Fisso + Variabile)" valore={`${formattaEuro(risultato.costiOrdinari)}`} />
-            <Riga label="Quote di ammortamento" valore={`${formattaEuro(risultato.costoAmmortamenti)}`} />
-            <Riga label="Costi totali (C(t))" valore={`${formattaEuro(risultato.costiTotali)}`} bold />
-            <Riga label="UBA-giorni produttivi/riproduttori" valore={formattaNumero(risultato.tasso.ubaGiorniProduttivi, 1)} />
-            <Riga label="UBA-giorni improduttivi (esclusi dal divisore)" valore={formattaNumero(risultato.tasso.ubaGiorniImproduttivi, 1)} color={C.red} />
-            <Riga label="Tasso semplice (se si dividesse su tutti)" valore={`${formattaEuro(risultato.tasso.tassoSemplice, 4)}/UBA-gg`} color={C.muted} />
-            <Riga label="Perdita spalmata sui produttivi" valore={`${formattaEuro(risultato.tasso.perditaSpalmata)}`} color={C.red} />
-            <Riga label="Tasso RETTIFICATO (quello usato)" valore={`${formattaEuro(risultato.tasso.tassoRettificato, 4)}/UBA-gg`} bold color={C.primary} />
-          </div>
-
-          {risultato.competenza && (risultato.competenza.righeDaRicevere > 0 || risultato.competenza.righeDaEmettere > 0) && (
-            <div style={{ background: "#FFF7E6", border: `1px solid ${C.orange || "#E8A33D"}`, borderRadius: 12, padding: 16, marginBottom: 16, fontSize: 13 }}>
-              <div style={{ fontWeight: 700, marginBottom: 6 }}>🧾 Nei costi ordinari dell'anno {risultato.anno} sono comprese fatture da ricevere e da emettere (rapporti con Muratella)</div>
-              {risultato.competenza.righeDaRicevere > 0 && <Riga label={`Fatture da ricevere da Muratella (${risultato.competenza.righeDaRicevere} righe): costi dei campi di Podere pagati da Muratella`} valore={formattaEuro(risultato.competenza.daRicevere)} />}
-              {risultato.competenza.righeDaEmettere > 0 && <Riga label="Fattura da emettere a Muratella: orzo di Podere conferito, in meno nei Mangimi (rientra come farina comprata dalla Cooperativa Ceri)" valore={formattaEuro(risultato.competenza.daEmettere)} />}
-              <div style={{ color: C.muted, marginTop: 6 }}>
-                Decisione del 08/10/2026: i costi dei campi di Podere stanno in Podere, anno per anno, anche se li ha pagati Muratella; l'orzo venduto e ricomprato non si conta due volte.
-                Elenco riga per riga, stato delle fatture vere ed esportazione per il commercialista: cartella «Emissione Fatture di Vendita» → «Fatture da Ricevere e da Emettere».
-              </div>
-            </div>
-          )}
-
-          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 16 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: C.muted, marginBottom: 10 }}>ALLOCAZIONE PER SPECIE</div>
-            <p style={{ fontSize: 12, color: C.muted, marginTop: 0, marginBottom: 10 }}>
-              I costi diretti (Destinazione/Imputazione = quella specie) restano dentro la specie; i costi Generali si ripartiscono in proporzione agli UBA-giorni produttivi; i costi intestati a due specie (es. «Bovini e Ovini») si ripartiscono solo tra quelle due, con lo stesso criterio. Costi diretti + quote = totale allocato.
+          {/* 1. Il risultato */}
+          <div style={scheda}>
+            <div style={titolo}>1. Quanto è costato l'allevamento nel {risultato.anno}</div>
+            <p style={spiega}>
+              Il costo di ogni specie e quanto costa in un anno mantenere un'UBA (un capo adulto di riferimento: una vacca vale 1, gli altri capi in proporzione alla taglia).
+              Gli euro per UBA all'anno sono gli euro per UBA al giorno moltiplicati per 365, uguali in tutti gli anni per poterli confrontare. Le «UBA in media» sono gli animali presenti nell'anno, contati in UBA{risultato.anno >= new Date().getFullYear() ? `, fino a oggi (${giorniPeriodo(risultato.anno)} giorni)` : ""}.
             </p>
-            <table style={{ width: "100%", fontSize: 13 }}>
-              <thead>
-                <tr style={{ color: C.muted, textAlign: "left" }}>
-                  <th style={{ padding: "4px 8px" }}>Specie</th>
-                  <th style={{ padding: "4px 8px", textAlign: "right" }}>% sul totale UBA-giorni</th>
-                  <th style={{ padding: "4px 8px", textAlign: "right" }}>Costi diretti</th>
-                  <th style={{ padding: "4px 8px", textAlign: "right" }}>Quota Generali</th>
-                  {QUOTE_COPPIE.filter(q => risultato.perSpecie.some(r => r[q.campo])).map(q => <th key={q.campo} style={{ padding: "4px 8px", textAlign: "right" }}>{q.etichetta}</th>)}
-                  <th style={{ padding: "4px 8px", textAlign: "right" }}>Totale allocato</th>
-                  <th style={{ padding: "4px 8px", textAlign: "right" }}>Incidenza €/UBA-gg</th>
-                </tr>
-              </thead>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr>
+                <th style={{ ...th, textAlign: "left" }}>Specie</th><th style={th}>Costo dell'anno</th><th style={th}>Quota del costo totale</th>
+                <th style={th}>UBA in media</th><th style={th}>Euro per UBA all'anno</th><th style={th}>Euro per UBA al giorno</th>
+              </tr></thead>
               <tbody>
                 {risultato.perSpecie.map(r => (
                   <tr key={r.specie} style={{ borderTop: `1px solid ${C.border}` }}>
-                    <td style={{ padding: "6px 8px", textTransform: "capitalize" }}>{r.specie}</td>
-                    <td style={{ padding: "6px 8px", textAlign: "right" }}>{formattaNumero(r.percentualeSulTotale, 1)}%</td>
-                    <td style={{ padding: "6px 8px", textAlign: "right" }}>{formattaEuro(r.costoDirettoSpecie)}</td>
-                    <td style={{ padding: "6px 8px", textAlign: "right" }}>{formattaEuro(r.quotaGeneraliSpecie)}</td>
-                    {QUOTE_COPPIE.filter(q => risultato.perSpecie.some(x => x[q.campo])).map(q => <td key={q.campo} style={{ padding: "6px 8px", textAlign: "right" }}>{formattaEuro(r[q.campo])}</td>)}
-                    <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700 }}>{formattaEuro(r.costoAllocatoTotale)}</td>
-                    <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700, color: C.primary }}>{formattaEuro(r.incidenzaUbaGiorno, 4)}</td>
+                    <td style={{ ...td, textAlign: "left", fontWeight: 700 }}>{NOMI[r.specie]}</td>
+                    <td style={{ ...td, fontWeight: 700 }}>{formattaEuro(r.costoAllocatoTotale)}</td>
+                    <td style={td}>{formattaNumero(r.costoAllocatoTotale / risultato.perSpecie.reduce((t, x) => t + x.costoAllocatoTotale, 0) * 100, 1)}%</td>
+                    <td style={td}>{formattaNumero(r.ubaGiorniSpProduttivi / giorniPeriodo(risultato.anno), 1)}</td>
+                    <td style={{ ...td, fontWeight: 800, color: C.primary }}>{formattaEuro(r.incidenzaUbaGiorno * 365, 2)}</td>
+                    <td style={td}>{formattaEuro(r.incidenzaUbaGiorno, 4)}</td>
                   </tr>
                 ))}
-                <tr style={{ borderTop: `2px solid ${C.border}`, fontWeight: 700, background: C.bg }}>
-                  <td style={{ padding: "6px 8px" }}>Totale</td>
-                  <td style={{ padding: "6px 8px", textAlign: "right" }}>{formattaNumero(risultato.perSpecie.reduce((s, r) => s + r.percentualeSulTotale, 0), 1)}%</td>
-                  <td style={{ padding: "6px 8px", textAlign: "right" }}>{formattaEuro(risultato.perSpecie.reduce((s, r) => s + r.costoDirettoSpecie, 0))}</td>
-                  <td style={{ padding: "6px 8px", textAlign: "right" }}>{formattaEuro(risultato.perSpecie.reduce((s, r) => s + r.quotaGeneraliSpecie, 0))}</td>
-                  {QUOTE_COPPIE.filter(q => risultato.perSpecie.some(r => r[q.campo])).map(q => <td key={q.campo} style={{ padding: "6px 8px", textAlign: "right" }}>{formattaEuro(risultato.perSpecie.reduce((t, r) => t + (r[q.campo] || 0), 0))}</td>)}
-                  <td style={{ padding: "6px 8px", textAlign: "right" }}>{formattaEuro(risultato.perSpecie.reduce((s, r) => s + r.costoAllocatoTotale, 0))}</td>
-                  <td style={{ padding: "6px 8px", textAlign: "right", color: C.muted, fontWeight: 400, fontSize: 11 }}>— (denominatori diversi per specie)</td>
-                </tr>
+                {(() => { const tot = risultato.perSpecie.reduce((t, x) => t + x.costoAllocatoTotale, 0); const uba = ubaTotale(); return (
+                  <tr style={{ borderTop: `2px solid ${C.border}`, background: C.bg }}>
+                    <td style={{ ...td, textAlign: "left", fontWeight: 800 }}>Tutto l'allevamento</td>
+                    <td style={{ ...td, fontWeight: 800 }}>{formattaEuro(tot)}</td><td style={td}>100,0%</td>
+                    <td style={td}>{formattaNumero(uba / giorniPeriodo(risultato.anno), 1)}</td>
+                    <td style={{ ...td, fontWeight: 800 }}>{uba > 0 ? formattaEuro(tot / uba * 365, 2) : "—"}</td>
+                    <td style={td}>{uba > 0 ? formattaEuro(tot / uba, 4) : "—"}</td>
+                  </tr>); })()}
               </tbody>
             </table>
           </div>
 
-          {(risultato.costiAltreSpecie["Macello e lavorazione delle carni"] > 0 || risultato.costiAltreSpecie.Pollame > 0 || risultato.costiAltreSpecie.Cavalli > 0 || risultato.costiAltreSpecie.Orto > 0 || risultato.costiAltreSpecie["Animali non d'allevamento (non specificato)"] > 0 || risultato.costiAltreSpecie["Cespiti con imputazione da correggere"] > 0) && (
-            <div style={{ background: "#FDECEC", border: `1.5px solid ${C.red}`, borderRadius: 12, padding: 16, marginBottom: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: C.red, marginBottom: 8 }}>⚠️ ESCLUSI DAL COSTO DEGLI ANIMALI: MACELLO E LAVORAZIONE DELLE CARNI, ORTO, CAVALLI, POLLAME, ANIMALI NON D'ALLEVAMENTO</div>
-              <table style={{ width: "100%", fontSize: 13 }}>
-                <thead>
-                  <tr style={{ color: C.muted, textAlign: "left" }}>
-                    <th style={{ padding: "4px 8px" }}></th>
-                    <th style={{ padding: "4px 8px", textAlign: "right" }}>Costo diretto</th>
-                    <th style={{ padding: "4px 8px", textAlign: "right" }}>Incidenza su UBA-giorni allevamento</th>
-                  </tr>
-                </thead>
+          {/* 2. Di cosa è fatto */}
+          <div style={scheda}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
+              <div style={titolo}>2. Di cosa è fatto il costo</div>
+              <div style={{ display: "flex", gap: 4 }}>
+                {[[false, "In euro"], [true, "In euro per UBA all'anno"]].map(([v, l]) => (
+                  <button key={l} onClick={() => setInUba(v)} style={{ fontSize: 12, fontWeight: 700, padding: "5px 10px", borderRadius: 6, cursor: "pointer", border: `1.5px solid ${C.primary}`, background: inUba === v ? C.primary : "#fff", color: inUba === v ? "#fff" : C.primary }}>{l}</button>
+                ))}
+              </div>
+            </div>
+            <p style={spiega}>Una riga per ogni Area di spesa del Piano dei Conti. Cliccando un'Area si vedono i suoi Centri di Costo (per gli ammortamenti: le categorie dei cespiti).</p>
+            {!righeAree ? <p style={spiega}>{erroreExtra ? `⚠️ ${erroreExtra}` : "Caricamento della composizione…"}</p> : (
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead><tr>
+                  <th style={{ ...th, textAlign: "left" }}>Area / Centro di Costo</th>
+                  {SPECIE_ORDINE.map(sp => <th key={sp} style={th}>{NOMI[sp]}</th>)}
+                  <th style={th}>Tutto l'allevamento</th><th style={th}>Quota</th>
+                </tr></thead>
                 <tbody>
-                  {["Macello e lavorazione delle carni", "Pollame", "Cavalli", "Orto", "Animali non d'allevamento (non specificato)", "Cespiti con imputazione da correggere"].map(chiave => risultato.costiAltreSpecie[chiave] > 0 && (
-                    <tr key={chiave} style={{ borderTop: `1px solid ${C.red}55` }}>
-                      <td style={{ padding: "6px 8px", fontWeight: 700, color: C.red }}>{chiave}</td>
-                      <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700, color: C.red }}>{formattaEuro(risultato.costiAltreSpecie[chiave])}</td>
-                      <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700, color: C.red }}>
-                        {risultato.tasso.ubaGiorniProduttivi > 0 ? formattaEuro(risultato.costiAltreSpecie[chiave] / risultato.tasso.ubaGiorniProduttivi, 4) : "—"}/UBA-gg
-                      </td>
+                  {(() => { const totAll = righeAree.reduce((t, g) => t + g.totale, 0); return righeAree.map(g => (
+                    <Fragment key={g.area}>
+                      <tr onClick={() => setEspansi(e => ({ ...e, [g.area]: !e[g.area] }))} style={{ borderTop: `1px solid ${C.border}`, cursor: "pointer" }}>
+                        <td style={{ ...td, textAlign: "left", fontWeight: 700 }}>{espansi[g.area] ? "▼" : "▶"} {g.area}</td>
+                        {SPECIE_ORDINE.map(sp => <td key={sp} style={td}>{mostra(g.valori[sp], ubaSpecie(sp))}</td>)}
+                        <td style={{ ...td, fontWeight: 700 }}>{mostra(g.totale, ubaTotale())}</td>
+                        <td style={td}>{formattaNumero(g.totale / totAll * 100, 1)}%</td>
+                      </tr>
+                      {espansi[g.area] && g.sottoRighe.map(sr => (
+                        <tr key={sr.etichetta} style={{ borderTop: `1px solid ${C.border}`, background: "#FAFAF8" }}>
+                          <td style={{ ...td, textAlign: "left", paddingLeft: 26, color: C.muted }}>{sr.etichetta}</td>
+                          {SPECIE_ORDINE.map(sp => <td key={sp} style={{ ...td, color: C.muted }}>{mostra(sr.perSpecie[sp].costoAllocato, ubaSpecie(sp))}</td>)}
+                          <td style={{ ...td, color: C.muted }}>{mostra(SPECIE_ORDINE.reduce((t, sp) => t + sr.perSpecie[sp].costoAllocato, 0), ubaTotale())}</td>
+                          <td style={{ ...td, color: C.muted }}>{formattaNumero(SPECIE_ORDINE.reduce((t, sp) => t + sr.perSpecie[sp].costoAllocato, 0) / totAll * 100, 1)}%</td>
+                        </tr>
+                      ))}
+                    </Fragment>
+                  )).concat(
+                    <tr key="totale" style={{ borderTop: `2px solid ${C.border}`, background: C.bg }}>
+                      <td style={{ ...td, textAlign: "left", fontWeight: 800 }}>Totale</td>
+                      {SPECIE_ORDINE.map(sp => <td key={sp} style={{ ...td, fontWeight: 800 }}>{mostra(righeAree.reduce((t, g) => t + g.valori[sp], 0), ubaSpecie(sp))}</td>)}
+                      <td style={{ ...td, fontWeight: 800 }}>{mostra(totAll, ubaTotale())}</td><td style={td}>100,0%</td>
+                    </tr>); })()}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* 3. Cosa resta fuori */}
+          {dettaglio && dettaglio.rigaRossa.length > 0 && (
+            <div style={{ ...scheda, background: "#FDECEC", borderColor: C.red }}>
+              <div style={{ ...titolo, color: C.red }}>3. Cosa resta fuori dal costo degli animali</div>
+              <p style={{ ...spiega, color: C.text }}>Spese dell'azienda che non riguardano bovini, suini e ovini: si registrano, ma non si dividono su nessuna specie (decisioni del 07/10/2026).</p>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <tbody>
+                  {dettaglio.rigaRossa.map(r => (
+                    <tr key={r.label} style={{ borderTop: `1px solid ${C.red}33` }}>
+                      <td style={{ ...td, textAlign: "left", color: C.red, fontWeight: 700 }}>{r.label}</td>
+                      <td style={{ ...td, color: C.red, fontWeight: 700 }}>{formattaEuro(r.valore)}</td>
                     </tr>
                   ))}
-                  <tr style={{ borderTop: `2px solid ${C.red}`, fontWeight: 700, background: "#FDECEC" }}>
-                    <td style={{ padding: "6px 8px", color: C.red }}>Totale</td>
-                    <td style={{ padding: "6px 8px", textAlign: "right", color: C.red }}>
-                      {formattaEuro(["Macello e lavorazione delle carni", "Pollame", "Cavalli", "Orto", "Animali non d'allevamento (non specificato)", "Cespiti con imputazione da correggere"].reduce((s, k) => s + (risultato.costiAltreSpecie[k] || 0), 0))}
-                    </td>
-                    <td style={{ padding: "6px 8px", textAlign: "right", color: C.red }}>
-                      {risultato.tasso.ubaGiorniProduttivi > 0
-                        ? formattaEuro(["Macello e lavorazione delle carni", "Pollame", "Cavalli", "Orto", "Animali non d'allevamento (non specificato)", "Cespiti con imputazione da correggere"].reduce((s, k) => s + (risultato.costiAltreSpecie[k] || 0), 0) / risultato.tasso.ubaGiorniProduttivi, 4)
-                        : "—"}/UBA-gg
-                    </td>
+                  <tr style={{ borderTop: `2px solid ${C.red}` }}>
+                    <td style={{ ...td, textAlign: "left", color: C.red, fontWeight: 800 }}>Totale</td>
+                    <td style={{ ...td, color: C.red, fontWeight: 800 }}>{formattaEuro(dettaglio.rigaRossa.reduce((t, r) => t + r.valore, 0))}</td>
                   </tr>
                 </tbody>
               </table>
-              <div style={{ fontSize: 11, color: C.text, marginTop: 8 }}>
-                Esclusi dai costi Generali — non si spalmano su nessuna specie d'allevamento. L'incidenza è calcolata sul totale degli UBA-giorni produttivi di Bovini+Suini+Ovini, come dato di confronto (non un costo effettivamente allocato).
-                {risultato.costiAltreSpecie["Cespiti con imputazione da correggere"] > 0 && " La riga «Cespiti con imputazione da correggere» raccoglie le quote di cespiti con un'imputazione che il programma non riconosce: correggerla nella pagina Cespiti."}
-                {risultato.costiAltreSpecie["Animali non d'allevamento (non specificato)"] > 0 && " La riga \"non specificato\" ha Area=\"Animali non d'allevamento\" ma nessuna Destinazione precisa (Pollame o Cavalli) — se vuoi, torna su Carica Fatture e precisala."}
+            </div>
+          )}
+
+          {/* 4. Muratella */}
+          {risultato.competenza && (risultato.competenza.righeDaRicevere > 0 || risultato.competenza.righeDaEmettere > 0) && (
+            <div style={{ ...scheda, background: "#FFF7E6", borderColor: "#E8A33D", fontSize: 13 }}>
+              <div style={titolo}>4. Rapporti con Muratella compresi nel costo del {risultato.anno}</div>
+              {risultato.competenza.righeDaRicevere > 0 && <Riga label={`Fatture da ricevere da Muratella (${risultato.competenza.righeDaRicevere} righe): costi dei campi di Podere pagati da Muratella`} valore={formattaEuro(risultato.competenza.daRicevere)} />}
+              {risultato.competenza.righeDaEmettere > 0 && <Riga label="Fattura da emettere a Muratella: orzo di Podere conferito, in meno nei Mangimi (rientra come farina comprata dalla Cooperativa Ceri)" valore={formattaEuro(risultato.competenza.daEmettere)} />}
+              <div style={{ color: C.muted, marginTop: 6 }}>
+                Decisione del 08/10/2026: i costi dei campi di Podere stanno in Podere, anno per anno, anche se li ha pagati Muratella; l'orzo venduto e ricomprato non si conta due volte.
+                Elenco riga per riga: cartella «Emissione Fatture di Vendita» → «Fatture da Ricevere e da Emettere».
               </div>
             </div>
           )}
 
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={esporta}
-              style={{ background: C.green, color: "#fff", border: "none", borderRadius: 10, padding: "12px 24px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
-              📥 Esporta Excel
-            </button>
+          {/* 5. Animali in stalla */}
+          <div style={scheda}>
+            <div style={titolo}>5. Animali in stalla {stalla ? `al ${stalla.data.split("-").reverse().join("/")}` : ""}: quanto sono costati e quanto valgono</div>
+            <p style={spiega}>
+              Il costo che gli animali ancora presenti hanno accumulato (acquisto o nascita, più il mantenimento di ogni anno salvato nel Report Costi) e quanto
+              varrebbero venduti come carcassa. <b>Il peso della carcassa è una stima</b>: nel database non ci sono ancora pesate, quindi si ricava dall'età,
+              con i pesi reali dei capi macellati. Il prezzo al kg è proposto dalle fatture di vendita e si può cambiare a mano.
+              I riproduttori sono a parte: il loro mantenimento va ai figli come costo di nascita, quindi per loro si mostra solo il costo d'ingresso.
+            </p>
+            {!stalla ? <p style={spiega}>{erroreExtra ? `⚠️ ${erroreExtra}` : "Caricamento degli animali in stalla…"}</p> : (
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead><tr>
+                  <th style={{ ...th, textAlign: "left" }}>Specie</th><th style={th}>Capi</th><th style={th}>Costo negli anni precedenti</th><th style={th}>Costo dell'anno</th>
+                  <th style={th}>Costo accumulato</th><th style={th}>Carcassa stimata</th><th style={th}>Prezzo al kg di carcassa</th><th style={th}>Valore stimato</th><th style={th}>Valore meno costo</th>
+                </tr></thead>
+                <tbody>
+                  {SPECIE_ORDINE.flatMap(sp => {
+                    const d = stalla.perSpecie[sp]; if (!d) return [];
+                    const pm = num(prezzi[`m_${sp}`]), pr = num(prezzi[`r_${sp}`]);
+                    const vI = pm !== null && d.ingrasso.kg > 0 ? round2(d.ingrasso.kg * pm) : null;
+                    const vR = pr !== null && d.riproduttori.kg > 0 ? round2(d.riproduttori.kg * pr) : null;
+                    const casella = k => <input value={prezzi[k] ?? ""} onChange={e => setPrezzi(p => ({ ...p, [k]: e.target.value }))} inputMode="decimal"
+                      style={{ width: 70, textAlign: "right", padding: "3px 6px", border: `1.5px solid ${C.blue}`, borderRadius: 5, fontSize: 13 }} />;
+                    const diff = (v, c) => (v === null ? "—" : <span style={{ color: v - c < 0 ? C.red : C.green, fontWeight: 700 }}>{formattaEuro(round2(v - c))}</span>);
+                    return [
+                      <tr key={sp + "i"} style={{ borderTop: `1px solid ${C.border}` }}>
+                        <td style={{ ...td, textAlign: "left", fontWeight: 700 }}>{NOMI[sp]} da macello</td>
+                        <td style={td}>{d.ingrasso.capi}</td>
+                        <td style={td}>{formattaEuro(d.ingrasso.costoPrecedenti)}</td>
+                        <td style={td}>{formattaEuro(d.ingrasso.costoAnno)}</td>
+                        <td style={{ ...td, fontWeight: 700 }}>{formattaEuro(d.ingrasso.costoTotale)}</td>
+                        <td style={td}>{d.ingrasso.kg > 0 ? `${formattaNumero(d.ingrasso.kg, 0)} kg` : "dato mancante"}</td>
+                        <td style={td}>{casella(`m_${sp}`)} €</td>
+                        <td style={{ ...td, fontWeight: 700 }}>{vI === null ? "—" : formattaEuro(vI)}</td>
+                        <td style={td}>{diff(vI, d.ingrasso.costoTotale)}</td>
+                      </tr>,
+                      <tr key={sp + "r"} style={{ background: "#F7F4FB" }}>
+                        <td style={{ ...td, textAlign: "left", color: "#5B3F8C" }}>{NOMI[sp]} riproduttori</td>
+                        <td style={td}>{d.riproduttori.capi}</td>
+                        <td style={{ ...td, color: C.muted }} colSpan={2}>mantenimento passato ai figli</td>
+                        <td style={td}>{formattaEuro(d.riproduttori.costoIngresso)} <span style={{ fontSize: 11, color: C.muted }}>d'ingresso</span></td>
+                        <td style={td}>{d.riproduttori.kg > 0 ? `${formattaNumero(d.riproduttori.kg, 0)} kg` : "dato mancante"}</td>
+                        <td style={td}>{casella(`r_${sp}`)} €</td>
+                        <td style={td}>{vR === null ? "—" : formattaEuro(vR)}</td>
+                        <td style={td}>{diff(vR, d.riproduttori.costoIngresso)}</td>
+                      </tr>,
+                    ];
+                  })}
+                </tbody>
+              </table>
+            )}
+            {stalla && (
+              <div style={{ fontSize: 12, color: C.muted, marginTop: 10, lineHeight: 1.6 }}>
+                <b>Come è stimato il peso.</b>{" "}
+                {SPECIE_ORDINE.map(sp => { const m = stalla.perSpecie[sp]?.modello; if (!m) return null; return (
+                  <span key={sp}>{NOMI[sp]}: {m.capiMacellati ? `${m.capiMacellati} capi macellati, età media ${formattaNumero(m.etaMedia, 1)} mesi, carcassa media ${formattaNumero(m.carcassaMedia, 1)} kg` : "nessun capo macellato con età e peso della carcassa, peso non stimabile"}{m.riproduttoriMacellati ? `; riproduttori macellati ${m.riproduttoriMacellati}, carcassa media ${formattaNumero(m.carcassaRiproduttori, 1)} kg` : ""}. </span>); })}
+                Un capo più giovane dell'età media vale in proporzione alla sua età (dalla carcassa alla nascita a quella media); uno più vecchio vale la carcassa media.
+                {" "}<b>Prezzi proposti.</b> Da macello: media delle fatture di vendita {SPECIE_ORDINE.map(sp => stalla.daFatture[sp] ? `${NOMI[sp].toLowerCase()} ${formattaEuro(stalla.daFatture[sp].prezzo)} (${stalla.daFatture[sp].anno})` : null).filter(Boolean).join(", ")}; riproduttori: prezzo di riforma al kg di carcassa scritto in Parametri.
+                Le caselle con il bordo blu si possono cambiare per fare prove: non si salva niente.
+              </div>
+            )}
+          </div>
+
+          {/* 6. Come si calcola */}
+          <div style={scheda}>
+            <div onClick={() => setMostraCalcolo(v => !v)} style={{ ...titolo, cursor: "pointer", marginBottom: 0 }}>{mostraCalcolo ? "▼" : "▶"} 6. Come si calcola (per chi vuole approfondire)</div>
+            {mostraCalcolo && (
+              <div style={{ fontSize: 13, marginTop: 10 }}>
+                <p style={spiega}>
+                  Ogni spesa ha una Destinazione (Piano dei Conti). Le spese intestate a una specie restano a quella specie; quelle «Generali» si dividono tra le tre specie
+                  in proporzione ai giorni di presenza pesati per la taglia (UBA-giorno); quelle intestate a due specie (per esempio «Bovini e Ovini») solo tra quelle due.
+                  I giorni degli animali da macello morti non entrano nel divisore: il loro costo lo pagano i capi rimasti. Il ricavo dei riproduttori venduti o riformati
+                  non entra qui: lo considera il Report Riproduttori.
+                </p>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead><tr>
+                    <th style={{ ...th, textAlign: "left" }}>Specie</th><th style={th}>Spese intestate alla specie</th><th style={th}>Quota delle spese generali</th>
+                    {QUOTE_COPPIE.filter(q => risultato.perSpecie.some(r => r[q.campo])).map(q => <th key={q.campo} style={th}>{q.etichetta}</th>)}
+                    <th style={th}>Costo dell'anno</th><th style={th}>Giorni di presenza pesati</th>
+                  </tr></thead>
+                  <tbody>
+                    {risultato.perSpecie.map(r => (
+                      <tr key={r.specie} style={{ borderTop: `1px solid ${C.border}` }}>
+                        <td style={{ ...td, textAlign: "left" }}>{NOMI[r.specie]}</td>
+                        <td style={td}>{formattaEuro(r.costoDirettoSpecie)}</td><td style={td}>{formattaEuro(r.quotaGeneraliSpecie)}</td>
+                        {QUOTE_COPPIE.filter(q => risultato.perSpecie.some(x => x[q.campo])).map(q => <td key={q.campo} style={td}>{formattaEuro(r[q.campo])}</td>)}
+                        <td style={{ ...td, fontWeight: 700 }}>{formattaEuro(r.costoAllocatoTotale)}</td><td style={td}>{formattaNumero(r.ubaGiorniSpProduttivi, 1)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div style={{ marginTop: 10 }}>
+                  <Riga label="Spese dell'anno (fatture e costi senza fattura), comprese quelle che restano fuori" valore={formattaEuro(risultato.costiOrdinari)} />
+                  <Riga label="Quote di ammortamento dei cespiti intestati all'allevamento" valore={formattaEuro(risultato.costoAmmortamenti)} />
+                  <Riga label="Giorni di presenza pesati degli animali da macello morti (fuori dal divisore)" valore={formattaNumero(risultato.tasso.ubaGiorniImproduttivi, 1)} />
+                  <Riga label="Costo che questi animali passano ai capi rimasti" valore={formattaEuro(risultato.tasso.perditaSpalmata)} />
+                </div>
+                <p style={{ ...spiega, marginTop: 8 }}>La tabella «Di cosa è fatto il costo» e quella del risultato arrotondano i centesimi in punti diversi: l'eventuale centesimo di differenza è attribuito all'Area più grande di ogni specie, così i totali coincidono.</p>
+              </div>
+            )}
           </div>
         </>
       )}

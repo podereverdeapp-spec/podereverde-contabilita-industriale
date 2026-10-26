@@ -19,18 +19,48 @@ function matricoleNelTesto(testo) {
   return [...trovate];
 }
 
+// Versione 308 (OK del Dott. Bizzarri del 26/10/2026, ore 18:54): una nota di credito che storna per intero una fattura
+// («STORNO TOTALE DELLA FATTURA N. 4-21») spesso non riporta la matricola. Senza questo controllo la fattura stornata e
+// quella che la sostituisce si sommavano: Gioacchino IT043990097357 risultava venduto a 6.000 € invece di 3.000 €
+// (FPR 4/21, nota di credito FPR 5/21, FPR 6/21). Se la nota richiama il numero della fattura e ne storna tutto
+// l'importo, la fattura e la nota si tolgono entrambe dalle vendite.
+const RIFERIMENTO = /(?:FATTURA|FATT\.?|FPR)\s*(?:N\.?\s*|NR\.?\s*|NUMERO\s*)?(\d{1,4})\s*[-/]\s*(\d{2,4})\b/gi;
+const chiaveNumero = (n, anno) => `${parseInt(n, 10)}/${String(anno).slice(-2)}`;
+export function fattureStornate(fatture, articoli) {
+  const perNumero = new Map();
+  for (const f of fatture) {
+    const m = String(f.numero || "").match(/(\d{1,4})\s*\/\s*(\d{2,4})/);
+    if (m) perNumero.set(chiaveNumero(m[1], m[2]), f);
+  }
+  const testi = new Map();
+  for (const r of articoli) testi.set(r.fattura_id, `${testi.get(r.fattura_id) || ""} ${r.descrizione || ""}`);
+  const stornate = new Set();
+  for (const nc of fatture) {
+    const totNc = parseFloat(nc.totale_netto) || 0;
+    if (totNc >= 0) continue;
+    for (const m of String(testi.get(nc.id) || "").matchAll(RIFERIMENTO)) {
+      const f = perNumero.get(chiaveNumero(m[1], m[2]));
+      if (!f || f.id === nc.id || stornate.has(f.id)) continue;
+      if (Math.abs((parseFloat(f.totale_netto) || 0) + totNc) <= 0.01) { stornate.add(f.id); stornate.add(nc.id); break; }
+    }
+  }
+  return stornate;
+}
+
 // Righe di vendita: [{ matricole: [...], importo, numero, data, cliente, descrizione, fonte }]
 export async function caricaRigheVendita() {
   const righe = [];
   const { data: fatture, error: eF } = await fetchAllPages((da, a) => supabase.from("ci_fatture")
-    .select("id, numero, data, ci_clienti(nome)").eq("tipo", "ATTIVA").order("id").range(da, a));
+    .select("id, numero, data, totale_netto, ci_clienti(nome)").eq("tipo", "ATTIVA").order("id").range(da, a));
   if (eF) throw new Error(`Errore leggendo le fatture attive: ${eF.message}`);
   const perId = new Map((fatture || []).map(f => [f.id, f]));
   if (perId.size) {
     const { data: articoli, error: eA } = await fetchAllPages((da, a) => supabase.from("ci_articoli_fattura")
       .select("fattura_id, descrizione, matricole, totale_riga").in("fattura_id", [...perId.keys()]).order("id").range(da, a));
     if (eA) throw new Error(`Errore leggendo le righe delle fatture attive: ${eA.message}`);
+    const stornate = fattureStornate(fatture || [], articoli || []);
     for (const r of articoli || []) {
+      if (stornate.has(r.fattura_id)) continue;
       const f = perId.get(r.fattura_id);
       const matricole = matricoleNelTesto(`${r.descrizione || ""} ${Array.isArray(r.matricole) ? r.matricole.join(" ") : (r.matricole || "")}`);
       if (!matricole.length) continue;

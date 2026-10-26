@@ -2,21 +2,7 @@ import { useState, useEffect } from "react";
 import { statoCalcoli } from "./statoCalcoli";
 import { C } from "./style";
 import ReportCosti from "./ReportCosti";
-import ReportPerArea from "./ReportPerArea";
-import ReportPerAreaCentro from "./ReportPerAreaCentro";
 import ReportStorico from "./ReportStorico";
-
-// Un tocco di sfondo diverso per ciascun livello di dettaglio, per non confondersi
-// passando dall'uno all'altro — dal più aggregato (aziendale) al più dettagliato (centro di costo)
-const LIVELLI = [
-  { id: "aggregato", label: "Aggregato (aziendale)", sfondo: "#F4F7FB", accento: C.blue },
-  { id: "area", label: "Per Area", sfondo: "#F3FAF3", accento: C.green },
-  { id: "areacentro", label: "Per Area e Centro di Costo", sfondo: "#FFF8ED", accento: C.accent },
-  { id: "storico_generale", label: "Storico — Generale", sfondo: "#F4F7FB", accento: C.blue },
-  { id: "storico_bovini", label: "Storico — Bovini", sfondo: "#F7F1EC", accento: C.bovini },
-  { id: "storico_suini", label: "Storico — Suini", sfondo: "#FBF0F2", accento: C.suini },
-  { id: "storico_ovini", label: "Storico — Ovini", sfondo: "#F1F6EC", accento: C.ovini },
-];
 
 // Versione 236: stato dei calcoli salvati, anno per anno (aggiornato / da ricalcolare / non verificabile)
 function StatoCalcoli() {
@@ -45,7 +31,7 @@ function StatoCalcoli() {
             <td style={{ padding: "4px 10px 2px", color: C.muted }}>elaborato il {quando(stato.riproduttori.elaboratoAt)}</td>
             <td style={{ padding: "4px 10px 2px", color: stato.riproduttori.daRifare ? "#B86E00" : C.green, fontWeight: 700 }}>
               {stato.riproduttori.daRifare ? "🔄 da rifare (pagina «Report Riproduttori», dopo aver salvato gli anni)" : "✓ aggiornato"}</td>
-            <td />
+            <td style={{ padding: "4px 10px 2px", color: C.muted }}>{stato.riproduttori.motivi?.length ? `motivo: ${stato.riproduttori.motivi.join(", ")}` : ""}</td>
           </tr>
         </tbody>
       </table>
@@ -53,54 +39,54 @@ function StatoCalcoli() {
   );
 }
 
-export default function SezioneReportCosti() {
-  const [livello, setLivello] = useState("aggregato");
-  const [anno, setAnno] = useState(new Date().getFullYear());
+// Versione 308 (decisione del Dott. Bizzarri del 26/10/2026, ore 19:04): due sole linguette. «Anno» unisce le vecchie
+// pagine Aggregato, Per Area e Per Area e Centro di Costo; «Storico» unisce le quattro pagine storiche, con la scelta della specie.
+const STORICI = [
+  { id: null, label: "Tutte le specie", titolo: "tutte le specie" },
+  { id: "bovino", label: "Bovini", titolo: "Bovini" },
+  { id: "suino", label: "Suini", titolo: "Suini (suini+lotti)" },
+  { id: "ovino", label: "Ovini", titolo: "Ovini" },
+];
 
-  const correnteMeta = LIVELLI.find(l => l.id === livello);
+export default function SezioneReportCosti() {
+  const [vista, setVista] = useState("anno");
+  const [specieStorico, setSpecieStorico] = useState(null);
+  const [anno, setAnno] = useState(new Date().getFullYear());
+  const anni = []; for (let a = new Date().getFullYear(); a >= 2019; a--) anni.push(a);
+  const linguetta = attiva => ({
+    background: attiva ? C.primary : "transparent", color: attiva ? "#fff" : C.muted,
+    border: `1.5px solid ${attiva ? C.primary : C.border}`, borderRadius: "8px 8px 0 0", padding: "8px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer",
+  });
+  const storico = STORICI.find(s => s.id === specieStorico);
 
   return (
     <div>
-      <div style={{ padding: "20px 20px 0 20px", maxWidth: 1300, margin: "0 auto" }}>
+      <div style={{ padding: "20px 20px 0 20px", maxWidth: 1100, margin: "0 auto" }}>
         <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Report Costi</h1>
         <p style={{ color: C.muted, marginTop: 0, marginBottom: 16 }}>
-          Dal costo aggregato aziendale, alle singole Aree, fino al dettaglio per Centro di Costo — stesso motore di calcolo, tre livelli di dettaglio.
+          Quanto è costato l'allevamento in un anno, specie per specie, di cosa è fatto il costo e quanto valgono gli animali in stalla; nello Storico, il confronto con gli anni prima.
         </p>
         <StatoCalcoli />
-
-        {!livello.startsWith("storico_") && (
-          <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 16 }}>
-            <div>
-              <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 3 }}>Anno (condiviso tra Aggregato/Area/Area e Centro)</label>
-              <input type="number" value={anno} onChange={e => setAnno(parseInt(e.target.value))}
-                style={{ padding: "7px 10px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 13, width: 100 }} />
-            </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+          <button onClick={() => setVista("anno")} style={linguetta(vista === "anno")}>Anno</button>
+          <button onClick={() => setVista("storico")} style={linguetta(vista === "storico")}>Storico</button>
+          <div style={{ marginLeft: "auto", paddingBottom: 6, display: "flex", gap: 6, alignItems: "center" }}>
+            {vista === "anno" ? (
+              <>
+                <span style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>Anno</span>
+                <select value={anno} onChange={e => setAnno(parseInt(e.target.value))} style={{ padding: "6px 10px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 13 }}>
+                  {anni.map(a => <option key={a} value={a}>{a}</option>)}
+                </select>
+              </>
+            ) : STORICI.map(s => (
+              <button key={String(s.id)} onClick={() => setSpecieStorico(s.id)} style={{ fontSize: 12, fontWeight: 700, padding: "5px 10px", borderRadius: 6, cursor: "pointer", border: `1.5px solid ${C.primary}`, background: specieStorico === s.id ? C.primary : "#fff", color: specieStorico === s.id ? "#fff" : C.primary }}>{s.label}</button>
+            ))}
           </div>
-        )}
-
-        <div style={{ display: "flex", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
-          {LIVELLI.map(l => (
-            <button key={l.id} onClick={() => setLivello(l.id)}
-              style={{
-                background: livello === l.id ? l.accento : "transparent",
-                color: livello === l.id ? "#fff" : C.muted,
-                border: `1.5px solid ${livello === l.id ? l.accento : C.border}`,
-                borderRadius: "8px 8px 0 0", padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer",
-              }}>
-              {l.label}
-            </button>
-          ))}
         </div>
       </div>
-
-      <div style={{ background: correnteMeta.sfondo, borderTop: `3px solid ${correnteMeta.accento}`, paddingBottom: 20 }}>
-        {livello === "aggregato" && <ReportCosti anno={anno} />}
-        {livello === "area" && <ReportPerArea anno={anno} />}
-        {livello === "areacentro" && <ReportPerAreaCentro anno={anno} />}
-        {livello === "storico_generale" && <ReportStorico specieFiltro={null} titolo="tutte le specie" />}
-        {livello === "storico_bovini" && <ReportStorico specieFiltro="bovino" titolo="Bovini" />}
-        {livello === "storico_suini" && <ReportStorico specieFiltro="suino" titolo="Suini (suini+lotti)" />}
-        {livello === "storico_ovini" && <ReportStorico specieFiltro="ovino" titolo="Ovini" />}
+      <div style={{ background: "#F4F7FB", borderTop: `3px solid ${C.primary}`, paddingBottom: 20 }}>
+        {vista === "anno" && <ReportCosti anno={anno} />}
+        {vista === "storico" && <ReportStorico key={String(specieStorico)} specieFiltro={specieStorico} titolo={storico.titolo} />}
       </div>
     </div>
   );

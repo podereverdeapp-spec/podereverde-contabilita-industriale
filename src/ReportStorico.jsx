@@ -139,8 +139,9 @@ export default function ReportStorico({ specieFiltro, titolo }) {
 
   const campo1 = specieFiltro ? "costoAllocato" : "imponibile";
   const campo2 = specieFiltro ? "incidenza" : "tasso";
-  const labelCampo1 = specieFiltro ? "Costo allocato" : "Imponibile";
-  const labelCampo2 = "€/UBA-gg";
+  const labelCampo1 = "Costo";
+  // Versione 308 (Report Costi rivisto con il Dott. Bizzarri il 26/10/2026): euro per UBA all'anno (= al giorno × 365) al posto di €/UBA-gg
+  const labelCampo2 = "Euro per UBA all'anno";
 
   // media dei grafici: solo anni interi calcolati (senza l'anno in corso), come nella tabella
   function mediaGrafico(campo) {
@@ -157,24 +158,24 @@ export default function ReportStorico({ specieFiltro, titolo }) {
         anni.forEach((a, i) => {
           const v = r.valoriPerAnno[i], et = ETICHETTA_STATO[risultato.statoAnni[i]] || "non calcolato";
           riga[`${l1} ${a}`] = v ? numeroExcel(v[c1]) : et;
-          riga[`${l2} ${a}`] = v ? numeroExcel(v[c2]) : et;
+          riga[`${l2} ${a}`] = v ? numeroExcel(v[c2] * GIORNI_UBA) : et;
         });
         riga[`${l1} Media`] = r.media[c1] === null ? "" : numeroExcel(r.media[c1]);
-        riga[`${l2} Media`] = r.media[c2] === null ? "" : numeroExcel(r.media[c2]);
+        riga[`${l2} Media`] = r.media[c2] === null ? "" : numeroExcel(r.media[c2] * GIORNI_UBA);
         return riga;
       });
     }
     esportaExcel(`ReportStorico_${specieFiltro || "Generale"}_${annoBase}`, [
       { nome: "Per Area", righe: righeExcelDa(risultato.righeArea, r => r.chiave) },
-      { nome: "Esclusi dal costo animali", righe: righeExcelDa(risultato.rigaRossa, r => r.chiave, "valore", "tasso", "Imponibile", "€/UBA-gg") },
+      { nome: "Esclusi dal costo animali", righe: righeExcelDa(risultato.rigaRossa, r => r.chiave, "valore", "tasso", "Costo", "Euro per UBA all'anno") },
       { nome: "Per Centro di Costo", righe: righeExcelDa(risultato.righeCentro, r => `${r.area} - ${r.etichetta}`) },
     ]);
   }
 
   return (
-    <div style={{ padding: 20, maxWidth: 1400, margin: "0 auto" }}>
+    <div style={{ padding: 20, maxWidth: 1100, margin: "0 auto" }}>
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 16 }}>
-        Confronto tra l'anno scelto e i 3 precedenti, con la media degli anni calcolati — per vedere l'andamento nel tempo dell'efficacia della contabilità industriale.{titolo && ` (${titolo})`}
+        Il costo dell'allevamento nell'anno scelto e nei 3 anni prima, con la media degli anni interi calcolati: per vedere come cambia nel tempo ogni Area e ogni Centro di Costo.{titolo && ` (${titolo})`}
       </p>
 
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 20 }}>
@@ -201,12 +202,12 @@ export default function ReportStorico({ specieFiltro, titolo }) {
           )}
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 20 }}>
             <div style={{ flex: 1, minWidth: 300, background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 12 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: C.primary, marginBottom: 4 }}>{labelCampo1} totale — andamento</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.primary, marginBottom: 4 }}>Costo dell'anno — andamento</div>
               <GraficoAndamento punti={risultato.totaliPerAnno.filter(t => t.valoreAssoluto !== null).map(t => ({ anno: t.anno, valore: t.valoreAssoluto }))} decimaliValore={2} media={mediaGrafico("valoreAssoluto")} />
             </div>
             <div style={{ flex: 1, minWidth: 300, background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 12 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: C.primary, marginBottom: 4 }}>€/UBA-gg totale — andamento</div>
-              <GraficoAndamento punti={risultato.totaliPerAnno.filter(t => t.tasso !== null).map(t => ({ anno: t.anno, valore: t.tasso }))} decimaliValore={4} media={mediaGrafico("tasso")} />
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.primary, marginBottom: 4 }}>Euro per UBA all'anno — andamento</div>
+              <GraficoAndamento punti={risultato.totaliPerAnno.filter(t => t.tasso !== null).map(t => ({ anno: t.anno, valore: t.tasso * GIORNI_UBA }))} decimaliValore={2} media={mediaGrafico("tasso") === null ? null : mediaGrafico("tasso") * GIORNI_UBA} />
             </div>
           </div>
 
@@ -214,7 +215,7 @@ export default function ReportStorico({ specieFiltro, titolo }) {
             style={{ background: C.green, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", marginBottom: 16 }}>
             📥 Esporta Excel
           </button>
-          <div style={{ fontSize: 13, fontWeight: 700, color: C.muted, marginBottom: 8 }}>PER AREA E CENTRO DI COSTO</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.muted, marginBottom: 8 }}>DI COSA È FATTO IL COSTO, ANNO PER ANNO (cliccando un'Area si vedono i suoi Centri di Costo)</div>
           <TabellaConfrontoAccordion
             righeArea={risultato.righeArea} righeCentro={risultato.righeCentro}
             espansi={espansi} toggleEspanso={toggleEspanso}
@@ -225,8 +226,8 @@ export default function ReportStorico({ specieFiltro, titolo }) {
 
           {risultato.rigaRossa.length > 0 && (
             <div style={{ marginTop: 16, marginBottom: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: C.red, marginBottom: 8 }}>⚠️ ESCLUSI DAL COSTO DEGLI ANIMALI: MACELLO E LAVORAZIONE DELLE CARNI, ORTO, CAVALLI, POLLAME, ANIMALI NON D'ALLEVAMENTO E AMMORTAMENTI SENZA IMPUTAZIONE</div>
-              <TabellaConfronto righe={risultato.rigaRossa} anni={anni} campo1="valore" campo2="tasso" labelCampo1="Imponibile" labelCampo2="€/UBA-gg" etichettaRiga={r => r.chiave} rosso anniMedia={risultato.anniCalcolati} statoAnni={risultato.statoAnni} />
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.red, marginBottom: 8 }}>Cosa resta fuori dal costo degli animali</div>
+              <TabellaConfronto righe={risultato.rigaRossa} anni={anni} campo1="valore" campo2="tasso" labelCampo1="Costo" labelCampo2="Euro per UBA all'anno" etichettaRiga={r => r.chiave} rosso anniMedia={risultato.anniCalcolati} statoAnni={risultato.statoAnni} />
             </div>
           )}
         </>
@@ -273,18 +274,18 @@ function TabellaConfrontoAccordion({ righeArea, righeCentro, espansi, toggleEspa
                     return (
                       <Fragment key={i}>
                         <td style={{ ...td, textAlign: "right", color: v ? col.scuro : (statoAnni?.[i] === "vuoto" ? C.muted : C.red), fontWeight: 700 }}>{cellaAnno(v, campo1, statoAnni, i)}</td>
-                        <td style={{ ...td, textAlign: "right", color: v ? col.chiaro : C.red, fontWeight: 600 }}>{v ? formattaEuro(v[campo2], 4) : ""}</td>
+                        <td style={{ ...td, textAlign: "right", color: v ? col.chiaro : C.red, fontWeight: 600 }}>{v ? formattaEuro(v[campo2] * GIORNI_UBA, 2) : ""}</td>
                       </Fragment>
                     );
                   })}
                   <td style={{ ...td, textAlign: "right", fontWeight: 800, color: COLORE_MEDIA.scuro }}>{euroOppure(rArea.media[campo1])}</td>
-                  <td style={{ ...td, textAlign: "right", color: COLORE_MEDIA.chiaro, fontWeight: 600 }}>{euroOppure(rArea.media[campo2], 4)}</td>
+                  <td style={{ ...td, textAlign: "right", color: COLORE_MEDIA.chiaro, fontWeight: 600 }}>{euroOppure(rArea.media[campo2] === null ? null : rArea.media[campo2] * GIORNI_UBA, 2)}</td>
                 </tr>
                 {espansi[rArea.chiave] && (
                   <tr>
                     <td colSpan={1 + anni.length * 2 + 2} style={{ padding: "12px 20px", background: "#FAFAF8", borderTop: `1px solid ${C.border}` }}>
                       <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, marginBottom: 4 }}>{labelCampo2} — andamento {rArea.chiave}</div>
-                      <GraficoBarre punti={rArea.valoriPerAnno.map((v, i) => (v ? { anno: anni[i], valore: v[campo2] } : null)).filter(Boolean)} decimaliValore={4} />
+                      <GraficoBarre punti={rArea.valoriPerAnno.map((v, i) => (v ? { anno: anni[i], valore: v[campo2] * GIORNI_UBA } : null)).filter(Boolean)} decimaliValore={2} />
                     </td>
                   </tr>
                 )}
@@ -296,12 +297,12 @@ function TabellaConfrontoAccordion({ righeArea, righeCentro, espansi, toggleEspa
                       return (
                         <Fragment key={i}>
                           <td style={{ ...td, textAlign: "right", color: v ? col.scuro : (statoAnni?.[i] === "vuoto" ? C.muted : C.red) }}>{cellaAnno(v, campo1, statoAnni, i)}</td>
-                          <td style={{ ...td, textAlign: "right", color: col.chiaro, fontWeight: 600 }}>{v ? formattaEuro(v[campo2], 4) : ""}</td>
+                          <td style={{ ...td, textAlign: "right", color: col.chiaro, fontWeight: 600 }}>{v ? formattaEuro(v[campo2] * GIORNI_UBA, 2) : ""}</td>
                         </Fragment>
                       );
                     })}
                     <td style={{ ...td, textAlign: "right", fontWeight: 700, color: COLORE_MEDIA.scuro }}>{euroOppure(rc.media[campo1])}</td>
-                    <td style={{ ...td, textAlign: "right", color: COLORE_MEDIA.chiaro, fontWeight: 600 }}>{euroOppure(rc.media[campo2], 4)}</td>
+                    <td style={{ ...td, textAlign: "right", color: COLORE_MEDIA.chiaro, fontWeight: 600 }}>{euroOppure(rc.media[campo2] === null ? null : rc.media[campo2] * GIORNI_UBA, 2)}</td>
                   </tr>
                 ))}
               </Fragment>
@@ -313,12 +314,12 @@ function TabellaConfrontoAccordion({ righeArea, righeCentro, espansi, toggleEspa
               {totaliPerAnno.map((t, i) => (
                 <Fragment key={i}>
                   <td style={{ ...td, textAlign: "right", color: t.valoreAssoluto === null ? C.red : undefined }}>{t.valoreAssoluto === null ? ETICHETTA_STATO[statoAnni?.[i]] || "non calcolato" : formattaEuro(t.valoreAssoluto)}</td>
-                  <td style={{ ...td, textAlign: "right" }}>{t.tasso === null ? "" : formattaEuro(t.tasso, 4)}</td>
+                  <td style={{ ...td, textAlign: "right" }}>{t.tasso === null ? "" : formattaEuro(t.tasso * GIORNI_UBA, 2)}</td>
                 </Fragment>
               ))}
               {(() => { const ok = totaliPerAnno.filter((t, i) => t.valoreAssoluto !== null && statoAnni?.[i] !== "inCorso"); return (<>
                 <td style={{ ...td, textAlign: "right" }}>{ok.length ? formattaEuro(round2(ok.reduce((s, t) => s + t.valoreAssoluto, 0) / ok.length)) : "non calcolato"}</td>
-                <td style={{ ...td, textAlign: "right" }}>{ok.length && ok.reduce((s, t) => s + t.uba, 0) > 0 ? formattaEuro(ok.reduce((s, t) => s + t.valoreAssoluto, 0) / ok.reduce((s, t) => s + t.uba, 0), 4) : ""}</td>
+                <td style={{ ...td, textAlign: "right" }}>{ok.length && ok.reduce((s, t) => s + t.uba, 0) > 0 ? formattaEuro(ok.reduce((s, t) => s + t.valoreAssoluto, 0) / ok.reduce((s, t) => s + t.uba, 0) * GIORNI_UBA, 2) : ""}</td>
               </>); })()}
             </tr>
           )}
@@ -356,11 +357,11 @@ function TabellaConfronto({ righe, anni, campo1, campo2, labelCampo1, labelCampo
               {r.valoriPerAnno.map((v, i) => (
                 <Fragment key={i}>
                   <td style={{ ...td, textAlign: "right", color: coloreTesto }}>{cellaAnno(v, campo1, statoAnni, i)}</td>
-                  <td style={{ ...td, textAlign: "right", color: coloreTesto }}>{v ? formattaEuro(v[campo2], 4) : ""}</td>
+                  <td style={{ ...td, textAlign: "right", color: coloreTesto }}>{v ? formattaEuro(v[campo2] * GIORNI_UBA, 2) : ""}</td>
                 </Fragment>
               ))}
               <td style={{ ...td, textAlign: "right", fontWeight: 700, color: coloreTesto }}>{euroOppure(r.media[campo1])}</td>
-              <td style={{ ...td, textAlign: "right", fontWeight: 700, color: coloreTesto }}>{euroOppure(r.media[campo2], 4)}</td>
+              <td style={{ ...td, textAlign: "right", fontWeight: 700, color: coloreTesto }}>{euroOppure(r.media[campo2] === null ? null : r.media[campo2] * GIORNI_UBA, 2)}</td>
             </tr>
           ))}
         </tbody>
@@ -369,6 +370,8 @@ function TabellaConfronto({ righe, anni, campo1, campo2, labelCampo1, labelCampo
   );
 }
 
+// Versione 308: un'UBA all'anno = 365 giorni di presenza pesati (stesso valore nella pagina dell'anno)
+export const GIORNI_UBA = 365;
 const th = { padding: "6px 8px", textAlign: "center", fontSize: 10, fontWeight: 700 };
 const td = { padding: "5px 8px", fontSize: 11 };
 
@@ -385,8 +388,8 @@ function RiquadroMedia({ totaliPerAnno, statoAnni, labelCampo1 }) {
       <div><strong>Anni usati:</strong> {usati.length ? usati.map(t => t.anno).sort().join(", ") : "nessuno"}
         {esclusi.length > 0 && <> · <strong>esclusi:</strong> {esclusi.map(x => `${x.t.anno} (${motivo[x.st]})`).join(", ")}</>}.</div>
       <div><strong>{labelCampo1}:</strong> media semplice = somma degli anni usati ÷ numero degli anni usati{usati.length ? ` (${formattaEuro(costi)} ÷ ${usati.length} = ${formattaEuro(costi / usati.length)})` : ""}.</div>
-      <div><strong>€ per giorno di presenza pesato:</strong> media pesata = totale dei costi degli anni usati ÷ totale dei loro giorni di presenza pesati
-        {uba > 0 ? ` (${formattaEuro(costi)} ÷ ${num(uba)} giorni = ${formattaEuro(costi / uba, 4)})` : ""}. Così un anno con pochi animali non pesa quanto un anno con molti.
+      <div><strong>Euro per UBA all'anno:</strong> media pesata = totale dei costi degli anni usati ÷ totale dei loro giorni di presenza pesati × 365
+        {uba > 0 ? ` (${formattaEuro(costi)} ÷ ${num(uba)} giorni × 365 = ${formattaEuro(costi / uba * GIORNI_UBA, 2)})` : ""}. Così un anno con pochi animali non pesa quanto un anno con molti.
         Lo stesso metodo vale per ogni area e centro di costo.</div>
     </div>
   );
