@@ -53,7 +53,7 @@ import ImportMassivoRiproduttori from "./ImportMassivoRiproduttori";
 import RiepilogoCostoAnimali from "./RiepilogoCostoAnimali";
 import PrezzoPareggio from "./PrezzoPareggio";
 import DocumentoIstruzioni from "./DocumentoIstruzioni";
-import { ISTRUZIONI_CARICA_FATTURE, PIANO_DEI_CONTI, ISTRUZIONI_COSTI_DIRETTI, ISTRUZIONI_COSTI_LAVORO, ISTRUZIONI_SISTEMA_DATI, ISTRUZIONI_VERIFICA, ISTRUZIONI_REGISTRO_MODIFICHE, ISTRUZIONI_CONTROLLI, ISTRUZIONI_FATTURAZIONE_ANIMALI, ISTRUZIONI_ALTRE_FATTURE, ISTRUZIONI_CONTROLLO_ATTIVA, ISTRUZIONI_RICERCA_ANAGRAFICHE } from "./istruzioniDati";
+import { ISTRUZIONI_CARICA_FATTURE, PIANO_DEI_CONTI, ISTRUZIONI_COSTI_DIRETTI, ISTRUZIONI_COSTI_LAVORO, ISTRUZIONI_SISTEMA_DATI, ISTRUZIONI_VERIFICA, ISTRUZIONI_REGISTRO_MODIFICHE, ISTRUZIONI_CONTROLLI, ISTRUZIONI_FATTURAZIONE_ANIMALI, ISTRUZIONI_ALTRE_FATTURE, ISTRUZIONI_CONTROLLO_ATTIVA, ISTRUZIONI_RICERCA_ANAGRAFICHE, ISTRUZIONI_RIEPILOGO_CARICA_DATI, ISTRUZIONI_GENERALI_EMISSIONE, ISTRUZIONI_FATTURE_COMPETENZA } from "./istruzioniDati";
 // Versione 305: le istruzioni della cartella «Ricerca: Fatture e Anagrafiche» sono il documento Word (ISTRUZIONI_RICERCA_ANAGRAFICHE)
 import IstruzioniPrezziAcquisto from "./IstruzioniPrezziAcquisto";
 import IstruzioniAnimali from "./IstruzioniAnimali";
@@ -70,7 +70,6 @@ import IstruzioniStudi from "./IstruzioniStudi";
 import IstruzioniColtivazioni from "./IstruzioniColtivazioni";
 import Modelli4 from "./Modelli4";
 import IstruzioniModelli4 from "./IstruzioniModelli4";
-import IstruzioniEmissioneFatture from "./IstruzioniEmissioneFatture";
 import FattureCompetenza from "./FattureCompetenza";
 import UsciteDaFatturare from "./UsciteDaFatturare";
 import PreparaFatture from "./PreparaFatture";
@@ -129,6 +128,9 @@ const MENU = [
     // alla fine, quando la cartella è completa): sottocartelle per tipo di
     // dato da caricare (fatture passive, costi diretti, costi del lavoro), poi sistemazione, verifica e
     // controllo finale. «Carica Fatture Attive» passa in Emissione Fatture.
+    // Versione 307 (richiesta del Dott. Bizzarri del 26/10/2026): in cima, prima del Piano dei Conti, le Istruzioni Generali
+    // con il riepilogo delle sezioni e il rinvio alle istruzioni di ciascuna.
+    { tipo: "voce", id: "istr-carica-dati", label: "Istruzioni Generali", icon: "📖" },
     { tipo: "voce", id: "piano-dei-conti", label: "Piano dei Conti", icon: "📖" },
     { tipo: "sottocartella", id: "sub-dati-fatture-passive", label: "1. Carica Fatture Passive", icon: "📥", voci: [
       { id: "istr-fatture", label: "Istruzioni Carica Fatture Passive", icon: "📖" },
@@ -174,7 +176,9 @@ const MENU = [
   // Versione 297 (decisione del Dott. Bizzarri del 26/10/2026): «Emissione Fatture» diventa «Emissione Fatture di Vendita»;
   // subito dopo le Istruzioni la sottocartella «Fatturazione Automatica Vendita Animali da Allevamento», con le sue Istruzioni.
   { tipo: "cartella", id: "cart-emissione-fatture", label: "Emissione Fatture di Vendita", icon: "🧾", contenuto: [
-    { tipo: "voce", id: "istr-emissione-fatture", label: "Istruzioni", icon: "📖" },
+    // Versione 307 (decisione del Dott. Bizzarri del 26/10/2026, ore 18:32): «Istruzioni» diventa «Istruzioni Generali», riepilogo delle
+    // sottocartelle con il rinvio alle istruzioni di ciascuna; la sottocartella «Fatture da Ricevere e da Emettere» ha le sue Istruzioni.
+    { tipo: "voce", id: "istr-emissione-fatture", label: "Istruzioni Generali", icon: "📖" },
     { tipo: "sottocartella", id: "sub-fatturazione-animali", label: "Fatturazione Automatica Vendita Animali da Allevamento", icon: "🐄", voci: [
       { id: "istr-fatturazione-animali", label: "Istruzioni", icon: "📖" },
       { id: "fatt-animali-da-fatturare", label: "Uscite da Fatturare", icon: "🔔" },
@@ -200,6 +204,7 @@ const MENU = [
       { id: "numero-progressivo", label: "Numero Progressivo", icon: "🔢" },
     ] },
     { tipo: "sottocartella", id: "sub-fatture-competenza", label: "Fatture da Ricevere e da Emettere", icon: "🗂️", voci: [
+      { id: "istr-fatture-competenza", label: "Istruzioni", icon: "📖" },
       { id: "fatture-competenza", label: "Rapporti con Muratella", icon: "🏛️" },
     ] },
   ]},
@@ -405,7 +410,7 @@ function Programma({ utente }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 306</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 307</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -574,6 +579,7 @@ function Programma({ utente }) {
         {tab === "import-massivo-riproduttori" && <ImportMassivoRiproduttori />}
         {tab === "riepilogo-costo-animali" && <RiepilogoCostoAnimali />}
         {tab === "istr-fatture" && <DocumentoIstruzioni doc={ISTRUZIONI_CARICA_FATTURE} />}
+        {tab === "istr-carica-dati" && <DocumentoIstruzioni doc={ISTRUZIONI_RIEPILOGO_CARICA_DATI} />}
         {tab === "piano-dei-conti" && <DocumentoIstruzioni doc={PIANO_DEI_CONTI} />}
         {tab === "istr-costi-diretti" && <DocumentoIstruzioni doc={ISTRUZIONI_COSTI_DIRETTI} />}
         {tab === "istr-costi-lavoro" && <DocumentoIstruzioni doc={ISTRUZIONI_COSTI_LAVORO} />}
@@ -593,7 +599,8 @@ function Programma({ utente }) {
         {tab === "istr-studi" && <IstruzioniStudi />}
         {tab === "istr-coltivazioni" && <IstruzioniColtivazioni />}
         {tab === "istr-modelli4" && <IstruzioniModelli4 />}
-        {tab === "istr-emissione-fatture" && <IstruzioniEmissioneFatture />}
+        {tab === "istr-emissione-fatture" && <DocumentoIstruzioni doc={ISTRUZIONI_GENERALI_EMISSIONE} />}
+        {tab === "istr-fatture-competenza" && <DocumentoIstruzioni doc={ISTRUZIONI_FATTURE_COMPETENZA} />}
         {tab === "istr-fatturazione-animali" && <DocumentoIstruzioni doc={ISTRUZIONI_FATTURAZIONE_ANIMALI} />}
         {tab === "istr-altre-fatture" && <DocumentoIstruzioni doc={ISTRUZIONI_ALTRE_FATTURE} />}
         {tab === "istr-controllo-attiva" && <DocumentoIstruzioni doc={ISTRUZIONI_CONTROLLO_ATTIVA} />}
