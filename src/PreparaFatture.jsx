@@ -4,6 +4,7 @@ import { formattaNumero, formattaEuro } from "./parsingUtils";
 import {
   caricaPreparazione, caricaCedente, salvaCedente, assegnaCliente, salvaCliente, datiMancantiCliente,
   calcolaFattura, emettiFattura, componiNumero,
+  caricaDestinatarioAmministrazione, inviaAllAmministrazione, quandoItaliano,
 } from "./calcoloEmissioneFatture";
 import { generaXmlFattura, nomeFileXml, scaricaFile, scaricaZip } from "./xmlFatturaPA";
 
@@ -34,6 +35,19 @@ export default function PreparaFatture({ onNavigate }) {
   const [dataFattura, setDataFattura] = useState(oggiIso());
   const [emesse, setEmesse] = useState([]);
   const [mostraCedente, setMostraCedente] = useState(false);
+  // Versione 298: invio per mail all'amministrazione delle fatture appena emesse
+  const [destinatario, setDestinatario] = useState(null);
+  const [invio, setInvio] = useState(null);
+  const [inviando, setInviando] = useState(false);
+  const [erroreInvio, setErroreInvio] = useState(null);
+  useEffect(() => { caricaDestinatarioAmministrazione().then(setDestinatario).catch(() => setDestinatario(null)); }, []);
+  async function inviaEmesse() {
+    if (!destinatario || !emesse.length) return;
+    if (!window.confirm(`Mandare ${emesse.length === 1 ? "la fattura" : `le ${emesse.length} fatture`} ${emesse.map(f => f.numero).join(", ")} a ${destinatario.nome} (${destinatario.email}) per il caricamento in Aruba?`)) return;
+    setInviando(true); setErroreInvio(null);
+    try { setInvio(await inviaAllAmministrazione(emesse.map(f => f.id))); } catch (err) { setErroreInvio(err.message); }
+    setInviando(false);
+  }
 
   async function carica() {
     setLoading(true); setErrore(null);
@@ -89,9 +103,15 @@ export default function PreparaFatture({ onNavigate }) {
           <div style={{ fontWeight: 800, color: C.green, marginBottom: 6 }}>✅ Fatture emesse ora ({emesse.length}) — file XML scaricati</div>
           {emesse.map(f => <div key={f.id} style={{ fontSize: 13 }}>{f.numero} del {dataItaliana(f.data)} · {f.cliente_denominazione} · {formattaEuro(f.totale)} · <code>{f.nome_file_xml}</code></div>)}
           <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+            {destinatario && destinatario.attivo && !invio && (
+              <button onClick={inviaEmesse} disabled={inviando} style={btn(true, C.primary)}>{inviando ? "Invio in corso…" : `✉️ Invia a ${destinatario.nome} per Aruba`}</button>
+            )}
             {emesse.length > 1 && <button onClick={() => scaricaZip(`Fatture_per_Aruba_${oggiIso()}.zip`, emesse)} style={btn(true, C.green)}>Scarica tutte per Aruba (.zip)</button>}
             <span style={{ fontSize: 12.5, color: C.text, alignSelf: "center" }}>In Aruba: «Carica fattura» → «Seleziona documenti» (o trascinare i file) → controllare → inviare.</span>
           </div>
+          {invio && <div style={{ marginTop: 8, fontWeight: 700, color: C.green }}>✅ Mail mandata a {destinatario ? destinatario.nome : invio.destinatario} ({invio.destinatario}) il {quandoItaliano(invio.inviata_il)}: {invio.fatture.join(", ")}.</div>}
+          {invio?.avviso && <div style={{ color: C.red, fontWeight: 700 }}>⚠️ {invio.avviso}</div>}
+          {erroreInvio && <div style={{ marginTop: 8, color: C.red, fontWeight: 700 }}>⚠️ {erroreInvio}</div>}
         </div>
       )}
 

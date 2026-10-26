@@ -2,12 +2,14 @@ import { useState, useEffect, Fragment } from "react";
 import { C } from "./style";
 import { formattaNumero, formattaEuro } from "./parsingUtils";
 import { esportaExcel } from "./esportaExcel";
-import { caricaFattureEmesse, annullaFattura } from "./calcoloEmissioneFatture";
+import { caricaFattureEmesse, annullaFattura, caricaDestinatarioAmministrazione, inviaAllAmministrazione, quandoItaliano } from "./calcoloEmissioneFatture";
 import { scaricaFile, scaricaZip } from "./xmlFatturaPA";
 
 // Emissione Fatture → Fatture Emesse (una pagina per «Animali Allevamento» e una per «Altre Fatturazioni»)
 // Le fatture emesse dal programma: si riscarica il file XML per Aruba (anche più fatture in un .zip)
 // e, se serve, si annulla la registrazione (i capi tornano da fatturare). Nessuna cancellazione.
+// Versione 298: «✉️ Invia» manda le fatture all'amministrazione (Teresa Demaria) con i file XML allegati,
+// per il caricamento in Aruba; la colonna «Inviata all'amministrazione» dice quando.
 
 function dataItaliana(iso) {
   if (!iso) return "—";
@@ -27,11 +29,31 @@ export default function FattureEmesse({ tipo = "animali_allevamento" }) {
   const [aperte, setAperte] = useState(() => new Set());
   const [annullaId, setAnnullaId] = useState(null);
   const [motivo, setMotivo] = useState("");
+  const [destinatario, setDestinatario] = useState(null);
+  const [invio, setInvio] = useState(null);       // esito dell'ultimo invio
+  const [inviando, setInviando] = useState(false);
 
   async function carica() {
     setLoading(true); setErrore(null);
     try { setFatture(await caricaFattureEmesse()); } catch (err) { setErrore(err.message); }
+    caricaDestinatarioAmministrazione().then(setDestinatario).catch(() => setDestinatario(null));
     setLoading(false);
+  }
+
+  async function invia(elenco) {
+    const daMandare = elenco.filter(f => f.stato === "emessa" && f.xml);
+    if (!daMandare.length || !destinatario) return;
+    const numeri = daMandare.map(f => f.numero).join(", ");
+    const gia = daMandare.filter(f => f.inviata_amministrazione_il);
+    const domanda = `Mandare ${daMandare.length === 1 ? "la fattura" : `le ${daMandare.length} fatture`} ${numeri} a ${destinatario.nome} (${destinatario.email}) per il caricamento in Aruba?`
+      + (gia.length ? `\n\nAttenzione: ${gia.map(f => `${f.numero} è già stata mandata il ${quandoItaliano(f.inviata_amministrazione_il)}`).join("; ")}. Verrà mandata di nuovo.` : "");
+    if (!window.confirm(domanda)) return;
+    setInviando(true); setErrore(null); setInvio(null);
+    try {
+      const esito = await inviaAllAmministrazione(daMandare.map(f => f.id));
+      setInvio(esito); setSelezionate(new Set()); await carica();
+    } catch (err) { setErrore(err.message); }
+    setInviando(false);
   }
   useEffect(() => { carica(); }, []);
 
@@ -65,12 +87,17 @@ export default function FattureEmesse({ tipo = "animali_allevamento" }) {
 
   if (loading) return <div style={{ padding: 20, color: C.muted }}>Lettura delle fatture emesse...</div>;
   const scelte = visibili.filter(f => selezionate.has(f.id) && f.xml);
+  const daInviare = visibili.filter(f => f.stato === "emessa" && f.xml && !f.inviata_amministrazione_il);
+  const puoInviare = !!destinatario && destinatario.attivo && !inviando;
 
   return (
     <div style={{ padding: 20, maxWidth: 1300, margin: "0 auto" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
         <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Fatture Emesse — {altre ? "Altre Fatturazioni" : "Animali Allevamento"}</h1>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button onClick={() => invia(scelte)} disabled={!scelte.length || !puoInviare} style={btn(true, scelte.length && puoInviare ? C.primary : "#B8B3A7")}>
+            {inviando ? "Invio in corso…" : `✉️ Invia a ${destinatario ? destinatario.nome : "amministrazione"} le selezionate (${scelte.length})`}
+          </button>
           <button onClick={() => scaricaZip(`Fatture_per_Aruba_${new Date().toISOString().slice(0, 10)}.zip`, scelte)} disabled={!scelte.length} style={btn(true, scelte.length ? C.green : "#B8B3A7")}>
             Scarica per Aruba le selezionate ({scelte.length}) .zip
           </button>
@@ -80,7 +107,16 @@ export default function FattureEmesse({ tipo = "animali_allevamento" }) {
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 14, fontSize: 13, lineHeight: 1.5 }}>
         {altre ? "Le fatture libere emesse dal programma (rifatturazioni, vendite diverse dai capi al macello, servizi)." : "Le fatture emesse dal programma con i capi fatturati."} «XML per Aruba» riscarica il file da caricare in Aruba Fatturazione Elettronica («Carica fattura»).
         «Annulla registrazione» serve solo se la fattura non è stata inviata con Aruba o è stata stornata{altre ? "." : ": i capi e i pezzi tornano tra quelli da fatturare."}
+        {" "}«✉️ Invia» manda la fattura per mail{destinatario ? ` a ${destinatario.nome} (${destinatario.email})` : " all'amministrazione"}, con il file XML allegato, perché la carichi in Aruba.
       </p>
+      {destinatario && !destinatario.attivo && <div style={{ color: C.red, marginBottom: 12, fontWeight: 700 }}>⚠️ {destinatario.email} non è tra i destinatari attivi delle mail dell'app: l'invio non è possibile finché non viene registrato.</div>}
+      {!destinatario && <div style={{ color: C.red, marginBottom: 12, fontWeight: 700 }}>⚠️ Manca l'indirizzo dell'amministrazione (parametro email_amministrazione_fatture): l'invio per mail non è possibile.</div>}
+      {invio && (
+        <div style={{ background: "#E2F0D9", border: `1.5px solid ${C.green}`, borderRadius: 12, padding: "10px 14px", marginBottom: 12, fontSize: 13 }}>
+          <b style={{ color: C.green }}>✅ Mail mandata a {destinatario ? destinatario.nome : invio.destinatario} ({invio.destinatario}) il {quandoItaliano(invio.inviata_il)}</b>: {invio.fatture.join(", ")}.
+          {invio.avviso && <div style={{ color: C.red, fontWeight: 700 }}>⚠️ {invio.avviso}</div>}
+        </div>
+      )}
       {errore && <div style={{ color: C.red, marginBottom: 12, fontWeight: 700 }}>⚠️ {errore}</div>}
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 12, fontSize: 13 }}>
         <select value={anno} onChange={e => setAnno(e.target.value)} style={{ height: 34, borderRadius: 8, border: `1.5px solid ${C.border}`, padding: "0 10px" }}>
@@ -88,13 +124,14 @@ export default function FattureEmesse({ tipo = "animali_allevamento" }) {
         </select>
         <label style={{ display: "flex", gap: 6, alignItems: "center" }}><input type="checkbox" checked={mostraAnnullate} onChange={e => setMostraAnnullate(e.target.checked)} /> Mostra anche le annullate</label>
         <span style={{ padding: "5px 12px", borderRadius: 6, background: C.primary, color: "#fff", fontWeight: 700 }}>{(n => `${n} ${n === 1 ? "fattura" : "fatture"}`)(visibili.filter(f => f.stato === "emessa").length)} · {formattaEuro(totale)}</span>
+        {daInviare.length > 0 && <span style={{ padding: "5px 12px", borderRadius: 6, background: C.red, color: "#fff", fontWeight: 700 }}>✉️ {daInviare.length === 1 ? "1 fattura da mandare" : `${daInviare.length} fatture da mandare`} all'amministrazione</span>}
       </div>
 
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "auto" }}>
         <table style={{ fontSize: 12.5 }}>
           <thead><tr style={{ background: C.primary, color: "#fff", textAlign: "left" }}>
             <th style={th}></th><th style={th}>Numero</th><th style={th}>Data</th><th style={th}>Cliente</th><th style={{ ...th, textAlign: "right" }}>{altre ? "Righe" : "Righe (pezzi o capi)"}</th>
-            <th style={{ ...th, textAlign: "right" }}>Imponibile</th><th style={{ ...th, textAlign: "right" }}>IVA</th><th style={{ ...th, textAlign: "right" }}>Totale</th><th style={th}></th>
+            <th style={{ ...th, textAlign: "right" }}>Imponibile</th><th style={{ ...th, textAlign: "right" }}>IVA</th><th style={{ ...th, textAlign: "right" }}>Totale</th><th style={th}>Inviata all'amministrazione</th><th style={th}></th>
           </tr></thead>
           <tbody>
             {visibili.map((f, i) => {
@@ -104,19 +141,25 @@ export default function FattureEmesse({ tipo = "animali_allevamento" }) {
                 <Fragment key={f.id}>
                   <tr style={{ borderTop: `1px solid ${C.border}`, background: i % 2 ? C.bg : "#fff", opacity: annullata ? 0.6 : 1 }}>
                     <td style={td}>{!annullata && <input type="checkbox" checked={selezionate.has(f.id)} onChange={() => alterna(setSelezionate, f.id)} />}</td>
-                    <td style={{ ...td, fontWeight: 800, cursor: "pointer" }} onClick={() => alterna(setAperte, f.id)}>{aperte.has(f.id) ? "▾" : "▸"} {f.numero}
+                    <td style={{ ...td, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" }} onClick={() => alterna(setAperte, f.id)}>{aperte.has(f.id) ? "▾" : "▸"} {f.numero}
                       {annullata && <div style={{ fontSize: 11, color: C.red }}>ANNULLATA: {f.motivo_annullamento}</div>}</td>
                     <td style={td}>{dataItaliana(f.data)}</td><td style={td}>{f.cliente_denominazione}</td>
                     <td style={{ ...td, textAlign: "right" }}>{righe.length}</td>
                     <td style={{ ...td, textAlign: "right" }}>{formattaEuro(f.imponibile)}</td><td style={{ ...td, textAlign: "right" }}>{formattaEuro(f.imposta)}</td>
                     <td style={{ ...td, textAlign: "right", fontWeight: 800 }}>{formattaEuro(f.totale)}</td>
                     <td style={{ ...td, whiteSpace: "nowrap" }}>
+                      {annullata ? "—" : f.inviata_amministrazione_il
+                        ? <span style={{ color: C.green, fontWeight: 700 }} title={f.inviata_amministrazione_a || ""}>✉️ {quandoItaliano(f.inviata_amministrazione_il)}</span>
+                        : <span style={{ color: C.red, fontWeight: 700 }}>da mandare</span>}
+                    </td>
+                    <td style={{ ...td, whiteSpace: "nowrap" }}>
+                      {!annullata && f.xml && <button onClick={() => invia([f])} disabled={!puoInviare} style={{ ...btn(true, puoInviare ? C.green : "#B8B3A7"), marginRight: 6 }}>✉️ Invia</button>}
                       {f.xml && <button onClick={() => scaricaFile(f.nome_file_xml, f.xml)} style={btn(true)}>XML per Aruba</button>}
                       {!annullata && <button onClick={() => { setAnnullaId(annullaId === f.id ? null : f.id); setMotivo(""); }} style={{ ...btn(false, C.red), marginLeft: 6 }}>Annulla registrazione</button>}
                     </td>
                   </tr>
                   {annullaId === f.id && (
-                    <tr><td colSpan={9} style={{ ...td, background: "#FBE1DE" }}>
+                    <tr><td colSpan={10} style={{ ...td, background: "#FBE1DE" }}>
                       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                         <b style={{ color: C.red }}>Annullare la registrazione di {f.numero}?</b>
                         <input value={motivo} onChange={e => setMotivo(e.target.value)} placeholder="Motivo (obbligatorio): es. non inviata ad Aruba, stornata con nota di credito…" style={{ height: 32, flex: "1 1 380px", borderRadius: 7, border: `1.5px solid ${C.border}`, padding: "0 9px" }} />
@@ -126,7 +169,7 @@ export default function FattureEmesse({ tipo = "animali_allevamento" }) {
                     </td></tr>
                   )}
                   {aperte.has(f.id) && (
-                    <tr><td colSpan={9} style={{ padding: "6px 14px 12px 40px" }}>
+                    <tr><td colSpan={10} style={{ padding: "6px 14px 12px 40px" }}>
                       <table style={{ fontSize: 12, background: C.bg }}>
                         <thead><tr style={{ color: C.muted, textAlign: "left" }}><th style={th2}>Riga</th><th style={th2}>Descrizione</th>
                           <th style={{ ...th2, textAlign: "right" }}>{altre ? "Quantità" : "Kg"}</th>{altre && <th style={th2}>Unità di misura</th>}
@@ -146,7 +189,7 @@ export default function FattureEmesse({ tipo = "animali_allevamento" }) {
                 </Fragment>
               );
             })}
-            {visibili.length === 0 && <tr><td colSpan={9} style={{ ...td, textAlign: "center", color: C.muted, padding: 20 }}>Nessuna fattura emessa dal programma.</td></tr>}
+            {visibili.length === 0 && <tr><td colSpan={10} style={{ ...td, textAlign: "center", color: C.muted, padding: 20 }}>Nessuna fattura emessa dal programma.</td></tr>}
           </tbody>
         </table>
       </div>

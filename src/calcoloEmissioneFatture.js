@@ -432,3 +432,37 @@ export async function annullaFattura(id, motivo) {
   const { error: eR } = await supabase.from("ci_fatture_emesse_righe").update({ attiva: false }).eq("fattura_id", id);
   if (eR) throw new Error(eR.message);
 }
+
+// ── Versione 298: invio delle fatture all'amministrazione per il caricamento in Aruba ─────────────
+// Decisione del Dott. Bizzarri del 26/10/2026 («la prima via»): un pulsante manda la mail con i file XML
+// allegati. La mail la manda la funzione del server «invia-fatture-amministrazione», che sceglie da sola
+// destinatario (parametro email_amministrazione_fatture, oggi Teresa Demaria), oggetto e testo, e scrive
+// nella fattura quando e a chi è stata mandata (inviata_amministrazione_il, inviata_amministrazione_a).
+export const nomeLeggibile = s => String(s || "").trim().toLowerCase().replace(/(^|[\s'’-])(\p{L})/gu, (m, a, b) => a + b.toUpperCase());
+
+export async function caricaDestinatarioAmministrazione() {
+  const { data: p, error } = await supabase.from("ci_parametri").select("valore").eq("chiave", "email_amministrazione_fatture").maybeSingle();
+  if (error) throw new Error(error.message);
+  const email = String(p?.valore || "").trim();
+  if (!email) return null;
+  const { data: d, error: eD } = await supabase.from("destinatari_email").select("nome, email, attivo").ilike("email", email).limit(1);
+  if (eD) throw new Error(eD.message);
+  const r = (d || [])[0];
+  return { email, nome: r ? nomeLeggibile(r.nome) : email, attivo: !!(r && r.attivo) };
+}
+
+export async function inviaAllAmministrazione(ids) {
+  const { data, error } = await supabase.functions.invoke("invia-fatture-amministrazione", { body: { fatture: ids } });
+  if (error) {
+    let messaggio = error.message;
+    try { const j = await error.context.json(); if (j?.error) messaggio = j.error; } catch { /* risposta senza testo */ }
+    throw new Error(`Mail non mandata: ${messaggio}`);
+  }
+  if (!data?.ok) throw new Error(`Mail non mandata: ${data?.error || "risposta non valida"}`);
+  return data;
+}
+
+export function quandoItaliano(iso) {
+  if (!iso) return "";
+  return new Date(iso).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Rome" });
+}
