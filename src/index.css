@@ -18,4 +18,6 @@ code {
 div:has(> table) { max-height: 78vh; overflow: auto; }
 thead th { position: sticky; top: 0; z-index: 2; }
 thead tr, thead th { background-color: inherit; }
-thead:not([style*="background"]) th { background-color: #fff; }
+/* Versione 297: lo sfondo bianco solo se né la testata né la riga hanno un colore proprio; prima le righe
+   di intestazione colorate (verde con scritte bianche) diventavano bianche e i titoli non si leggevano. */
+thead:not([style*="background"]) tr:not([style*="background"]) th { background-color: #fff; }

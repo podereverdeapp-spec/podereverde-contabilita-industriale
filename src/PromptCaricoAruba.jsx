@@ -58,7 +58,7 @@ Fai lo stesso confronto con le fatture emesse (inviate) dell'anno, contro le fat
 ## 9. Dove caricare
 Dimmi i percorsi dei file e l'ordine:
 1) Carica Dati Contabilità → 1. Carica Fatture Passive → Carica Fatture Passive massivamente: l'Excel delle fatture d'acquisto;
-2) Emissione Fatture → Carica Fatture Attive → «📥 Carica Massivo»: l'Excel delle fatture di vendita;
+2) Emissione Fatture di Vendita → Carica Fatture Attive → «📥 Carica Massivo»: l'Excel delle fatture di vendita;
 3) Carica Dati Contabilità → 1. Carica Fatture Passive → Carica PDF delle Fatture: la cartella dell'anno (sempre dopo il punto 1).
 
 ## 10. Controllo dopo il carico

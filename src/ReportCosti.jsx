@@ -336,7 +336,7 @@ export default function ReportCosti({ anno }) {
               {risultato.competenza.righeDaEmettere > 0 && <Riga label="Fattura da emettere a Muratella: orzo di Podere conferito, in meno nei Mangimi (rientra come farina comprata dalla Cooperativa Ceri)" valore={formattaEuro(risultato.competenza.daEmettere)} />}
               <div style={{ color: C.muted, marginTop: 6 }}>
                 Decisione del 08/10/2026: i costi dei campi di Podere stanno in Podere, anno per anno, anche se li ha pagati Muratella; l'orzo venduto e ricomprato non si conta due volte.
-                Elenco riga per riga, stato delle fatture vere ed esportazione per il commercialista: cartella «Emissione Fatture» → «Fatture da Ricevere e da Emettere».
+                Elenco riga per riga, stato delle fatture vere ed esportazione per il commercialista: cartella «Emissione Fatture di Vendita» → «Fatture da Ricevere e da Emettere».
               </div>
             </div>
           )}

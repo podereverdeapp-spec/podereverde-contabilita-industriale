@@ -1,10 +1,11 @@
 import PaginaIstruzioni from "./PaginaIstruzioni";
 
-// Istruzioni della cartella Emissione Fatture (fatture attive emesse da Podere Verde).
+// Istruzioni della cartella Emissione Fatture di Vendita (fatture attive emesse da Podere Verde).
+// Versione 297: solo i nomi nuovi della cartella e della sottocartella; il testo si riscrive quando la cartella è completa.
 export default function IstruzioniEmissioneFatture() {
   return (
     <PaginaIstruzioni
-      titolo="Emissione Fatture"
+      titolo="Emissione Fatture di Vendita"
       introduzione={
         <>
           Questa sezione serve a preparare ed emettere le fatture di vendita di Podere Verde: per prime le consegne degli animali al macello.
@@ -21,7 +22,7 @@ export default function IstruzioniEmissioneFatture() {
           <br />Il database impedisce di fatturare due volte lo stesso pezzo o lo stesso capo, e finché la fattura è valida nell'app non si possono cambiare partite, pesi, cliente e dati del capo, né cancellare il capo: prima si annulla la fattura.
           <br /><br />
           La sezione è divisa in due sottocartelle:
-          <br />• <strong>Fatturazione Animali Allevamento</strong>: le fatture per gli animali consegnati al macello o venduti ad altri allevamenti, preparate dai dati dei capi usciti;
+          <br />• <strong>Fatturazione Automatica Vendita Animali da Allevamento</strong>: le fatture per gli animali consegnati al macello o venduti ad altri allevamenti, preparate dai dati dei capi usciti;
           <br />• <strong>Altre Fatturazioni</strong>: tutte le altre fatture di vendita (riaddebiti, prodotti, servizi, vendite occasionali).
           <br /><br />
           Tutte le fatture emesse dal programma, animali e altre, seguono la stessa numerazione «FPR n/aa» usata in Aruba.
@@ -31,10 +32,10 @@ export default function IstruzioniEmissioneFatture() {
       }
       sezioni={[
         {
-          pagina: "Fatturazione Animali Allevamento → Uscite da Fatturare", icon: "🔔",
+          pagina: "Fatturazione Automatica Vendita Animali da Allevamento → Uscite da Fatturare", icon: "🔔",
           aCosaServe: "Avvisa chi fa le fatture che ci sono animali usciti da fatturare e li elenca. Sono i capi usciti per la macellazione registrati nell'app Podere Verde con qualcosa ancora da fatturare; per ogni capo sono elencati i pezzi con numero di partita e peso (i pezzi già fatturati sono barrati).",
           comeSiUsa: [
-            "Quando ci sono capi da fatturare compare un numero rosso nel menu, accanto a Emissione Fatture, a Fatturazione Animali Allevamento e a Uscite da Fatturare, e in cima a ogni pagina del programma una striscia rossa «Ci sono N capi usciti dall'allevamento da fatturare»: cliccandola si apre l'elenco.",
+            "Quando ci sono capi da fatturare compare un numero rosso nel menu, accanto a Emissione Fatture, a Fatturazione Automatica Vendita Animali da Allevamento e a Uscite da Fatturare, e in cima a ogni pagina del programma una striscia rossa «Ci sono N capi usciti dall'allevamento da fatturare»: cliccandola si apre l'elenco.",
             "L'avviso si ricontrolla all'apertura del programma, a ogni cambio di pagina e ogni 5 minuti.",
             "I capi sono raggruppati per cliente e data di uscita, con i chili di carcassa e di peso vivo della consegna.",
             "Bordo verde «DATI COMPLETI»: la consegna si può fatturare. Bordo giallo «DATI DA COMPLETARE»: nella colonna «Da completare» è indicato cosa manca (peso della carcassa, modello 4, numeri di partita dei pezzi, cliente, cliente non presente in anagrafica). L'avviso arancione dice che la somma dei pesi dei pezzi non torna con il peso della carcassa.",
@@ -43,7 +44,7 @@ export default function IstruzioniEmissioneFatture() {
           note: "Pagina in sola lettura: i dati mancanti si completano nell'app Podere Verde, non qui. Quando la fattura è emessa nel programma, i suoi capi non compaiono più tra quelli da fatturare e il numero rosso scende.",
         },
         {
-          pagina: "Fatturazione Animali Allevamento → Prepara Fatture", icon: "🧾",
+          pagina: "Fatturazione Automatica Vendita Animali da Allevamento → Prepara Fatture", icon: "🧾",
           aCosaServe: "Prepara una fattura per ogni cliente con i capi da fatturare, una riga per pezzo (matricola o lotto, modello 4, pezzo e numero di partita, chili, prezzo al kg, importo) o una riga unica per il capo quando i pesi dei pezzi mancano, e alla conferma scarica il file XML da caricare in Aruba Fatturazione Elettronica.",
           comeSiUsa: [
             "La prima volta aprire «Dati di Podere Verde in fattura», controllare i dati (ripresi dalla fattura FPR 8/26 emessa con Aruba) e salvarli. Finché non sono salvati le fatture non si possono emettere.",
@@ -59,7 +60,7 @@ export default function IstruzioniEmissioneFatture() {
           note: "Il cliente assegnato, i prezzi confermati e le fatture si registrano solo nelle tabelle del programma: i dati dell'app non vengono mai modificati. Un pezzo, e un capo, si fattura una sola volta.",
         },
         {
-          pagina: "Fatturazione Animali Allevamento → Fatture Emesse", icon: "📤",
+          pagina: "Fatturazione Automatica Vendita Animali da Allevamento → Fatture Emesse", icon: "📤",
           aCosaServe: "L'elenco delle fatture emesse dal programma, con le righe per capo, per riscaricare il file XML per Aruba o annullarne la registrazione.",
           comeSiUsa: [
             "Cliccare sul numero per vedere le righe della fattura.",

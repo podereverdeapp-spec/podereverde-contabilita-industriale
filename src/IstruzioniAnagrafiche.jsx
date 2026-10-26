@@ -53,7 +53,7 @@ export default function IstruzioniAnagrafiche() {
             "«+ Nuovo Cliente» apre il modulo: «Nome» (obbligatorio), «P.IVA», «Città», «Telefono», «Email»; «Salva» lo registra.",
             "«📥 Esporta Excel» scarica nome e partita IVA.",
           ],
-          note: "I clienti vengono creati anche da soli quando si caricano le fatture di vendita o si emettono fatture dalla cartella «Emissione Fatture». Se si crea a mano un cliente con lo stesso nome o la stessa partita IVA di uno già presente, il programma lo segnala e chiede conferma. Da questa pagina i clienti non si modificano né si cancellano.",
+          note: "I clienti vengono creati anche da soli quando si caricano le fatture di vendita o si emettono fatture dalla cartella «Emissione Fatture di Vendita». Se si crea a mano un cliente con lo stesso nome o la stessa partita IVA di uno già presente, il programma lo segnala e chiede conferma. Da questa pagina i clienti non si modificano né si cancellano.",
         },
       ]}
     />
