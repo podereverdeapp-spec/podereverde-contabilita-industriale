@@ -35,6 +35,12 @@ import ReportFabbisogniBovini from "./ReportFabbisogniBovini";
 import { ControllaPrezzi, ChiediPreventivi, PreventiviRicevuti } from "./PrezziAlimentaria";
 import PromptEstrazionePDF from "./PromptEstrazionePDF";
 import PromptCaricoAruba from "./PromptCaricoAruba";
+import PromptFattureEmesseAruba from "./PromptFattureEmesseAruba";
+import LetturaAruba from "./LetturaAruba";
+import ControlloFatturazioneAttiva from "./ControlloFatturazioneAttiva";
+import ElencoFattureAttive from "./ElencoFattureAttive";
+import NumeroProgressivo from "./NumeroProgressivo";
+import { contaAllarmiFatturazione } from "./calcoloAruba";
 import PromptCedolini from "./PromptCedolini";
 import CaricaCostiLavoro from "./CaricaCostiLavoro";
 import ConsultaCostiLavoro from "./ConsultaCostiLavoro";
@@ -46,7 +52,7 @@ import ImportMassivoRiproduttori from "./ImportMassivoRiproduttori";
 import RiepilogoCostoAnimali from "./RiepilogoCostoAnimali";
 import PrezzoPareggio from "./PrezzoPareggio";
 import DocumentoIstruzioni from "./DocumentoIstruzioni";
-import { ISTRUZIONI_CARICA_FATTURE, PIANO_DEI_CONTI, ISTRUZIONI_COSTI_DIRETTI, ISTRUZIONI_COSTI_LAVORO, ISTRUZIONI_SISTEMA_DATI, ISTRUZIONI_VERIFICA, ISTRUZIONI_REGISTRO_MODIFICHE, ISTRUZIONI_CONTROLLI, ISTRUZIONI_FATTURAZIONE_ANIMALI, ISTRUZIONI_ALTRE_FATTURE } from "./istruzioniDati";
+import { ISTRUZIONI_CARICA_FATTURE, PIANO_DEI_CONTI, ISTRUZIONI_COSTI_DIRETTI, ISTRUZIONI_COSTI_LAVORO, ISTRUZIONI_SISTEMA_DATI, ISTRUZIONI_VERIFICA, ISTRUZIONI_REGISTRO_MODIFICHE, ISTRUZIONI_CONTROLLI, ISTRUZIONI_FATTURAZIONE_ANIMALI, ISTRUZIONI_ALTRE_FATTURE, ISTRUZIONI_CONTROLLO_ATTIVA } from "./istruzioniDati";
 import IstruzioniAnagrafiche from "./IstruzioniAnagrafiche";
 import IstruzioniPrezziAcquisto from "./IstruzioniPrezziAcquisto";
 import IstruzioniAnimali from "./IstruzioniAnimali";
@@ -178,8 +184,16 @@ const MENU = [
       { id: "altre-nuova", label: "Nuova Fattura", icon: "✍️" },
       { id: "altre-emesse", label: "Fatture Emesse", icon: "📤" },
     ] },
-    // Versione 265: «Carica Fatture Attive» spostata qui da «Carica Dati Contabilità»
-    { tipo: "voce", id: "attive", label: "Carica Fatture Attive", icon: "💰" },
+    // Versione 300 (decisione del Dott. Bizzarri del 26/10/2026, ore 13:14): «Carica Fatture Attive» non serve più.
+    // Le fatture di vendita si leggono da Aruba; controlli, elenco con ricerca e numero progressivo.
+    { tipo: "sottocartella", id: "sub-controllo-attiva", label: "Controllo Fatturazione Attiva e Numero Progressivo", icon: "🔎", voci: [
+      { id: "istr-controllo-attiva", label: "Istruzioni", icon: "📖" },
+      { id: "prompt-aruba-emesse", label: "Prompt per Claude: Fatture Emesse in Aruba", icon: "🤖" },
+      { id: "lettura-aruba", label: "Leggi le Fatture di Aruba", icon: "📥" },
+      { id: "controllo-attiva", label: "Controlli e Allarmi", icon: "🔔" },
+      { id: "elenco-attive", label: "Elenco Fatture Attive", icon: "📋" },
+      { id: "numero-progressivo", label: "Numero Progressivo", icon: "🔢" },
+    ] },
     { tipo: "sottocartella", id: "sub-fatture-competenza", label: "Fatture da Ricevere e da Emettere", icon: "🗂️", voci: [
       { id: "fatture-competenza", label: "Rapporti con Muratella", icon: "🏛️" },
     ] },
@@ -331,6 +345,9 @@ function Programma({ utente }) {
     const timer = setInterval(controlla, 5 * 60 * 1000);
     return () => { attivo = false; clearInterval(timer); };
   }, [tab]);
+  // Versione 300: allarmi della fatturazione attiva (fatture del programma non trovate in Aruba, scartate, con differenze)
+  const [allarmiAttiva, setAllarmiAttiva] = useState(0);
+  useEffect(() => { contaAllarmiFatturazione().then(setAllarmiAttiva); }, [tab]);
   // Controlli dei registri: all'apertura del programma, poi il conteggio si aggiorna a ogni cambio di pagina
   const [anomalieAperte, setAnomalieAperte] = useState(null);
   const [controlloInCorso, setControlloInCorso] = useState(true);
@@ -344,7 +361,7 @@ function Programma({ utente }) {
   // cambiati dati che entrano nei costi (fatture, costi diretti, cespiti, animali…)
   const [avvisoCalcoli, setAvvisoCalcoli] = useState(null);
   useEffect(() => { statoCalcoli().then(st => setAvvisoCalcoli(testoAvvisoCalcoli(st))).catch(() => setAvvisoCalcoli(null)); }, [tab]);
-  const AVVISI = { "cart-fatture": anomalieAperte || 0, "sub-dati-controllo": anomalieAperte || 0, "registro-controlli": anomalieAperte || 0, "cart-emissione-fatture": daFatturare, "sub-fatturazione-animali": daFatturare, "fatt-animali-da-fatturare": daFatturare, "fatt-animali-prepara": daFatturare };
+  const AVVISI = { "cart-fatture": anomalieAperte || 0, "sub-dati-controllo": anomalieAperte || 0, "registro-controlli": anomalieAperte || 0, "cart-emissione-fatture": daFatturare + allarmiAttiva, "sub-fatturazione-animali": daFatturare, "fatt-animali-da-fatturare": daFatturare, "fatt-animali-prepara": daFatturare, "sub-controllo-attiva": allarmiAttiva, "controllo-attiva": allarmiAttiva };
 
   function vaiA(pageId) {
     setTab(pageId);
@@ -379,7 +396,7 @@ function Programma({ utente }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 299</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 300</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -465,7 +482,14 @@ function Programma({ utente }) {
             🔔 {daFatturare === 1 ? "C'è 1 capo uscito" : `Ci sono ${daFatturare} capi usciti`} dall'allevamento da fatturare.
             <span style={{ textDecoration: "underline", fontWeight: 800 }}>Vai alle uscite da fatturare →</span>
           </div>
-        )}        {tab === "dashboard" && <Dashboard onNavigate={vaiA} />}
+        )}        {allarmiAttiva > 0 && tab !== "controllo-attiva" && tab !== "lettura-aruba" && (
+          <div onClick={() => vaiA("controllo-attiva")}
+            style={{ background: "#FBE1DE", borderBottom: "2px solid #C0392B", color: "#8B1E14", padding: "10px 20px", fontSize: 13.5, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+            🧾 {allarmiAttiva === 1 ? "C'è 1 fattura di vendita da controllare" : `Ci sono ${allarmiAttiva} fatture di vendita da controllare`} (non trovate in Aruba, scartate o con differenze).
+            <span style={{ textDecoration: "underline", fontWeight: 800 }}>Vai ai controlli →</span>
+          </div>
+        )}
+        {tab === "dashboard" && <Dashboard onNavigate={vaiA} />}
         {tab === "carica" && <CaricaFatture />}
         {tab === "passive" && <FatturePassive />}
         {tab === "attive" && (
@@ -525,6 +549,11 @@ function Programma({ utente }) {
         {tab === "preventivi-ricevuti" && <PreventiviRicevuti />}
         {tab === "prompt-estrazione-pdf" && <PromptEstrazionePDF />}
         {tab === "prompt-carico-aruba" && <PromptCaricoAruba />}
+        {tab === "prompt-aruba-emesse" && <PromptFattureEmesseAruba />}
+        {tab === "lettura-aruba" && <LetturaAruba onNavigate={vaiA} />}
+        {tab === "controllo-attiva" && <ControlloFatturazioneAttiva onNavigate={vaiA} />}
+        {tab === "elenco-attive" && <ElencoFattureAttive />}
+        {tab === "numero-progressivo" && <NumeroProgressivo />}
         {tab === "prompt-cedolini" && <PromptCedolini />}
         {tab === "carica-costi-lavoro" && <CaricaCostiLavoro />}
         {tab === "consulta-costi-lavoro" && <ConsultaCostiLavoro />}
@@ -557,6 +586,7 @@ function Programma({ utente }) {
         {tab === "istr-emissione-fatture" && <IstruzioniEmissioneFatture />}
         {tab === "istr-fatturazione-animali" && <DocumentoIstruzioni doc={ISTRUZIONI_FATTURAZIONE_ANIMALI} />}
         {tab === "istr-altre-fatture" && <DocumentoIstruzioni doc={ISTRUZIONI_ALTRE_FATTURE} />}
+        {tab === "istr-controllo-attiva" && <DocumentoIstruzioni doc={ISTRUZIONI_CONTROLLO_ATTIVA} />}
         {tab === "fatt-animali-da-fatturare" && <UsciteDaFatturare onNavigate={vaiA} />}
         {tab === "fatt-animali-prepara" && <PreparaFatture onNavigate={vaiA} />}
         {tab === "fatt-animali-emesse" && <FattureEmesse tipo="animali_allevamento" />}

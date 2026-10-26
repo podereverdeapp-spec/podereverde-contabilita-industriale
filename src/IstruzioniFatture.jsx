@@ -66,14 +66,13 @@ export default function IstruzioniFatture() {
           note: "Pagina di sola consultazione: la classificazione delle singole righe si vede nella cartella «Ricerca».",
         },
         {
-          pagina: "Carica Fatture Attive", icon: "💰",
-          aCosaServe: "Le fatture di vendita: elenco, inserimento di una fattura e caricamento massivo da Excel.",
+          pagina: "Fatture di vendita", icon: "💰",
+          aCosaServe: "Dalla versione 300 le fatture di vendita non si caricano più con «Carica Fatture Attive»: si leggono da Aruba (decisione del Dott. Bizzarri del 26/10/2026).",
           comeSiUsa: [
-            "«📋 Elenco»: le fatture di vendita, con ricerca per cliente, numero, partita IVA, prodotto o note, filtro per anno, «▼ vedi righe» ed «📥 Esporta Excel». Come nelle Fatture Passive, si vedono 50, 100 o 200 fatture per volta con i pulsanti «◀ precedenti» e «successive ▶» sopra e sotto l'elenco; il numero, il totale e l'esportazione riguardano tutte le fatture trovate. Compaiono anche i documenti «🗂️ Da emettere» a Muratella: sono documenti di competenza e per capirli occorre leggere il rinvio alla pagina «Fatture da Ricevere e da Emettere → Rapporti con Muratella».",
-            "«+ Nuova Fattura»: scegliere il «Cliente» (solo clienti già in anagrafica), numero e data, poi gli articoli (descrizione, quantità, unità di misura, prezzo, aliquota IVA, specie facoltativa) e «💾 Salva fattura».",
-            "«📥 Carica Massivo»: file Excel (primo foglio) con le colonne Cliente, P.IVA, Numero, Data, Descrizione, Quantità, U.M., Prezzo unitario, Imponibile, Aliquota IVA, Destinazione (specie, facoltativa). Ogni riga si salva con «💾 Salva questa riga» o tutte con «Salva tutte le rimanenti»; i clienti nuovi vengono creati con nome e partita IVA.",
+            "Emissione Fatture di Vendita → Controllo Fatturazione Attiva e Numero Progressivo: «Prompt per Claude: Fatture Emesse in Aruba», poi «Leggi le Fatture di Aruba» con il file .zip preparato da Claude.",
+            "L'elenco di tutte le fatture di vendita, con la ricerca nelle righe, è in «Elenco Fatture Attive» della stessa cartella.",
           ],
-          note: "Nel caricamento massivo le fatture già presenti (stesso cliente, numero e data) compaiono «GIÀ CARICATA». La «Nuova Fattura» invece non controlla i doppioni: ogni salvataggio crea una fattura nuova. Le fatture emesse dal programma per gli animali si trovano nella cartella «Emissione Fatture».",
+          note: "Le fatture emesse dal programma non si registrano di nuovo: la lettura di Aruba le riconosce e le collega.",
         },
         {
           pagina: "Carica Costi Diretti", icon: "💼",

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { C } from "./style";
 
 // Versione 293 (decisione del Dott. Bizzarri del 24/10/2026 ore 15:26): il carico diretto da Aruba con Claude.
+// Versione 300: le fatture di vendita escono da questo prompt (vedi PromptFattureEmesseAruba.jsx).
 // Claude entra in Aruba Fatturazione Elettronica nel browser della sua app (le credenziali le scrive chi lavora),
 // confronta le fatture ricevute ed emesse con quelle del programma, prepara l'Excel delle sole mancanti e ne scarica
 // i PDF. Il carico nel programma resta a chi lavora. Il testo va aggiornato a mano se cambia la procedura.
@@ -53,13 +54,12 @@ Per ogni riga guarda come la classificherà il programma: regole del fornitore (
 Chiedimi il permesso, poi scarica da Aruba il PDF di ogni fattura mancante e salvalo nella cartella dell'anno con il nome «FORNITORE_AAAA-MM-GG_numero.pdf» (ogni carattere non ammesso nei nomi dei file diventa «-»). Controlla che ogni PDF contenga il numero della sua fattura.
 
 ## 8. Fatture di vendita
-Fai lo stesso confronto con le fatture emesse (inviate) dell'anno, contro le fatture ATTIVA del programma (ci_fatture) e le fatture emesse dal programma (ci_fatture_emesse). Le fatture emesse dal programma NON vanno caricate in Carica Fatture Attive: le venderebbero due volte. Per le altre mancanti prepara «Fatture_Attive_AAAA_carico_AAAA-MM-GG.xlsx», foglio «Fatture»: Cliente | P.IVA | Numero | Data | Descrizione | Quantità | U.M. | Prezzo unitario | Imponibile | Aliquota IVA | Destinazione (Suini, Bovini, Ovini… secondo la descrizione), più il foglio «Verifica Fatture». Segnalami anche le fatture emesse dal programma che in Aruba non risultano ancora inviate: le carico io.
+Le fatture di vendita (emesse) NON si trattano con questo prompt: dalla versione 300 si leggono con il prompt «Prompt per Claude: Fatture Emesse in Aruba» della cartella Emissione Fatture di Vendita → Controllo Fatturazione Attiva e Numero Progressivo. Qui lavora solo sulle fatture d'acquisto.
 
 ## 9. Dove caricare
 Dimmi i percorsi dei file e l'ordine:
 1) Carica Dati Contabilità → 1. Carica Fatture Passive → Carica Fatture Passive massivamente: l'Excel delle fatture d'acquisto;
-2) Emissione Fatture di Vendita → Carica Fatture Attive → «📥 Carica Massivo»: l'Excel delle fatture di vendita;
-3) Carica Dati Contabilità → 1. Carica Fatture Passive → Carica PDF delle Fatture: la cartella dell'anno (sempre dopo il punto 1).
+2) Carica Dati Contabilità → 1. Carica Fatture Passive → Carica PDF delle Fatture: la cartella dell'anno (sempre dopo il punto 1).
 
 ## 10. Controllo dopo il carico
 Quando ti scrivo «fatto», controlla nel database che le fatture ci siano con gli importi di Aruba, che le righe abbiano la classificazione concordata e che i PDF siano collegati (ci_pdf_fatture). Riportami solo le anomalie, una alla volta. Ricordami di aggiornare i costi (Report Costi degli anni toccati, poi Report Riproduttori). Alla fine, su mio ordine, esci da Aruba con «Logout».
@@ -90,7 +90,7 @@ export default function PromptCaricoAruba() {
       </p>
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", marginBottom: 24 }}>
         <div style={{ background: C.primary, color: "#fff", padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ fontWeight: 700, fontSize: 14 }}>Carico diretto da Aruba (fatture di acquisto e di vendita)</div>
+          <div style={{ fontWeight: 700, fontSize: 14 }}>Carico diretto da Aruba (fatture di acquisto)</div>
           <button onClick={copia}
             style={{ background: copiato ? C.green : "rgba(255,255,255,0.2)", color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
             {copiato ? "✓ Copiato!" : "📋 Copia prompt"}
