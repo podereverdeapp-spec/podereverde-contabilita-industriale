@@ -7,6 +7,7 @@ import { leggiFileAnagrafiche, preparaProposte, proposta, scriviProposte } from 
 // Versione 304 (decisione del Dott. Bizzarri del 26/10/2026, ore 16:11) — completa le anagrafiche di clienti e fornitori
 // con i dati delle fatture di Aruba (emesse e ricevute) e della rubrica di Aruba. Si scrivono SOLO i campi vuoti,
 // dopo la conferma; i valori diversi da quelli del programma si mostrano e basta.
+// Versione 305: i file si aggiungono una scelta dopo l'altra (anche da cartelle diverse); «Togli i file scelti» riparte.
 
 const etichetta = c => (c === "partita_iva" ? "Partita IVA" : etichettaCampo(c).replace(/ \(.*\)$/, ""));
 
@@ -89,8 +90,9 @@ export default function CompletaAnagraficheAruba() {
         non si cambia mai. Il Codice Univoco e la PEC di un fornitore si trovano solo se il fornitore è anche cliente o è nella rubrica di Aruba.
       </p>
       <div style={{ ...scheda, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <input type="file" multiple accept=".zip,.xml,.p7m,.csv" onChange={e => setFiles([...e.target.files])} style={input} />
-        <span style={{ fontSize: 12, color: C.muted }}>{files.length ? files.map(f => f.name).join(", ") : "nessun file scelto (si possono scegliere più file insieme)"}</span>
+        <input type="file" multiple accept=".zip,.xml,.p7m,.csv" onChange={e => { const nuovi = [...e.target.files]; e.target.value = ""; setFiles(prev => [...prev.filter(f => !nuovi.some(n => n.name === f.name)), ...nuovi]); }} style={input} />
+        <span style={{ fontSize: 12, color: C.muted }}>{files.length ? files.map(f => f.name).join(", ") : "nessun file scelto (si possono aggiungere file da cartelle diverse, una scelta dopo l'altra)"}</span>
+        {files.length > 0 && <button onClick={() => { setFiles([]); setLettura(null); setProp(null); }} style={btn(false, C.muted)}>Togli i file scelti</button>}
         <button onClick={leggi} disabled={lavoro} style={{ ...btn(true), marginLeft: "auto" }}>📂 Leggi i file</button>
       </div>
       {stato && <p style={{ color: C.primary, fontWeight: 700 }}>{stato}</p>}

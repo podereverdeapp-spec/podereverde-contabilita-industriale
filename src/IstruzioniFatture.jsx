@@ -63,7 +63,7 @@ export default function IstruzioniFatture() {
             "🚚 Trasporti attribuiti ai capi (versione 283): alcune fatture di trasporto degli animali in ingresso hanno la riga a 0, perché il loro importo è scritto nel Report Acquisto Animali e va nel costo dei capi trasportati (così non si conta due volte). Accanto a queste fatture, e sulla loro riga, si legge «🚚 trasporto … attribuito ai capi»; in alto si legge quanto valgono in tutto, non compreso nel totale delle fatture.",
             "«📥 Esporta Excel» scarica TUTTE le fatture trovate con i filtri, non solo il gruppo che si vede (fornitore, partita IVA, numero, data, totali): il programma le legge 1.000 alla volta e sul pulsante si vede l'avanzamento.",
           ],
-          note: "Pagina di sola consultazione: la classificazione delle singole righe si vede nella cartella «Ricerca».",
+          note: "Pagina di sola consultazione: la classificazione delle singole righe si vede nella cartella «Ricerca: Fatture e Anagrafiche» → «Ricerca Fatture».",
         },
         {
           pagina: "Fatture di vendita", icon: "💰",

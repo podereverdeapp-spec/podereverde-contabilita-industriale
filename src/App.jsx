@@ -53,8 +53,8 @@ import ImportMassivoRiproduttori from "./ImportMassivoRiproduttori";
 import RiepilogoCostoAnimali from "./RiepilogoCostoAnimali";
 import PrezzoPareggio from "./PrezzoPareggio";
 import DocumentoIstruzioni from "./DocumentoIstruzioni";
-import { ISTRUZIONI_CARICA_FATTURE, PIANO_DEI_CONTI, ISTRUZIONI_COSTI_DIRETTI, ISTRUZIONI_COSTI_LAVORO, ISTRUZIONI_SISTEMA_DATI, ISTRUZIONI_VERIFICA, ISTRUZIONI_REGISTRO_MODIFICHE, ISTRUZIONI_CONTROLLI, ISTRUZIONI_FATTURAZIONE_ANIMALI, ISTRUZIONI_ALTRE_FATTURE, ISTRUZIONI_CONTROLLO_ATTIVA } from "./istruzioniDati";
-import IstruzioniAnagrafiche from "./IstruzioniAnagrafiche";
+import { ISTRUZIONI_CARICA_FATTURE, PIANO_DEI_CONTI, ISTRUZIONI_COSTI_DIRETTI, ISTRUZIONI_COSTI_LAVORO, ISTRUZIONI_SISTEMA_DATI, ISTRUZIONI_VERIFICA, ISTRUZIONI_REGISTRO_MODIFICHE, ISTRUZIONI_CONTROLLI, ISTRUZIONI_FATTURAZIONE_ANIMALI, ISTRUZIONI_ALTRE_FATTURE, ISTRUZIONI_CONTROLLO_ATTIVA, ISTRUZIONI_RICERCA_ANAGRAFICHE } from "./istruzioniDati";
+// Versione 305: le istruzioni della cartella «Ricerca: Fatture e Anagrafiche» sono il documento Word (ISTRUZIONI_RICERCA_ANAGRAFICHE)
 import IstruzioniPrezziAcquisto from "./IstruzioniPrezziAcquisto";
 import IstruzioniAnimali from "./IstruzioniAnimali";
 import IstruzioniCosti from "./IstruzioniCosti";
@@ -405,7 +405,7 @@ function Programma({ utente }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 304</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 305</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -580,7 +580,7 @@ function Programma({ utente }) {
         {tab === "istr-sistema-dati" && <DocumentoIstruzioni doc={ISTRUZIONI_SISTEMA_DATI} />}
         {tab === "istr-verifica" && <DocumentoIstruzioni doc={ISTRUZIONI_VERIFICA} />}
         {tab === "carica-pdf-fatture" && <CaricaPdfFatture />}
-        {tab === "istr-ricerca" && <IstruzioniAnagrafiche />}
+        {tab === "istr-ricerca" && <DocumentoIstruzioni doc={ISTRUZIONI_RICERCA_ANAGRAFICHE} />}
         {tab === "istr-prezzi-acquisto" && <IstruzioniPrezziAcquisto />}
         {tab === "istr-animali" && <IstruzioniAnimali />}
         {tab === "istr-costi" && <IstruzioniCosti />}
