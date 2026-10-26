@@ -64,10 +64,10 @@ export async function leggiFileAruba(files) {
       for (const voce of Object.values(zip.files)) if (!voce.dir) await aggiungi(voce.name, await voce.async("uint8array"));
     } else await aggiungi(f.name, new Uint8Array(await f.arrayBuffer()));
   }
-  const fatture = [];
+  const fatture = [], autofatture = [];
   for (const x of xml) {
     try { fatture.push(...analizzaXml(x.testo, x.nome)); }
-    catch (e) { scartati.push({ file: x.nome, motivo: e.message }); }
+    catch (e) { if (e.autofattura) autofatture.push({ file: x.nome, numero: (x.testo.match(/<Numero>([^<]*)<\/Numero>/) || [])[1] || "", data: (x.testo.match(/<Data>([^<]*)<\/Data>/) || [])[1] || "" }); else scartati.push({ file: x.nome, motivo: e.message }); }
   }
   // stato di Aruba dall'elenco: per nome del file, altrimenti per numero e anno
   if (elenco) {
@@ -80,7 +80,8 @@ export async function leggiFileAruba(files) {
   }
   const nelleFatture = new Set(fatture.map(f => chiaveNumero(f.numero, f.anno)));
   const mancantiNeiFile = (elenco || []).filter(r => !nelleFatture.has(chiaveNumero(r.numero, String(r.data).slice(0, 4))));
-  return { fatture, elenco, scartati, mancantiNeiFile, nomeFile: nomi.join(", ") };
+  const autoNumeri = new Set(autofatture.map(a => chiaveNumero(a.numero, String(a.data).slice(0, 4))));
+  return { fatture, elenco, scartati, autofatture, mancantiNeiFile: mancantiNeiFile.filter(r => !autoNumeri.has(chiaveNumero(r.numero, String(r.data).slice(0, 4)))), nomeFile: nomi.join(", ") };
 }
 
 function leggiElenco(testo) {
@@ -118,8 +119,12 @@ export function analizzaXml(testo, nomeFile) {
   const header = primo(radice, "FatturaElettronicaHeader");
   const cedente = primo(header, "CedentePrestatore");
   const cedentePiva = testoDi(primo(cedente, "IdFiscaleIVA"), "IdCodice");
-  if (senzaIT(cedentePiva) !== PARTITA_IVA_PODERE) throw new Error(`non è una fattura emessa da Podere Verde (partita IVA del cedente ${cedentePiva || "assente"})`);
   const cess = primo(header, "CessionarioCommittente");
+  if (senzaIT(cedentePiva) !== PARTITA_IVA_PODERE) {
+    // Versione 301: autofattura (Podere Verde è il cliente, il cedente è il fornitore): non è una vendita
+    if (senzaIT(testoDi(primo(cess, "IdFiscaleIVA"), "IdCodice")) === PARTITA_IVA_PODERE) { const e = new Error("autofattura: Podere Verde è il cliente, non è una vendita"); e.autofattura = true; throw e; }
+    throw new Error(`non è una fattura emessa da Podere Verde (partita IVA del cedente ${cedentePiva || "assente"})`);
+  }
   const ana = primo(cess, "Anagrafica"), sede = primo(cess, "Sede"), idIva = primo(cess, "IdFiscaleIVA"), trasm = primo(header, "DatiTrasmissione");
   const nomeCliente = testoDi(ana, "Denominazione") || [testoDi(ana, "Nome"), testoDi(ana, "Cognome")].filter(Boolean).join(" ");
   const cliente = {
@@ -166,11 +171,19 @@ export function analizzaXml(testo, nomeFile) {
 const MATRICOLA = /\bIT\s?\d{9,12}\b/gi;
 const SPECIE_DESTINAZIONE = { bovino: "Bovini", suino: "Suini", ovino: "Ovini", caprino: "Ovini", equino: "Cavalli" };
 const PAROLE = [
-  [/\b(SUIN|MAIAL|PORC|CINTA SENESE|LATTONZOL|SCROF|VERR)/i, "Suini"],
-  [/\b(BOVIN|SCOTTON|VITELL|MANZ|VACC|TORO|TORI|CHIANIN|LIMOUSIN|QUART[OI] )/i, "Bovini"],
+  [/\b(SUIN|MAIAL|PORC|CINTA SENESE|LATTONZOL|SCROF|VERR|MAGRON)/i, "Suini"],
+  [/\b(BOVIN|SCOTTON|VITELL|MANZ|VACC|TORO|TORI|TOREL|CHIANIN|MARCHIGIAN|MAREMMAN|LIMOUSIN|QUART[OI] )/i, "Bovini"],
   [/\b(OVIN|AGNELL|PECOR|MONTON|CAPR|CAPRETT)/i, "Ovini"],
   [/\b(EQUIN|CAVALL|PULEDR|CAVALLA)/i, "Cavalli"],
   [/\b(POLL|GALLIN|UOVA|TACCHIN)/i, "Pollame"],
+];
+// Versione 301: righe che non sono animali né carcasse. Vanno in «Generali», così non entrano nel prezzo al kg di carcassa
+// delle specie (un prosciutto o un pacco di carne a pezzi non è una mezzena; un nolo o una potatura non è una vendita di animali).
+const NON_ANIMALI = [
+  [/\b(PROSCIUTT|CAPOCOLL|SALAM|SALSICC|LONZ|INSACCAT|PACC[OH]I?|GUANCIAL|PANCETT|LARDO|BISTECC|FETTIN|SPEZZATIN|MACINAT|BIRRA|ARROST|COSTAT|HAMBURG|COPPA|CARNE|FILONE|SGAMBAT|PORCHETT|STAGIONAT|SALUM)/i, "prodotto lavorato (salumi, carne a pezzi): non è una carcassa"],
+  [/\b(NOLO|POTATUR|RECINZ|DISSERBO|DISERBO|DECESP|SFALCI|DRENAGG|POSA |PULIZIA|MANUTENZ|ABBATTIM|ANNAFF|CONCIMAZ|IMPIANTO|SCAV|TRASPORT|LAVORAZ|SERVIZIO|TAGLIO|ARATUR|SEMINA|TRINCIA|SMANTELL|RIPRISTIN|FRESA|MOVIMENTAZ|SOSTITUZ|FORNITURA|POSA IN OPERA)/i, "servizio o lavoro per conto di altri"],
+  [/\b(FIENO|PAGLIA|BALLON|ROTOBALL|ORZO|GRANO|LEGNA|OLIO)/i, "prodotto agricolo, non animale"],
+  [/\bCOME DA FATTURA\b|\bRIFATTUR/i, "rifatturazione di un costo"],
 ];
 export async function caricaSpecieMatricole() {
   const { data, error } = await fetchAllPages((da, a) => supabase.from("animali").select("bdn, specie").not("bdn", "is", null).order("id").range(da, a));
@@ -181,6 +194,7 @@ export function proponiDestinazione(descrizione, specieMatricole) {
   const matricole = [...new Set((String(descrizione || "").match(MATRICOLA) || []).map(m => m.toUpperCase().replace(/\s/g, "")))];
   const specie = [...new Set(matricole.map(m => SPECIE_DESTINAZIONE[specieMatricole.get(m)]).filter(Boolean))];
   if (specie.length === 1) return { destinazione: specie[0], motivo: `matricola ${matricole.find(m => specieMatricole.has(m))} nell'anagrafe` };
+  for (const [re, motivo] of NON_ANIMALI) if (re.test(descrizione)) return { destinazione: "Generali", motivo };
   for (const [re, dest] of PAROLE) if (re.test(descrizione)) return { destinazione: dest, motivo: "parola della descrizione" };
   return { destinazione: "", motivo: "da scegliere" };
 }
@@ -202,13 +216,16 @@ export function confronta(fatture, archivio, specieMatricole) {
   const emesse = new Map();
   archivio.emesse.forEach(f => { const k = chiaveNumero(f.numero, f.anno); if (!emesse.has(k) || f.stato === "emessa") emesse.set(k, f); });
   const viste = new Map();
-  return fatture.map(f => {
+  const risultati = fatture.map(f => {
     const k = chiaveNumero(f.numero, f.anno);
-    const doppia = viste.has(k); viste.set(k, true);
+    // Versione 301: una fattura scartata dal Sistema di Interscambio vale come non emessa (spesso è stata rimandata con lo stesso numero)
+    const scartata = statoScartata(f.stato);
+    const doppia = !scartata && viste.has(k); if (!scartata) viste.set(k, true);
     const differenze = [];
     const p = emesse.get(k), c = attive.get(k);
     let esito, collegata = null;
-    if (doppia) esito = "doppia";
+    if (scartata) esito = "scartata";
+    else if (doppia) esito = "doppia";
     else if (p && p.stato === "emessa") {
       esito = "programma"; collegata = p;
       if (p.data !== f.data) differenze.push(`data ${p.data} nel programma, ${f.data} in Aruba`);
@@ -227,11 +244,29 @@ export function confronta(fatture, archivio, specieMatricole) {
     const righe = f.righe.map(r => ({ ...r, ...proponiDestinazione(r.descrizione, specieMatricole) }));
     return { ...f, chiave: k, esito, collegata, differenze, righe };
   });
+  // Versione 301: una nota di credito che storna una fattura prende la destinazione delle righe di quella fattura
+  for (const n of risultati.filter(f => f.tipoDocumento === "TD04")) {
+    n.righe.forEach(r => {
+      if (r.destinazione && r.motivo !== "parola della descrizione") return;
+      const m = String(r.descrizione).match(/(?:FATTURA|FPR)\s*(?:N\.?\s*)?(\d+)\s*[-/]\s*(\d{2})\b/i) || String(r.descrizione).match(/(?:FATTURA|FPR)\s*(?:N\.?\s*)?(\d+)\s+DEL\s+\d{1,2}[./]\d{1,2}[./](\d{2,4})/i);
+      if (!m) return;
+      const anno = Number(m[2].length === 2 ? "20" + m[2] : m[2]);
+      const orig = risultati.find(f => f.tipoDocumento !== "TD04" && f.anno === anno && progressivoDi(f.numero) === Number(m[1]) && f.esito !== "scartata");
+      const dest = orig ? [...new Set(orig.righe.map(x => x.destinazione).filter(Boolean))] : [];
+      if (dest.length === 1) { r.destinazione = dest[0]; r.motivo = `storno della ${orig.numero}`; }
+      // storno totale di una fattura con più destinazioni: la riga si divide come le righe della fattura stornata
+      else if (dest.length > 1 && n.righe.length === 1 && Math.abs(Math.abs(r.totale) - Math.abs(orig.imponibile)) <= TOLLERANZA) {
+        n.righeDivise = orig.righe.map((x, i) => ({ ...x, numeroLinea: i + 1, descrizione: `STORNO ${orig.numero}: ${x.descrizione}`, quantita: -Math.abs(x.quantita), totale: -Math.abs(x.totale), motivo: `storno della ${orig.numero}, riga ${x.numeroLinea}` }));
+      }
+    });
+    if (n.righeDivise) { n.righe = n.righeDivise; delete n.righeDivise; }
+  }
+  return risultati;
 }
 
 // Fatture emesse dal programma che nel file di Aruba non ci sono (per gli anni contenuti nel file)
 export function emesseNonInAruba(fatture, archivio) {
-  const inAruba = new Set(fatture.map(f => chiaveNumero(f.numero, f.anno)));
+  const inAruba = new Set(fatture.filter(f => !statoScartata(f.stato)).map(f => chiaveNumero(f.numero, f.anno)));
   const anni = new Set(fatture.map(f => f.anno));
   return archivio.emesse.filter(f => f.stato === "emessa" && anni.has(f.anno) && !inAruba.has(chiaveNumero(f.numero, f.anno)));
 }
@@ -242,7 +277,7 @@ export const PREFISSO_PRINCIPALE = "FPR";
 // Ultimo numero per anno della sequenza «FPR» (fatture e note di credito, se hanno lo stesso prefisso)
 export function ultimoNumeroPerAnno(fatture) {
   const per = {};
-  fatture.filter(f => prefissoDi(f.numero) === PREFISSO_PRINCIPALE).forEach(f => {
+  fatture.filter(f => prefissoDi(f.numero) === PREFISSO_PRINCIPALE && !statoScartata(f.stato)).forEach(f => {
     const n = progressivoDi(f.numero);
     if (n !== null && (!per[f.anno] || n > per[f.anno].n)) per[f.anno] = { n, numero: f.numero, data: f.data };
   });
@@ -323,7 +358,10 @@ export async function registraLettura({ risultati, archivio, nomeFile, ultimi })
 }
 
 // ── Controlli (striscia rossa e pagina dei controlli) ───────────────────────────────────────────────
-export const statoProblema = s => /scart|non consegn|rifiut|errore/i.test(String(s || ""));
+// Versione 301: «Emessa e non consegnata» e «Recapito impossibile» sono fatture VALIDE (il cliente le trova nel cassetto fiscale):
+// sono un problema solo «Scartata», «Errore elaborazione» e «Rifiutata».
+export const statoProblema = s => /scart|rifiut|errore/i.test(String(s || ""));
+export const statoScartata = s => /scart/i.test(String(s || ""));
 export async function caricaUltimaLettura() {
   const { data, error } = await supabase.from("ci_letture_aruba").select("*").order("letta_il", { ascending: false }).limit(1);
   if (error) return null;

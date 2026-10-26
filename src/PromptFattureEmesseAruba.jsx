@@ -30,7 +30,7 @@ Apri la sezione delle fatture inviate (emesse) e leggi l'elenco di OGNI anno fis
 - imponibile, imposta, totale;
 - stato del documento in Aruba (per esempio Inviata, Consegnata, Non consegnata, Scartata) e, se c'è, l'identificativo del Sistema di Interscambio e la data di invio;
 - il nome del file.
-Dammi per ogni anno: quante fatture, quante note di credito, il totale degli imponibili, il primo e l'ultimo numero, e i documenti con stato diverso da «Consegnata». Se un anno non ha fatture dimmelo.
+Dammi per ogni anno: quante fatture, quante note di credito, il totale degli imponibili, il primo e l'ultimo numero, i documenti scartati (non valgono come emessi) e le autofatture (AF01: Podere Verde è il cliente). «Emessa e non consegnata» è una fattura valida. Se un anno non ha fatture dimmelo.
 
 ## 3. File XML
 Chiedimi il permesso, poi salva nella cartella di lavoro il file XML di ogni documento dell'elenco (la fattura elettronica, NON il PDF). Se Aruba dà il file firmato (.xml.p7m), salva il file XML contenuto, senza firma. Nome: quello del file in Aruba, con estensione .xml.

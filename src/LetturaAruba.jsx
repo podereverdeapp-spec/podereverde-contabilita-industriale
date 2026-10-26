@@ -19,6 +19,7 @@ const ESITI = {
   presente: { testo: "Già in contabilità: si aggiorna lo stato", colore: C.primary },
   annullata: { testo: "Annullate nel programma ma presenti in Aruba", colore: C.red },
   doppia: { testo: "Doppie nel file", colore: C.red },
+  scartata: { testo: "Scartate dal Sistema di Interscambio: non valide, non si registrano", colore: C.muted },
 };
 
 export default function LetturaAruba({ onNavigate }) {
@@ -59,7 +60,7 @@ export default function LetturaAruba({ onNavigate }) {
     if (!window.confirm(msg)) return;
     setLavoro(true); setErrore(null);
     try {
-      const daRegistrare = risultati.filter(f => f.esito !== "doppia");
+      const daRegistrare = risultati.filter(f => f.esito !== "doppia" && f.esito !== "scartata");
       const e = await registraLettura({ risultati: daRegistrare, archivio, nomeFile: lettura.nomeFile, ultimi: ultimoNumeroPerAnno(daRegistrare) });
       setEsito(e); setRisultati(null); setLettura(null);
       setUltima(await caricaUltimaLettura());
@@ -69,7 +70,7 @@ export default function LetturaAruba({ onNavigate }) {
 
   const gruppi = risultati ? Object.keys(ESITI).map(k => ({ k, ...ESITI[k], fatture: risultati.filter(f => f.esito === k) })).filter(g => g.fatture.length) : [];
   const conDifferenze = risultati ? risultati.filter(f => f.differenze.length) : [];
-  const conProblemi = risultati ? risultati.filter(f => statoProblema(f.stato)) : [];
+  const conProblemi = risultati ? risultati.filter(f => statoProblema(f.stato) && f.esito !== "scartata") : [];
   const nonTrovate = risultati && archivio ? emesseNonInAruba(lettura.fatture, archivio) : [];
   const ultimi = risultati ? ultimoNumeroPerAnno(risultati) : {};
   const righeSenza = risultati ? risultati.filter(f => f.esito === "nuova").reduce((s, f) => s + f.righe.filter(r => !r.destinazione).length, 0) : 0;
@@ -124,6 +125,7 @@ export default function LetturaAruba({ onNavigate }) {
             <div style={{ fontSize: 12.5, color: C.muted }}>
               File letto: {lettura.nomeFile}. {lettura.elenco ? `Elenco degli stati: ${lettura.elenco.length} righe.` : "Nel file manca l'elenco degli stati (Elenco_Fatture_Emesse_Aruba.csv): lo stato di Aruba non si aggiorna."}
             </div>
+            {lettura.autofatture.length > 0 && <div style={{ fontSize: 12.5, color: C.muted }}>{lettura.autofatture.length === 1 ? "1 autofattura" : `${lettura.autofatture.length} autofatture`} ({lettura.autofatture.map(a => a.numero).join(", ")}): Podere Verde è il cliente, non sono vendite e non si registrano.</div>}
             {lettura.scartati.map((s, i) => <div key={i} style={{ color: C.red, fontSize: 12.5, fontWeight: 700 }}>⚠️ File {s.file} non letto: {s.motivo}.</div>)}
             {lettura.mancantiNeiFile.map((r, i) => <div key={i} style={{ color: C.red, fontSize: 12.5, fontWeight: 700 }}>⚠️ {r.numero} del {dataIt(r.data)} è nell'elenco ma il suo file XML manca.</div>)}
           </div>
@@ -156,7 +158,7 @@ export default function LetturaAruba({ onNavigate }) {
                 <thead><tr style={testata}><th style={th}>Numero</th><th style={th}>Data</th><th style={th}>Tipo</th><th style={th}>Cliente</th><th style={{ ...th, textAlign: "right" }}>Imponibile</th><th style={{ ...th, textAlign: "right" }}>IVA</th><th style={{ ...th, textAlign: "right" }}>Totale</th><th style={th}>Stato in Aruba</th><th style={th}>Righe</th></tr></thead>
                 <tbody>
                   {g.fatture.map(f => (
-                    <FatturaRiga key={f.chiave} f={f} aperta={g.k === "nuova" || aperte.has(f.chiave)} onApri={() => apri(f.chiave)} modificabile={g.k === "nuova"} onDestinazione={(i, v) => cambiaDestinazione(f.chiave, i, v)} />
+                    <FatturaRiga key={f.chiave} f={f} aperta={(g.k === "nuova" && f.righe.some(r => !r.destinazione)) || aperte.has(f.chiave)} onApri={() => apri(f.chiave)} modificabile={g.k === "nuova"} onDestinazione={(i, v) => cambiaDestinazione(f.chiave, i, v)} />
                   ))}
                 </tbody>
               </table>
@@ -168,7 +170,7 @@ export default function LetturaAruba({ onNavigate }) {
             <button onClick={registra} disabled={lavoro || righeSenza > 0} style={{ ...btn(true, C.green), opacity: lavoro || righeSenza > 0 ? 0.5 : 1 }}>
               {lavoro ? "Registrazione…" : "Registra la lettura"}
             </button>
-            <span style={{ fontSize: 12.5, color: C.muted, marginLeft: 10 }}>Le fatture doppie nel file non si registrano.</span>
+            <span style={{ fontSize: 12.5, color: C.muted, marginLeft: 10 }}>Le fatture scartate e quelle doppie nel file non si registrano.</span>
           </div>
         </>
       )}
