@@ -5,7 +5,7 @@ import { esportaExcel } from "./esportaExcel";
 import { caricaFattureEmesse, annullaFattura, caricaDestinatarioAmministrazione, inviaAllAmministrazione, quandoItaliano } from "./calcoloEmissioneFatture";
 import { scaricaFile, scaricaZip } from "./xmlFatturaPA";
 
-// Emissione Fatture → Fatture Emesse (una pagina per «Animali Allevamento» e una per «Altre Fatturazioni»)
+// Emissione Fatture → Fatture Emesse (una pagina per «Animali Allevamento» e una per «Emissione delle Altre Fatture Attive»)
 // Le fatture emesse dal programma: si riscarica il file XML per Aruba (anche più fatture in un .zip)
 // e, se serve, si annulla la registrazione (i capi tornano da fatturare). Nessuna cancellazione.
 // Versione 298: «✉️ Invia» manda le fatture all'amministrazione (Teresa Demaria) con i file XML allegati,
@@ -93,7 +93,7 @@ export default function FattureEmesse({ tipo = "animali_allevamento" }) {
   return (
     <div style={{ padding: 20, maxWidth: 1300, margin: "0 auto" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-        <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Fatture Emesse — {altre ? "Altre Fatturazioni" : "Animali Allevamento"}</h1>
+        <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Fatture Emesse — {altre ? "Altre Fatture Attive" : "Animali Allevamento"}</h1>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button onClick={() => invia(scelte)} disabled={!scelte.length || !puoInviare} style={btn(true, scelte.length && puoInviare ? C.primary : "#B8B3A7")}>
             {inviando ? "Invio in corso…" : `✉️ Invia a ${destinatario ? destinatario.nome : "amministrazione"} le selezionate (${scelte.length})`}

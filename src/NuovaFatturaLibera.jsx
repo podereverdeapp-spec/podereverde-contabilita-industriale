@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { C } from "./style";
 import { formattaNumero, formattaEuro } from "./parsingUtils";
-import { caricaCedente, salvaCedente, datiMancantiCliente, componiNumero, caricaNumeroProposto } from "./calcoloEmissioneFatture";
+import { caricaCedente, salvaCedente, datiMancantiCliente, componiNumero, caricaNumeroProposto, caricaDestinatarioAmministrazione, inviaAllAmministrazione, quandoItaliano } from "./calcoloEmissioneFatture";
 import {
   ALIQUOTE, UNITA_MISURA, NATURE, SOGLIA_BOLLO, IMPORTO_BOLLO, rigaVuota, calcolaFatturaLibera, problemiFattura,
   caricaClienti, caricaFatturePrecedenti, emettiFatturaLibera,
@@ -9,7 +9,7 @@ import {
 import { generaXmlFattura, nomeFileXml, scaricaFile } from "./xmlFatturaPA";
 import { ClienteForm, PannelloCedente } from "./PreparaFatture";
 
-// Emissione Fatture → Altre Fatturazioni → Nuova Fattura
+// Emissione Fatture di Vendita → Emissione delle Altre Fatture Attive → Nuova Fattura
 // Fattura scritta riga per riga (rifatturazione di costi, vendita di un equino, servizi…), con
 // aliquota IVA per riga. Alla conferma si registra nel programma e si scarica il file XML per Aruba.
 
@@ -45,6 +45,19 @@ export default function NuovaFatturaLibera({ onNavigate }) {
   const [conferma, setConferma] = useState(false);
   const [lavoro, setLavoro] = useState(false);
   const [emessa, setEmessa] = useState(null);
+  // Versione 299: invio per mail all'amministrazione subito dopo l'emissione, come per le fatture degli animali
+  const [destinatario, setDestinatario] = useState(null);
+  const [invio, setInvio] = useState(null);
+  const [inviando, setInviando] = useState(false);
+  const [erroreInvio, setErroreInvio] = useState(null);
+  useEffect(() => { caricaDestinatarioAmministrazione().then(setDestinatario).catch(() => setDestinatario(null)); }, []);
+  async function inviaEmessa() {
+    if (!destinatario || !emessa) return;
+    if (!window.confirm(`Mandare la fattura ${emessa.numero} a ${destinatario.nome} (${destinatario.email}) per il caricamento in Aruba?`)) return;
+    setInviando(true); setErroreInvio(null);
+    try { setInvio(await inviaAllAmministrazione([emessa.id])); } catch (err) { setErroreInvio(err.message); }
+    setInviando(false);
+  }
 
   async function carica() {
     setLoading(true); setErrore(null);
@@ -110,7 +123,7 @@ export default function NuovaFatturaLibera({ onNavigate }) {
   }
 
   function nuovaFattura() {
-    setEmessa(null); setRighe([rigaVuota()]); setNote(""); setBolloScelto(null); setSceltaPrecedente(""); setClienteId("");
+    setEmessa(null); setInvio(null); setErroreInvio(null); setRighe([rigaVuota()]); setNote(""); setBolloScelto(null); setSceltaPrecedente(""); setClienteId("");
     carica();
   }
 
@@ -118,7 +131,7 @@ export default function NuovaFatturaLibera({ onNavigate }) {
 
   return (
     <div style={{ padding: 20, maxWidth: 1300, margin: "0 auto" }}>
-      <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Nuova Fattura — Altre Fatturazioni</h1>
+      <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Nuova Fattura — Altre Fatture Attive</h1>
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 14, fontSize: 13, lineHeight: 1.5 }}>
         Fatture diverse da quelle degli animali consegnati al macello: rifatturazione di costi, vendita di un equino, servizi, ecc.
         Le righe si scrivono a mano, ognuna con la sua aliquota IVA. La numerazione è la stessa delle fatture degli animali.
@@ -135,13 +148,19 @@ export default function NuovaFatturaLibera({ onNavigate }) {
         <div style={{ ...scheda, borderLeft: `6px solid ${C.green}` }}>
           <div style={{ fontWeight: 800, color: C.green, fontSize: 16 }}>✅ Fattura {emessa.numero} del {dataItaliana(emessa.data)} registrata — {formattaEuro(emessa.totale)}</div>
           <div style={{ fontSize: 13, margin: "6px 0 10px" }}>
-            Il file <b>{emessa.nome_file_xml}</b> è stato scaricato. Lo carichi in Aruba con «Carica fattura» e controlli l'anteprima prima di «Invia».
+            Il file <b>{emessa.nome_file_xml}</b> è stato scaricato. Lo mandi a {destinatario ? destinatario.nome : "l'amministrazione"} con «✉️ Invia», perché lo carichi in Aruba con «Carica fattura».
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {destinatario && destinatario.attivo && !invio && (
+              <button onClick={inviaEmessa} disabled={inviando} style={btn(true, C.primary)}>{inviando ? "Invio in corso…" : `✉️ Invia a ${destinatario.nome} per Aruba`}</button>
+            )}
             <button onClick={() => scaricaFile(emessa.nome_file_xml, emessa.xml)} style={btn(true)}>Scarica di nuovo l'XML</button>
             <button onClick={nuovaFattura} style={btn(false)}>Prepara un'altra fattura</button>
             {onNavigate && <button onClick={() => onNavigate("altre-emesse")} style={btn(false)}>Vai alle fatture emesse</button>}
           </div>
+          {invio && <div style={{ marginTop: 8, fontWeight: 700, color: C.green }}>✅ Mail mandata a {destinatario ? destinatario.nome : invio.destinatario} ({invio.destinatario}) il {quandoItaliano(invio.inviata_il)}: {invio.fatture.join(", ")}.</div>}
+          {invio?.avviso && <div style={{ color: C.red, fontWeight: 700 }}>⚠️ {invio.avviso}</div>}
+          {erroreInvio && <div style={{ marginTop: 8, color: C.red, fontWeight: 700 }}>⚠️ {erroreInvio}</div>}
         </div>
       ) : (
         <>
@@ -222,7 +241,7 @@ export default function NuovaFatturaLibera({ onNavigate }) {
                         <td style={td}><input value={r.quantita} onChange={e => cambiaRiga(i, "quantita", e.target.value)} style={{ ...input, width: 80, textAlign: "right" }} /></td>
                         <td style={td}>
                           <select value={r.unitaMisura} onChange={e => cambiaRiga(i, "unitaMisura", e.target.value)} style={{ ...input, width: 110 }}>
-                            {UNITA_MISURA.map(u => <option key={u} value={u}>{u || "nessuna"}</option>)}
+                            {(UNITA_MISURA.includes(r.unitaMisura) ? UNITA_MISURA : [...UNITA_MISURA, r.unitaMisura]).map(u => <option key={u} value={u}>{u || "nessuna"}</option>)}
                           </select>
                         </td>
                         <td style={td}><input value={r.prezzo} onChange={e => cambiaRiga(i, "prezzo", e.target.value)} style={{ ...input, width: 100, textAlign: "right" }} /></td>

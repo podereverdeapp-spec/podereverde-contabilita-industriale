@@ -1,7 +1,7 @@
 import { supabase } from "./supabase";
 import { fetchAllPages } from "./parsingUtils";
 
-// Emissione Fatture → Altre Fatturazioni
+// Emissione Fatture di Vendita → Emissione delle Altre Fatture Attive
 // Fatture «libere» di Podere Verde (rifatturazione di costi, vendita di un equino, servizi…):
 // righe scritte dall'operatore, ciascuna con quantità, unità di misura, prezzo e aliquota IVA.
 // Stessa numerazione «FPR n/aa» delle fatture degli animali, stesso file XML per Aruba.
@@ -12,6 +12,15 @@ const round2 = n => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
 export const ALIQUOTE = ["22", "10", "5", "4", "0"];
 export const UNITA_MISURA = ["", "KG", "NR", "PZ", "ORE", "LT", "Q", "T", "MC", "HA", "A CORPO"];
+
+// Versione 299: le righe riprese da una fattura precedente portano l'unità di misura scritta in quella fattura
+// (34 righe delle fatture attive in contabilità hanno «Kilogrammi»): la si riporta alla sigla dell'elenco,
+// così la pagina mostra la stessa unità che va nel file XML.
+const SINONIMI_UNITA = { KILOGRAMMI: "KG", KILOGRAMMO: "KG", "KG.": "KG", KGS: "KG", CHILOGRAMMI: "KG", NUMERO: "NR", "N.": "NR", "NR.": "NR", PEZZI: "PZ", PEZZO: "PZ", "PZ.": "PZ", QUINTALI: "Q", QUINTALE: "Q", TONNELLATE: "T", LITRI: "LT", ETTARI: "HA", "ORE.": "ORE" };
+export function normalizzaUnita(u) {
+  const v = String(u || "").trim().toUpperCase();
+  return SINONIMI_UNITA[v] || v;
+}
 
 // Natura dell'operazione quando l'IVA è 0 (codici della fattura elettronica)
 export const NATURE = [
@@ -109,14 +118,14 @@ export async function caricaFatturePrecedenti() {
   (emesse.data || []).forEach(f => elenco.push({
     chiave: `p${f.id}`, data: f.data, etichetta: `${f.numero} del ${f.data} — ${f.cliente_denominazione} (dal programma)`, cliente_id: f.cliente_id,
     righe: (f.ci_fatture_emesse_righe || []).filter(r => r.attiva !== false).sort((a, b) => a.numero_linea - b.numero_linea).map(r => ({
-      descrizione: r.descrizione, quantita: String(r.quantita_kg), unitaMisura: r.unita_misura || "", prezzo: String(r.prezzo_kg),
+      descrizione: r.descrizione, quantita: String(r.quantita_kg), unitaMisura: normalizzaUnita(r.unita_misura), prezzo: String(r.prezzo_kg),
       aliquota: String(Number(r.aliquota_iva)), natura: r.natura_iva || "",
     })),
   }));
   (attive.data || []).forEach(f => elenco.push({
     chiave: `c${f.id}`, data: f.data, etichetta: `${f.numero} del ${f.data} — ${f.ci_clienti?.nome || "cliente non indicato"} (da contabilità)`, cliente_id: f.cliente_id,
     righe: (f.ci_articoli_fattura || []).sort((a, b) => a.id - b.id).map(r => ({
-      descrizione: r.descrizione || "", quantita: String(Number(r.quantita ?? 1)), unitaMisura: r.unita_misura || "", prezzo: String(Number(r.prezzo_unitario ?? 0)),
+      descrizione: r.descrizione || "", quantita: String(Number(r.quantita ?? 1)), unitaMisura: normalizzaUnita(r.unita_misura), prezzo: String(Number(r.prezzo_unitario ?? 0)),
       aliquota: String(Number(r.aliquota_iva ?? 10)), natura: "",
     })),
   }));

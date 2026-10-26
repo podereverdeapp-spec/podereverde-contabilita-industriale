@@ -23,7 +23,7 @@ export default function IstruzioniEmissioneFatture() {
           <br /><br />
           La sezione è divisa in due sottocartelle:
           <br />• <strong>Fatturazione Automatica Vendita Animali da Allevamento</strong>: le fatture per gli animali consegnati al macello o venduti ad altri allevamenti, preparate dai dati dei capi usciti;
-          <br />• <strong>Altre Fatturazioni</strong>: tutte le altre fatture di vendita (riaddebiti, prodotti, servizi, vendite occasionali).
+          <br />• <strong>Emissione delle Altre Fatture Attive</strong>: tutte le altre fatture di vendita (riaddebiti, prodotti, servizi, vendite occasionali).
           <br /><br />
           Tutte le fatture emesse dal programma, animali e altre, seguono la stessa numerazione «FPR n/aa» usata in Aruba.
           <br /><br />
@@ -71,7 +71,7 @@ export default function IstruzioniEmissioneFatture() {
           note: "Se la fattura è già stata inviata allo SdI, per stornarla serve una nota di credito emessa con Aruba.",
         },
         {
-          pagina: "Altre Fatturazioni → Nuova Fattura", icon: "✍️",
+          pagina: "Emissione delle Altre Fatture Attive → Nuova Fattura", icon: "✍️",
           aCosaServe: "Prepara ed emette le fatture di vendita diverse dagli animali consegnati al macello: rifatturazione di costi sostenuti per conto di altri (es. concimi e sementi a Muratella), vendita di un equino, servizi, vendite occasionali. Le righe si scrivono a mano e ognuna ha la sua aliquota IVA.",
           comeSiUsa: [
             "1. Cliente: sceglierlo dall'elenco (si può cercare per nome o partita IVA), oppure crearlo con «+ Nuovo cliente». Se mancano dati necessari alla fattura elettronica (partita IVA o codice fiscale, indirizzo, CAP, comune, provincia, codice destinatario o PEC) sono indicati in rosso: si completano con «Modifica dati del cliente».",
@@ -85,7 +85,7 @@ export default function IstruzioniEmissioneFatture() {
           note: "I dati di Podere Verde in fattura (intestazione, banca, IBAN) sono gli stessi delle fatture degli animali e si controllano dal riquadro in cima alla pagina.",
         },
         {
-          pagina: "Altre Fatturazioni → Fatture Emesse", icon: "📤",
+          pagina: "Emissione delle Altre Fatture Attive → Fatture Emesse", icon: "📤",
           aCosaServe: "L'elenco delle fatture libere emesse dal programma, con le righe, per riscaricare il file XML per Aruba o annullarne la registrazione.",
           comeSiUsa: [
             "Cliccare sul numero per vedere le righe (quantità, unità di misura, prezzo, aliquota IVA e natura, importo).",
@@ -102,7 +102,7 @@ export default function IstruzioniEmissioneFatture() {
             "In cima c'è la decisione spiegata per esteso: è il testo da dare al commercialista, che lo ritrova anche nell'Excel («Esporta in Excel per il commercialista»: nota, riepilogo per anno, righe da ricevere, righe da emettere).",
             "Il riepilogo per anno mostra quanto entra nei costi di Podere: le fatture da ricevere in più, l'orzo in meno nei Mangimi. Sono gli stessi importi che il Report Costi segnala nel riquadro arancione dell'anno.",
             "Ogni documento di competenza («DA RICEVERE MURATELLA 2021», «DA EMETTERE MURATELLA 2025»…) ha le sue righe: ogni riga riporta la fattura originale pagata da Muratella (fornitore, numero, data) con la stessa classificazione delle fatture di Podere.",
-            "Stato arancione «da ricevere» / «da emettere»: la fattura vera non c'è ancora. Quando la fattura vera è registrata in contabilità (acquisto caricato in «Carica Dati Contabilità»; vendita emessa con Aruba o con «Altre Fatturazioni» e poi registrata in «Carica Fatture Attive»), la si sceglie nella tendina del documento e si clicca «Collega»: lo stato diventa verde «regolarizzato».",
+            "Stato arancione «da ricevere» / «da emettere»: la fattura vera non c'è ancora. Quando la fattura vera è registrata in contabilità (acquisto caricato in «Carica Dati Contabilità»; vendita emessa con Aruba o con «Emissione delle Altre Fatture Attive» e poi registrata in «Carica Fatture Attive»), la si sceglie nella tendina del documento e si clicca «Collega»: lo stato diventa verde «regolarizzato».",
             "Una fattura d'acquisto vera collegata NON si conta nei costi: il costo è già contato dal documento di competenza nell'anno giusto (es. il gasolio del 2022 resta nel 2022 anche se Muratella lo fattura nel 2026). Per questo le fatture di Muratella arrivate dopo l'8 ottobre 2026 e non ancora collegate sono elencate in rosso: vanno collegate, altrimenti il costo si conta due volte.",
             "Dopo ogni collegamento o modifica, gli anni interessati vanno ricalcolati (il programma lo segnala con l'avviso arancione «Occorre ricalcolare i costi»).",
           ],
