@@ -10,7 +10,7 @@ import CaricaFattureAttive from "./CaricaFattureAttive";
 import SezioneCespiti from "./SezioneCespiti";
 import ReportUba from "./ReportUba";
 import SezioneReportCosti from "./SezioneReportCosti";
-import GraficoMacellazioni from "./GraficoMacellazioni";
+import QuandoMacellare from "./QuandoMacellare";
 import BreakEven from "./BreakEven";
 import ContabilitaMuratella from "./ContabilitaMuratella";
 import RiepilogoCostiBreakEven from "./RiepilogoCostiBreakEven";
@@ -53,7 +53,7 @@ import ImportMassivoRiproduttori from "./ImportMassivoRiproduttori";
 import RiepilogoCostoAnimali from "./RiepilogoCostoAnimali";
 import PrezzoPareggio from "./PrezzoPareggio";
 import DocumentoIstruzioni from "./DocumentoIstruzioni";
-import { ISTRUZIONI_CARICA_FATTURE, PIANO_DEI_CONTI, ISTRUZIONI_COSTI_DIRETTI, ISTRUZIONI_COSTI_LAVORO, ISTRUZIONI_SISTEMA_DATI, ISTRUZIONI_VERIFICA, ISTRUZIONI_REGISTRO_MODIFICHE, ISTRUZIONI_CONTROLLI, ISTRUZIONI_FATTURAZIONE_ANIMALI, ISTRUZIONI_ALTRE_FATTURE, ISTRUZIONI_CONTROLLO_ATTIVA, ISTRUZIONI_RICERCA_ANAGRAFICHE, ISTRUZIONI_RIEPILOGO_CARICA_DATI, ISTRUZIONI_GENERALI_EMISSIONE, ISTRUZIONI_FATTURE_COMPETENZA, ISTRUZIONI_REPORT_COSTI } from "./istruzioniDati";
+import { ISTRUZIONI_CARICA_FATTURE, PIANO_DEI_CONTI, ISTRUZIONI_COSTI_DIRETTI, ISTRUZIONI_COSTI_LAVORO, ISTRUZIONI_SISTEMA_DATI, ISTRUZIONI_VERIFICA, ISTRUZIONI_REGISTRO_MODIFICHE, ISTRUZIONI_CONTROLLI, ISTRUZIONI_FATTURAZIONE_ANIMALI, ISTRUZIONI_ALTRE_FATTURE, ISTRUZIONI_CONTROLLO_ATTIVA, ISTRUZIONI_RICERCA_ANAGRAFICHE, ISTRUZIONI_RIEPILOGO_CARICA_DATI, ISTRUZIONI_GENERALI_EMISSIONE, ISTRUZIONI_FATTURE_COMPETENZA, ISTRUZIONI_REPORT_COSTI, ISTRUZIONI_QUANDO_MACELLARE } from "./istruzioniDati";
 // Versione 305: le istruzioni della cartella «Ricerca: Fatture e Anagrafiche» sono il documento Word (ISTRUZIONI_RICERCA_ANAGRAFICHE)
 import IstruzioniPrezziAcquisto from "./IstruzioniPrezziAcquisto";
 import IstruzioniAnimali from "./IstruzioniAnimali";
@@ -223,7 +223,10 @@ const MENU = [
     // Versione 308 (richiesta del Dott. Bizzarri del 26/10/2026 ore 19:45): prima del Report Costi le sue istruzioni
     { tipo: "voce", id: "istr-report-costi", label: "Istruzioni Report Costi", icon: "📖" },
     { tipo: "voce", id: "costi", label: "Report Costi", icon: "📊" },
-    { tipo: "voce", id: "grafico-macellazioni", label: "Grafico per le Macellazioni", icon: "📈" },
+    // Versione 309 (decisione del Dott. Bizzarri del 26/10/2026 ore 20:26): «Grafico per le Macellazioni» diventa «Quando macellare»
+    // Versione 309 (richiesta del Dott. Bizzarri del 26/10/2026 ore 21:17): prima di «Quando macellare» le sue istruzioni
+    { tipo: "voce", id: "istr-quando-macellare", label: "Istruzioni Quando macellare", icon: "📖" },
+    { tipo: "voce", id: "grafico-macellazioni", label: "Quando macellare", icon: "📈" },
     { tipo: "voce", id: "prezzo-pareggio", label: "Prezzo di Pareggio", icon: "🎯" },
     { tipo: "voce", id: "istr-break-even", label: "Istruzioni del Break Even", icon: "📖" },
     { tipo: "voce", id: "break-even", label: "Break Even sulla carcassa", icon: "⚖️" },
@@ -412,7 +415,7 @@ function Programma({ utente }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 308</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 309</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -536,7 +539,8 @@ function Programma({ utente }) {
         {tab === "uba" && <ReportUba onVediScheda={vaiAllaSchedaAnimale} />}
         {tab === "istr-report-costi" && <DocumentoIstruzioni doc={ISTRUZIONI_REPORT_COSTI} />}
         {tab === "costi" && <SezioneReportCosti />}
-        {tab === "grafico-macellazioni" && <GraficoMacellazioni />}
+        {tab === "istr-quando-macellare" && <DocumentoIstruzioni doc={ISTRUZIONI_QUANDO_MACELLARE} />}
+        {tab === "grafico-macellazioni" && <QuandoMacellare />}
         {tab === "prezzo-pareggio" && <PrezzoPareggio />}
         {tab === "break-even" && <BreakEven base="carcassa" onNavigate={vaiA} />}
         {tab === "break-even-vivo" && <BreakEven base="vivo" onNavigate={vaiA} />}

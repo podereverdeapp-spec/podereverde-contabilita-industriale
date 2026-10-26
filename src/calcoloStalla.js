@@ -27,18 +27,26 @@ export function dataRiferimento(anno) {
 // Prezzo al kg di carcassa dalle fatture di vendita: media pesata sui chili dell'ultimo anno con vendite (fino all'anno scelto).
 // Si contano le righe intestate alla specie con almeno 10 kg e un prezzo tra 1 e 50 € al kg (così una riga «vendita torello»
 // a corpo non sporca la media). Fatture lette da Aruba + fatture emesse dal programma non annullate.
+// Versione 309: si tolgono le righe dei capi di riforma (usciti con più di 36 mesi, per esempio le vacche Aurelia della
+// FPR 11/26 a 4,50 € al kg): il loro prezzo non è quello di un capo da macello e abbassava la media dei bovini.
+const ETA_RIFORMA_MESI = 36;
+const MATRICOLA = /\b(IT\s?\d{6,})\b/gi;
 export async function prezziDaFatture(anno) {
-  const [{ data: fatture }, { data: emesse }] = await Promise.all([
+  const [{ data: fatture }, { data: emesse }, { data: animali }] = await Promise.all([
     fetchAllPages((da, a) => supabase.from("ci_fatture").select("id, data").eq("tipo", "ATTIVA").lte("data", `${anno}-12-31`).order("id").range(da, a)),
-    fetchAllPages((da, a) => supabase.from("ci_fatture_emesse_righe").select("specie, quantita_kg, importo, ci_fatture_emesse(data, stato)").order("id").range(da, a)),
+    fetchAllPages((da, a) => supabase.from("ci_fatture_emesse_righe").select("specie, matricola, quantita_kg, importo, ci_fatture_emesse(data, stato)").order("id").range(da, a)),
+    fetchAllPages((da, a) => supabase.from("animali").select("id, bdn, nascita, data_uscita").order("id").range(da, a)),
   ]);
+  const etaUscita = new Map((animali || []).filter(x => x.bdn && x.nascita && x.data_uscita).map(x => [String(x.bdn).toUpperCase().replace(/\s+/g, ""), (new Date(x.data_uscita) - new Date(x.nascita)) / GIORNO / MESE]));
+  const diRiforma = testo => [...String(testo || "").matchAll(MATRICOLA)].some(m => (etaUscita.get(m[1].toUpperCase().replace(/\s+/g, "")) || 0) > ETA_RIFORMA_MESI);
   const annoFattura = new Map((fatture || []).map(f => [f.id, parseInt(String(f.data).slice(0, 4))]));
   const righe = [];
   if (annoFattura.size) {
-    const { data: art } = await fetchAllPages((da, a) => supabase.from("ci_articoli_fattura").select("fattura_id, destinazione, quantita, totale_riga")
+    const { data: art } = await fetchAllPages((da, a) => supabase.from("ci_articoli_fattura").select("fattura_id, destinazione, descrizione, matricole, quantita, totale_riga")
       .in("destinazione", Object.values(DESTINAZIONE)).order("id").range(da, a));
     for (const r of art || []) {
       const an = annoFattura.get(r.fattura_id); if (!an) continue;
+      if (diRiforma(`${r.descrizione || ""} ${Array.isArray(r.matricole) ? r.matricole.join(" ") : (r.matricole || "")}`)) continue;
       const specie = Object.keys(DESTINAZIONE).find(s => DESTINAZIONE[s] === (r.destinazione || "").trim());
       righe.push({ specie, anno: an, kg: num(r.quantita), importo: num(r.totale_riga), fonte: "fatture" });
     }
@@ -46,6 +54,7 @@ export async function prezziDaFatture(anno) {
   for (const r of emesse || []) {
     const f = r.ci_fatture_emesse; if (!f || f.stato === "annullata") continue;
     const an = parseInt(String(f.data).slice(0, 4)); if (an > anno) continue;
+    if (diRiforma(r.matricola)) continue;
     righe.push({ specie: r.specie, anno: an, kg: num(r.quantita_kg), importo: num(r.importo), fonte: "programma" });
   }
   const valide = righe.filter(r => SPECIE.includes(r.specie) && r.kg >= 10 && r.importo / r.kg >= 1 && r.importo / r.kg <= 50);
