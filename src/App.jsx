@@ -40,6 +40,7 @@ import LetturaAruba from "./LetturaAruba";
 import ControlloFatturazioneAttiva from "./ControlloFatturazioneAttiva";
 import ElencoFattureAttive from "./ElencoFattureAttive";
 import NumeroProgressivo from "./NumeroProgressivo";
+import VenditePerAnno from "./VenditePerAnno";
 import { contaAllarmiFatturazione } from "./calcoloAruba";
 import PromptCedolini from "./PromptCedolini";
 import CaricaCostiLavoro from "./CaricaCostiLavoro";
@@ -192,6 +193,8 @@ const MENU = [
       { id: "lettura-aruba", label: "Leggi le Fatture di Aruba", icon: "📥" },
       { id: "controllo-attiva", label: "Controlli e Allarmi", icon: "🔔" },
       { id: "elenco-attive", label: "Elenco Fatture Attive", icon: "📋" },
+      // Versione 303 (decisione del Dott. Bizzarri del 26/10/2026, ore 15:27): seconda pagina dell'elenco, anno per anno in quattro colonne
+      { id: "vendite-per-anno", label: "Vendite per Anno e per Tipo", icon: "📊" },
       { id: "numero-progressivo", label: "Numero Progressivo", icon: "🔢" },
     ] },
     { tipo: "sottocartella", id: "sub-fatture-competenza", label: "Fatture da Ricevere e da Emettere", icon: "🗂️", voci: [
@@ -396,7 +399,7 @@ function Programma({ utente }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 301</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 303</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -554,6 +557,7 @@ function Programma({ utente }) {
         {tab === "controllo-attiva" && <ControlloFatturazioneAttiva onNavigate={vaiA} />}
         {tab === "elenco-attive" && <ElencoFattureAttive />}
         {tab === "numero-progressivo" && <NumeroProgressivo />}
+        {tab === "vendite-per-anno" && <VenditePerAnno />}
         {tab === "prompt-cedolini" && <PromptCedolini />}
         {tab === "carica-costi-lavoro" && <CaricaCostiLavoro />}
         {tab === "consulta-costi-lavoro" && <ConsultaCostiLavoro />}

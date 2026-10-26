@@ -180,7 +180,7 @@ const PAROLE = [
 // Versione 301: righe che non sono animali né carcasse. Vanno in «Generali», così non entrano nel prezzo al kg di carcassa
 // delle specie (un prosciutto o un pacco di carne a pezzi non è una mezzena; un nolo o una potatura non è una vendita di animali).
 const NON_ANIMALI = [
-  [/\b(PROSCIUTT|CAPOCOLL|SALAM|SALSICC|LONZ|INSACCAT|PACC[OH]I?|GUANCIAL|PANCETT|LARDO|BISTECC|FETTIN|SPEZZATIN|MACINAT|BIRRA|ARROST|COSTAT|HAMBURG|COPPA|CARNE|FILONE|SGAMBAT|PORCHETT|STAGIONAT|SALUM)/i, "prodotto lavorato (salumi, carne a pezzi): non è una carcassa"],
+  [/\b(PROSCIUTT|CAPOCOLL|SALAM|SALSICC|LONZ|INSACCAT|PACC[OH]I?|GUANCIAL|PANCETT|LARDO|BISTECC|FETTIN|SPEZZATIN|MACINAT|BIRR[AE]|ARROST|COSTAT|HAMBURG|COPP[AE]|FILONE|SGAMBAT|PORCHETT|STAGIONAT|SALUM|SPUNTATUR|SOPPRESSAT)/i, "prodotto lavorato (salumi, carne a pezzi): non è una carcassa"],
   [/\b(NOLO|POTATUR|RECINZ|DISSERBO|DISERBO|DECESP|SFALCI|DRENAGG|POSA |PULIZIA|MANUTENZ|ABBATTIM|ANNAFF|CONCIMAZ|IMPIANTO|SCAV|TRASPORT|LAVORAZ|SERVIZIO|TAGLIO|ARATUR|SEMINA|TRINCIA|SMANTELL|RIPRISTIN|FRESA|MOVIMENTAZ|SOSTITUZ|FORNITURA|POSA IN OPERA)/i, "servizio o lavoro per conto di altri"],
   [/\b(FIENO|PAGLIA|BALLON|ROTOBALL|ORZO|GRANO|LEGNA|OLIO)/i, "prodotto agricolo, non animale"],
   [/\bCOME DA FATTURA\b|\bRIFATTUR/i, "rifatturazione di un costo"],
@@ -443,3 +443,43 @@ export async function caricaElencoAttive() {
   }));
   return elenco.sort((a, b) => String(b.data).localeCompare(String(a.data)) || (progressivoDi(b.numero) || 0) - (progressivoDi(a.numero) || 0));
 }
+
+// ── Versione 303: vendite per anno e per tipo (decisione del Dott. Bizzarri del 26/10/2026, ore 15:27) ─────────────
+// Quattro colonne: vendita di animali (capi vivi, carcasse, mezzene, quarti), vendita di prodotti (salumi, carne a pezzi,
+// pacchi, birre), lavorazioni con mezzi pesanti (noli a caldo di bob cat, miniescavatore, trituratore, scavi), altro.
+// La riga si assegna dalla destinazione e dalle parole della descrizione; il dettaglio mostra ogni riga, per controllo.
+export const TIPI_VENDITA = [
+  { chiave: "animali", nome: "Vendita animali" },
+  { chiave: "prodotti", nome: "Vendita prodotti" },
+  { chiave: "mezzi", nome: "Lavorazioni con mezzi pesanti" },
+  { chiave: "altro", nome: "Altro" },
+];
+const RE_PRODOTTI = /\b(PROSCIUTT|CAPOCOLL|SALAM|SALSICC|LONZ|INSACCAT|PACC[OH]I?|GUANCIAL|PANCETT|LARDO|BISTECC|FETTIN|SPEZZATIN|MACINAT|BIRR[AE]|ARROST|COSTAT|HAMBURG|COPP[AE]|FILONE|SGAMBAT|PORCHETT|STAGIONAT|SALUM|SPUNTATUR|SOPPRESSAT)/i;
+const RE_MEZZI = /\b(NOLO|BOB ?CAT|ESCAVAT|MINIESCAVAT|TRITURAT|SCAV[OI]|DRENAGG|PALA MECCANICA|CAMION|AUTOCARR)/i;
+const RE_ANIMALI = /\b(SUIN|MAIAL|PORC|CINTA SENESE|LATTONZOL|SCROF|VERR|MAGRON|BOVIN|SCOTTON|VITELL|MANZ|VACC|TORO|TORI|TOREL|CHIANIN|MARCHIGIAN|MAREMMAN|LIMOUSIN|QUART[OI] |MEZZEN|CARCASS|OVIN|AGNELL|PECOR|MONTON|CAPR|EQUIN|CAVALL|PULEDR|POLL|GALLIN)/i;
+export function tipoVendita(riga) {
+  const d = String(riga.descrizione || "");
+  if (["Bovini", "Suini", "Ovini", "Cavalli", "Pollame"].includes(riga.destinazione)) return RE_PRODOTTI.test(d) && !/MEZZEN|QUART|CARCASS/i.test(d) ? "prodotti" : "animali";
+  if (RE_PRODOTTI.test(d)) return "prodotti";
+  if (RE_MEZZI.test(d)) return "mezzi";
+  if (/SERVIZIO DI MANTENIMENTO/i.test(d)) return "altro";
+  if (RE_ANIMALI.test(d)) return "animali";
+  return "altro";
+}
+export async function caricaVenditePerAnno() {
+  const elenco = await caricaElencoAttive();
+  const anni = new Map();
+  const righe = [];
+  for (const f of elenco) {
+    const a = anni.get(f.anno) || { anno: f.anno, animali: 0, prodotti: 0, mezzi: 0, altro: 0, totale: 0, fatture: 0, imponibileFatture: 0 };
+    a.fatture++; a.imponibileFatture = round2(a.imponibileFatture + (f.imponibile || 0));
+    for (const r of f.righe) {
+      const t = tipoVendita(r);
+      a[t] = round2(a[t] + (r.importo || 0)); a.totale = round2(a.totale + (r.importo || 0));
+      righe.push({ anno: f.anno, numero: f.numero, data: f.data, cliente: f.cliente, descrizione: r.descrizione, importo: r.importo, destinazione: r.destinazione, tipo: t });
+    }
+    anni.set(f.anno, a);
+  }
+  return { anni: [...anni.values()].sort((x, y) => y.anno - x.anno), righe };
+}
+

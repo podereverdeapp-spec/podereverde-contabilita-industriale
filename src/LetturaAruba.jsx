@@ -41,8 +41,13 @@ export default function LetturaAruba({ onNavigate }) {
     setLavoro(true); setErrore(null); setEsito(null); setRisultati(null);
     try {
       const [l, arch, specie] = await Promise.all([leggiFileAruba(files), caricaArchivio(), caricaSpecieMatricole()]);
-      setLettura(l); setArchivio(arch);
-      setRisultati(confronta(l.fatture, arch, specie));
+      // Versione 302: se nel file non ci sono fatture (per esempio è stato scelto solo l'elenco .csv) non si va avanti
+      if (!l.fatture.length) {
+        setErrore(`Nel file scelto (${l.nomeFile}) non c'è nessuna fattura${l.autofatture.length ? " da registrare" : ""}: va scelto il file .zip «Fatture_Emesse_Aruba_…» della cartella «FATTURE EMESSE ARUBA», non l'elenco .csv.`);
+      } else {
+        setLettura(l); setArchivio(arch);
+        setRisultati(confronta(l.fatture, arch, specie));
+      }
     } catch (err) { setErrore(err.message); }
     setLavoro(false);
   }
@@ -52,6 +57,7 @@ export default function LetturaAruba({ onNavigate }) {
   }
 
   async function registra() {
+    if (!risultati || !risultati.length) { window.alert("Non c'è nessuna fattura da registrare: scegliere il file .zip di Aruba."); return; }
     const nuove = risultati.filter(f => f.esito === "nuova");
     const senza = nuove.filter(f => f.righe.some(r => !r.destinazione)).length;
     if (senza) { window.alert(`${senza} fatture nuove hanno righe senza destinazione: sceglierla prima di registrare.`); return; }
@@ -116,6 +122,15 @@ export default function LetturaAruba({ onNavigate }) {
 
       {risultati && (
         <>
+          {/* Versione 302: il pulsante di registrazione anche in cima, con l'avviso che finora non è stato scritto niente */}
+          <div style={{ ...scheda, borderLeft: `6px solid ${C.yellow}`, background: "#FFFBEA", display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ fontSize: 13.5, fontWeight: 700, color: "#6B5200", flex: "1 1 420px" }}>
+              ⚠️ Le fatture sono state lette ma NON ancora scritte nel programma. Controllare i riquadri qui sotto, poi premere «Registra la lettura» (qui o in fondo alla pagina).
+            </div>
+            <button onClick={registra} disabled={lavoro || righeSenza > 0} style={{ ...btn(true, C.green), opacity: lavoro || righeSenza > 0 ? 0.5 : 1 }}>
+              {lavoro ? "Registrazione…" : "Registra la lettura"}
+            </button>
+          </div>
           <div style={scheda}>
             <div style={titolo}>1. Che cosa c'è nel file</div>
             <div>
