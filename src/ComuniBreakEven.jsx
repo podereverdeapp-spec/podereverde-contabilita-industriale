@@ -87,3 +87,9 @@ export function Schede({ voci, attiva, scegli }) {
     </div>
   );
 }
+
+// Nota sul «Risultato con la produzione» (richiesta del Dott. Bizzarri del 27/10/2026)
+export const TESTO_RISULTATO = "Risultato con la produzione = margine di contribuzione di un capo × capi prodotti nel periodo − costi fissi del periodo. Dice quanto si guadagna o si perde con i capi prodotti davvero, al prezzo e con le leve scritte. Non è l'utile del bilancio: usa peso e costo del capo tipo, conta l'aumento della stalla in capi equivalenti al margine pieno e non comprende il valore dei riproduttori riformati, che riduce il costo della rimonta.";
+export function NotaRisultato() {
+  return <div style={{ fontSize: 11.5, color: C.muted, marginTop: 8, lineHeight: 1.5 }}>ℹ️ {TESTO_RISULTATO}</div>;
+}

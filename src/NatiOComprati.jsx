@@ -6,7 +6,7 @@ import { useState } from "react";
 import { C } from "./style";
 import { calcolaPareggio, leggiNumero } from "./analisiBreakEven";
 import { impostaStruttura } from "./statoBreakEven";
-import { usaPaginaBreakEven, Intestazione, Titolo, Avviso, Dato, Schede, riquadro, th, td, sx, euro, numero, perc, NOMI, COLORE } from "./ComuniBreakEven";
+import { usaPaginaBreakEven, Intestazione, Titolo, Avviso, Dato, Schede, riquadro, th, td, sx, euro, numero, perc, NOMI, COLORE, NotaRisultato } from "./ComuniBreakEven";
 
 const TEMPI = {
   bovino: "Una manza partorisce la prima volta a 27–30 mesi e il vitello va al macello dopo altri 16 mesi circa: i cambiamenti della mandria si vedono nelle vendite dopo circa 2 anni.",
@@ -79,6 +79,7 @@ function Specie({ s, calc, specie }) {
               <td style={{ ...td, color: (y.risultato ?? 0) >= 0 ? C.green : C.red, fontWeight: 700 }}>{euro(y.risultato, 0)}</td></tr>))}
           </tbody>
         </table>
+        <NotaRisultato />
       </div>
       <Avviso tipo="blu">ℹ️ Il passaggio da uno scenario all'altro non è immediato: vendere le madri porta un incasso una volta sola (valore di riforma), comprarle o tenerne di più richiede capitale e tempo. Questa pagina confronta le situazioni a regime; la mortalità e la prolificità delle madri si cambiano nella pagina Break Even.</Avviso>
     </div>

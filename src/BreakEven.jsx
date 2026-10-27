@@ -8,7 +8,7 @@ import { C } from "./style";
 import { SPECIE, calcolaPareggio } from "./analisiBreakEven";
 import { FASCE_BOVINI, contaFasceBovini } from "./calcoloBreakEven";
 import { calcoloCorrente, impostaLeva, ripristinaLeve, impostaFascia } from "./statoBreakEven";
-import { usaPaginaBreakEven, Intestazione, Titolo, Avviso, Dato, Schede, riquadro, th, td, sx, bottone, euro, numero, perc, NOMI, COLORE } from "./ComuniBreakEven";
+import { usaPaginaBreakEven, Intestazione, Titolo, Avviso, Dato, Schede, riquadro, th, td, sx, bottone, euro, numero, perc, NOMI, COLORE, NotaRisultato } from "./ComuniBreakEven";
 
 const testo = (n, d = 2) => (n === null || n === undefined || !Number.isFinite(n) ? "" : String(Math.round(n * 10 ** d) / 10 ** d).replace(".", ","));
 const NOME_MADRI = { bovino: "vacche", suino: "scrofe", ovino: "pecore" }, NOME_MASCHI = { bovino: "tori", suino: "verri", ovino: "arieti" };
@@ -110,7 +110,7 @@ function Specie({ s, calc, specie }) {
             <Dato l="Capi prodotti nel periodo" v={numero(R.prod)} nota={`usciti ${numero(Q.capiUsciti)} + stalla ${Q.variazioneStalla >= 0 ? "+" : ""}${numero(Q.variazioneStalla, 1)} capi equivalenti (capi in stalla pesati per l'età: età ÷ età media d'uscita)`} />
             {R.sicurezza !== null && <Dato l="Margine di sicurezza" v={perc(R.sicurezza)} colore={C.green} nota="quanto può calare la produzione prima di andare in perdita" />}
             {R.copertura !== null && <Dato l="La produzione copre solo" v={`${perc(R.copertura)} del pareggio`} colore={C.red} />}
-            <Dato l="Risultato con la produzione del periodo" v={euro(R.risultato, 0)} colore={R.risultato >= 0 ? C.green : C.red} />
+            <Dato l="Risultato con la produzione del periodo" v={euro(R.risultato, 0)} colore={R.risultato >= 0 ? C.green : C.red} nota={R.prod !== null ? `margine ${euro(R.margine)} × ${numero(R.prod)} capi prodotti − ${euro(R.fissi, 0)} di costi fissi (la nota sotto le tabelle spiega che cosa è)` : null} />
             {R.leva !== null && <Dato l="Leva operativa" v={numero(R.leva, 2)} nota={`se la produzione cresce dell'1%, il risultato cresce del ${numero(R.leva, 2)}%`} />}
             <Dato l="Prezzo che pareggia la produzione del periodo" v={`${euro(R.prezzoPareggioProduzione)} al kg di carcassa`} />
           </div>
@@ -161,7 +161,7 @@ function TabellaPrezzi({ x }) {
   if (!(R.prezzo > 0)) return <div style={{ color: C.muted }}>Scrivete un prezzo.</div>;
   const passo = R.prezzo >= 5 ? 1 : 0.5;
   const prezzi = [-3, -2, -1, 0, 1, 2, 3, 5, 8].map(k => Math.round((R.prezzo + k * passo) * 100) / 100).filter(v => v > 0);
-  return (
+  return (<>
     <table style={{ fontSize: 12.5 }}>
       <thead><tr><th style={th}>Prezzo al kg di carcassa</th><th style={th}>Al kg vivo</th><th style={th}>Margine per capo</th><th style={th}>Capi di pareggio</th><th style={th}>Risultato con la produzione</th></tr></thead>
       <tbody>{prezzi.map(v => {
@@ -172,6 +172,7 @@ function TabellaPrezzi({ x }) {
           <td style={td}>{y.capi === null ? "irraggiungibile" : numero(y.capi)}</td><td style={{ ...td, color: (y.risultato ?? 0) >= 0 ? C.green : C.red }}>{euro(y.risultato, 0)}</td></tr>);
       })}</tbody>
     </table>
+    <NotaRisultato /></>
   );
 }
 
@@ -189,7 +190,7 @@ function Sensibilita({ x }) {
     L.quotaNati < 100 && { v: "Tutti i capi nati in azienda", q: { quotaNati: 100 } },
     L.acquisto > 0 && { v: "Tutti i capi comprati", q: { quotaNati: 0 } },
   ].filter(Boolean);
-  return (
+  return (<>
     <table style={{ fontSize: 12.5 }}>
       <thead><tr><th style={{ ...th, ...sx }}>Leva</th><th style={th}>Costo variabile di un capo</th><th style={th}>Margine per capo</th><th style={th}>Capi di pareggio</th><th style={th}>Risultato con la produzione</th></tr></thead>
       <tbody>{leve.map(l => {
@@ -198,6 +199,7 @@ function Sensibilita({ x }) {
           <td style={td}>{y.capi === null ? "irraggiungibile" : numero(y.capi)}</td><td style={{ ...td, color: (y.risultato ?? 0) >= 0 ? C.green : C.red }}>{euro(y.risultato, 0)}</td></tr>);
       })}</tbody>
     </table>
+    <NotaRisultato /></>
   );
 }
 
@@ -240,7 +242,7 @@ function Azienda({ calc }) {
           <Dato l="Costi fissi delle tre specie" v={euro(a.fissi, 0)} />
           <Dato l="Ricavi con la produzione del periodo" v={euro(a.ricavi, 0)} />
           <Dato l="Margine di contribuzione totale" v={euro(a.margine, 0)} colore={a.margine >= 0 ? C.green : C.red} />
-          <Dato l="Risultato" v={euro(a.risultato, 0)} colore={a.risultato >= 0 ? C.green : C.red} forte />
+          <Dato l="Risultato con la produzione" v={euro(a.risultato, 0)} colore={a.risultato >= 0 ? C.green : C.red} forte nota="margine di contribuzione totale − costi fissi delle tre specie" />
           <Dato l="Fatturato di pareggio" v={a.fatturatoPareggio === null ? "irraggiungibile con questo mix" : euro(a.fatturatoPareggio, 0)} forte colore={C.primary} />
           <Dato l={a.sicurezza !== null && a.sicurezza >= 0 ? "Margine di sicurezza" : "Distanza dal pareggio"} v={perc(a.sicurezza)} colore={(a.sicurezza ?? -1) >= 0 ? C.green : C.red} />
           {a.leva !== null && <Dato l="Leva operativa" v={numero(a.leva, 2)} />}
