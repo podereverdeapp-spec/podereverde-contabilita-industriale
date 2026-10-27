@@ -52,7 +52,7 @@ export default function IstruzioniBreakEven() {
             "Restano nel campione solo i capi con il peso vivo e il peso della carcassa, con il codice scritto correttamente e con una resa credibile: bovini tra il 50% e il 66%, suini tra il 65% e l'85% (limiti decisi il 07/10/2026).",
             "I capi anomali NON entrano nel calcolo, ma sono elencati nel riquadro arancione «Capi esclusi» (pulsante «mostra l'elenco») con codice, pesi, resa e motivo, così si possono andare a correggere nell'app. Quando un capo viene corretto, rientra da solo nel campione.",
             "Peso, resa e durata del capo tipo si aggiornano da soli ogni volta che nell'app si inseriscono nuovi pesi di carcassa o di capi vivi.",
-            "Prezzo proposto (versione 312): sulla carcassa, la media delle fatture di vendita dell'anno dei costi, pesata sui chili e senza i capi di riforma (la stessa di «Quando macellare»); se in quell'anno non ci sono vendite, quella dell'ultimo anno con vendite; se non c'è nessuna fattura, il prezzo scritto nelle schede dei capi del campione. Sul vivo, lo stesso prezzo moltiplicato per la resa (prezzo equivalente al kg vivo).",
+            "Prezzo reale proposto: sulla carcassa, la media dei prezzi registrati per i capi del campione, pesata sui chili; sul vivo, lo stesso prezzo moltiplicato per la resa (prezzo equivalente al kg vivo).",
             "Ovini: finché i dati non sono inseriti nell'app (pesi, nascite, uscite), compare «dato mancante» e i valori si scrivono a mano.",
           ],
         },
@@ -94,7 +94,7 @@ export default function IstruzioniBreakEven() {
           aCosaServe: "Le pagine sono fatte per provare scenari: ogni valore si può cambiare e i risultati si ricalcolano subito.",
           comeSiUsa: [
             "Scegliere l'anno dei costi (in alto). Costi fissi e costo variabile per giorno sono quelli di quell'anno.",
-            "Scrivere il prezzo di vendita: qualunque valore, anche molto lontano da quello reale. Il prezzo scritto resta anche se si cambia anno; «Torna al prezzo delle fatture» lo riporta al prezzo proposto dalle fatture di vendita.",
+            "Scrivere il prezzo di vendita: qualunque valore, anche molto lontano da quello reale. Il prezzo scritto resta anche se si cambia anno; «Torna al prezzo reale» lo riporta al prezzo registrato.",
             "Le altre leve: peso, mesi in azienda, nati vivi per madre, tori per madre, percentuale di capi nati in azienda, variazione dei costi variabili e dei costi fissi, posti disponibili in stalla. Una casella con il bordo blu è un valore scritto a mano; «Ripristina tutti i valori reali» le riporta tutte ai dati reali.",
             "Risultato: margine di un capo, capi da macellare all'anno, capi da tenere in stalla, prezzo minimo con i capi realmente macellati nell'anno, margine di sicurezza (quanti capi reali in più o in meno rispetto al pareggio), guadagno o perdita con i capi reali.",
             "Di cosa è fatto il costo di un chilo: acquisto o nascita e ogni area di costo (alimentazione, lavoro, ammortamenti…), parte variabile e parte fissa, per capo e al kg. Mostra dove intervenire per contenere il costo.",
