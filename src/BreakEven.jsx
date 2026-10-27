@@ -6,6 +6,8 @@ import { useState, useEffect, useMemo } from "react";
 import { C } from "./style";
 import { formattaEuro, formattaNumero } from "./parsingUtils";
 import { statoCalcoli, testoAvvisoCalcoli } from "./statoCalcoli";
+// Versione 312 (decisione del Dott. Bizzarri del 27/10/2026 ore 09:40): prezzo proposto dalle fatture di vendita dell'anno dei costi
+import { prezziDaFatture } from "./calcoloStalla";
 import { caricaDatiBase, campione, datiMandriaAnno, anniDiRiferimento, capiAnno, pareggio, contaFasceBovini, FASCE_BOVINI, SPECIE, ETICHETTE, ETA_ADULTA_MESI } from "./calcoloBreakEven";
 
 const leggi = v => { const n = parseFloat(String(v ?? "").replace(",", ".")); return Number.isFinite(n) ? n : 0; };
@@ -25,6 +27,8 @@ export default function BreakEven({ base: tipoBase = "carcassa", onNavigate }) {
   const [avviso, setAvviso] = useState(null);
   const [anno, setAnno] = useState(null);
   const [valori, setValori] = useState({ bovino: {}, suino: {}, ovino: {} }); // valori scritti a mano (restano finché non si ripristina)
+  const [prezziFatture, setPrezziFatture] = useState({});
+  useEffect(() => { if (anno) prezziDaFatture(anno).then(setPrezziFatture).catch(() => setPrezziFatture({})); }, [anno]);
 
   useEffect(() => {
     caricaDatiBase().then(b => {
@@ -71,7 +75,7 @@ export default function BreakEven({ base: tipoBase = "carcassa", onNavigate }) {
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
             {SPECIE.map(sp => (
-              <SchedaSpecie key={sp} base={base} specie={sp} anno={anno} vivo={vivo}
+              <SchedaSpecie key={sp} base={base} specie={sp} anno={anno} vivo={vivo} prezzoFatture={prezziFatture[sp] || null}
                 valori={valori[sp]} imposta={(campo, v) => setValori(p => ({ ...p, [sp]: { ...p[sp], [campo]: v } }))}
                 ripristina={campi => setValori(p => { const n = { ...p[sp] }; (campi || Object.keys(n)).forEach(c => delete n[c]); return { ...p, [sp]: n }; })} />
             ))}
@@ -82,7 +86,7 @@ export default function BreakEven({ base: tipoBase = "carcassa", onNavigate }) {
   );
 }
 
-function SchedaSpecie({ base, specie, anno, vivo, valori, imposta, ripristina }) {
+function SchedaSpecie({ base, specie, anno, vivo, prezzoFatture, valori, imposta, ripristina }) {
   const [fascia, setFascia] = useState("12-24");
   const camp = useMemo(() => campione(base, specie, fascia), [base, specie, fascia]);
   const fasce = useMemo(() => (specie === "bovino" ? contaFasceBovini(base) : null), [base, specie]);
@@ -94,7 +98,8 @@ function SchedaSpecie({ base, specie, anno, vivo, valori, imposta, ripristina })
   const mediaValida = l => { const v = l.filter(x => x !== null && Number.isFinite(x)); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null; };
 
   // Valori di partenza (reali) delle leve
-  const prezzoRealeCarcassa = camp.prezzoRealeCarcassa;
+  // prima le fatture di vendita; se non ce ne sono, il prezzo scritto nelle schede dei capi del campione
+  const prezzoRealeCarcassa = prezzoFatture ? prezzoFatture.prezzo : camp.prezzoRealeCarcassa;
   const predefiniti = {
     prezzo: vivo ? (prezzoRealeCarcassa !== null && camp.resa ? prezzoRealeCarcassa * camp.resa / 100 : null) : prezzoRealeCarcassa,
     peso: vivo ? camp.pesoVivo : camp.pesoCarcassa,
@@ -104,7 +109,7 @@ function SchedaSpecie({ base, specie, anno, vivo, valori, imposta, ripristina })
     quotaNati: camp.quotaNati !== null ? camp.quotaNati * 100 : null,
     variazioneVariabili: 0, variazioneFissi: 0, posti: null,
   };
-  const val = campo => (valori[campo] !== undefined ? valori[campo] : testoNumero(predefiniti[campo], campo === "natiPerMadre" || campo === "toriPerMadre" ? 2 : campo === "prezzo" ? 2 : 1));
+  const val = campo => (valori[campo] !== undefined ? valori[campo] : testoNumero(predefiniti[campo], campo === "natiPerMadre" || campo === "toriPerMadre" ? 2 : campo === "prezzo" ? (vivo ? 3 : 2) : 1));
   const p = Object.fromEntries(Object.keys(predefiniti).map(k => [k, leggi(val(k))]));
   const rif = {
     fissi: cs.fissi, tassoVariabile: cs.tassoVariabile, ubaVita: camp.ubaVita || 0, permanenzaCampione: camp.permanenzaMesi || 0,
@@ -117,7 +122,9 @@ function SchedaSpecie({ base, specie, anno, vivo, valori, imposta, ripristina })
   const etichettaPeso = vivo ? "Peso vivo del capo (kg)" : "Peso della carcassa (kg)";
   const etichettaPrezzo = vivo ? "Prezzo di vendita (€ al kg vivo)" : "Prezzo di vendita (€ al kg di carcassa)";
   const campi = [
-    { k: "prezzo", l: etichettaPrezzo, nota: predefiniti.prezzo !== null ? `prezzo reale: ${euro(predefiniti.prezzo)}${vivo ? " (equivalente del prezzo reale della carcassa, con la resa)" : ` (media pesata sui chili, ${camp.numeroConPrezzo} capi)`}` : "nessun prezzo reale registrato: scrivetene uno" },
+    { k: "prezzo", l: etichettaPrezzo, nota: predefiniti.prezzo === null ? "nessuna fattura di vendita e nessun prezzo nelle schede: scrivetene uno"
+      : prezzoFatture ? `proposto: ${euro(predefiniti.prezzo, vivo ? 3 : 2)}${vivo ? ` (le fatture del ${prezzoFatture.anno} danno ${euro(prezzoFatture.prezzo)} al kg di carcassa; con la resa del ${numero(camp.resa, 1)}%)` : `, media delle fatture di vendita del ${prezzoFatture.anno} pesata sui chili, senza le riforme`}${prezzoFatture.anno !== anno ? ` (nel ${anno} nessuna vendita)` : ""}${camp.prezzoRealeCarcassa !== null ? `; nelle schede del campione ${euro(camp.prezzoRealeCarcassa)} (${camp.numeroConPrezzo} capi)` : ""}`
+      : `proposto: ${euro(predefiniti.prezzo)}, prezzo scritto nelle schede (${camp.numeroConPrezzo} capi): nessuna fattura di vendita di questa specie` },
     { k: "peso", l: etichettaPeso, nota: predefiniti.peso !== null ? `media del campione: ${numero(predefiniti.peso, 1)} kg` : "dato mancante: scrivetelo voi" },
     { k: "permanenza", l: "Mesi in azienda del capo", nota: predefiniti.permanenza !== null ? `media del campione: ${numero(predefiniti.permanenza, 1)} mesi` : "dato mancante: scrivetelo voi" },
     { k: "natiPerMadre", l: "Nati vivi per madre all'anno", nota: `media ${anniRif.join(", ")}: ${mandria.map(m => `${m.anno} ${m.natiPerMadre === null ? "—" : numero(m.natiPerMadre, 2)}`).join(" · ")}` },
@@ -191,7 +198,7 @@ function SchedaSpecie({ base, specie, anno, vivo, valori, imposta, ripristina })
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
             <span style={{ fontWeight: 800 }}>Prezzo e leve — scrivete qualunque valore</span>
             <span style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => ripristina(["prezzo"])} style={bottone}>Torna al prezzo reale</button>
+              <button onClick={() => ripristina(["prezzo"])} style={bottone}>{prezzoFatture ? "Torna al prezzo delle fatture" : "Torna al prezzo reale"}</button>
               <button onClick={() => ripristina()} style={bottone}>Ripristina tutti i valori reali</button>
             </span>
           </div>

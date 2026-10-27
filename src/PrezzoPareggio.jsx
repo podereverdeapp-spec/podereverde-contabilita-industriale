@@ -3,6 +3,9 @@ import { supabase } from "./supabase";
 import { C } from "./style";
 import { formattaEuro, formattaNumero, round2, fetchAllPages } from "./parsingUtils";
 import { conteggioUnitaPerLotto, costoAcquistoUnitario, costoAnimale, righePerSoggetto , idGenitori, normalizzaAnimali } from "./costoAnimale";
+// Versione 312 (decisione del Dott. Bizzarri del 27/10/2026 ore 09:40): il prezzo di vendita proposto viene dalle fatture
+// di vendita (stessa media di «Quando macellare» e del Report Costi, senza i capi di riforma); quello delle schede resta come confronto
+import { prezziDaFatture } from "./calcoloStalla";
 
 // Prezzo di pareggio per specie e anno: quanto è costato in media un kg di carcassa degli
 // animali da macello usciti nell'anno (= prezzo sotto il quale si perde), da cosa è fatto il
@@ -24,13 +27,14 @@ export default function PrezzoPareggio() {
     setCaricando(true); setErrore(null);
     try {
       const inizio = `${anno}-01-01`, fine = `${anno}-12-31`;
-      const [rA, rL, rU, rC, rV, rM] = await Promise.all([
+      const [rA, rL, rU, rC, rV, rM, prezziFatture] = await Promise.all([
         fetchAllPages((da, a) => supabase.from("animali").select("id,bdn,specie,riproduttore,provenienza,prezzo_acquisto,stato,data_uscita,peso_carcassa,madre_id,padre_id,nascita,data_ingresso,note").range(da, a)),
         fetchAllPages((da, a) => supabase.from("lotti_suini").select("id,tipo_provenienza,prezzo_acquisto,specie,madre_id,padre_id").range(da, a)),
         fetchAllPages((da, a) => supabase.from("suini_lotto").select("id,lotto_id,nr,stato,data_uscita,peso_carcassa,bdn,codice_completo").range(da, a)),
         fetchAllPages((da, a) => supabase.from("ci_costo_animale_annuale").select("animale_id,lotto_id,unita_nr,costo_mantenimento,costo_nascita_ereditato,quota_residuo_riproduttori").range(da, a)),
         fetchAllPages((da, a) => supabase.from("ci_dati_vendita_ingrasso").select("id,animale_id,lotto_id,unita_nr,prezzo_vendita_kg_reale").order("id").range(da, a)),
         fetchAllPages((da, a) => supabase.from("ci_costo_nascita_mandria").select("*").eq("anno", anno).order("id").range(da, a)),
+        prezziDaFatture(anno).catch(() => ({})),
       ]);
       for (const r of [rA, rL, rU, rC, rV]) if (r.error) throw new Error(r.error.message);
       const lotti = new Map((rL.data || []).map(l => [l.id, l]));
@@ -71,6 +75,7 @@ export default function PrezzoPareggio() {
           acquisto: somma("costoAcquisto"), nascita: somma("costoNascita"), mantenimento: somma("mantenimento"), rimasto: somma("costoRimastoRicevuto"),
           prezzoMedioRegistrato: conPrezzo.length ? round2(conPrezzo.reduce((t, x) => t + x.prezzo * x.peso, 0) / conPrezzo.reduce((t, x) => t + x.peso, 0)) : null,
           capiConPrezzo: conPrezzo.length,
+          prezzoFatture: prezziFatture?.[s] || null,
           mandria: (rM.data || []).find(m => m.specie === s) || null,
           senzaCosti,
         };
@@ -101,7 +106,7 @@ export default function PrezzoPareggio() {
       {dati && Object.keys(dati).length === 0 && <p style={{ color: C.muted }}>Nessun animale da macello uscito nel {anno} con il peso della carcassa.</p>}
       {dati && Object.entries(dati).map(([s, d]) => (
         <SchedaSpecie key={s} specie={s} d={d} anno={anno}
-          prezzo={prezzi[s] !== undefined ? prezzi[s] : (d.prezzoMedioRegistrato != null ? String(d.prezzoMedioRegistrato) : "")}
+          prezzo={prezzi[s] !== undefined ? prezzi[s] : d.prezzoFatture ? Number(d.prezzoFatture.prezzo).toFixed(2).replace(".", ",") : (d.prezzoMedioRegistrato != null ? String(d.prezzoMedioRegistrato).replace(".", ",") : "")}
           scrittoAMano={prezzi[s] !== undefined}
           onPrezzo={v => setPrezzi(p => ({ ...p, [s]: v }))}
           onRegistrato={() => setPrezzi(p => { const n = { ...p }; delete n[s]; return n; })} />
@@ -124,7 +129,7 @@ function SchedaSpecie({ specie, d, prezzo, onPrezzo, anno, scrittoAMano, onRegis
   );
   const pareggio = d.kg > 0 ? round2(d.costo / d.kg) : null;
   const costoCapo = round2(d.costo / d.capi), pesoMedio = round2(d.kg / d.capi);
-  const p = parseFloat(String(prezzo).replace(",", "."));
+  const p = (s => parseFloat(s.includes(",") ? s.replace(/\./g, "").replace(",", ".") : s))(String(prezzo ?? "")); // «9,50» e anche «9.50»
   const haPrezzo = p > 0;
   const ricavo = haPrezzo ? round2(d.kg * p) : null;
   const risultato = haPrezzo ? round2(ricavo - d.costo) : null;
@@ -168,9 +173,13 @@ function SchedaSpecie({ specie, d, prezzo, onPrezzo, anno, scrittoAMano, onRegis
             <input type="text" inputMode="decimal" value={prezzo} onChange={e => onPrezzo(e.target.value)}
               style={{ display: "block", width: 120, padding: "6px 8px", borderRadius: 6, border: `1.5px solid ${scrittoAMano ? C.blue : C.primary}`, fontSize: 14, marginTop: 3, marginBottom: 6 }} />
           </label>
-          {scrittoAMano && <button onClick={onRegistrato} style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer", marginBottom: 6 }}>Torna al prezzo registrato</button>}
-          <div style={{ fontSize: 11, color: C.muted, marginBottom: 6 }}>
-            {d.prezzoMedioRegistrato != null ? `Prezzo medio registrato nelle schede: ${formattaEuro(d.prezzoMedioRegistrato)} al kg (${d.capiConPrezzo} capi).` : "Nessun prezzo di vendita registrato nelle schede: scriverlo qui."}
+          {scrittoAMano && <button onClick={onRegistrato} style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer", marginBottom: 6 }}>{d.prezzoFatture ? "Torna al prezzo delle fatture" : "Torna al prezzo registrato"}</button>}
+          <div style={{ fontSize: 11, color: C.muted, marginBottom: 6, lineHeight: 1.5 }}>
+            {d.prezzoFatture
+              ? <>Proposto: {formattaEuro(d.prezzoFatture.prezzo)} al kg, media delle fatture di vendita del {d.prezzoFatture.anno}{d.prezzoFatture.anno !== anno ? ` (nel ${anno} nessuna vendita di questa specie: si usa l'ultimo anno con vendite)` : ""}, pesata sui chili ({formattaNumero(d.prezzoFatture.kg, 0)} kg), senza i capi di riforma.<br /></>
+              : <>Nessuna fattura di vendita di questa specie fino al {anno}.<br /></>}
+            {d.prezzoMedioRegistrato != null ? `Per confronto, prezzo medio scritto nelle schede: ${formattaEuro(d.prezzoMedioRegistrato)} al kg (${d.capiConPrezzo} capi).` : "Nelle schede non è scritto nessun prezzo di vendita."}
+            {!d.prezzoFatture && d.prezzoMedioRegistrato == null && " Scrivere il prezzo qui."}
           </div>
           {haPrezzo ? (
             <>
