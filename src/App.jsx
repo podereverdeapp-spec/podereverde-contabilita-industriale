@@ -220,19 +220,28 @@ const MENU = [
   ]},
   { tipo: "cartella", id: "cart-costi", label: "Analisi Costi", icon: "📊", contenuto: [
     { tipo: "voce", id: "istr-costi", label: "Istruzioni", icon: "📖" },
+    // Versione 311 (decisione del Dott. Bizzarri del 27/10/2026 ore 09:10): la cartella è divisa in quattro sottocartelle
     // Versione 308 (richiesta del Dott. Bizzarri del 26/10/2026 ore 19:45): prima del Report Costi le sue istruzioni
-    { tipo: "voce", id: "istr-report-costi", label: "Istruzioni Report Costi", icon: "📖" },
-    { tipo: "voce", id: "costi", label: "Report Costi", icon: "📊" },
+    { tipo: "sottocartella", id: "sub-costi-report", label: "Report Costi", icon: "📊", voci: [
+      { id: "istr-report-costi", label: "Istruzioni Report Costi", icon: "📖" },
+      { id: "costi", label: "Report Costi", icon: "📊" },
+    ] },
     // Versione 309 (decisione del Dott. Bizzarri del 26/10/2026 ore 20:26): «Grafico per le Macellazioni» diventa «Quando macellare»
     // Versione 309 (richiesta del Dott. Bizzarri del 26/10/2026 ore 21:17): prima di «Quando macellare» le sue istruzioni
-    { tipo: "voce", id: "istr-quando-macellare", label: "Istruzioni Quando macellare", icon: "📖" },
-    { tipo: "voce", id: "grafico-macellazioni", label: "Quando macellare", icon: "📈" },
-    { tipo: "voce", id: "prezzo-pareggio", label: "Prezzo di Pareggio", icon: "🎯" },
-    { tipo: "voce", id: "istr-break-even", label: "Istruzioni del Break Even", icon: "📖" },
-    { tipo: "voce", id: "break-even", label: "Break Even sulla carcassa", icon: "⚖️" },
-    { tipo: "voce", id: "break-even-vivo", label: "Break Even sul capo vivo", icon: "🐂" },
-    { tipo: "voce", id: "riepilogo-costi-breakeven", label: "Riepilogo Costi (Break Even)", icon: "📋" },
-    { tipo: "voce", id: "cespiti", label: "Cespiti", icon: "🏗️" },
+    { tipo: "sottocartella", id: "sub-costi-macellare", label: "Quando macellare", icon: "📈", voci: [
+      { id: "istr-quando-macellare", label: "Istruzioni Quando macellare", icon: "📖" },
+      { id: "grafico-macellazioni", label: "Quando macellare", icon: "📈" },
+    ] },
+    { tipo: "sottocartella", id: "sub-costi-break-even", label: "Analisi Break Even", icon: "⚖️", voci: [
+      { id: "istr-break-even", label: "Istruzioni del Break Even", icon: "📖" },
+      { id: "prezzo-pareggio", label: "Prezzo di Pareggio", icon: "🎯" },
+      { id: "break-even", label: "Break Even sulla carcassa", icon: "⚖️" },
+      { id: "break-even-vivo", label: "Break Even sul capo vivo", icon: "🐂" },
+      { id: "riepilogo-costi-breakeven", label: "Riepilogo Costi (Break Even)", icon: "📋" },
+    ] },
+    { tipo: "sottocartella", id: "sub-costi-cespiti", label: "Libro Cespiti", icon: "🏗️", voci: [
+      { id: "cespiti", label: "Cespiti", icon: "🏗️" },
+    ] },
   ]},
   { tipo: "cartella", id: "cart-alimentaria", label: "Alimentaria", icon: "🌾", contenuto: [
     { tipo: "voce", id: "istr-alimentaria", label: "Istruzioni", icon: "📖" },
@@ -415,7 +424,7 @@ function Programma({ utente }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 310</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 311</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
