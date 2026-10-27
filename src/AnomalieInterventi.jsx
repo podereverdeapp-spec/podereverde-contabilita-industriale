@@ -65,7 +65,7 @@ function Contenuto({ s, calc }) {
             <div key={sp} style={{ fontSize: 12.5 }}><strong style={{ color: COLORE[sp] }}>Cause di morte registrate — {NOMI[sp]}:</strong>{" "}
               {an.causeMorte[sp].length ? an.causeMorte[sp].map(c => `${c.causa} ${c.n}`).join(" · ") : "nessuna morte registrata nel periodo"}</div>))}
         </div>
-        <div style={{ marginTop: 8 }}><Avviso>La causa di morte si chiede dall'ottobre 2026 (suinetti dei lotti: obbligatoria dalla versione 136 dell'app; capi con scheda: oggi facoltativa e solo per «malattia»). Prima di allora le cause non sono state rilevate: si vedono solo i totali. Il protocollo per gli operatori è in preparazione. Dove i morti dopo la nascita risultano 0 (per esempio suinetti dei lotti nel 2025) i suinetti morti nei primi giorni non sono stati registrati a parte: è probabile che stiano dentro i «nati morti al parto», che quindi vanno letti come morti fino allo svezzamento.</Avviso></div>
+        <div style={{ marginTop: 8 }}><Avviso>La causa di morte si chiede dall'ottobre 2026 (suinetti dei lotti: obbligatoria dalla versione 136 dell'app; capi con scheda: oggi facoltativa e solo per «malattia»). Prima di allora le cause non sono state rilevate: si vedono solo i totali. Il protocollo per gli operatori è in preparazione. Dove i morti dopo la nascita risultano 0 (per esempio suinetti dei lotti nel 2025) i suinetti morti nei primi giorni non sono stati registrati a parte: è probabile che stiano dentro i «nati morti al parto», che quindi vanno letti come morti prima della registrazione nel lotto (dopo la registrazione i morti si segnano come «morto» nel lotto).</Avviso></div>
       </div>
 
       <div style={riquadro}>
@@ -96,7 +96,7 @@ function Contenuto({ s, calc }) {
       <div style={riquadro}>
         <Titolo sotto="Nello scenario base prudente restano fuori; nello scenario «con» entrano. Si chiudono con la verifica di Sborchia.">4. Dati da verificare</Titolo>
         <div style={{ fontSize: 13, lineHeight: 1.6 }}>
-          <strong>Suinetti dei lotti ancora «attivi» con più di 24 mesi ({an.suiniLotto.length}):</strong> {an.suiniLotto.map(u => u.codice).join(", ") || "nessuno"}.
+          <strong>Suinetti dei lotti ancora «attivi» con più di 15 mesi, quasi certamente usciti e non registrati ({an.suiniLotto.length}):</strong> {an.suiniLotto.map(u => u.codice).join(", ") || "nessuno"}.
           <br /><strong>Capi macellati nel periodo senza peso della carcassa:</strong> {SPECIE.map(sp => `${NOMI[sp].toLowerCase()} ${an.senzaPeso[sp].length}`).join(" · ")}
           {an.senzaPeso.suino.length > 0 && <details style={{ marginTop: 4 }}><summary style={{ cursor: "pointer" }}>elenco</summary>{SPECIE.flatMap(sp => an.senzaPeso[sp].map(x => `${x.codice} (${data(x.uscita)})`)).join(" · ")}</details>}
           <strong>Agnelli:</strong> {calc.perSpecie.ovino.T.notaOvini || "nessuna differenza tra fatture e app"}.

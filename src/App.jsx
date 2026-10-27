@@ -57,6 +57,7 @@ import ImportMassivoRiproduttori from "./ImportMassivoRiproduttori";
 import RiepilogoCostoAnimali from "./RiepilogoCostoAnimali";
 import PrezzoPareggio from "./PrezzoPareggio";
 import DocumentoIstruzioni from "./DocumentoIstruzioni";
+import ReportBreakEven from "./ReportBreakEven";
 import { ISTRUZIONI_CARICA_FATTURE, PIANO_DEI_CONTI, ISTRUZIONI_COSTI_DIRETTI, ISTRUZIONI_COSTI_LAVORO, ISTRUZIONI_SISTEMA_DATI, ISTRUZIONI_VERIFICA, ISTRUZIONI_REGISTRO_MODIFICHE, ISTRUZIONI_CONTROLLI, ISTRUZIONI_FATTURAZIONE_ANIMALI, ISTRUZIONI_ALTRE_FATTURE, ISTRUZIONI_CONTROLLO_ATTIVA, ISTRUZIONI_RICERCA_ANAGRAFICHE, ISTRUZIONI_RIEPILOGO_CARICA_DATI, ISTRUZIONI_GENERALI_EMISSIONE, ISTRUZIONI_FATTURE_COMPETENZA, ISTRUZIONI_REPORT_COSTI, ISTRUZIONI_QUANDO_MACELLARE, ISTRUZIONI_BREAK_EVEN } from "./istruzioniDati";
 // Versione 305: le istruzioni della cartella «Ricerca: Fatture e Anagrafiche» sono il documento Word (ISTRUZIONI_RICERCA_ANAGRAFICHE)
 import IstruzioniPrezziAcquisto from "./IstruzioniPrezziAcquisto";
@@ -112,6 +113,7 @@ const MENU = [
     { tipo: "voce", id: "analisi-suini", label: "Suini", icon: "🐖" },
     { tipo: "voce", id: "analisi-bovini", label: "Bovini", icon: "🐄" },
     { tipo: "voce", id: "analisi-ovini", label: "Ovini", icon: "🐑" },
+    { tipo: "voce", id: "analisi-break-even", label: "Break Even", icon: "⚖️" }, // versione 316 (27/10/2026)
     { tipo: "voce", id: "analisi-coltivazioni", label: "Coltivazioni", icon: "🌾" },
   ]},
   // Versione 241: cartella dedicata al controllo dei prezzi di acquisto (richiesta del Dott. Bizzarri del 09/10/2026)
@@ -432,7 +434,7 @@ function Programma({ utente }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 315</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 316</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -622,6 +624,7 @@ function Programma({ utente }) {
         {tab === "analisi-suini" && <ReportAnalisi key="suino" specie="suino" />}
         {tab === "analisi-bovini" && <ReportAnalisi key="bovino" specie="bovino" />}
         {tab === "analisi-ovini" && <ReportAnalisi key="ovino" specie="ovino" />}
+        {tab === "analisi-break-even" && <ReportBreakEven onNavigate={vaiA} />}
         {tab === "analisi-coltivazioni" && <ReportAnalisiColtivazioni />}
         {tab === "istr-studi" && <IstruzioniStudi />}
         {tab === "istr-coltivazioni" && <IstruzioniColtivazioni />}

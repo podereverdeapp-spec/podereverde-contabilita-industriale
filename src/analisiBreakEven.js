@@ -16,7 +16,7 @@
 //   dell'azienda (bovini 27 mesi, suini 12, ovini 19 — regola approvata il 27/10/2026 ore 12:24);
 // - nati per madre solo sui VIVI; i nati morti e i morti dopo la nascita si evidenziano a parte (pagina Anomalie);
 // - dati incerti: scenario BASE prudente «senza» e scenario «con», affiancati, con nota esplicativa:
-//   · suinetti dei lotti ancora «attivi» con più di 24 mesi (16 capi al 27/10/2026): senza = fuori dagli UBA e dai presenti;
+//   · suinetti dei lotti ancora «attivi» con più di 15 mesi (61 capi al 27/10/2026): senza = fuori dagli UBA e dai presenti;
 //   · capi macellati senza peso della carcassa (36 suini del 2025): senza = non contati tra i capi prodotti;
 //     con = contati con il peso medio del capo tipo;
 // - ovini: gli agnelli escono con il solo codice dell'allevamento e non sono nell'app: capi e chili dalle fatture
@@ -45,7 +45,7 @@ const media = l => (l.length ? somma(l) / l.length : null);
 // Soglie approvate il 27/10/2026
 export const SOGLIA_MADRE_MESI = { bovino: 27, suino: 12, ovino: 19 };       // oltre: madre improduttiva
 export const SOGLIA_SCOTTONA_MESI = 36;                                     // bovina mai partorita oltre 36 mesi = scottona
-export const ETA_SUINO_LOTTO_ANOMALO_MESI = 24;                              // suinetto di lotto ancora attivo oltre 24 mesi
+export const ETA_SUINO_LOTTO_ANOMALO_MESI = 15;                              // suinetto di lotto ancora attivo oltre 15 mesi (un suino esce in media a 9 mesi; 27/10/2026: 61 capi, controllo del Topo delle 14:04)
 const MESE = 30.44;
 
 // ── Periodi ─────────────────────────────────────────────────────────────────────────────────────
@@ -168,7 +168,7 @@ export function animaliNormalizzati(A) {
   A._animaliUba = segnaRiproduttoriEffettivi(base, idGenitori(base, A.g.lotti || []));
   return A._animaliUba;
 }
-// Suinetti dei lotti ancora attivi oltre 24 mesi: dato da verificare (scenario «senza»)
+// Suinetti dei lotti ancora attivi oltre 15 mesi: dato da verificare (scenario «senza»)
 export function suiniLottoAnomali(A, oggi = new Date()) {
   const lotti = new Map((A.g.lotti || []).map(l => [l.id, l]));
   const limite = ms(isoDa(Date.UTC(oggi.getFullYear(), oggi.getMonth(), oggi.getDate()))) - ETA_SUINO_LOTTO_ANOMALO_MESI * MESE * GIORNO;
@@ -193,9 +193,10 @@ export function ubaPeriodo(A, P, escludi = new Set()) {
   for (const u of A.g.unita || []) {
     if (u.stato === "registrato_individuale") continue;
     const l = lotti.get(u.lotto_id); if (!l || !l.data_parto) continue;
-    const k = `u:${l.id}|${u.nr}`; if (escludi.has(k)) continue;
+    const k = `u:${l.id}|${u.nr}`;
+    const tronca = escludi.get ? escludi.get(k) : (escludi.has(k) ? l.data_parto : undefined);
     const finto = { stato: u.stato === "attivo" ? "attivo" : (u.stato || "uscito"), motivo_uscita: u.motivo_uscita, riproduttore: false };
-    const per = presenzaNelPeriodo(l.data_parto, u.data_uscita, P, null, oggiMs); if (!per) continue;
+    const per = presenzaNelPeriodo(l.data_parto, tronca || u.data_uscita, P, null, oggiMs); if (!per) continue;
     const uba = calcolaUBAMedioExp("suino", per.giorni, per.etaAllInizio); if (!uba) continue;
     righe.push({ chiave: k, lotto_id: l.id, unita_nr: u.nr, specie: "suino", uba_giorni: Math.round(uba * per.giorni * 1000) / 1000, giorni: per.giorni, categoria_contabile: categoriaContabileExp(finto) });
   }
@@ -205,8 +206,12 @@ export function ubaPeriodo(A, P, escludi = new Set()) {
 
 // ── Scenario ───────────────────────────────────────────────────────────────────────────────────
 // «base» = prudente, senza i dati da verificare; «con» = con i dati da verificare
+// Versione 316: nello scenario base i suinetti «attivi» troppo vecchi non spariscono del tutto (erano in stalla davvero
+// finché erano giovani): restano fino a 15 mesi di età (ETA_SUINO_LOTTO_ANOMALO_MESI) e poi escono senza vendita.
+// Restituisce una mappa chiave → data in cui il capo esce dal conto.
 export function esclusiScenario(A, scenario) {
-  return scenario === "con" ? new Set() : new Set(suiniLottoAnomali(A).map(x => x.chiave));
+  if (scenario === "con") return new Map();
+  return new Map(suiniLottoAnomali(A).map(x => [x.chiave, isoDa(ms(x.nascita) + ETA_SUINO_LOTTO_ANOMALO_MESI * MESE * GIORNO)]));
 }
 
 // ── Costi per specie nel periodo ─────────────────────────────────────────────────────────────────
@@ -377,7 +382,7 @@ export function produzione(A, P, specie, scenario = "base", pesoMedioCarcassa = 
   const conPeso = usciti.filter(s => s.pesoCarcassa > 0 || !/macell/i.test(s.stato || ""));
   const senzaPeso = usciti.filter(s => !(s.pesoCarcassa > 0) && /macell/i.test(s.stato || ""));
   const kgReali = somma(usciti.map(s => s.pesoCarcassa).filter(x => x > 0));
-  const presenti = d => sogg.filter(s => !escl.has(s.chiave) && A.presenteIl(s, d));
+  const presenti = d => sogg.filter(s => (!escl.has(s.chiave) || d < escl.get(s.chiave)) && A.presenteIl(s, d));
   const prima = isoDa(ms(P.da) - GIORNO);
   // Un capo in stalla vale come capo finito solo in proporzione all'età raggiunta: età ÷ età media d'uscita
   // dei capi venduti o macellati (fino alla fine del periodo). Un suinetto di un mese non è un suino finito.
