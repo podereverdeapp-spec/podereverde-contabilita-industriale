@@ -58,7 +58,7 @@ import RiepilogoCostoAnimali from "./RiepilogoCostoAnimali";
 import PrezzoPareggio from "./PrezzoPareggio";
 import DocumentoIstruzioni from "./DocumentoIstruzioni";
 import ReportBreakEven from "./ReportBreakEven";
-import { ISTRUZIONI_CARICA_FATTURE, PIANO_DEI_CONTI, ISTRUZIONI_COSTI_DIRETTI, ISTRUZIONI_COSTI_LAVORO, ISTRUZIONI_SISTEMA_DATI, ISTRUZIONI_VERIFICA, ISTRUZIONI_REGISTRO_MODIFICHE, ISTRUZIONI_CONTROLLI, ISTRUZIONI_FATTURAZIONE_ANIMALI, ISTRUZIONI_ALTRE_FATTURE, ISTRUZIONI_CONTROLLO_ATTIVA, ISTRUZIONI_RICERCA_ANAGRAFICHE, ISTRUZIONI_RIEPILOGO_CARICA_DATI, ISTRUZIONI_GENERALI_EMISSIONE, ISTRUZIONI_FATTURE_COMPETENZA, ISTRUZIONI_REPORT_COSTI, ISTRUZIONI_QUANDO_MACELLARE, ISTRUZIONI_BREAK_EVEN } from "./istruzioniDati";
+import { ISTRUZIONI_CARICA_FATTURE, PIANO_DEI_CONTI, ISTRUZIONI_COSTI_DIRETTI, ISTRUZIONI_COSTI_LAVORO, ISTRUZIONI_SISTEMA_DATI, ISTRUZIONI_VERIFICA, ISTRUZIONI_REGISTRO_MODIFICHE, ISTRUZIONI_CONTROLLI, ISTRUZIONI_FATTURAZIONE_ANIMALI, ISTRUZIONI_ALTRE_FATTURE, ISTRUZIONI_CONTROLLO_ATTIVA, ISTRUZIONI_RICERCA_ANAGRAFICHE, ISTRUZIONI_RIEPILOGO_CARICA_DATI, ISTRUZIONI_GENERALI_EMISSIONE, ISTRUZIONI_FATTURE_COMPETENZA, ISTRUZIONI_REPORT_COSTI, ISTRUZIONI_QUANDO_MACELLARE, ISTRUZIONI_BREAK_EVEN, ISTRUZIONI_CESPITI } from "./istruzioniDati";
 // Versione 305: le istruzioni della cartella «Ricerca: Fatture e Anagrafiche» sono il documento Word (ISTRUZIONI_RICERCA_ANAGRAFICHE)
 import IstruzioniPrezziAcquisto from "./IstruzioniPrezziAcquisto";
 import IstruzioniAnimali from "./IstruzioniAnimali";
@@ -250,6 +250,7 @@ const MENU = [
       { id: "be-fotografie", label: "Fotografie e controllo", icon: "📸" },
     ] },
     { tipo: "sottocartella", id: "sub-costi-cespiti", label: "Libro Cespiti", icon: "🏗️", voci: [
+      { id: "istr-cespiti", label: "Istruzioni del Libro Cespiti", icon: "📖" }, // versione 317 (28/10/2026)
       { id: "cespiti", label: "Cespiti", icon: "🏗️" },
     ] },
   ]},
@@ -434,7 +435,7 @@ function Programma({ utente }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 316</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 317</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -555,6 +556,7 @@ function Programma({ utente }) {
         {tab === "clienti" && <Clienti />}
         {tab === "acquisto" && <ReportAcquistoAnimali />}
         {tab === "cespiti" && <SezioneCespiti />}
+        {tab === "istr-cespiti" && <DocumentoIstruzioni doc={ISTRUZIONI_CESPITI} />}
         {tab === "uba" && <ReportUba onVediScheda={vaiAllaSchedaAnimale} />}
         {tab === "istr-report-costi" && <DocumentoIstruzioni doc={ISTRUZIONI_REPORT_COSTI} />}
         {tab === "costi" && <SezioneReportCosti />}

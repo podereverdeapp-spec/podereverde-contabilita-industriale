@@ -3,6 +3,7 @@ import { supabase } from "./supabase";
 import { C } from "./style";
 import { numerizzaCampi, round2, formattaEuro, fetchAllPages } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
+import { anniValidi, percentualeDaAnni } from "./cespitiDaFatture";
 
 const CATEGORIE_AMMORTAMENTO = [
   "3 - Attrezzatura specifica",
@@ -123,7 +124,8 @@ export default function Cespiti() {
       // Versione 236: «Generale» nel database corrisponde alla voce «Generali» del menu, nessuna
       // imputazione alla voce «Nessuno» (prima il menu non riconosceva il valore e salvava «Nessuno»)
       specieSelezionata: !c.specie?.length ? "Nessuno" : (c.specie[0] === "Generale" || c.specie[0] === "GENERALE" ? "Generali" : c.specie[0]),
-      coefficientePct: coefficienteDi(c) !== null ? String(Math.round(coefficienteDi(c) * 10000) / 10000).replace(".", ",") : "",
+      // Versione 317 (decisione del 21/10/2026, confermata il 28/10/2026): si scrivono gli ANNI, la percentuale la calcola il programma
+      anni: c.anni_ammortamento ? String(c.anni_ammortamento) : "",
       data_acquisto: c.data_acquisto || "",
       fornitore_id: c.fornitore_id || "",
     });
@@ -136,24 +138,24 @@ export default function Cespiti() {
 
   async function salvaModifica(cespiteId) {
     const c0 = cespiti.find(x => x.id === cespiteId);
-    const primaImp = !c0?.specie?.length ? "Nessuno" : c0.specie.join(", ");
-    const coeff = parseFloat(String(formModifica.coefficientePct).replace(",", "."));
-    // Punto 2: si salva il coefficiente esatto; la durata è il numero di anni necessari (es. 15% → 7 anni)
-    const coeffNuovo = coeff > 0 && coeff <= 100 ? Math.round(coeff * 10000) / 10000 : null;
-    if (!coeffNuovo) { alert("Coefficiente non valido: scrivere una percentuale tra 0 e 100."); return; }
-    const durataNuova = Math.ceil(100 / coeffNuovo - 1e-9);
-    const coeffPrima = Math.round((coefficienteDi(c0) || 0) * 10000) / 10000;
+    const primaImp = !c0?.specie?.length ? "Nessuno" : c0.specie.map(x => (x === "Generale" || x === "GENERALE" ? "Generali" : x)).join(", ");
+    // Versione 317: si scrivono gli anni; quote a rate costanti (costo ÷ anni, i centesimi nell'ultimo anno)
+    const durataNuova = anniValidi(formModifica.anni);
+    if (!durataNuova) { alert("Anni di ammortamento non validi: scrivere un numero intero da 1 a 100."); return; }
+    const coeffNuovo = null;
+    const coeffPrima = c0.coefficiente_percentuale > 0 ? Math.round(c0.coefficiente_percentuale * 10000) / 10000 : null;
     const annoNuovo = annoDiData(formModifica.data_acquisto || c0.data_acquisto);
     const quoteEsistenti = quoteTutte.filter(q => q.cespite_id === cespiteId);
     // Cambio di durata o di data di acquisto su un cespite che ha già quote: si rifà il piano di tutti gli anni
-    const rifarePiano = quoteEsistenti.length > 0 && (coeffNuovo !== coeffPrima || durataNuova !== c0.anni_ammortamento || annoNuovo !== annoDiData(c0.data_acquisto));
+    const rifarePiano = quoteEsistenti.length > 0 && (coeffPrima !== null || durataNuova !== c0.anni_ammortamento || annoNuovo !== annoDiData(c0.data_acquisto));
     const annoCorrente = new Date().getFullYear();
     const pianoNuovo = rifarePiano ? pianoQuote(c0.costo_acquisto, durataNuova, annoNuovo, coeffNuovo).filter(r => r.anno <= annoCorrente) : [];
     const anniToccati = rifarePiano ? [...new Set([...quoteEsistenti.map(q => q.anno), ...pianoNuovo.map(r => r.anno)])].sort() : [];
     const testoPiano = rifarePiano
-      ? `\n\nIl coefficiente passa da ${testoCoeff(coeffPrima)} a ${testoCoeff(coeffNuovo)} (durata da ${c0.anni_ammortamento} a ${durataNuova} anni)${annoNuovo !== annoDiData(c0.data_acquisto) ? ` e l'anno di acquisto da ${annoDiData(c0.data_acquisto)} a ${annoNuovo}` : ""}: rifaccio le quote di TUTTI gli anni dal ${annoNuovo} in poi (${pianoNuovo.length ? `${formattaEuro(pianoNuovo[0].quota)} all'anno` : "nessun anno fino a oggi"}). Gli anni ${anniToccati.join(", ")} andranno ricalcolati (Report Costi).`
+      ? `\n\nLa durata passa da ${c0.anni_ammortamento} a ${durataNuova} anni (${testoCoeff(percentualeDaAnni(durataNuova))} all'anno, rate costanti)${annoNuovo !== annoDiData(c0.data_acquisto) ? ` e l'anno di acquisto da ${annoDiData(c0.data_acquisto)} a ${annoNuovo}` : ""}: rifaccio le quote di TUTTI gli anni dal ${annoNuovo} in poi (${pianoNuovo.length ? `${formattaEuro(pianoNuovo[0].quota)} all'anno` : "nessun anno fino a oggi"}). Gli anni ${anniToccati.join(", ")} andranno ricalcolati (Report Costi).`
       : "";
-    if (!window.confirm(`Imputazione: da «${primaImp}» a «${formModifica.specieSelezionata}»${formModifica.specieSelezionata === "Nessuno" ? " (la quota resterà FUORI dai costi degli animali)" : ""}.${testoPiano}\n\nConfermi le modifiche a questo cespite?`)) return;
+    const testoImp = primaImp === formModifica.specieSelezionata ? `Imputazione: «${primaImp}» (non cambia).` : `Imputazione: da «${primaImp}» a «${formModifica.specieSelezionata}»${formModifica.specieSelezionata === "Nessuno" ? " (la quota resterà FUORI dai costi degli animali)" : ""}.`;
+    if (!window.confirm(`${testoImp}${testoPiano}\n\nConfermi le modifiche a questo cespite?`)) return;
     setSalvandoModifica(true);
     try {
       const mappaSpecie = { "Bovini": ["Bovini"], "Suini": ["Suini"], "Ovini": ["Ovini"], "Generali": ["Generale"], "Nessuno": [], "Cavalli": ["Cavalli"], "Pollame": ["Pollame"], "Orto": ["Orto"] };
@@ -207,20 +209,30 @@ export default function Cespiti() {
     if (!nuovo.descrizione?.trim()) { alert("La descrizione è obbligatoria."); return; }
     if (!nuovo.data_acquisto) { alert("La data di acquisto è obbligatoria."); return; }
     if (!nuovo.costo_acquisto) { alert("Il costo di acquisto è obbligatorio."); return; }
+    if (!anniValidi(nuovo.anni_ammortamento)) { alert("Anni di ammortamento non validi: scrivere un numero intero da 1 a 100."); return; }
     setSalvando(true);
-    const { error } = await supabase.from("ci_cespiti").insert([{
+    const { data: creato, error } = await supabase.from("ci_cespiti").insert([{
       descrizione: nuovo.descrizione.trim(),
       categoria: nuovo.categoria || null,
       data_acquisto: nuovo.data_acquisto,
       costo_acquisto: parseFloat(nuovo.costo_acquisto),
-      anni_ammortamento: parseInt(nuovo.anni_ammortamento) || 5,
+      anni_ammortamento: anniValidi(nuovo.anni_ammortamento) || 5,
       // Versione 236: «Generali» si salva «Generale» (come lo leggono i report) e «Nessuno» come
       // nessuna imputazione; prima si salvavano «GENERALE» in maiuscolo e «Nessuno», non riconosciuti
       specie: ({ "": ["Generale"], "Generali": ["Generale"], "Nessuno": [] })[nuovo.specie] ?? [nuovo.specie],
       note: nuovo.note || null,
-    }]);
+    }]).select().single();
+    if (error) { setSalvando(false); alert(`⚠️ Errore nel salvataggio:\n\n${error.message}`); return; }
+    // Versione 317: come per i cespiti nati dalle fatture (decisione del 21/10/2026), il cespite scritto a mano nasce
+    // con le sue quote dall'anno di acquisto all'anno in corso; prima restava fuori dai costi fino a «Genera Quote».
+    const quote = pianoQuote(creato.costo_acquisto, creato.anni_ammortamento, annoDiData(creato.data_acquisto)).filter(r => r.anno <= new Date().getFullYear());
+    if (quote.length) {
+      const { error: eQ } = await supabase.from("ci_cespiti_ammortamento")
+        .upsert(quote.map(r => ({ cespite_id: creato.id, anno: r.anno, quota: r.quota, fondo_ammortamento_fine: r.fondo })), { onConflict: "cespite_id,anno" });
+      if (eQ) alert(`⚠️ Cespite salvato, ma quote non scritte: ${eQ.message}\n\nUsare «Genera Quote» per gli anni dal ${annoDiData(creato.data_acquisto)}.`);
+      else alert(`✓ Cespite salvato con le quote degli anni ${quote.map(r => r.anno).join(", ")} (${formattaEuro(quote[0].quota)} all'anno).${annoDiData(creato.data_acquisto) < new Date().getFullYear() ? "\n\nRicordarsi di ricalcolare il Report Costi di questi anni." : ""}`);
+    }
     setSalvando(false);
-    if (error) { alert(`⚠️ Errore nel salvataggio:\n\n${error.message}`); return; }
     setNuovo(null);
     carica();
   }
@@ -311,10 +323,10 @@ export default function Cespiti() {
 
   function esporta() {
     const righeExcel = filtrati.map(c => ({
-      "Descrizione": c.descrizione, "Categoria": c.categoria, "Imputazione": c.specie?.join(", ") || "Generali",
-      "Fornitore": c.ci_fornitori?.nome, "Fattura n.": c.ci_fatture?.numero, "Data fattura": c.ci_fatture?.data,
-      "Data acquisto": c.data_acquisto, "Costo acquisto": numeroExcel(c.costo_acquisto), "Anni ammortamento": c.anni_ammortamento,
-      "Coefficiente %/anno": coefficienteDi(c) !== null ? numeroExcel(coefficienteDi(c)) : null,
+      "Descrizione": c.descrizione, "Categoria": c.categoria, "Imputazione": c.specie?.join(", ") || "Nessuno (fuori dai costi degli animali)",
+      "Fornitore": c.ci_fornitori?.nome, "Numero della fattura": c.ci_fatture?.numero, "Data della fattura": c.ci_fatture?.data,
+      "Data di acquisto": c.data_acquisto, "Costo di acquisto": numeroExcel(c.costo_acquisto), "Anni di ammortamento": c.anni_ammortamento,
+      "Percentuale di ammortamento all'anno": coefficienteDi(c) !== null ? numeroExcel(coefficienteDi(c)) : null,
     }));
     esportaExcel("Cespiti", [{ nome: "Cespiti", righe: righeExcel }]);
   }
@@ -368,7 +380,10 @@ export default function Cespiti() {
             </div>
             <Campo label="Data acquisto *" tipo="date" value={nuovo.data_acquisto} onChange={v => setNuovo({ ...nuovo, data_acquisto: v })} />
             <Campo label="Costo acquisto (€) *" tipo="number" value={nuovo.costo_acquisto} onChange={v => setNuovo({ ...nuovo, costo_acquisto: v })} />
-            <Campo label="Anni ammortamento" tipo="number" value={nuovo.anni_ammortamento} onChange={v => setNuovo({ ...nuovo, anni_ammortamento: v })} />
+            <div>
+              <Campo label="Anni di ammortamento (vita reale del bene)" tipo="number" value={nuovo.anni_ammortamento} onChange={v => setNuovo({ ...nuovo, anni_ammortamento: v })} />
+              <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{percentualeDaAnni(nuovo.anni_ammortamento) ? `= ${testoCoeff(percentualeDaAnni(nuovo.anni_ammortamento))} all'anno, rate costanti` : "numero intero da 1 a 100"}</div>
+            </div>
             <div>
               <label style={{ fontSize: 11, color: C.muted, fontWeight: 700, display: "block", marginBottom: 3 }}>Specie (Imputazione)</label>
               <select value={nuovo.specie} onChange={e => setNuovo({ ...nuovo, specie: e.target.value })}
@@ -453,9 +468,10 @@ export default function Cespiti() {
                           </select>
                         </div>
                         <div>
-                          <label style={{ fontSize: 11, color: C.muted, fontWeight: 700, display: "block", marginBottom: 3 }}>Coefficiente ammortamento (%/anno)</label>
-                          <input type="text" inputMode="decimal" value={formModifica.coefficientePct} onChange={e => setFormModifica({ ...formModifica, coefficientePct: e.target.value })}
+                          <label style={{ fontSize: 11, color: C.muted, fontWeight: 700, display: "block", marginBottom: 3 }}>Anni di ammortamento (vita reale del bene)</label>
+                          <input type="number" min="1" max="100" step="1" value={formModifica.anni} onChange={e => setFormModifica({ ...formModifica, anni: e.target.value })}
                             style={{ width: "100%", boxSizing: "border-box", padding: "7px 8px", borderRadius: 6, border: `1.5px solid ${C.border}`, fontSize: 13 }} />
+                          <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{percentualeDaAnni(formModifica.anni) ? `= ${testoCoeff(percentualeDaAnni(formModifica.anni))} all'anno, rate costanti` : "numero intero da 1 a 100"}</div>
                         </div>
                         <div>
                           <label style={{ fontSize: 11, color: C.muted, fontWeight: 700, display: "block", marginBottom: 3 }}>Data acquisto</label>
@@ -498,7 +514,7 @@ export default function Cespiti() {
                               c.specie?.length > 0 ? c.specie.join(", ") : "Generali"
                             )}
                           </div>
-                          <div><strong>Coefficiente ammortamento:</strong> {coefficienteDi(c) !== null ? `${testoCoeff(coefficienteDi(c))}/anno (${c.anni_ammortamento} anni)` : "—"}</div>
+                          <div><strong>Durata dell'ammortamento:</strong> {c.anni_ammortamento ? `${c.anni_ammortamento} anni (${testoCoeff(coefficienteDi(c))} all'anno)` : "—"}</div>
                         </div>
                         <button onClick={() => iniziaModifica(c)}
                           style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>

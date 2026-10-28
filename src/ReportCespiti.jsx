@@ -3,6 +3,7 @@ import { supabase } from "./supabase";
 import { C } from "./style";
 import { numerizzaCampi, round2, formattaEuro, fetchAllPages, leggiInBlocchi } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
+import { pianoQuote } from "./Cespiti";
 
 export default function ReportCespiti() {
   const [loading, setLoading] = useState(true);
@@ -15,7 +16,7 @@ export default function ReportCespiti() {
     try {
       const { data: cespiti, error: eC } = await fetchAllPages((da, a) => supabase.from("ci_cespiti").select("*").order("id").range(da, a));
       if (eC) throw new Error(eC.message);
-      const cespitiNum = numerizzaCampi(cespiti || [], ["costo_acquisto", "anni_ammortamento"]);
+      const cespitiNum = numerizzaCampi(cespiti || [], ["costo_acquisto", "anni_ammortamento", "coefficiente_percentuale"]);
 
       const idCespiti = cespitiNum.map(c => c.id);
       let quote = [];
@@ -31,9 +32,12 @@ export default function ReportCespiti() {
       const cespitiConResiduo = cespitiNum.map(c => {
         const quoteGenerate = round2(quoteGeneratePerCespite.get(c.id) || 0);
         const residuo = round2(Math.max(0, c.costo_acquisto - quoteGenerate));
-        const quotaAnnua = c.anni_ammortamento > 0 ? round2(c.costo_acquisto / c.anni_ammortamento) : 0;
-        const annoFine = new Date(c.data_acquisto).getFullYear() + c.anni_ammortamento - 1;
-        return { ...c, quoteGenerate, residuo, quotaAnnua, annoFine, completamenteAmmortizzato: residuo <= 0 };
+        // Versione 317 (28/10/2026): il piano atteso è lo stesso delle quote vere (rate costanti, costo ÷ anni,
+        // i centesimi nell'ultimo anno), non più costo ÷ anni per tutti gli anni senza il residuo
+        const piano = c.data_acquisto ? pianoQuote(c.costo_acquisto, c.anni_ammortamento, new Date(c.data_acquisto).getFullYear(), c.coefficiente_percentuale) : [];
+        const quotaAnnua = piano.length ? piano[0].quota : 0;
+        const annoFine = piano.length ? piano[piano.length - 1].anno : null;
+        return { ...c, piano, quoteGenerate, residuo, quotaAnnua, annoFine, completamenteAmmortizzato: residuo <= 0 };
       });
 
       // Riepilogo per categoria
@@ -64,11 +68,8 @@ export default function ReportCespiti() {
       // Piano di ammortamento futuro (prossimi 5 anni)
       const annoCorrente = new Date().getFullYear();
       const pianoFuturo = Array.from({ length: 5 }, (_, i) => annoCorrente + i).map(anno => {
-        const cespitiInVita = cespitiConResiduo.filter(c => {
-          const annoAcquisto = new Date(c.data_acquisto).getFullYear();
-          return anno >= annoAcquisto && anno <= c.annoFine;
-        });
-        return { anno, quotaAttesa: round2(cespitiInVita.reduce((s, c) => s + c.quotaAnnua, 0)), nCespiti: cespitiInVita.length };
+        const righe = cespitiConResiduo.map(c => c.piano.find(r => r.anno === anno)).filter(Boolean);
+        return { anno, quotaAttesa: round2(righe.reduce((s, r) => s + r.quota, 0)), nCespiti: righe.length };
       });
 
       const riepilogoGenerale = {
@@ -89,22 +90,22 @@ export default function ReportCespiti() {
   function esporta() {
     esportaExcel("ReportCespiti", [
       { nome: "Riepilogo Generale", righe: [{
-        "N° Cespiti attivi": dati.riepilogoGenerale.nCespiti, "Costo totale": numeroExcel(dati.riepilogoGenerale.costoTotale),
+        "Numero di cespiti attivi": dati.riepilogoGenerale.nCespiti, "Costo totale": numeroExcel(dati.riepilogoGenerale.costoTotale),
         "Quote generate": numeroExcel(dati.riepilogoGenerale.quoteGenerate), "Residuo": numeroExcel(dati.riepilogoGenerale.residuo),
         "Completamente ammortizzati": dati.riepilogoGenerale.completamenteAmmortizzati,
       }] },
       { nome: "Per Categoria", righe: dati.perCategoria.map(r => ({
-        "Categoria": r.categoria, "N° Cespiti": r.nCespiti, "Costo totale": numeroExcel(r.costoTotale),
+        "Categoria": r.categoria, "Numero di cespiti": r.nCespiti, "Costo totale": numeroExcel(r.costoTotale),
         "Quote generate": numeroExcel(r.quoteGenerate), "Residuo": numeroExcel(r.residuo),
       })) },
       { nome: "Per Imputazione", righe: dati.perImputazione.map(r => ({
-        "Imputazione": r.imputazione, "N° Cespiti": r.nCespiti, "Costo totale": numeroExcel(r.costoTotale),
+        "Imputazione": r.imputazione, "Numero di cespiti": r.nCespiti, "Costo totale": numeroExcel(r.costoTotale),
         "Quote generate": numeroExcel(r.quoteGenerate), "Residuo": numeroExcel(r.residuo),
       })), coloriRiga: r => IMPUTAZIONI_NON_ALLEVAMENTO.includes(r["Imputazione"]) },
-      { nome: "Piano Futuro", righe: dati.pianoFuturo.map(r => ({ "Anno": r.anno, "Quota attesa": numeroExcel(r.quotaAttesa), "N° Cespiti coinvolti": r.nCespiti })) },
+      { nome: "Piano Futuro", righe: dati.pianoFuturo.map(r => ({ "Anno": r.anno, "Quota attesa": numeroExcel(r.quotaAttesa), "Numero di cespiti coinvolti": r.nCespiti })) },
       { nome: "Dettaglio Cespiti", righe: dati.cespitiConResiduo.map(c => ({
-        "Descrizione": c.descrizione, "Categoria": c.categoria, "Imputazione": c.specie?.join(", ") || "Generali",
-        "Data acquisto": c.data_acquisto, "Costo acquisto": numeroExcel(c.costo_acquisto), "Anni ammortamento": c.anni_ammortamento,
+        "Descrizione": c.descrizione, "Categoria": c.categoria, "Imputazione": c.specie?.join(", ") || "Nessuno (fuori dai costi degli animali)",
+        "Data di acquisto": c.data_acquisto, "Costo di acquisto": numeroExcel(c.costo_acquisto), "Anni di ammortamento": c.anni_ammortamento,
         "Quote generate": numeroExcel(c.quoteGenerate), "Residuo": numeroExcel(c.residuo), "Anno fine ammortamento": c.annoFine,
         "Completamente ammortizzato": c.completamenteAmmortizzato ? "Sì" : "No",
       })) },
@@ -146,7 +147,7 @@ export default function ReportCespiti() {
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
           <table style={{ width: "100%", fontSize: 13 }}>
             <thead style={{ background: C.primary, color: "#fff", position: "sticky", top: 0, zIndex: 1 }}>
-              <tr><th style={th}>Anno</th><th style={{ ...th, textAlign: "right" }}>Quota attesa</th><th style={{ ...th, textAlign: "right" }}>N° Cespiti coinvolti</th></tr>
+              <tr><th style={th}>Anno</th><th style={{ ...th, textAlign: "right" }}>Quota attesa</th><th style={{ ...th, textAlign: "right" }}>Numero di cespiti coinvolti</th></tr>
             </thead>
             <tbody>
               {dati.pianoFuturo.map(r => (
@@ -182,7 +183,7 @@ function TabellaSemplice({ righe, etichetta }) {
       <table style={{ width: "100%", fontSize: 13 }}>
         <thead style={{ background: C.primary, color: "#fff", position: "sticky", top: 0, zIndex: 1 }}>
           <tr>
-            <th style={th}></th><th style={{ ...th, textAlign: "right" }}>N° Cespiti</th>
+            <th style={th}></th><th style={{ ...th, textAlign: "right" }}>Numero di cespiti</th>
             <th style={{ ...th, textAlign: "right" }}>Costo totale</th><th style={{ ...th, textAlign: "right" }}>Quote generate</th>
             <th style={{ ...th, textAlign: "right" }}>Residuo</th>
           </tr>

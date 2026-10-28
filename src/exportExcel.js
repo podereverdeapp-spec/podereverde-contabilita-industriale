@@ -182,7 +182,7 @@ export function exportCompleto(animali, eventi_sanitari, costi, lotti, suini, us
   XLSX.utils.book_append_sheet(wb, foglio(macchinari, [
     {key:'nome',label:'Macchinario'},{key:'categoria',label:'Categoria'},
     {key:'costo_storico',label:'Costo storico €'},{key:'anno_acquisto',label:'Anno acquisto'},
-    {key:'anni_ammortamento',label:'Anni amm.'},{key:'note',label:'Note'},
+    {key:'anni_ammortamento',label:'Anni di ammortamento'},{key:'note',label:'Note'},
   ]), 'Macchinari');
 
   // Costi generali
