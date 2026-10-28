@@ -58,6 +58,8 @@ import RiepilogoCostoAnimali from "./RiepilogoCostoAnimali";
 import PrezzoPareggio from "./PrezzoPareggio";
 import DocumentoIstruzioni from "./DocumentoIstruzioni";
 import ReportBreakEven from "./ReportBreakEven";
+import AlimentiSenzaComposizione from "./AlimentiSenzaComposizione"; // versione 320
+import { contaAlimentiSenzaComposizione } from "./calcoloAlimentiSenzaComposizione";
 import { ISTRUZIONI_CARICA_FATTURE, PIANO_DEI_CONTI, ISTRUZIONI_COSTI_DIRETTI, ISTRUZIONI_COSTI_LAVORO, ISTRUZIONI_SISTEMA_DATI, ISTRUZIONI_VERIFICA, ISTRUZIONI_REGISTRO_MODIFICHE, ISTRUZIONI_CONTROLLI, ISTRUZIONI_FATTURAZIONE_ANIMALI, ISTRUZIONI_ALTRE_FATTURE, ISTRUZIONI_CONTROLLO_ATTIVA, ISTRUZIONI_RICERCA_ANAGRAFICHE, ISTRUZIONI_RIEPILOGO_CARICA_DATI, ISTRUZIONI_GENERALI_EMISSIONE, ISTRUZIONI_FATTURE_COMPETENZA, ISTRUZIONI_REPORT_COSTI, ISTRUZIONI_QUANDO_MACELLARE, ISTRUZIONI_BREAK_EVEN, ISTRUZIONI_CESPITI, ISTRUZIONI_GENERALI_ANALISI_COSTI } from "./istruzioniDati";
 // Versione 305: le istruzioni della cartella «Ricerca: Fatture e Anagrafiche» sono il documento Word (ISTRUZIONI_RICERCA_ANAGRAFICHE)
 import IstruzioniPrezziAcquisto from "./IstruzioniPrezziAcquisto";
@@ -256,6 +258,7 @@ const MENU = [
   { tipo: "cartella", id: "cart-alimentaria", label: "Alimentaria", icon: "🌾", contenuto: [
     { tipo: "voce", id: "istr-alimentaria", label: "Istruzioni", icon: "📖" },
     { tipo: "voce", id: "costi-quantita-alimentare", label: "Costi e Quantità", icon: "📊" },
+    { tipo: "voce", id: "alimenti-senza-composizione", label: "Alimenti senza composizione", icon: "⚠️" }, // versione 320 (28/10/2026)
     { tipo: "sottocartella", id: "sub-prezzi-preventivi", label: "Controlla prezzi e chiedi preventivi", icon: "💶", voci: [
       { id: "controlla-prezzi", label: "Controlla prezzi", icon: "💶" },
       { id: "chiedi-preventivi", label: "Chiedi preventivi", icon: "✉️" },
@@ -399,7 +402,10 @@ function Programma({ utente }) {
   // cambiati dati che entrano nei costi (fatture, costi diretti, cespiti, animali…)
   const [avvisoCalcoli, setAvvisoCalcoli] = useState(null);
   useEffect(() => { statoCalcoli().then(st => setAvvisoCalcoli(testoAvvisoCalcoli(st))).catch(() => setAvvisoCalcoli(null)); }, [tab]);
-  const AVVISI = { "cart-fatture": anomalieAperte || 0, "sub-dati-controllo": anomalieAperte || 0, "registro-controlli": anomalieAperte || 0, "cart-emissione-fatture": daFatturare + allarmiAttiva, "sub-fatturazione-animali": daFatturare, "fatt-animali-da-fatturare": daFatturare, "fatt-animali-prepara": daFatturare, "sub-controllo-attiva": allarmiAttiva, "controllo-attiva": allarmiAttiva };
+  // Versione 320: alimenti acquistati senza composizione (avviso finché lo stato non è «Ricevuta»)
+  const [senzaComposizione, setSenzaComposizione] = useState(0);
+  useEffect(() => { contaAlimentiSenzaComposizione().then(setSenzaComposizione); }, [tab]);
+  const AVVISI = { "cart-alimentaria": senzaComposizione, "alimenti-senza-composizione": senzaComposizione, "cart-fatture": anomalieAperte || 0, "sub-dati-controllo": anomalieAperte || 0, "registro-controlli": anomalieAperte || 0, "cart-emissione-fatture": daFatturare + allarmiAttiva, "sub-fatturazione-animali": daFatturare, "fatt-animali-da-fatturare": daFatturare, "fatt-animali-prepara": daFatturare, "sub-controllo-attiva": allarmiAttiva, "controllo-attiva": allarmiAttiva };
 
   function vaiA(pageId) {
     setTab(pageId);
@@ -434,7 +440,7 @@ function Programma({ utente }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 319</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 320</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -588,6 +594,7 @@ function Programma({ utente }) {
         {tab === "razioni-bovini-riferimento" && <RazioniRiferimento onNavigate={vaiA} />}
         {tab === "razioni-bovini-report" && <ReportFabbisogniBovini onNavigate={vaiA} />}
         {tab === "istr-alimentaria" && <IstruzioniAlimentaria />}
+        {tab === "alimenti-senza-composizione" && <AlimentiSenzaComposizione onAggiorna={() => contaAlimentiSenzaComposizione().then(setSenzaComposizione)} />}
         {tab === "controlla-prezzi" && <ControllaPrezzi onNavigate={vaiA} />}
         {tab === "chiedi-preventivi" && <ChiediPreventivi />}
         {tab === "preventivi-ricevuti" && <PreventiviRicevuti />}
