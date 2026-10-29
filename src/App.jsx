@@ -64,7 +64,7 @@ import AlimentiSenzaComposizione from "./AlimentiSenzaComposizione"; // versione
 import { contaAlimentiSenzaComposizione } from "./calcoloAlimentiSenzaComposizione";
 import OviniDaVerificare from "./OviniDaVerificare"; // versione 323
 import { contaVerificheAnimali } from "./calcoloVerificheAnimali";
-import { ISTRUZIONI_CARICA_FATTURE, PIANO_DEI_CONTI, ISTRUZIONI_COSTI_DIRETTI, ISTRUZIONI_COSTI_LAVORO, ISTRUZIONI_SISTEMA_DATI, ISTRUZIONI_VERIFICA, ISTRUZIONI_REGISTRO_MODIFICHE, ISTRUZIONI_CONTROLLI, ISTRUZIONI_FATTURAZIONE_ANIMALI, ISTRUZIONI_ALTRE_FATTURE, ISTRUZIONI_CONTROLLO_ATTIVA, ISTRUZIONI_RICERCA_ANAGRAFICHE, ISTRUZIONI_RIEPILOGO_CARICA_DATI, ISTRUZIONI_GENERALI_EMISSIONE, ISTRUZIONI_FATTURE_COMPETENZA, ISTRUZIONI_REPORT_COSTI, ISTRUZIONI_QUANDO_MACELLARE, ISTRUZIONI_BREAK_EVEN, ISTRUZIONI_CESPITI, ISTRUZIONI_GENERALI_ANALISI_COSTI } from "./istruzioniDati";
+import { ISTRUZIONI_CARICA_FATTURE, PIANO_DEI_CONTI, ISTRUZIONI_COSTI_DIRETTI, ISTRUZIONI_COSTI_LAVORO, ISTRUZIONI_SISTEMA_DATI, ISTRUZIONI_VERIFICA, ISTRUZIONI_REGISTRO_MODIFICHE, ISTRUZIONI_CONTROLLI, ISTRUZIONI_FATTURAZIONE_ANIMALI, ISTRUZIONI_ALTRE_FATTURE, ISTRUZIONI_CONTROLLO_ATTIVA, ISTRUZIONI_RICERCA_ANAGRAFICHE, ISTRUZIONI_RIEPILOGO_CARICA_DATI, ISTRUZIONI_GENERALI_EMISSIONE, ISTRUZIONI_FATTURE_COMPETENZA, ISTRUZIONI_REPORT_COSTI, ISTRUZIONI_QUANDO_MACELLARE, ISTRUZIONI_BREAK_EVEN, ISTRUZIONI_CESPITI, ISTRUZIONI_GENERALI_ANALISI_COSTI, ISTRUZIONI_GENERALI_F24 } from "./istruzioniDati";
 // Versione 305: le istruzioni della cartella «Ricerca: Fatture e Anagrafiche» sono il documento Word (ISTRUZIONI_RICERCA_ANAGRAFICHE)
 import IstruzioniPrezziAcquisto from "./IstruzioniPrezziAcquisto";
 import IstruzioniAnimali from "./IstruzioniAnimali";
@@ -168,6 +168,8 @@ const MENU = [
     // sotto-sottocartella «Smistamento e Carico nel cloud» (terzo livello del menu); le cartelle seguenti passano da 4–6 a 5–7.
     // Da aggiungere: Istruzioni Generali F24 (in cima), Istruzioni Smistamento e Carico (con immagini), Carica F24, Ricerca F24.
     { tipo: "sottocartella", id: "sub-dati-f24", label: "4. Carica F24", icon: "🧾", voci: [
+      // Versione 327 (ordine del Dott. Bizzarri del 29/10/2026 ore 21:16): le Istruzioni Generali in cima.
+      { id: "istr-generali-f24", label: "Istruzioni Generali", icon: "📖" },
       { tipo: "sottocartella", id: "sub-f24-cloud", label: "Smistamento e Carico nel cloud", icon: "☁️", voci: [
         { id: "prompt-f24", label: "Prompt per Smistamento e Carico F24", icon: "🤖" },
       ]},
@@ -464,7 +466,7 @@ function Programma({ utente }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 326</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 327</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -661,6 +663,7 @@ function Programma({ utente }) {
         {tab === "vendite-per-anno" && <VenditePerAnno />}
         {tab === "prompt-cedolini" && <PromptCedolini />}
         {tab === "prompt-f24" && <PromptF24 />}
+        {tab === "istr-generali-f24" && <DocumentoIstruzioni doc={ISTRUZIONI_GENERALI_F24} />}
         {tab === "carica-costi-lavoro" && <CaricaCostiLavoro />}
         {tab === "consulta-costi-lavoro" && <ConsultaCostiLavoro />}
         {tab === "inserimento-manuale" && <InserimentoManualeFattura />}

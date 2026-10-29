@@ -18,10 +18,12 @@ function Runs({ r }) {
       );
     }
     const testo = x.x.split("\n").flatMap((t, j) => j ? [<br key={j} />, t] : [t]);
-    if (x.b && x.i) return <b key={i}><i>{testo}</i></b>;
-    if (x.b) return <b key={i}>{testo}</b>;
-    if (x.i) return <i key={i}>{testo}</i>;
-    return <span key={i}>{testo}</span>;
+    // Versione 327: colore e sottolineato del Word (l'avviso rosso delle Istruzioni Generali degli F24)
+    const st = (x.c || x.u) ? { color: x.c, textDecoration: x.u ? "underline" : undefined } : undefined;
+    if (x.b && x.i) return <b key={i} style={st}><i>{testo}</i></b>;
+    if (x.b) return <b key={i} style={st}>{testo}</b>;
+    if (x.i) return <i key={i} style={st}>{testo}</i>;
+    return <span key={i} style={st}>{testo}</span>;
   });
 }
 
