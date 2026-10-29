@@ -8,7 +8,7 @@ export default function IstruzioniControlli() {
       titolo="Istruzioni dei Controlli"
       introduzione={
         <>
-          Il gruppo «6. Controllo finale» della cartella «Carica Dati Contabilità» controlla che i dati dell'app Podere Verde e della Contabilità siano coerenti, prima che finiscano nei costi degli animali.
+          Il gruppo «7. Controllo finale» della cartella «Carica Dati Contabilità» controlla che i dati dell'app Podere Verde e della Contabilità siano coerenti, prima che finiscano nei costi degli animali.
           I controlli partono da soli all'apertura del programma; quando trovano qualcosa, in cima a ogni pagina compare un avviso rosso con il numero di anomalie da decidere.
           <br /><br />
           Ogni anomalia resta scritta finché non è decisa: una decisione presa non viene riproposta. Accanto a ogni anomalia si vede chi ha inserito o cambiato per ultimo quel dato, dal registro delle modifiche attivo dal 07/10/2026.
@@ -30,7 +30,7 @@ export default function IstruzioniControlli() {
         },
         {
           pagina: "Abbinamenti Fatture Acquisto", icon: "🔗",
-          aCosaServe: "Collega ogni riga delle fatture d'acquisto animali al capo dell'app a cui si riferisce, con il motivo della proposta. La pagina si trova in «Carica Dati Contabilità → 4. Sistema i dati caricati».",
+          aCosaServe: "Collega ogni riga delle fatture d'acquisto animali al capo dell'app a cui si riferisce, con il motivo della proposta. La pagina si trova in «Carica Dati Contabilità → 5. Sistema i dati caricati».",
           comeSiUsa: [
             "«Proposte sicure»: la matricola scritta in fattura è quella di un capo dell'app. Sotto si leggono i motivi; quelli in rosso sono differenze da guardare (prezzo, data, specie).",
             "«Esamina e conferma» mostra, campo per campo, la scheda dell'app e la fattura: dove la scheda è vuota si può scrivere il dato della fattura; dove sono diversi si sceglie quale tenere. Niente viene salvato prima di «Conferma l'abbinamento».",

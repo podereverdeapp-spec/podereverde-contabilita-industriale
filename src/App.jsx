@@ -48,6 +48,7 @@ import NumeroProgressivo from "./NumeroProgressivo";
 import VenditePerAnno from "./VenditePerAnno";
 import { contaAllarmiFatturazione } from "./calcoloAruba";
 import PromptCedolini from "./PromptCedolini";
+import PromptF24 from "./PromptF24";
 import CaricaCostiLavoro from "./CaricaCostiLavoro";
 import ConsultaCostiLavoro from "./ConsultaCostiLavoro";
 import InserimentoManualeFattura from "./InserimentoManualeFattura";
@@ -163,21 +164,29 @@ const MENU = [
       { id: "carica-costi-lavoro", label: "Carica Costi del Lavoro", icon: "📥" },
       { id: "consulta-costi-lavoro", label: "Consulta Costi del Lavoro", icon: "🔍" },
     ]},
+    // Versione 326 (ordine del Dott. Bizzarri del 29/10/2026 ore 20:59): la sottocartella degli F24, con dentro la
+    // sotto-sottocartella «Smistamento e Carico nel cloud» (terzo livello del menu); le cartelle seguenti passano da 4–6 a 5–7.
+    // Da aggiungere: Istruzioni Generali F24 (in cima), Istruzioni Smistamento e Carico (con immagini), Carica F24, Ricerca F24.
+    { tipo: "sottocartella", id: "sub-dati-f24", label: "4. Carica F24", icon: "🧾", voci: [
+      { tipo: "sottocartella", id: "sub-f24-cloud", label: "Smistamento e Carico nel cloud", icon: "☁️", voci: [
+        { id: "prompt-f24", label: "Prompt per Smistamento e Carico F24", icon: "🤖" },
+      ]},
+    ]},
     // Versione 289: le istruzioni, dal Word approvato dal Dott. Bizzarri il 23/10/2026.
-    { tipo: "sottocartella", id: "sub-dati-sistema", label: "4. Sistema i dati caricati", icon: "🧹", voci: [
+    { tipo: "sottocartella", id: "sub-dati-sistema", label: "5. Sistema i dati caricati", icon: "🧹", voci: [
       { id: "istr-sistema-dati", label: "Istruzioni Sistema i dati caricati", icon: "📖" },
       { id: "armonizza", label: "Armonizzare Unità Misura Fatture", icon: "⚖️" },
       { id: "abbinamenti-fatture", label: "Abbinamenti Fatture Acquisto", icon: "🔗" },
     ]},
     // Versione 291: le istruzioni, dal Word approvato dal Dott. Bizzarri il 24/10/2026.
-    { tipo: "sottocartella", id: "sub-dati-verifica", label: "5. Verifica che non manchi niente", icon: "🔍", voci: [
+    { tipo: "sottocartella", id: "sub-dati-verifica", label: "6. Verifica che non manchi niente", icon: "🔍", voci: [
       { id: "istr-verifica", label: "Istruzioni Verifica che non manchi niente", icon: "📖" },
       { id: "verifica-fatture-mancanti", label: "Verifica Fatture Mancanti", icon: "🔍" },
       { id: "verifica-righe-mancanti", label: "Verifica Righe Mancanti", icon: "🔎" },
       { id: "anomalie", label: "Fatture Incomplete", icon: "🧾" },
       { id: "passive", label: "Fatture Passive", icon: "📄" },
     ]},
-    { tipo: "sottocartella", id: "sub-dati-controllo", label: "6. Controllo finale", icon: "🛡️", voci: [
+    { tipo: "sottocartella", id: "sub-dati-controllo", label: "7. Controllo finale", icon: "🛡️", voci: [
       { id: "istr-controlli", label: "Istruzioni dei Controlli", icon: "📖" },
       { id: "registro-controlli", label: "Registro Controlli", icon: "🛡️" },
     ]},
@@ -344,6 +353,10 @@ function cartellaDiPagina(pageId) {
     for (const c of m.contenuto) {
       if (c.tipo === "voce" && c.id === pageId) return { cartella: m.id, sottocartella: null };
       if (c.tipo === "sottocartella" && c.voci.some(v => v.id === pageId)) return { cartella: m.id, sottocartella: c.id };
+      // Versione 326: terzo livello (sottocartella dentro una sottocartella)
+      if (c.tipo === "sottocartella") for (const s of c.voci) {
+        if (s.tipo === "sottocartella" && s.voci.some(v => v.id === pageId)) return { cartella: m.id, sottocartella: c.id, sottosottocartella: s.id };
+      }
     }
   }
   return null;
@@ -424,6 +437,7 @@ function Programma({ utente }) {
       setCartelleAperte(prev => {
         const nuovo = new Set(prev).add(posizione.cartella);
         if (posizione.sottocartella) nuovo.add(posizione.sottocartella);
+        if (posizione.sottosottocartella) nuovo.add(posizione.sottosottocartella);
         return nuovo;
       });
     }
@@ -450,7 +464,7 @@ function Programma({ utente }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 325</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 326</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -493,7 +507,32 @@ function Programma({ utente }) {
                       </button>
                       {cartelleAperte.has(c.id) && (
                         <div style={{ display: "flex", flexDirection: "column", gap: 2, marginLeft: 14, borderLeft: "1.5px solid rgba(255,255,255,0.2)", paddingLeft: 6 }}>
-                          {c.voci.map(v => (
+                          {c.voci.map(v => v.tipo === "sottocartella" ? (
+                            <div key={v.id}>
+                              <button
+                                onClick={() => toggleCartella(v.id)}
+                                style={{
+                                  background: "transparent", color: "#fff", border: "none", borderRadius: 8,
+                                  padding: "7px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                                  textAlign: "left", display: "flex", alignItems: "center", gap: 8, width: "100%", opacity: 0.9,
+                                }}
+                              >
+                                <span>{cartelleAperte.has(v.id) ? "📂" : "📁"}</span> <span>{v.label}</span>
+                                <Avviso n={AVVISI[v.id]} />
+                                <span style={{ marginLeft: AVVISI[v.id] ? 6 : "auto", fontSize: 10, opacity: 0.7 }}>{cartelleAperte.has(v.id) ? "▾" : "▸"}</span>
+                              </button>
+                              {cartelleAperte.has(v.id) && (
+                                <div style={{ display: "flex", flexDirection: "column", gap: 2, marginLeft: 14, borderLeft: "1.5px solid rgba(255,255,255,0.15)", paddingLeft: 6 }}>
+                                  {v.voci.map(w => (
+                                    <VoceMenuBottone key={w.id} v={w} attiva={tab === w.id} onClick={() => vaiA(w.id)} piccola avviso={AVVISI[w.id]} />
+                                  ))}
+                                  {v.voci.length === 0 && (
+                                    <div style={{ color: "#fff", opacity: 0.6, fontSize: 11.5, padding: "6px 10px", fontStyle: "italic" }}>Pagine in preparazione</div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
                             <VoceMenuBottone key={v.id} v={v} attiva={tab === v.id} onClick={() => vaiA(v.id)} piccola avviso={AVVISI[v.id]} />
                           ))}
                           {c.voci.length === 0 && (
@@ -621,6 +660,7 @@ function Programma({ utente }) {
         {tab === "numero-progressivo" && <NumeroProgressivo />}
         {tab === "vendite-per-anno" && <VenditePerAnno />}
         {tab === "prompt-cedolini" && <PromptCedolini />}
+        {tab === "prompt-f24" && <PromptF24 />}
         {tab === "carica-costi-lavoro" && <CaricaCostiLavoro />}
         {tab === "consulta-costi-lavoro" && <ConsultaCostiLavoro />}
         {tab === "inserimento-manuale" && <InserimentoManualeFattura />}
