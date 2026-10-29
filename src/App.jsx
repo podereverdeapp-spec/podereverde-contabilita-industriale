@@ -30,8 +30,9 @@ import PerformanceEtaMaschi from "./PerformanceEtaMaschi";
 import PerformanceEtaFemmine from "./PerformanceEtaFemmine";
 import StoricoPerformanceEta from "./StoricoPerformanceEta";
 import AccrescimentoCostiPagina from "./AccrescimentoCostiPagina";
-import RazioniSuiniComposizione from "./RazioniSuiniComposizione";
-import RazioniSuiniConsumi from "./RazioniSuiniConsumi";
+import ControlloRazioniSpecie from "./ControlloRazioniSpecie";
+import ControlloPollame from "./ControlloPollame";
+import RiepilogoControlloRazioni from "./RiepilogoControlloRazioni";
 import CostruisciRazione from "./CostruisciRazione";
 import IstruzioniAlimentaria from "./IstruzioniAlimentaria";
 import RazioniRiferimento from "./RazioniRiferimento";
@@ -60,6 +61,8 @@ import DocumentoIstruzioni from "./DocumentoIstruzioni";
 import ReportBreakEven from "./ReportBreakEven";
 import AlimentiSenzaComposizione from "./AlimentiSenzaComposizione"; // versione 320
 import { contaAlimentiSenzaComposizione } from "./calcoloAlimentiSenzaComposizione";
+import OviniDaVerificare from "./OviniDaVerificare"; // versione 323
+import { contaVerificheAnimali } from "./calcoloVerificheAnimali";
 import { ISTRUZIONI_CARICA_FATTURE, PIANO_DEI_CONTI, ISTRUZIONI_COSTI_DIRETTI, ISTRUZIONI_COSTI_LAVORO, ISTRUZIONI_SISTEMA_DATI, ISTRUZIONI_VERIFICA, ISTRUZIONI_REGISTRO_MODIFICHE, ISTRUZIONI_CONTROLLI, ISTRUZIONI_FATTURAZIONE_ANIMALI, ISTRUZIONI_ALTRE_FATTURE, ISTRUZIONI_CONTROLLO_ATTIVA, ISTRUZIONI_RICERCA_ANAGRAFICHE, ISTRUZIONI_RIEPILOGO_CARICA_DATI, ISTRUZIONI_GENERALI_EMISSIONE, ISTRUZIONI_FATTURE_COMPETENZA, ISTRUZIONI_REPORT_COSTI, ISTRUZIONI_QUANDO_MACELLARE, ISTRUZIONI_BREAK_EVEN, ISTRUZIONI_CESPITI, ISTRUZIONI_GENERALI_ANALISI_COSTI } from "./istruzioniDati";
 // Versione 305: le istruzioni della cartella «Ricerca: Fatture e Anagrafiche» sono il documento Word (ISTRUZIONI_RICERCA_ANAGRAFICHE)
 import IstruzioniPrezziAcquisto from "./IstruzioniPrezziAcquisto";
@@ -269,13 +272,17 @@ const MENU = [
       { id: "razioni-bovini-report", label: "Report fabbisogni", icon: "📑" },
       { id: "costruisci-razione", label: "Costruisci razione", icon: "🥣" },
     ]},
-    { tipo: "sottocartella", id: "sub-razioni-suini", label: "Razioni Suini", icon: "🥣", voci: [
-      { id: "razioni-suini-composizione", label: "Composizione Razioni", icon: "📋" },
-      { id: "razioni-suini-consumi", label: "Consumi", icon: "📊" },
+    { tipo: "sottocartella", id: "sub-controllo-razioni", label: "Razioni attive e Controllo costi", icon: "⚖️", voci: [ // versione 325 (29/10/2026)
+      { id: "controllo-bovini", label: "Bovini", icon: "🐄" },
+      { id: "controllo-suini", label: "Suini", icon: "🐖" },
+      { id: "controllo-ovini", label: "Ovini", icon: "🐑" },
+      { id: "controllo-pollame", label: "Pollame", icon: "🐔" },
+      { id: "controllo-riepilogo", label: "Riepilogo bovini, suini e ovini", icon: "📊" },
     ]},
   ]},
   { tipo: "cartella", id: "cart-animali", label: "Animali", icon: "🐄", contenuto: [
     { tipo: "voce", id: "istr-animali", label: "Istruzioni", icon: "📖" },
+    { tipo: "voce", id: "verifiche-ovini", label: "Ovini da verificare con Sborchia", icon: "⚠️" }, // versione 323 (28/10/2026)
     { tipo: "voce", id: "acquisto", label: "Report Acquisto Animali", icon: "🐄" },
     { tipo: "voce", id: "uba", label: "Report UBA", icon: "🐮" },
     { tipo: "voce", id: "riepilogo-costo-animali", label: "Riepilogo Costo Animali", icon: "📋" },
@@ -405,7 +412,10 @@ function Programma({ utente }) {
   // Versione 320: alimenti acquistati senza composizione (avviso finché lo stato non è «Ricevuta»)
   const [senzaComposizione, setSenzaComposizione] = useState(0);
   useEffect(() => { contaAlimentiSenzaComposizione().then(setSenzaComposizione); }, [tab]);
-  const AVVISI = { "cart-alimentaria": senzaComposizione, "alimenti-senza-composizione": senzaComposizione, "cart-fatture": anomalieAperte || 0, "sub-dati-controllo": anomalieAperte || 0, "registro-controlli": anomalieAperte || 0, "cart-emissione-fatture": daFatturare + allarmiAttiva, "sub-fatturazione-animali": daFatturare, "fatt-animali-da-fatturare": daFatturare, "fatt-animali-prepara": daFatturare, "sub-controllo-attiva": allarmiAttiva, "controllo-attiva": allarmiAttiva };
+  // Versione 323: punti degli ovini da verificare con Sborchia (avviso finché sono «Da verificare»)
+  const [verificheAnimali, setVerificheAnimali] = useState(0);
+  useEffect(() => { contaVerificheAnimali().then(setVerificheAnimali); }, [tab]);
+  const AVVISI = { "cart-animali": verificheAnimali, "verifiche-ovini": verificheAnimali, "cart-alimentaria": senzaComposizione, "alimenti-senza-composizione": senzaComposizione, "cart-fatture": anomalieAperte || 0, "sub-dati-controllo": anomalieAperte || 0, "registro-controlli": anomalieAperte || 0, "cart-emissione-fatture": daFatturare + allarmiAttiva, "sub-fatturazione-animali": daFatturare, "fatt-animali-da-fatturare": daFatturare, "fatt-animali-prepara": daFatturare, "sub-controllo-attiva": allarmiAttiva, "controllo-attiva": allarmiAttiva };
 
   function vaiA(pageId) {
     setTab(pageId);
@@ -440,7 +450,7 @@ function Programma({ utente }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 320</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 325</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -588,12 +598,16 @@ function Programma({ utente }) {
         {tab === "anomalie" && <ControlloAnomalie />}
         {tab === "armonizza" && <DaArmonizzare />}
         {tab === "acc-bovini-alimenti" && <AccrescimentoCostiPagina />}
-        {tab === "razioni-suini-composizione" && <RazioniSuiniComposizione />}
-        {tab === "razioni-suini-consumi" && <RazioniSuiniConsumi />}
+        {tab === "controllo-bovini" && <ControlloRazioniSpecie specie="bovino" onNavigate={vaiA} />}
+        {tab === "controllo-suini" && <ControlloRazioniSpecie specie="suino" onNavigate={vaiA} />}
+        {tab === "controllo-ovini" && <ControlloRazioniSpecie specie="ovino" onNavigate={vaiA} />}
+        {tab === "controllo-pollame" && <ControlloPollame />}
+        {tab === "controllo-riepilogo" && <RiepilogoControlloRazioni />}
         {tab === "costruisci-razione" && <CostruisciRazione onNavigate={vaiA} />}
         {tab === "razioni-bovini-riferimento" && <RazioniRiferimento onNavigate={vaiA} />}
         {tab === "razioni-bovini-report" && <ReportFabbisogniBovini onNavigate={vaiA} />}
         {tab === "istr-alimentaria" && <IstruzioniAlimentaria />}
+        {tab === "verifiche-ovini" && <OviniDaVerificare onAggiorna={() => contaVerificheAnimali().then(setVerificheAnimali)} />}
         {tab === "alimenti-senza-composizione" && <AlimentiSenzaComposizione onAggiorna={() => contaAlimentiSenzaComposizione().then(setSenzaComposizione)} />}
         {tab === "controlla-prezzi" && <ControllaPrezzi onNavigate={vaiA} />}
         {tab === "chiedi-preventivi" && <ChiediPreventivi />}

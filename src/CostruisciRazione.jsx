@@ -13,6 +13,10 @@ import { GraficoCopertura, TotaleCosto, TabellaFabbisogno, euro, testoQuantita, 
 // la stessa tabella usata dall'app Podere Verde: ciò che si salva qui si vede anche nell'app, e viceversa.
 // Versione 245: il prezzo di ogni alimento si può cambiare a mano; il prezzo cambiato si salva nella riga
 // della razione (campo prezzo_euro_t dentro alimenti) e si ritrova quando la razione si riapre.
+// Versione 324 (decisione del Dott. Bizzarri del 29/10/2026): razioni «di prova» e razioni «in uso».
+// «Metti in uso dal …» rende la razione quella in uso per la sua classe da quel giorno; la razione in uso
+// precedente della stessa classe si chiude il giorno prima e passa nello storico. Una sola razione in uso per classe.
+// Le razioni in uso e quelle dello storico non si modificano (cambierebbero il passato): si salva una razione nuova.
 
 
 export default function CostruisciRazione({ onNavigate }) {
@@ -37,6 +41,7 @@ export default function CostruisciRazione({ onNavigate }) {
   const [idAperta, setIdAperta] = useState(null);
   const [classeMancante, setClasseMancante] = useState(null);
   const [salvando, setSalvando] = useState(false);
+  const [dataUso, setDataUso] = useState(new Date().toISOString().slice(0, 10));
 
   useEffect(() => { carica(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -97,7 +102,11 @@ export default function CostruisciRazione({ onNavigate }) {
     if (!classeEsiste) setMessaggio({ tipo: "errore", testo: `La razione «${r.nome}» è della classe «${r.classe}», che non esiste più: la può leggere ma «Salva modifiche» è bloccato (righe e specie potrebbero essere incomplete). Scelga una classe e usi «Salva come nuova».` });
   }
 
+  const aperta = salvate.find(s => String(s.id) === String(idAperta));
+  const statoAperta = aperta ? statoRazione(aperta) : null;
+
   async function salva(comeNuova) {
+    if (idAperta && !comeNuova && statoAperta && statoAperta !== "prova") { setMessaggio({ tipo: "errore", testo: "Questa razione è in uso (o nello storico): non si modifica, perché cambierebbe il controllo dei costi del passato. Usi «Salva come nuova» o «Metti in uso dal …»." }); return; }
     if (!nome.trim()) { setMessaggio({ tipo: "errore", testo: "Scriva il nome della razione prima di salvare." }); return; }
     if (!righe.some(r => r.alimento && Number(r.quantita) > 0)) { setMessaggio({ tipo: "errore", testo: "La razione non ha alimenti." }); return; }
     setSalvando(true); setMessaggio(null);
@@ -123,8 +132,50 @@ export default function CostruisciRazione({ onNavigate }) {
     setSalvando(false);
   }
 
+  // Versione 324: mette in uso la razione (quella aperta se è di prova, altrimenti una nuova) e chiude la precedente della classe
+  async function mettiInUso() {
+    if (!nome.trim()) { setMessaggio({ tipo: "errore", testo: "Scriva il nome della razione prima di metterla in uso." }); return; }
+    if (!righe.some(r => r.alimento && Number(r.quantita) > 0)) { setMessaggio({ tipo: "errore", testo: "La razione non ha alimenti." }); return; }
+    if (!dataUso) { setMessaggio({ tipo: "errore", testo: "Scriva la data da cui la razione è in uso." }); return; }
+    if (!classi.some(c => c.classe === classe)) { setMessaggio({ tipo: "errore", testo: `Scelga una classe che esiste: «${classe}» non c'è più.` }); return; }
+    setSalvando(true); setMessaggio(null);
+    try {
+      const { data: attuali, error: e1 } = await supabase.from("ci_razioni_salvate").select("id, nome, in_uso_dal, in_uso_al").eq("classe", classe).not("in_uso_dal", "is", null);
+      if (e1) throw new Error(e1.message.includes("in_uso_dal") ? "il database non ha ancora le colonne della versione 324 (file contabilita_strutture_v324.sql)" : e1.message);
+      const ultimoInizio = (attuali || []).reduce((m, r) => (r.in_uso_dal > m ? r.in_uso_dal : m), "");
+      if (ultimoInizio && dataUso <= ultimoInizio) throw new Error(`per la classe «${classe}» c'è già una razione in uso dal ${dataIt(ultimoInizio)}: la nuova deve partire dopo quella data.`);
+      const { data: u } = await supabase.auth.getUser();
+      const record = {
+        nome: nome.trim(), classe, tipo_alimentazione: tipo, numero_capi: Math.max(1, parseInt(numeroCapi, 10) || 1), ambiente: ambiente || null, note: note || null,
+        alimenti: righe.map((r, k) => ({ posizione: k, gruppo: r.gruppo, alimento: r.alimento || null, quantita: r.alimento && r.quantita !== "" ? Number(r.quantita) : null, unita: alimentiPerNome[r.alimento]?.unita_dose || "kg", ...(ris.righe[k]?.fonte === "modificato" ? { prezzo_euro_t: ris.righe[k].prezzoEuroT } : {}) })).filter(x => x.alimento),
+        costo_capo_giorno: ris.costi.completo ? Number(ris.costi.capoGiorno.toFixed(4)) : null,
+        anno_prezzi: ANNO, creata_da: u?.user?.email || null, origine: "programma", in_uso_dal: dataUso, in_uso_al: null,
+      };
+      const precedente = (attuali || []).find(r => r.in_uso_dal && !r.in_uso_al);
+      const giornoPrima = new Date(new Date(dataUso + "T12:00:00").getTime() - 86400000).toISOString().slice(0, 10);
+      if (precedente) {
+        const c = await supabase.from("ci_razioni_salvate").update({ in_uso_al: giornoPrima }).eq("id", precedente.id).is("in_uso_al", null);
+        if (c.error) throw new Error(c.error.message);
+      }
+      const nuovaRiga = !(idAperta && statoAperta === "prova");
+      const res = nuovaRiga
+        ? await supabase.from("ci_razioni_salvate").insert([record]).select().single()
+        : await supabase.from("ci_razioni_salvate").update(record).eq("id", idAperta).select().single();
+      if (res.error) {
+        if (precedente) await supabase.from("ci_razioni_salvate").update({ in_uso_al: null }).eq("id", precedente.id);
+        throw new Error(res.error.message);
+      }
+      setIdAperta(res.data.id);
+      const { data: rs } = await supabase.from("ci_razioni_salvate").select("*").order("updated_at", { ascending: false });
+      setSalvate(rs || []);
+      setMessaggio({ tipo: "ok", testo: `Razione «${record.nome}» in uso dal ${dataIt(dataUso)} per «${classe}».` + (precedente ? ` La razione precedente «${precedente.nome}» si chiude il ${dataIt(giornoPrima)} e passa nello storico.` : "") });
+    } catch (e) { setMessaggio({ tipo: "errore", testo: "Non riuscito: " + e.message }); }
+    setSalvando(false);
+  }
+
   async function elimina() {
     if (!idAperta) return;
+    if (statoAperta && statoAperta !== "prova") { setMessaggio({ tipo: "errore", testo: "Una razione in uso o nello storico non si elimina: serve al controllo dei costi." }); return; }
     if (!window.confirm(`Eliminare la razione «${nome}»? Sparisce anche dall'app.`)) return;
     const { error } = await supabase.from("ci_razioni_salvate").delete().eq("id", idAperta);
     if (error) { setMessaggio({ tipo: "errore", testo: error.message }); return; }
@@ -152,14 +203,22 @@ export default function CostruisciRazione({ onNavigate }) {
           <label style={lab}>Razioni salvate (programma e app)</label>
           <select value={idAperta || ""} onChange={e => apri(e.target.value)} style={sel}>
             <option value="">— razione nuova —</option>
-            {salvate.map(s => <option key={s.id} value={s.id}>{s.nome} · {s.classe} · {s.origine === "app" ? "app" : "programma"}</option>)}
+            {salvate.map(s => <option key={s.id} value={s.id}>{s.nome} · {s.classe} · {etichettaStato(s)} · {s.origine === "app" ? "app" : "programma"}</option>)}
           </select>
         </div>
         <button onClick={nuova} style={btn(C.muted)}>Nuova</button>
-        <button onClick={() => salva(false)} disabled={salvando || (idAperta && classeMancante)} title={idAperta && classeMancante ? "La classe della razione non esiste più" : undefined} style={btn(C.primary)}>{idAperta ? "Salva modifiche" : "Salva razione"}</button>
-        {idAperta && <button onClick={() => salva(true)} disabled={salvando} style={btn(C.blue)}>Salva come nuova</button>}
-        {idAperta && <button onClick={elimina} style={btn(C.red)}>Elimina</button>}
+        {(!idAperta || statoAperta === "prova") && <button onClick={() => salva(false)} disabled={salvando || (idAperta && classeMancante)} title={idAperta && classeMancante ? "La classe della razione non esiste più" : undefined} style={btn(C.primary)}>{idAperta ? "Salva modifiche (prova)" : "Salva come prova"}</button>}
+        {idAperta && <button onClick={() => salva(true)} disabled={salvando} style={btn(C.blue)}>Salva come nuova (prova)</button>}
+        {idAperta && statoAperta === "prova" && <button onClick={elimina} style={btn(C.red)}>Elimina</button>}
+        <div style={{ display: "flex", gap: 6, alignItems: "flex-end", borderLeft: `2px solid ${C.border}`, paddingLeft: 10 }}>
+          <div><label style={lab}>In uso dal</label>
+            <input type="date" value={dataUso} onChange={e => setDataUso(e.target.value)} style={{ ...sel, width: 150, background: "#fff" }} /></div>
+          <button onClick={mettiInUso} disabled={salvando || !!classeMancante} style={btn(C.green)}>Metti in uso</button>
+        </div>
       </div>
+      {aperta && statoAperta !== "prova" && <div style={{ ...box, padding: 10, fontSize: 13, background: statoAperta === "in uso" ? "#E6F2E8" : "#F2F2F2" }}>
+        {statoAperta === "in uso" ? `✓ Razione in uso dal ${dataIt(aperta.in_uso_dal)} per «${aperta.classe}». Non si modifica: per cambiarla, la modifichi e la metta in uso con una data nuova (questa si chiuderà il giorno prima).` : `Razione dello storico: è stata in uso dal ${dataIt(aperta.in_uso_dal)} al ${dataIt(aperta.in_uso_al)}. Non si modifica.`}
+      </div>}
       {messaggio && <div style={{ ...box, padding: 10, fontSize: 13, color: messaggio.tipo === "errore" ? C.red : messaggio.tipo === "ok" ? C.green : C.text }}>{messaggio.testo}</div>}
 
       {/* scelte */}
@@ -238,3 +297,15 @@ export default function CostruisciRazione({ onNavigate }) {
   );
 }
 
+// Versione 324: stato di una razione salvata
+export function statoRazione(r) {
+  if (!r.in_uso_dal) return "prova";
+  return r.in_uso_al ? "storico" : "in uso";
+}
+const dataIt = d => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
+function etichettaStato(r) {
+  const st = statoRazione(r);
+  if (st === "prova") return "prova";
+  if (st === "in uso") return `in uso dal ${dataIt(r.in_uso_dal)}`;
+  return `storico ${dataIt(r.in_uso_dal)}–${dataIt(r.in_uso_al)}`;
+}
