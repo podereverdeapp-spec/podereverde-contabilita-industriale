@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { C } from "./style";
 
-// Versione 326 (29/10/2026, ordine del Dott. Bizzarri delle 20:59): i due prompt degli F24, nella cartella
-// «4. Carica F24 → Smistamento e Carico nel cloud». Testi uguali ai Word «Prompt_smistamento_F24» (versione 6)
+// Versione 326 (29/10/2026, ordine del Dott. Bizzarri delle 20:59): i due prompt degli F24.
+// Versione 328 (ordine delle 22:10): due pagine, una per prompt, in due cartelle: «Smistamento nel cloud» e «Carico nel programma». Testi uguali ai Word «Prompt_smistamento_F24» (versione 6)
 // e «Prompt_carico_F24_nel_programma» (versione 3) del 29/10/2026. Il testo va aggiornato a mano se cambia la procedura.
 
 const PROMPT_SMISTAMENTO = `PROMPT PER SMISTAMENTO F24 — Società Agricola Podere Verde a r.l.
@@ -257,26 +257,51 @@ function RiquadroPrompt({ numero, titolo, quando, cosaFa, avviso, testo }) {
   );
 }
 
-export default function PromptF24() {
+function Avviso() {
+  return (
+    <div style={{ background: "#FDECEA", border: "1px solid #C0392B", color: "#7B1F17", borderRadius: 10, padding: "8px 12px", fontSize: 13, fontWeight: 600, marginBottom: 20 }}>
+      ⚠️ Claude lavora solo nella cartella F24 di Podere Verde nel cloud della società
+      (Z:\SOCIETA\SOCIETA' AGRICOLA PODERE VERDE A R.L\F24) e si ferma se gli si chiede di uscirne. Il computer deve essere collegato alla rete dell'ufficio.
+    </div>
+  );
+}
+
+function Spiegazione() {
+  return (
+    <p style={{ color: C.muted, marginTop: 0, marginBottom: 10 }}>
+      Un prompt è un testo che si copia con il pulsante «Copia prompt» e si incolla in una conversazione nuova dell'app di Claude
+      sul computer dell'ufficio: Claude esegue i passi scritti nel testo, uno alla volta, e chiede a chi lavora quando serve una conferma.
+      Come si usa è spiegato nelle istruzioni di questa cartella.
+    </p>
+  );
+}
+
+export function PromptSmistamentoF24() {
   return (
     <div style={{ padding: 20, maxWidth: 900, margin: "0 auto" }}>
-      <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Prompt per Smistamento e Carico F24</h1>
+      <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Prompt per smistamento F24</h1>
+      <Spiegazione />
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 10 }}>
-        Qui ci sono i due testi da dare a Claude per gli F24. Un prompt è un testo che si copia con il pulsante «Copia prompt» e si incolla
-        in una conversazione nuova dell'app di Claude sul computer dell'ufficio: Claude esegue i passi scritti nel testo, uno alla volta,
-        e chiede a chi lavora quando serve una conferma.
+        Si usa per primo. Subito dopo, lo stesso giorno, si usa il «Prompt per carico F24 nel programma», nella cartella «Carico nel programma»:
+        finché non si fa il carico, gli F24 smistati non compaiono tra i pagamenti del programma.
       </p>
-      <p style={{ color: C.muted, marginTop: 0, marginBottom: 10 }}>
-        Si usano sempre tutti e due, in quest'ordine e lo stesso giorno: prima lo smistamento, poi il carico. Finché non si fa il carico,
-        gli F24 smistati non compaiono tra i pagamenti del programma.
-      </p>
-      <div style={{ background: "#FDECEA", border: "1px solid #C0392B", color: "#7B1F17", borderRadius: 10, padding: "8px 12px", fontSize: 13, fontWeight: 600, marginBottom: 20 }}>
-        ⚠️ Claude lavora solo nella cartella F24 di Podere Verde nel cloud della società
-        (Z:\SOCIETA\SOCIETA' AGRICOLA PODERE VERDE A R.L\F24) e si ferma se gli si chiede di uscirne. Il computer deve essere collegato alla rete dell'ufficio.
-      </div>
+      <Avviso />
       <RiquadroPrompt numero={1} titolo="Prompt per smistamento F24" quando="Si usa per primo, ogni volta che arrivano F24, quietanze o contabili"
         cosaFa="Claude legge i documenti salvati nella cartella «F24\Da smistare», dà a ogni file il nome giusto, lo archivia nella cartella giusta e scrive il file di carico dell'anno («F24\Carichi\F24_carico_AAAA.xlsx»). Il programma non viene toccato."
         testo={PROMPT_SMISTAMENTO} />
+    </div>
+  );
+}
+
+export function PromptCaricoF24() {
+  return (
+    <div style={{ padding: 20, maxWidth: 900, margin: "0 auto" }}>
+      <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Prompt per carico F24 nel programma</h1>
+      <Spiegazione />
+      <p style={{ color: C.muted, marginTop: 0, marginBottom: 10 }}>
+        Si usa subito dopo il «Prompt per smistamento F24», lo stesso giorno: porta nel programma gli F24 smistati.
+      </p>
+      <Avviso />
       <RiquadroPrompt numero={2} titolo="Prompt per carico F24 nel programma" quando="Si usa subito dopo lo smistamento, lo stesso giorno"
         cosaFa="Claude controlla il file di carico preparato dallo smistamento, guida chi lavora nel caricarlo nel programma e poi controlla che ogni F24 da pagare compaia tra i pagamenti, con gli allarmi giusti."
         avviso="La pagina «Carica F24» del programma è in costruzione: finché non c'è, questo prompt non si usa."
