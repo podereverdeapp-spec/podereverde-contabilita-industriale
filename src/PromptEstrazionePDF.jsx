@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { C } from "./style";
+import { ScelteDelPrompt, mancaQualcosa, intestazione, riempi, anniScelta, annoDiOggi, cartellaFatture } from "./SceltePrompt";
 
 // Versione 260 (20/10/2026): prompt delle fatture passive riscritto con il Dott. Bizzarri — cartella unica
 // dell'anno con lo zip di Aruba, partita IVA solo dal riquadro FORNITORE, numero e data copiati esattamente,
@@ -115,10 +116,13 @@ Al termine, dammi entrambe le tabelle pronte da incollare in Excel (o generami d
 
 Infine, per ciascun PDF elaborato: rinomina il file sostituendo il nome esistente con uno nuovo composto da Nome del cliente, Data della fattura e Numero della fattura (es. "MARIO_ROSSI_2025-06-15_10.pdf"), sostituendo con un trattino "-" ogni carattere non ammesso nei nomi file (come / \\ : * ? " < > |). (Questa parte richiede uno strumento IA che possa leggere e scrivere file direttamente sul tuo computer — se invece usi una chat web dove carichi i PDF singolarmente, questa rinomina non è possibile e puoi ignorarla.)`;
 
-function BloccoPrompt({ titolo, testo, note }) {
+// Versione 335 (ordine del 30/10/2026 ore 19:24): anno e cartella si scelgono sopra «Copia prompt»; il programma li scrive nel testo.
+function BloccoPrompt({ titolo, testo, note, campi, valori, imposta }) {
   const [copiato, setCopiato] = useState(false);
+  const fermo = campi ? mancaQualcosa(campi, valori) : false;
 
   async function copia() {
+    if (fermo) return;
     await navigator.clipboard.writeText(testo);
     setCopiato(true);
     setTimeout(() => setCopiato(false), 2000);
@@ -128,12 +132,13 @@ function BloccoPrompt({ titolo, testo, note }) {
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", marginBottom: 24 }}>
       <div style={{ background: C.primary, color: "#fff", padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div style={{ fontWeight: 700, fontSize: 14 }}>{titolo}</div>
-        <button onClick={copia}
-          style={{ background: copiato ? C.green : "rgba(255,255,255,0.2)", color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+        <button onClick={copia} disabled={fermo}
+          style={{ background: copiato ? C.green : fermo ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.2)", color: fermo ? "rgba(255,255,255,0.5)" : "#fff", border: "none", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: fermo ? "default" : "pointer" }}>
           {copiato ? "✓ Copiato!" : "📋 Copia prompt"}
         </button>
       </div>
       {note && <div style={{ padding: "8px 14px", fontSize: 12, color: C.muted, background: "#F7F7F5" }}>{note}</div>}
+      {campi && <ScelteDelPrompt campi={campi} valori={valori} imposta={imposta} />}
       <pre style={{ margin: 0, padding: 14, fontSize: 12, whiteSpace: "pre-wrap", fontFamily: "monospace", maxHeight: 400, overflow: "auto", color: C.text }}>
         {testo}
       </pre>
@@ -141,7 +146,22 @@ function BloccoPrompt({ titolo, testo, note }) {
   );
 }
 
+const SEGNAPOSTO_PASSIVE = "[INSERISCI QUI IL PERCORSO DELLA CARTELLA DELL'ANNO SUL TUO COMPUTER, es. C:\\Users\\Filippo\\Desktop\\00.FATTURE PODERE RICLASSIFICATE ANNI19-24\\FATTURE 2026]";
+const SEGNAPOSTO_ATTIVE = "[INSERISCI QUI IL PERCORSO DELLA CARTELLA SUL TUO COMPUTER, es. C:\\Utenti\\Filippo\\Documenti\\FattureAttive2025]";
+
 export default function PromptEstrazionePDF() {
+  const [passive, setPassive] = useState({ anno: String(annoDiOggi()), cartella: cartellaFatture(annoDiOggi()), cartellaCambiata: false });
+  const impostaPassive = (k, v) => setPassive(x => k === "anno" && !x.cartellaCambiata ? { ...x, anno: v, cartella: cartellaFatture(v) } : { ...x, [k]: v, ...(k === "cartella" ? { cartellaCambiata: true } : {}) });
+  const campiPassive = [
+    { chiave: "anno", etichetta: "Anno delle fatture", obbligatorio: true, opzioni: anniScelta().map(a => ({ valore: String(a), testo: String(a) })) },
+    { chiave: "cartella", etichetta: "Cartella dell'anno sul computer", obbligatorio: true, largo: true, aiuto: "Si compila da sola con l'anno; si può correggere a mano." },
+  ];
+  const testoPassive = intestazione([["Anno delle fatture", passive.anno], ["Cartella dell'anno sul computer", passive.cartella]])
+    + riempi(PROMPT_PASSIVE, [[SEGNAPOSTO_PASSIVE, passive.cartella.trim()]]);
+  const [attive, setAttive] = useState({ cartella: "" });
+  const campiAttive = [{ chiave: "cartella", etichetta: "Cartella dei PDF delle fatture di vendita sul computer", obbligatorio: true, largo: true, esempio: "C:\\Users\\Filippo\\Documents\\FattureAttive2025" }];
+  const testoAttive = intestazione([["Cartella dei PDF sul computer", attive.cartella]])
+    + riempi(PROMPT_ATTIVE, [[SEGNAPOSTO_ATTIVE, attive.cartella.trim() || SEGNAPOSTO_ATTIVE]]);
   return (
     <div style={{ padding: 20, maxWidth: 900, margin: "0 auto" }}>
       <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Prompt per Estrazione Dati da PDF</h1>
@@ -152,13 +172,13 @@ export default function PromptEstrazionePDF() {
       <BloccoPrompt
         titolo="Fatture Passive (acquisto)"
         note="Pensato per uso esterno (chat IA fuori dal programma): produce direttamente un file Excel a due tabelle, con verifica dei totali e gestione delle note di credito. Diverso dal prompt interno del programma (in formato JSON, usato da Carica Fatture per l'elaborazione automatica) — stessa logica di fondo, output pensato per un uso manuale."
-        testo={PROMPT_PASSIVE}
+        testo={testoPassive} campi={campiPassive} valori={passive} imposta={impostaPassive}
       />
 
       <BloccoPrompt
         titolo="Fatture Attive (vendita)"
         note="Scritto sullo stesso modello di quello Passive, adattato per le vendite (cliente invece di fornitore) — il programma oggi non legge ancora PDF per le fatture attive in automatico, questo prompt serve per farlo manualmente con un'IA esterna."
-        testo={PROMPT_ATTIVE}
+        testo={testoAttive} campi={campiAttive} valori={attive} imposta={(k, v) => setAttive(x => ({ ...x, [k]: v }))}
       />
 
       <p style={{ fontSize: 12, color: C.muted }}>

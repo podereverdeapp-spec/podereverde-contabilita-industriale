@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { C } from "./style";
+import { ScelteDelPrompt, mancaQualcosa, intestazione, riempi, anniScelta, annoDiOggi } from "./SceltePrompt";
 
 // Versione 270 (21/10/2026; codici di festività e malattia corretti nella 271): prompt per il carico dei cedolini, provato con il Dott. Bizzarri sulle buste
 // paga e sui riepiloghi da gennaio ad agosto 2026 (tutti i controlli tornati). Salvato nella cartella
@@ -101,10 +102,26 @@ Al termine scrivimi:
 - il costo totale dell'anno e il costo di ogni persona;
 - il nome dell'Excel e dello zip, da caricare nel programma con «Carica Costi del Lavoro».`;
 
+// Versione 335 (ordine del 30/10/2026 ore 19:24): anno e cartella LAVORO si scelgono sopra «Copia prompt»; il programma li scrive nel testo.
+const LAVORO = "Z:\\SOCIETA\\SOCIETA' AGRICOLA PODERE VERDE A R.L\\LAVORO";
 export default function PromptCedolini() {
   const [copiato, setCopiato] = useState(false);
+  const [valori, setValori] = useState({ anno: String(annoDiOggi()), cartella: LAVORO });
+  const imposta = (k, v) => setValori(x => ({ ...x, [k]: v }));
+  const campi = [
+    { chiave: "anno", etichetta: "Anno delle buste paga", obbligatorio: true, opzioni: anniScelta().map(a => ({ valore: String(a), testo: String(a) })) },
+    { chiave: "cartella", etichetta: "Cartella LAVORO sul computer (se i PDF non si allegano alla chat)", largo: true },
+  ];
+  const fermo = mancaQualcosa(campi, valori);
+  const testo = intestazione([["Anno delle buste paga", valori.anno], ["Cartella LAVORO sul computer", valori.cartella]])
+    + riempi(PROMPT_CEDOLINI, [
+      ["[INSERISCI QUI IL PERCORSO, es. Z:\\SOCIETA\\SOCIETA' AGRICOLA PODERE VERDE A R.L\\LAVORO]", valori.cartella.trim() || "(nessuna: i PDF sono allegati alla chat)"],
+      ["[INSERISCI QUI L'ANNO]", valori.anno],
+      ["AAAA", valori.anno],
+    ]);
   async function copia() {
-    await navigator.clipboard.writeText(PROMPT_CEDOLINI);
+    if (fermo) return;
+    await navigator.clipboard.writeText(testo);
     setCopiato(true);
     setTimeout(() => setCopiato(false), 2000);
   }
@@ -119,13 +136,14 @@ export default function PromptCedolini() {
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", marginBottom: 24 }}>
         <div style={{ background: C.primary, color: "#fff", padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div style={{ fontWeight: 700, fontSize: 14 }}>Cedolini e riepiloghi paghe e contributi</div>
-          <button onClick={copia}
-            style={{ background: copiato ? C.green : "rgba(255,255,255,0.2)", color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+          <button onClick={copia} disabled={fermo}
+            style={{ background: copiato ? C.green : fermo ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.2)", color: fermo ? "rgba(255,255,255,0.5)" : "#fff", border: "none", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: fermo ? "default" : "pointer" }}>
             {copiato ? "✓ Copiato!" : "📋 Copia prompt"}
           </button>
         </div>
+        <ScelteDelPrompt campi={campi} valori={valori} imposta={imposta} />
         <pre style={{ margin: 0, padding: 14, fontSize: 12, whiteSpace: "pre-wrap", fontFamily: "monospace", maxHeight: 520, overflow: "auto", color: C.text }}>
-          {PROMPT_CEDOLINI}
+          {testo}
         </pre>
       </div>
     </div>

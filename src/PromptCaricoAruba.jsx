@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { C } from "./style";
+import { ScelteDelPrompt, mancaQualcosa, intestazione, riempi, anniScelta, annoDiOggi, cartellaFatture } from "./SceltePrompt";
 
 // Versione 293 (decisione del Dott. Bizzarri del 24/10/2026 ore 15:26): il carico diretto da Aruba con Claude.
 // Versione 300: le fatture di vendita escono da questo prompt (vedi PromptFattureEmesseAruba.jsx).
 // Claude entra in Aruba Fatturazione Elettronica nel browser della sua app (le credenziali le scrive chi lavora),
 // confronta le fatture ricevute ed emesse con quelle del programma, prepara l'Excel delle sole mancanti e ne scarica
 // i PDF. Il carico nel programma resta a chi lavora. Il testo va aggiornato a mano se cambia la procedura.
+// Versione 335 (ordine del 30/10/2026 ore 19:24): anno e cartella si scelgono sopra «Copia prompt» e il programma li scrive nel testo.
 
 const PROMPT_ARUBA = `Lavoriamo sulle fatture di Società Agricola Podere Verde a r.l. (partita IVA IT15117871002) direttamente da Aruba Fatturazione Elettronica. Anno da controllare: [INSERISCI L'ANNO, es. 2026]. Cartella dell'anno sul computer: [INSERISCI IL PERCORSO, es. C:\\Users\\Filippo\\Desktop\\00.FATTURE PODERE RICLASSIFICATE ANNI19-24\\FATTURE 2026].
 
@@ -74,8 +76,19 @@ Nessun altro servizio. Se uno di questi non risponde, usa i pulsanti della pagin
 
 export default function PromptCaricoAruba() {
   const [copiato, setCopiato] = useState(false);
+  const [valori, setValori] = useState({ anno: String(annoDiOggi()), cartella: cartellaFatture(annoDiOggi()), cartellaCambiata: false });
+  // cambiando l'anno, la cartella segue l'anno finché non la si scrive a mano
+  const imposta = (k, v) => setValori(x => k === "anno" && !x.cartellaCambiata ? { ...x, anno: v, cartella: cartellaFatture(v) } : { ...x, [k]: v, ...(k === "cartella" ? { cartellaCambiata: true } : {}) });
+  const campi = [
+    { chiave: "anno", etichetta: "Anno da controllare", obbligatorio: true, opzioni: anniScelta().map(a => ({ valore: String(a), testo: String(a) })) },
+    { chiave: "cartella", etichetta: "Cartella dell'anno sul computer", obbligatorio: true, largo: true, aiuto: "Si compila da sola con l'anno; si può correggere a mano." },
+  ];
+  const fermo = mancaQualcosa(campi, valori);
+  const testo = intestazione([["Anno da controllare", valori.anno], ["Cartella dell'anno sul computer", valori.cartella]])
+    + riempi(PROMPT_ARUBA, [["[INSERISCI L'ANNO, es. 2026]", valori.anno], ["[INSERISCI IL PERCORSO, es. C:\\Users\\Filippo\\Desktop\\00.FATTURE PODERE RICLASSIFICATE ANNI19-24\\FATTURE 2026]", valori.cartella.trim()]]);
   async function copia() {
-    await navigator.clipboard.writeText(PROMPT_ARUBA);
+    if (fermo) return;
+    await navigator.clipboard.writeText(testo);
     setCopiato(true);
     setTimeout(() => setCopiato(false), 2000);
   }
@@ -85,14 +98,14 @@ export default function PromptCaricoAruba() {
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 20 }}>
         Il testo da dare a Claude per caricare le fatture direttamente da Aruba Fatturazione Elettronica: Claude entra in Aruba
         nel browser della sua app, confronta le fatture con quelle del programma, prepara l'Excel delle sole fatture mancanti e
-        ne scarica i PDF. Si copia, si incolla in una chat nuova dell'app di Claude sul computer e si completano anno e cartella
-        tra parentesi quadre. Le credenziali di Aruba le scrive sempre chi lavora, mai Claude.
+        ne scarica i PDF. Si scelgono anno e cartella qui sotto, si copia e si incolla in una chat nuova dell'app di Claude sul computer:
+        il programma scrive anno e cartella nel testo. Le credenziali di Aruba le scrive sempre chi lavora, mai Claude.
       </p>
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", marginBottom: 24 }}>
         <div style={{ background: C.primary, color: "#fff", padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div style={{ fontWeight: 700, fontSize: 14 }}>Carico diretto da Aruba (fatture di acquisto)</div>
-          <button onClick={copia}
-            style={{ background: copiato ? C.green : "rgba(255,255,255,0.2)", color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+          <button onClick={copia} disabled={fermo}
+            style={{ background: copiato ? C.green : fermo ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.2)", color: fermo ? "rgba(255,255,255,0.5)" : "#fff", border: "none", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: fermo ? "default" : "pointer" }}>
             {copiato ? "✓ Copiato!" : "📋 Copia prompt"}
           </button>
         </div>
@@ -101,8 +114,9 @@ export default function PromptCaricoAruba() {
           database. Claude lavora in sola lettura: in Aruba non invia, non firma e non cancella nulla, e nel database non scrive.
           I carichi si fanno dal programma, come spiegato nelle Istruzioni Carica Fatture Passive (parte «A bis»).
         </div>
+        <ScelteDelPrompt campi={campi} valori={valori} imposta={imposta} />
         <pre style={{ margin: 0, padding: 14, fontSize: 12, whiteSpace: "pre-wrap", fontFamily: "monospace", maxHeight: 500, overflow: "auto", color: C.text }}>
-          {PROMPT_ARUBA}
+          {testo}
         </pre>
       </div>
       <p style={{ fontSize: 12, color: C.muted }}>

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { C } from "./style";
+import { ScelteDelPrompt, mancaQualcosa, intestazione, anniScelta } from "./SceltePrompt";
 
 // Versione 326 (29/10/2026, ordine del Dott. Bizzarri delle 20:59): i due prompt degli F24.
 // Versione 328 (ordine delle 22:10): due pagine, una per prompt, in due cartelle: «Smistamento nel cloud» e «Carico nel programma». Testi uguali ai Word «Prompt_smistamento_F24» (versione 6)
@@ -7,6 +8,7 @@ import { C } from "./style";
 // Versione 329 (ordine del Dott. Bizzarri delle 22:34): smistamento versione 7 e carico versione 4, «Da smistare» si svuota solo a carico riuscito.
 // Versione 330 (ordine del 30/10/2026 ore 15:55): smistamento versione 8 e carico versione 5 — gli esiti si riconoscono dall'inizio («Smistato», «Doppione», «Già smistato»), anche quelli delle versioni precedenti; LEGGIMI.txt si ignora. Il testo va aggiornato a mano se cambia la procedura.
 // Versione 333 (30/10/2026): la pagina «Carica F24» esiste; tolto l'avviso «in costruzione» dal prompt di carico.
+// Versione 335 (ordine del 30/10/2026 ore 19:24): sopra «Copia prompt» si scelgono il nome di chi lavora e, per il carico, l'anno da caricare.
 
 const PROMPT_SMISTAMENTO = `PROMPT PER SMISTAMENTO F24 — Società Agricola Podere Verde a r.l.
 Lavori per la Società Agricola Podere Verde a r.l., codice fiscale e partita IVA 15117871002. Attenzione: 01879020517 non è Podere Verde, è l'intermediario che trasmette le fatture.
@@ -231,9 +233,11 @@ Leggi dal database le tabelle ci_f24, ci_f24_righe e ci_codici_tributo, di tutti
 
 FINE DEL PROMPT`;
 
-function RiquadroPrompt({ numero, titolo, quando, cosaFa, avviso, testo }) {
+function RiquadroPrompt({ numero, titolo, quando, cosaFa, avviso, testo, campi, valori, imposta }) {
   const [copiato, setCopiato] = useState(false);
+  const fermo = campi ? mancaQualcosa(campi, valori) : false;
   async function copia() {
+    if (fermo) return;
     await navigator.clipboard.writeText(testo);
     setCopiato(true);
     setTimeout(() => setCopiato(false), 2000);
@@ -245,8 +249,8 @@ function RiquadroPrompt({ numero, titolo, quando, cosaFa, avviso, testo }) {
           <div style={{ fontWeight: 700, fontSize: 15 }}>{numero}. {titolo}</div>
           <div style={{ fontSize: 12, opacity: 0.9 }}>{quando}</div>
         </div>
-        <button onClick={copia}
-          style={{ background: copiato ? C.green : "rgba(255,255,255,0.2)", color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+        <button onClick={copia} disabled={fermo} title={fermo ? "Prima scegliere i dati con *" : ""}
+          style={{ background: copiato ? C.green : fermo ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.2)", color: fermo ? "rgba(255,255,255,0.5)" : "#fff", border: "none", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: fermo ? "default" : "pointer", whiteSpace: "nowrap" }}>
           {copiato ? "✓ Copiato!" : "📋 Copia prompt"}
         </button>
       </div>
@@ -254,6 +258,7 @@ function RiquadroPrompt({ numero, titolo, quando, cosaFa, avviso, testo }) {
         {cosaFa}
         {avviso && <div style={{ marginTop: 8, color: "#7A4A00", background: "#FFF1DC", border: "1px solid #D4880F", borderRadius: 8, padding: "6px 10px", fontWeight: 600 }}>{avviso}</div>}
       </div>
+      {campi && <ScelteDelPrompt campi={campi} valori={valori} imposta={imposta} />}
       <pre style={{ margin: 0, padding: 14, fontSize: 12, whiteSpace: "pre-wrap", fontFamily: "monospace", maxHeight: 420, overflow: "auto", color: C.text }}>
         {testo}
       </pre>
@@ -280,7 +285,13 @@ function Spiegazione() {
   );
 }
 
+const CAMPO_NOME = { chiave: "nome", etichetta: "Nome e cognome di chi lavora", obbligatorio: true, esempio: "Mario Rossi", aiuto: "Va nel registro e nelle conferme: Claude non lo chiede più." };
+
 export function PromptSmistamentoF24() {
+  const [valori, setValori] = useState({ nome: "" });
+  const imposta = (k, v) => setValori(x => ({ ...x, [k]: v }));
+  const campi = [CAMPO_NOME];
+  const testo = intestazione([["Operatore (nome e cognome già indicato: non chiederlo)", valori.nome]]) + PROMPT_SMISTAMENTO;
   return (
     <div style={{ padding: 20, maxWidth: 900, margin: "0 auto" }}>
       <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Prompt per smistamento F24</h1>
@@ -292,12 +303,22 @@ export function PromptSmistamentoF24() {
       <Avviso />
       <RiquadroPrompt numero={1} titolo="Prompt per smistamento F24" quando="Si usa per primo, ogni volta che arrivano F24, quietanze o contabili"
         cosaFa="Claude legge i documenti salvati nella cartella «F24\Da smistare», dà a ogni file il nome giusto, lo archivia nella cartella giusta e scrive il file di carico dell'anno («F24\Carichi\F24_carico_AAAA.xlsx»). Il programma non viene toccato."
-        testo={PROMPT_SMISTAMENTO} />
+        testo={testo} campi={campi} valori={valori} imposta={imposta} />
     </div>
   );
 }
 
 export function PromptCaricoF24() {
+  const [valori, setValori] = useState({ nome: "", anno: "tutti" });
+  const imposta = (k, v) => setValori(x => ({ ...x, [k]: v }));
+  const campi = [CAMPO_NOME, {
+    chiave: "anno", etichetta: "Anno da caricare", obbligatorio: true,
+    opzioni: [{ valore: "tutti", testo: "Tutti gli anni da caricare, uno alla volta" }, ...anniScelta().map(a => ({ valore: String(a), testo: String(a) }))],
+    aiuto: "Un anno alla volta, dal più vecchio. «Da smistare» si svuota solo quando tutti gli anni risultano caricati.",
+  }];
+  const anno = valori.anno === "tutti" ? "tutti gli anni da caricare, uno alla volta, dal più vecchio al più recente"
+    : `${valori.anno}: controlla e fai caricare soltanto il file «Carichi\\F24_carico_${valori.anno}.xlsx»; gli altri anni li controlli soltanto e non si caricano in questo lavoro. «Da smistare» si svuota solo se tutti gli anni da caricare risultano RIUSCITO, compresi quelli non caricati oggi`;
+  const testo = intestazione([["Operatore (nome e cognome già indicato: non chiederlo)", valori.nome], ["Anno da caricare", anno]]) + PROMPT_CARICO;
   return (
     <div style={{ padding: 20, maxWidth: 900, margin: "0 auto" }}>
       <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Prompt per carico F24 nel programma</h1>
@@ -309,7 +330,7 @@ export function PromptCaricoF24() {
       <RiquadroPrompt numero={2} titolo="Prompt per carico F24 nel programma" quando="Si usa subito dopo lo smistamento, lo stesso giorno"
         cosaFa="Claude controlla il file di carico preparato dallo smistamento, guida chi lavora nel caricarlo nel programma e poi controlla che ogni F24 da pagare compaia tra i pagamenti, con gli allarmi giusti."
         avviso="La pagina «Carica F24» è nella stessa cartella, «Carico nel programma»: Claude dice quando aprirla e quali pulsanti premere."
-        testo={PROMPT_CARICO} />
+        testo={testo} campi={campi} valori={valori} imposta={imposta} />
     </div>
   );
 }
