@@ -116,7 +116,7 @@ export async function caricaComunicazioni() {
   for (const l of rep.data || []) {
     for (const d of l.destinatari || []) {
       righe.push({
-        // data_invio è scritta in ora UTC senza fuso: si aggiunge «Z» per leggerla giusta
+        // data_invio ha il fuso dalla v331 (prima era ora UTC senza fuso): la «Z» si aggiunge solo ai valori senza fuso
         chiave: `r${l.id}-${d}`, origine: "report", id: null, data_ora: l.data_invio ? `${String(l.data_invio).replace(" ", "T")}${/[zZ]|[+-]\d\d:?\d\d$/.test(String(l.data_invio)) ? "" : "Z"}` : null,
         tipo: "Email", direzione: "inviata", indirizzo: d,
         oggetto: `Report mensile di Podere Verde — ${l.mese_riferimento || ""}${l.tipo === "test" ? " (invio di prova)" : ""}`,
@@ -125,7 +125,9 @@ export async function caricaComunicazioni() {
       });
     }
   }
-  righe.sort((a, b) => String(b.data_ora).localeCompare(String(a.data_ora)));
+  // ordine sugli istanti, non sul testo: le ore arrivano con fusi diversi (+01:00, +02:00, Z); le righe senza data restano in cima come prima
+  const istante = x => (x ? Date.parse(x) : Infinity);
+  righe.sort((a, b) => istante(b.data_ora) - istante(a.data_ora));
   return righe;
 }
 

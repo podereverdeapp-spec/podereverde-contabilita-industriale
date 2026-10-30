@@ -26,7 +26,7 @@ function Contenuto({ s, calc }) {
   const [nota, setNota] = useState("");
   const [esito, setEsito] = useState(null);
   const [scelte, setScelte] = useState([]);
-  const lista = [...(s.A.fotografie || [])].sort((a, b) => (a.creata_il < b.creata_il ? 1 : -1));
+  const lista = [...(s.A.fotografie || [])].sort((a, b) => Date.parse(b.creata_il) - Date.parse(a.creata_il));
   if (!s.A.fotografieDisponibili) return <Avviso tipo="rosso">⚠️ La tabella delle fotografie non c'è ancora: va lanciato il file SQL della versione 314. Le altre pagine del Break Even funzionano lo stesso.</Avviso>;
 
   const salva = async () => {
@@ -41,7 +41,7 @@ function Contenuto({ s, calc }) {
     setEtichetta(""); setNota(""); setEsito("✓ Fotografia salvata.");
   };
   const scegli = id => setScelte(p => (p.includes(id) ? p.filter(x => x !== id) : [...p, id].slice(-2)));
-  const confronto = scelte.length === 2 ? scelte.map(id => lista.find(f => f.id === id)).sort((a, b) => (a.creata_il < b.creata_il ? -1 : 1)) : null;
+  const confronto = scelte.length === 2 ? scelte.map(id => lista.find(f => f.id === id)).sort((a, b) => Date.parse(a.creata_il) - Date.parse(b.creata_il)) : null;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
