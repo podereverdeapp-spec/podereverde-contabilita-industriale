@@ -10,7 +10,7 @@ import {
   euro, dataIt, LIMITE_PDF,
 } from "./calcoloCaricoF24";
 
-// Versione 333 (30/10/2026, ordine del Dott. Bizzarri): pagina «Carica F24», nella cartella «Carico nel programma».
+// Versione 333 (30/10/2026, ordine del Dott. Bizzarri), passo 2 rifatto nella 336: pagina «Carica F24», nella cartella «Carico nel programma».
 // Porta nel database gli F24 del file di carico preparato dal «Prompt per smistamento F24» e i loro PDF nell'archivio «f24».
 // Ogni delega entra con tutte le sue righe in un'unica operazione (funzione ci_f24_salva_delega): o entra tutta o non entra niente.
 // Prima i dati, poi i PDF: se un PDF non si carica, la delega resta registrata e il PDF è segnalato.
@@ -130,6 +130,111 @@ export default function CaricaF24() {
   }
 
   // ── Passo 2: la cartella F24 ──
+  // Versione 336 (30/10/2026): in Chrome ed Edge la cartella si sceglie con la finestra delle cartelle del browser
+  // (showDirectoryPicker) e si leggono SOLTANTO i file che servono: il file di carico, il segnale e i PDF delle deleghe.
+  // Con la cartella F24 nel cloud (Z:) la scelta di prima doveva elencare tutti i file (433) e la pagina non li riceveva mai.
+  // La scelta di prima resta solo per i browser che non hanno quella finestra.
+  const conFinestra = typeof window !== "undefined" && typeof window.showDirectoryPicker === "function";
+
+  // controlli comuni ai due modi di scegliere la cartella: mappa = percorso dentro F24 → file
+  async function esaminaCartella(mappa, errori, mio, perFile, quanti) {
+    if (!errori.length) {
+      const copia = mappa.get(`Carichi/${perFile.nome}`);
+      if (!copia) errori.push(`Nella cartella «F24\\Carichi» non c'è il file «${perFile.nome}».`);
+      else if (await md5File(copia) !== perFile.md5) errori.push(`Il file «${perFile.nome}» scelto al passo 1 non è identico a quello nella cartella «F24\\Carichi»: va scelto proprio quel file.`);
+      const segnale = mappa.get("Carichi/Smistamento in corso.txt");
+      const testoSegnale = segnale ? leggiTestoFile(new Uint8Array(await segnale.arrayBuffer())).trim() : "";
+      if (!testoSegnale.toUpperCase().startsWith("CARICO IN CORSO"))
+        errori.push(`Il file «F24\\Carichi\\Smistamento in corso.txt» dice «${testoSegnale.split(/\r?\n/)[0] || "niente"}» invece di «CARICO IN CORSO»: il carico si fa solo con il «Prompt per carico F24 nel programma», che scrive «CARICO IN CORSO» prima di farlo eseguire. Se c'è scritto «IN CORSO», uno smistamento è in corso: non caricare.`);
+    }
+    const pdf = new Map();
+    if (!errori.length) {
+      for (const d of ordineDiCarico(perFile.deleghe)) {
+        const lista = [];
+        for (const p of PDF) {
+          const nome = d[p.nome];
+          if (!nome) continue;
+          const t = trovaPdf(mappa, d, nome);
+          const giaNelProgramma = d.dbRiga?.[p.impronta] || null;
+          const voce = { ...p, nomeFile: nome, percorso: t.percorso };
+          if (t.mancante) {
+            voce.stato = p.tipo === "F24" && d.senzaPdf ? "Non ricevuto (lo dicono le Note): entra senza PDF" : "NON TROVATO nella cartella";
+            voce.problema = !(p.tipo === "F24" && d.senzaPdf);
+          } else {
+            voce.file = t.file; voce.byte = t.file.size;
+            voce.md5 = await md5File(t.file);
+            if (t.file.size > LIMITE_PDF) { voce.stato = `Più grande di 10 MB (${(t.file.size / 1048576).toFixed(1)} MB): non entra nell'archivio, resta nel cloud`; voce.problema = true; voce.oltre = true; voce.file = null; }
+            else if (giaNelProgramma && giaNelProgramma === voce.md5) { voce.stato = "Già nell'archivio, identico"; voce.file = null; voce.uguale = true; }
+            else if (giaNelProgramma) { voce.stato = "DIVERSO da quello già nell'archivio: non si sostituisce, va verificato"; voce.problema = true; voce.file = null; }
+            else voce.stato = "Trovato: si carica";
+          }
+          lista.push(voce);
+        }
+        pdf.set(d.codice_delega, lista);
+      }
+    }
+    if (mio !== giro.current) return; // nel frattempo è stato scelto un altro file: questa lettura non vale più
+    setCartella({ errori, pdf, file: quanti ?? mappa.size, perFile });
+    setLettura("");
+  }
+
+  // un file dentro la cartella scelta, per percorso «Sottocartella/…/nome»; null se non c'è
+  async function prendiFile(radice, percorso) {
+    const parti = percorso.split("/");
+    let h = radice;
+    try {
+      for (const p of parti.slice(0, -1)) h = await h.getDirectoryHandle(p);
+      return await (await h.getFileHandle(parti[parti.length - 1])).getFile();
+    } catch (err) {
+      if (err?.name === "NotFoundError" || err?.name === "TypeMismatchError") return null;
+      throw err;
+    }
+  }
+
+  async function sceltaCartellaFinestra() {
+    if (!file || carico || lettura) return;
+    const perFile = file;
+    let radice;
+    try {
+      radice = await window.showDirectoryPicker({ id: "f24-podere-verde", mode: "read" });
+    } catch (err) {
+      if (err?.name === "AbortError") return; // finestra chiusa senza scegliere
+      setCartella({ errori: [`La finestra per scegliere la cartella non si è aperta: ${err.message}`], pdf: new Map(), file: 0, perFile });
+      return;
+    }
+    const mio = ++giro.current;
+    setCartella(null);
+    setLettura("Lettura della cartella in corso…");
+    try {
+      const mappa = new Map(), errori = [];
+      // REGOLA ZERO: solo la cartella «F24»
+      if (radice.name !== "F24") errori.push(`È stata scelta la cartella «${radice.name}»: si può scegliere solo la cartella «F24» di Podere Verde nel cloud.`);
+      else {
+        let carichi = null;
+        try { carichi = await radice.getDirectoryHandle("Carichi"); }
+        catch (err) { if (err?.name !== "NotFoundError" && err?.name !== "TypeMismatchError") throw err; }
+        if (!carichi) errori.push("Nella cartella scelta non c'è la sottocartella «Carichi».");
+        else {
+          // i percorsi da leggere: file di carico, segnale, e per ogni PDF i posti dove trovaPdf lo cerca
+          const percorsi = new Set([`Carichi/${perFile.nome}`, "Carichi/Smistamento in corso.txt"]);
+          const raccogli = { has: p => { percorsi.add(p); return false; }, get: () => undefined };
+          for (const d of ordineDiCarico(perFile.deleghe)) for (const p of PDF) if (d[p.nome]) trovaPdf(raccogli, d, d[p.nome]);
+          for (const p of percorsi) {
+            const f = await prendiFile(radice, p);
+            if (mio !== giro.current) return;
+            if (f) mappa.set(p, f);
+          }
+        }
+      }
+      await esaminaCartella(mappa, errori, mio, perFile);
+    } catch (err) {
+      if (mio !== giro.current) return;
+      setCartella({ errori: [`Lettura della cartella non riuscita: ${err.message}`], pdf: new Map(), file: 0, perFile });
+      setLettura("");
+    }
+  }
+
+  // modo di prima (browser senza la finestra delle cartelle): il browser consegna tutti i file della cartella
   async function sceltaCartella(e) {
     const elenco = [...(e.target.files || [])];
     e.target.value = "";
@@ -139,48 +244,12 @@ export default function CaricaF24() {
     setLettura("Lettura della cartella in corso…");
     try {
       const { mappa, errori } = leggiCartella(elenco);
-      if (!errori.length) {
-        const copia = mappa.get(`Carichi/${perFile.nome}`);
-        if (!copia) errori.push(`Nella cartella «F24\\Carichi» non c'è il file «${perFile.nome}».`);
-        else if (await md5File(copia) !== perFile.md5) errori.push(`Il file «${perFile.nome}» scelto al passo 1 non è identico a quello nella cartella «F24\\Carichi»: va scelto proprio quel file.`);
-        const segnale = mappa.get("Carichi/Smistamento in corso.txt");
-        const testoSegnale = segnale ? leggiTestoFile(new Uint8Array(await segnale.arrayBuffer())).trim() : "";
-        if (!testoSegnale.toUpperCase().startsWith("CARICO IN CORSO"))
-          errori.push(`Il file «F24\\Carichi\\Smistamento in corso.txt» dice «${testoSegnale.split(/\r?\n/)[0] || "niente"}» invece di «CARICO IN CORSO»: il carico si fa solo con il «Prompt per carico F24 nel programma», che scrive «CARICO IN CORSO» prima di farlo eseguire. Se c'è scritto «IN CORSO», uno smistamento è in corso: non caricare.`);
-      }
-      const pdf = new Map();
-      if (!errori.length) {
-        for (const d of ordineDiCarico(perFile.deleghe)) {
-          const lista = [];
-          for (const p of PDF) {
-            const nome = d[p.nome];
-            if (!nome) continue;
-            const t = trovaPdf(mappa, d, nome);
-            const giaNelProgramma = d.dbRiga?.[p.impronta] || null;
-            const voce = { ...p, nomeFile: nome, percorso: t.percorso };
-            if (t.mancante) {
-              voce.stato = p.tipo === "F24" && d.senzaPdf ? "Non ricevuto (lo dicono le Note): entra senza PDF" : "NON TROVATO nella cartella";
-              voce.problema = !(p.tipo === "F24" && d.senzaPdf);
-            } else {
-              voce.file = t.file; voce.byte = t.file.size;
-              voce.md5 = await md5File(t.file);
-              if (t.file.size > LIMITE_PDF) { voce.stato = `Più grande di 10 MB (${(t.file.size / 1048576).toFixed(1)} MB): non entra nell'archivio, resta nel cloud`; voce.problema = true; voce.oltre = true; voce.file = null; }
-              else if (giaNelProgramma && giaNelProgramma === voce.md5) { voce.stato = "Già nell'archivio, identico"; voce.file = null; voce.uguale = true; }
-              else if (giaNelProgramma) { voce.stato = "DIVERSO da quello già nell'archivio: non si sostituisce, va verificato"; voce.problema = true; voce.file = null; }
-              else voce.stato = "Trovato: si carica";
-            }
-            lista.push(voce);
-          }
-          pdf.set(d.codice_delega, lista);
-        }
-      }
-      if (mio !== giro.current) return; // nel frattempo è stato scelto un altro file: questa lettura non vale più
-      setCartella({ errori, pdf, file: elenco.length, perFile });
+      await esaminaCartella(mappa, errori, mio, perFile, elenco.length);
     } catch (err) {
       if (mio !== giro.current) return;
       setCartella({ errori: [`Lettura della cartella non riuscita: ${err.message}`], pdf: new Map(), file: elenco.length, perFile });
+      setLettura("");
     }
-    setLettura("");
   }
 
   // ── Passo 3: il carico ──
@@ -190,6 +259,11 @@ export default function CaricaF24() {
   const totaleDeleghe = file ? file.deleghe.filter(d => !d.spostato).length : 0;
   const pronto = !!(db && file && !file.anomalie.length && cartella && cartella.perFile === file && !cartella.errori.length && !lettura
     && operatore.trim().length >= 5 && daCaricare.length && !carico);
+  // perché «Carica» è grigio (versione 336)
+  const perche = !db ? "Si attendono i dati del programma." : !file ? "Manca il passo 1: scegliere il file di carico."
+    : file.anomalie.length ? "Il file di carico ha errori (passo 1)." : lettura ? "Lettura della cartella in corso."
+    : !cartella || cartella.perFile !== file ? "Manca il passo 2: scegliere la cartella F24." : cartella.errori.length ? "La cartella non è stata accettata (passo 2)."
+    : operatore.trim().length < 5 ? "Manca nome e cognome di chi carica." : !daCaricare.length ? "Nel file non ci sono deleghe da caricare." : "";
 
   function payload(d, conCarico, caricoId, impronte) {
     const p = {};
@@ -338,7 +412,7 @@ export default function CaricaF24() {
         {erroreFile && <div style={{ ...sx.rosso, marginTop: 12 }}>{erroreFile}</div>}
         {file && (
           <div style={{ marginTop: 12, fontSize: 13 }}>
-            <div><b>{file.nome}</b> — impronta MD5 {file.md5} — {totaleDeleghe} deleghe da caricare{file.deleghe.length > totaleDeleghe ? ` (più ${file.deleghe.length - totaleDeleghe} «Spostato in…», che non si caricano)` : ""}</div>
+            <div><b>{file.nome}</b> — impronta MD5 {file.md5} — {totaleDeleghe} {totaleDeleghe === 1 ? "delega" : "deleghe"} da caricare{file.deleghe.length > totaleDeleghe ? ` (più ${file.deleghe.length - totaleDeleghe} «Spostato in…», che non si caricano)` : ""}</div>
             <div style={{ color: C.muted, marginTop: 4 }}>Controllare con Claude che nome, numero di deleghe e impronta siano quelli che ha controllato lui.</div>
             {file.anomalie.length > 0 && <div style={{ ...sx.rosso, marginTop: 10 }}><b>Il file non si può caricare:</b><ul style={{ margin: "6px 0 0 18px", padding: 0 }}>{file.anomalie.map((a, i) => <li key={i}>{a}</li>)}</ul></div>}
             {daPagareFuori.length > 0 && (
@@ -387,10 +461,18 @@ export default function CaricaF24() {
           Il browser chiede «Caricare N file su questo sito?»: si risponde «Carica». I file non partono tutti: il programma li legge sul computer e manda
           nell'archivio soltanto i PDF scritti nel file di carico, presi dalle cartelle degli oggetti (mai da «Da smistare» o da «Originali ricevuti»).
         </p>
-        <label style={file && !carico && !lettura ? sx.scelta : { ...sx.scelta, background: "#B8B3A7", cursor: "default" }}>
-          Scegli la cartella
-          <input type="file" webkitdirectory="" directory="" multiple onChange={sceltaCartella} disabled={!file || !!carico || !!lettura} style={{ display: "none" }} />
-        </label>
+        {conFinestra ? (
+          <button type="button" onClick={sceltaCartellaFinestra} disabled={!file || !!carico || !!lettura}
+            style={{ ...sx.scelta, border: "none", ...(file && !carico && !lettura ? {} : { background: "#B8B3A7", cursor: "default" }) }}>
+            Scegli la cartella
+          </button>
+        ) : (
+          <label style={file && !carico && !lettura ? sx.scelta : { ...sx.scelta, background: "#B8B3A7", cursor: "default" }}>
+            Scegli la cartella
+            <input type="file" webkitdirectory="" directory="" multiple onChange={sceltaCartella} disabled={!file || !!carico || !!lettura} style={{ display: "none" }} />
+          </label>
+        )}
+        {conFinestra && file && !cartella && !lettura && <div style={{ marginTop: 8, fontSize: 13, color: C.muted }}>Il browser chiede «Vuoi consentire al sito di visualizzare i file?»: rispondere «Visualizza file». La pagina legge solo il file di carico, il segnale e i PDF delle deleghe.</div>}
         {!file && <span style={{ marginLeft: 10, fontSize: 13, color: C.muted }}>Prima il passo 1.</span>}
         {lettura && <div style={{ marginTop: 10, fontSize: 13 }}>{lettura}</div>}
         {cartella && cartella.errori.length > 0 && <div style={{ ...sx.rosso, marginTop: 12 }}><b>Cartella non accettata:</b><ul style={{ margin: "6px 0 0 18px", padding: 0 }}>{cartella.errori.map((a, i) => <li key={i}>{a}</li>)}</ul></div>}
@@ -414,7 +496,8 @@ export default function CaricaF24() {
         <div style={sx.titolo}>Passo 3 — Il carico</div>
         {!operatore.trim() && <div style={{ fontSize: 13, color: C.muted, marginBottom: 8 }}>Scrivere prima nome e cognome di chi carica.</div>}
         <button onClick={carica} disabled={!pronto} style={sx.bottone(pronto)}>Carica</button>
-        {file && <span style={{ marginLeft: 12, fontSize: 13 }}>{daCaricare.length} deleghe entrano; {nonEntrano.length} restano fuori.</span>}
+        {!pronto && !carico && <span style={{ marginLeft: 12, fontSize: 13, color: C.red }}>{perche}</span>}
+        {file && <span style={{ marginLeft: 12, fontSize: 13 }}>{daCaricare.length} {daCaricare.length === 1 ? "delega entra" : "deleghe entrano"}; {nonEntrano.length} {nonEntrano.length === 1 ? "resta" : "restano"} fuori.</span>}
         {carico?.inCorso && <div style={{ ...sx.arancio, marginTop: 12 }}>Carico in corso: {carico.fatte} di {carico.totale}. Non chiudere la pagina.</div>}
         {carico?.errore && <div style={{ ...sx.rosso, marginTop: 12 }}>{carico.errore}</div>}
         {carico?.esito && (
