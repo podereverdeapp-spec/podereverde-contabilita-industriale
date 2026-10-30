@@ -6,6 +6,7 @@ import { C } from "./style";
 // e «Prompt_carico_F24_nel_programma» (versione 3) del 29/10/2026.
 // Versione 329 (ordine del Dott. Bizzarri delle 22:34): smistamento versione 7 e carico versione 4, «Da smistare» si svuota solo a carico riuscito.
 // Versione 330 (ordine del 30/10/2026 ore 15:55): smistamento versione 8 e carico versione 5 — gli esiti si riconoscono dall'inizio («Smistato», «Doppione», «Già smistato»), anche quelli delle versioni precedenti; LEGGIMI.txt si ignora. Il testo va aggiornato a mano se cambia la procedura.
+// Versione 333 (30/10/2026): la pagina «Carica F24» esiste; tolto l'avviso «in costruzione» dal prompt di carico.
 
 const PROMPT_SMISTAMENTO = `PROMPT PER SMISTAMENTO F24 — Società Agricola Podere Verde a r.l.
 Lavori per la Società Agricola Podere Verde a r.l., codice fiscale e partita IVA 15117871002. Attenzione: 01879020517 non è Podere Verde, è l'intermediario che trasmette le fatture.
@@ -307,7 +308,7 @@ export function PromptCaricoF24() {
       <Avviso />
       <RiquadroPrompt numero={2} titolo="Prompt per carico F24 nel programma" quando="Si usa subito dopo lo smistamento, lo stesso giorno"
         cosaFa="Claude controlla il file di carico preparato dallo smistamento, guida chi lavora nel caricarlo nel programma e poi controlla che ogni F24 da pagare compaia tra i pagamenti, con gli allarmi giusti."
-        avviso="La pagina «Carica F24» del programma è in costruzione: finché non c'è, questo prompt non si usa."
+        avviso="La pagina «Carica F24» è nella stessa cartella, «Carico nel programma»: Claude dice quando aprirla e quali pulsanti premere."
         testo={PROMPT_CARICO} />
     </div>
   );

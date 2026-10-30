@@ -49,6 +49,7 @@ import VenditePerAnno from "./VenditePerAnno";
 import { contaAllarmiFatturazione } from "./calcoloAruba";
 import PromptCedolini from "./PromptCedolini";
 import { PromptSmistamentoF24, PromptCaricoF24 } from "./PromptF24";
+import CaricaF24 from "./CaricaF24"; // versione 333
 import CaricaCostiLavoro from "./CaricaCostiLavoro";
 import ConsultaCostiLavoro from "./ConsultaCostiLavoro";
 import InserimentoManualeFattura from "./InserimentoManualeFattura";
@@ -178,6 +179,8 @@ const MENU = [
       { tipo: "sottocartella", id: "sub-f24-carico", label: "Carico nel programma", icon: "📥", voci: [
         { id: "istr-carico-f24", label: "Istruzioni Prompt per carico", icon: "📖" },
         { id: "prompt-carico-f24", label: "Prompt per carico F24 nel programma", icon: "🤖" },
+        // Versione 333 (ordine del Dott. Bizzarri del 30/10/2026): la pagina che carica gli F24 nel programma.
+        { id: "carica-f24", label: "Carica F24", icon: "📥" },
       ]},
     ]},
     // Versione 289: le istruzioni, dal Word approvato dal Dott. Bizzarri il 23/10/2026.
@@ -472,7 +475,7 @@ function Programma({ utente }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 330</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 334</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -670,6 +673,7 @@ function Programma({ utente }) {
         {tab === "prompt-cedolini" && <PromptCedolini />}
         {tab === "prompt-smistamento-f24" && <PromptSmistamentoF24 />}
         {tab === "prompt-carico-f24" && <PromptCaricoF24 />}
+        {tab === "carica-f24" && <CaricaF24 />}
         {tab === "istr-smistamento-f24" && <DocumentoIstruzioni doc={ISTRUZIONI_PROMPT_SMISTAMENTO_F24} />}
         {tab === "istr-carico-f24" && <DocumentoIstruzioni doc={ISTRUZIONI_PROMPT_CARICO_F24} />}
         {tab === "istr-generali-f24" && <DocumentoIstruzioni doc={ISTRUZIONI_GENERALI_F24} />}
