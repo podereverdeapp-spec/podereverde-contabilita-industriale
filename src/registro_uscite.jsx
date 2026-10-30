@@ -1,3 +1,4 @@
+import { oggiRoma } from "./dateRoma";
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "./supabase";
 
@@ -29,7 +30,7 @@ const motivoIcon = m=>{
   if(ml.includes("scappat"))  return "🏃";
   return "📤";
 };
-const today=()=>new Date().toISOString().split("T")[0];
+const today=()=>oggiRoma();
 
 // ─── UI BASE ──────────────────────────────────────────────────────────────────
 const inputStyle={width:"100%",boxSizing:"border-box",border:`1.5px solid ${C.border}`,

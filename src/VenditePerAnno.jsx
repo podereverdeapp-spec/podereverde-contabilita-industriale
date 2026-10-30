@@ -1,3 +1,4 @@
+import { oggiRoma } from "./dateRoma";
 import { useEffect, useState } from "react";
 import * as XLSX from "xlsx";
 import { C } from "./style";
@@ -33,7 +34,7 @@ export default function VenditePerAnno() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(riepilogo), "Vendite per anno");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(righe), "Righe");
-    XLSX.writeFile(wb, `Vendite_per_anno_e_tipo_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    XLSX.writeFile(wb, `Vendite_per_anno_e_tipo_${oggiRoma()}.xlsx`);
   }
 
   return (

@@ -1,3 +1,4 @@
+import { oggiRoma } from "./dateRoma";
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "./supabase";
 
@@ -11,7 +12,7 @@ const C = {
 const specieColor=s=>({bovino:C.bovini,suino:C.suini,ovino:C.ovini}[s]||C.muted);
 const specieIcon=s=>({bovino:"🐄",suino:"🐷",ovino:"🐑"}[s]||"🐾");
 const daysBetween=(d1,d2)=>Math.max(1,Math.round((new Date(d2)-new Date(d1))/86400000));
-const today=()=>new Date().toISOString().split("T")[0];
+const today=()=>oggiRoma();
 
 // ─── UI BASE ──────────────────────────────────────────────────────────────────
 const Card=({children,style={}})=>(

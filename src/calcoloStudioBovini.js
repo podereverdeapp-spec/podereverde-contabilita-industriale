@@ -12,6 +12,7 @@
 // - costo di un riproduttore adulto: mantenimento per UBA-giorno dell'anno × giorni dell'anno (uguale per tori e vacche);
 // - vacche da controllare: in azienda, ultimo parto oltre 15 mesi fa, oppure mai partorito oltre i 30 mesi.
 // Sola lettura: nessuna scrittura nel database.
+import { dataRoma } from "./dateRoma";
 import { normalizzaAnimali, idGenitori, eNatoDellaMandria, eUscito } from "./costoAnimale";
 
 const MESE = 30.4375;
@@ -39,7 +40,7 @@ export const OTTOBRE_2026 = {
 };
 
 export function studioBovini({ animali, lotti, costiAnimali, mandria, razze }, oggiData = new Date()) {
-  const oggi = oggiData.toISOString().slice(0, 10);
+  const oggi = dataRoma(oggiData);
   const annoCorrente = annoDi(oggi);
   const bov = (costiAnimali || []).filter(r => r.specie === "bovino" && r.animale_id);
   const righe = new Map();

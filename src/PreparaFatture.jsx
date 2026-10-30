@@ -1,3 +1,4 @@
+import { oggiRoma } from "./dateRoma";
 import { useState, useEffect, useMemo } from "react";
 import { C } from "./style";
 import { formattaNumero, formattaEuro } from "./parsingUtils";
@@ -15,7 +16,7 @@ import { generaXmlFattura, nomeFileXml, scaricaFile, scaricaZip } from "./xmlFat
 // per i clienti abituali (ultimo prezzo) ma sempre da confermare; da inserire per i nuovi.
 // Alla conferma la fattura si registra nel programma e si scarica il file XML per Aruba.
 
-const oggiIso = () => new Date().toISOString().slice(0, 10);
+const oggiIso = () => oggiRoma();
 function dataItaliana(iso) {
   if (!iso) return "—";
   const [a, m, g] = String(iso).slice(0, 10).split("-");

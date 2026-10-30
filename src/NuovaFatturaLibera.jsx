@@ -1,3 +1,4 @@
+import { oggiRoma } from "./dateRoma";
 import { useState, useEffect, useMemo } from "react";
 import { C } from "./style";
 import { formattaNumero, formattaEuro } from "./parsingUtils";
@@ -13,7 +14,7 @@ import { ClienteForm, PannelloCedente } from "./PreparaFatture";
 // Fattura scritta riga per riga (rifatturazione di costi, vendita di un equino, servizi…), con
 // aliquota IVA per riga. Alla conferma si registra nel programma e si scarica il file XML per Aruba.
 
-const oggiIso = () => new Date().toISOString().slice(0, 10);
+const oggiIso = () => oggiRoma();
 function dataItaliana(iso) {
   if (!iso) return "—";
   const [a, m, g] = String(iso).slice(0, 10).split("-");

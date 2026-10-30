@@ -1,6 +1,7 @@
 // Versione 323 (28/10/2026, ordine del Dott. Bizzarri): punti del registro degli animali da verificare con Sborchia.
 // Tabella ci_verifiche_animali (file contabilita_strutture_v323.sql). L'avviso ⚠️ sulla cartella Animali
 // conta i punti con stato «Da verificare».
+import { oggiRoma } from "./dateRoma";
 import { supabase } from "./supabase";
 
 export const STATI_VERIFICA = ["Da verificare", "Verificato"];
@@ -25,7 +26,7 @@ export async function contaVerificheAnimali() {
 
 export async function aggiornaVerificaAnimale(id, campi) {
   const dati = { ...campi, updated_at: new Date().toISOString() };
-  if (campi.stato === "Verificato") dati.verificato_il = new Date().toISOString().slice(0, 10);
+  if (campi.stato === "Verificato") dati.verificato_il = oggiRoma();
   if (campi.stato === "Da verificare") dati.verificato_il = null;
   const { error } = await supabase.from("ci_verifiche_animali").update(dati).eq("id", id);
   if (error) throw new Error(error.message);

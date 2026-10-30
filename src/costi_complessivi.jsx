@@ -1,3 +1,4 @@
+import { oggiRoma } from "./dateRoma";
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "./supabase";
 
@@ -8,7 +9,7 @@ const C = {
   bovini:"#8B6914", suini:"#B5547A", ovini:"#4A7C59",
 };
 const specieIcon  = s=>({bovino:"🐄",suino:"🐷",ovino:"🐑"}[s]||"🐾");
-const today=()=>new Date().toISOString().split("T")[0];
+const today=()=>oggiRoma();
 
 const inputStyle={width:"100%",boxSizing:"border-box",border:`1.5px solid ${C.border}`,
   borderRadius:10,padding:"10px 12px",fontSize:15,background:"#FAFAF8",color:C.text,outline:"none"};

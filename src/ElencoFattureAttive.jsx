@@ -1,3 +1,4 @@
+import { oggiRoma } from "./dateRoma";
 import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import { C } from "./style";
@@ -52,7 +53,7 @@ export default function ElencoFattureAttive() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(fatture), "Fatture");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(righe), "Righe");
-    XLSX.writeFile(wb, `Fatture_Attive_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    XLSX.writeFile(wb, `Fatture_Attive_${oggiRoma()}.xlsx`);
   }
 
   if (errore) return <div style={{ padding: 20, color: C.red, fontWeight: 700 }}>⚠️ {errore}</div>;

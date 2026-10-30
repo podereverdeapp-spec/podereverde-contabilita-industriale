@@ -3,6 +3,7 @@
 // all'altra, con un'unità metrica unica (€ al kg o al litro, mostrato a tonnellata, quintale, kg, litro),
 // calcola quanto vale la variazione in un anno, la ordina per gravità e suggerisce cosa fare.
 // Si ricalcola a ogni apertura con le fatture caricate. Sola lettura: nessuna scrittura nel database.
+import { oggiRoma } from "./dateRoma";
 import { supabase } from "./supabase";
 import { fetchAllPages } from "./parsingUtils";
 import { RIFERIMENTI } from "./riferimentiEsterni";
@@ -63,7 +64,7 @@ export async function caricaDatiPrezzi() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
-export function analisiPrezzi(d, oggi = new Date().toISOString().slice(0, 10)) {
+export function analisiPrezzi(d, oggi = oggiRoma()) {
   const fam = new Map(d.famiglie.map(f => [f.id, f]));
   const mappa = new Map(d.descrizioni.map(x => [x.descrizione_norm, x]));
   const fat = new Map(d.fatture.map(f => [f.id, f]));

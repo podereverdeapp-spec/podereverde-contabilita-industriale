@@ -6,6 +6,7 @@
 //             come farina NON si conta: decisione del 28/10/2026 ore 21:27).
 // Destinazione delle fatture: la specie scritta va a quella specie; «Generali» e le coppie di specie si dividono in base
 // agli UBA-giorni produttivi dell'anno, con la stessa funzione del Report Costi (calcolaRigaAggregata).
+import { oggiRoma } from "./dateRoma";
 import { supabase } from "./supabase";
 import { fetchAllPages } from "./parsingUtils";
 import { caricaDatiGrezziAnno } from "./calcoloReportCosti";
@@ -140,7 +141,7 @@ function trovaClasse(classi, ...parole) {
 
 export async function calcolaTeoricoRuminanti(specie, anno, parametri = PARAMETRI_INIZIALI) {
   const p = { ...PARAMETRI_INIZIALI, ...parametri };
-  const inizio = Date.UTC(anno, 0, 1), fine = Math.min(Date.UTC(anno, 11, 31), Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()));
+  const inizio = Date.UTC(anno, 0, 1), fine = Math.min(Date.UTC(anno, 11, 31), giorno(oggiRoma()));
   const raz = await caricaRazioniSpecie(specie);
   const [{ data: animali, error: eA }, { data: alimenti, error: eAl }] = await Promise.all([
     fetchAllPages((da, a) => supabase.from("animali").select("id,bdn,specie,sesso,razza,nascita,data_ingresso,data_uscita,motivo_uscita,stato,vivo,riproduttore,data_qualifica_riproduttore").eq("specie", specie).order("id").range(da, a)),

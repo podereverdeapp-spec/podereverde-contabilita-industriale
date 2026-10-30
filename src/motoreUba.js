@@ -1,3 +1,4 @@
+import { oggiRoma } from "./dateRoma";
 import { idGenitori, segnaRiproduttoriEffettivi, applicaNatiConLaMadre } from "./costoAnimale";
 // Motore UBA — identico a quello reale di podereverdeapp.it (ExportManager.jsx)
 // Condiviso tra ReportUba.jsx e ReportCosti.jsx
@@ -33,7 +34,7 @@ export function periodoNellAnnoExp(nascita, dataUscita, stato, anno, dataIngress
   if (dataNascita === null) return null;
   const inizioAnno = Date.UTC(anno, 0, 1);
   const fineAnno = Date.UTC(anno, 11, 31);
-  const oggi = giornoSoloData(new Date());
+  const oggi = giornoSoloData(oggiRoma());
   const dataIngr = giornoSoloData(dataIngresso);
   const dataInizio = dataIngr !== null && dataIngr > dataNascita ? dataIngr : dataNascita;
   const dataFine = dataUscita ? giornoSoloData(dataUscita) : (oggi < fineAnno ? oggi : fineAnno);

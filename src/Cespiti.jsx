@@ -1,3 +1,4 @@
+import { oggiRoma } from "./dateRoma";
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
@@ -340,7 +341,7 @@ export default function Cespiti() {
             📥 Esporta Excel
           </button>
           {!nuovo && (
-            <button onClick={() => setNuovo({ descrizione: "", categoria: "", data_acquisto: new Date().toISOString().slice(0, 10), costo_acquisto: "", anni_ammortamento: "5", specie: "Generali", note: "" })}
+            <button onClick={() => setNuovo({ descrizione: "", categoria: "", data_acquisto: oggiRoma(), costo_acquisto: "", anni_ammortamento: "5", specie: "Generali", note: "" })}
               style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
               + Nuovo Cespite
             </button>

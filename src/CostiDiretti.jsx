@@ -1,3 +1,4 @@
+import { oggiRoma } from "./dateRoma";
 import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
@@ -32,7 +33,7 @@ export default function CostiDiretti() {
   const [inModifica, setInModifica] = useState(null);
 
   function vuoto() {
-    return { data: new Date().toISOString().slice(0, 10), area: "Lavoro", centro_costo: "", destinazione: "", tipo_costo: "Fisso", imponibile: "", cassa_percentuale: "", aliquota_iva: "22", iva_non_detraibile: false, descrizione: "", dipendente: "" };
+    return { data: oggiRoma(), area: "Lavoro", centro_costo: "", destinazione: "", tipo_costo: "Fisso", imponibile: "", cassa_percentuale: "", aliquota_iva: "22", iva_non_detraibile: false, descrizione: "", dipendente: "" };
   }
 
   useEffect(() => { carica(); caricaPiano(); }, []);

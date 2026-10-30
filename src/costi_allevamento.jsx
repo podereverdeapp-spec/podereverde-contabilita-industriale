@@ -1,4 +1,5 @@
 
+import { oggiRoma } from "./dateRoma";
 import { useState, useMemo } from "react";
 
 const C = {
@@ -22,7 +23,7 @@ const VOCI = [
 const specieColor = s => ({ bovino: C.bovini, suino: C.suini, ovino: C.ovini }[s] || C.muted);
 const specieIcon  = s => ({ bovino: "🐄", suino: "🐷", ovino: "🐑" }[s] || "🐾");
 const resaDefault = s => ({ bovino: 56, suino: 78, ovino: 48 }[s] || 55);
-const today = () => new Date().toISOString().split("T")[0];
+const today = () => oggiRoma();
 
 // ─── DATI DEMO ───────────────────────────────────────────────────────────────
 const initialData = {

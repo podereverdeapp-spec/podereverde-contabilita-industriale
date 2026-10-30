@@ -1,3 +1,4 @@
+import { oggiRoma, dataRoma } from "./dateRoma";
 import { useState, useEffect, useMemo } from "react";
 import * as XLSX from "xlsx-js-style";
 import { supabase } from "./supabase";
@@ -9,7 +10,7 @@ const C = {
   bovini:"#8B6914", suini:"#B5547A", ovini:"#4A7C59",
 };
 
-const today = () => new Date().toISOString().split("T")[0];
+const today = () => oggiRoma();
 const specieIcon = s=>({bovino:"🐄",suino:"🐷",ovino:"🐑"}[s]||"🐾");
 const specieColor = s=>({bovino:C.bovini,suino:C.suini,ovino:C.ovini}[s]||C.muted);
 
@@ -55,8 +56,8 @@ function periodoNellAnno(animale, anno) {
   const fine   = dataFine < fineAnno ? dataFine : fineAnno;
 
   return {
-    inizio: inizio.toISOString().split("T")[0],
-    fine:   fine.toISOString().split("T")[0],
+    inizio: dataRoma(inizio),
+    fine:   dataRoma(fine),
     giorni: Math.round((fine - inizio) / 86400000) + 1,
     etaAllInizio: Math.round((inizio - new Date(nascita)) / 86400000),
   };

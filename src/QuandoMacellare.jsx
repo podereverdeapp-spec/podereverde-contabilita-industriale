@@ -6,6 +6,7 @@
 // Il costo di ogni capo è quello di tutto il programma (Riepilogo Costo Animali, Prezzo di Pareggio, Break Even):
 // acquisto o nascita + mantenimento + costo rimasto ricevuto dai riproduttori, dai costi salvati del Report Costi.
 // Sola lettura: nessuna scrittura nel database.
+import { oggiRoma } from "./dateRoma";
 import { useState, useEffect, useMemo } from "react";
 import { C } from "./style";
 import { formattaEuro, formattaNumero, round2 } from "./parsingUtils";
@@ -25,7 +26,7 @@ const FASCE = {
   ovino: [[0, 6, "sotto 6 mesi"], [6, 9, "6–9 mesi"], [9, 12, "9–12 mesi"], [12, 18, "12–18 mesi"], [18, Infinity, "oltre 18 mesi"]],
 };
 const CAPI_MINIMI = 3; // una fascia con meno capi si mostra, ma non decide il semaforo
-const oggi = () => new Date().toISOString().slice(0, 10);
+const oggi = () => oggiRoma();
 
 // fattoreNascita (versione 309, simulazione): moltiplica il costo di nascita di ogni anno; senza, il costo è quello salvato
 function costoDi(base, s, finoAl, fattoreNascita) {

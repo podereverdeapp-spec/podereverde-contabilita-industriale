@@ -1,3 +1,4 @@
+import { oggiRoma } from "./dateRoma";
 import { useState, useEffect, Fragment } from "react";
 import { C } from "./style";
 import { formattaNumero, formattaEuro } from "./parsingUtils";
@@ -98,7 +99,7 @@ export default function FattureEmesse({ tipo = "animali_allevamento" }) {
           <button onClick={() => invia(scelte)} disabled={!scelte.length || !puoInviare} style={btn(true, scelte.length && puoInviare ? C.primary : "#B8B3A7")}>
             {inviando ? "Invio in corso…" : `✉️ Invia a ${destinatario ? destinatario.nome : "amministrazione"} le selezionate (${scelte.length})`}
           </button>
-          <button onClick={() => scaricaZip(`Fatture_per_Aruba_${new Date().toISOString().slice(0, 10)}.zip`, scelte)} disabled={!scelte.length} style={btn(true, scelte.length ? C.green : "#B8B3A7")}>
+          <button onClick={() => scaricaZip(`Fatture_per_Aruba_${oggiRoma()}.zip`, scelte)} disabled={!scelte.length} style={btn(true, scelte.length ? C.green : "#B8B3A7")}>
             Scarica per Aruba le selezionate ({scelte.length}) .zip
           </button>
           <button onClick={esporta} disabled={!visibili.length} style={btn(false)}>📥 Esporta Excel</button>

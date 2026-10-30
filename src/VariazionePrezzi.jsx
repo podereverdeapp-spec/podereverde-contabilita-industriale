@@ -2,6 +2,7 @@
 // Mostra, in ordine di gravità, i prodotti comprati il cui prezzo è cambiato da una fattura all'altra, con il
 // grafico del prezzo nel tempo, i consigli e il testo di ricerca da copiare in un'intelligenza artificiale.
 // Si ricalcola a ogni apertura. Sola lettura.
+import { oggiRoma, dataRoma } from "./dateRoma";
 import { useEffect, useMemo, useState } from "react";
 import { C, FONT } from "./style";
 import { caricaDatiPrezzi, analisiPrezzi, it, data, SOGLIE } from "./calcoloVariazionePrezzi";
@@ -158,8 +159,8 @@ function Dettaglio({ s }) {
 function GraficoPrezzi({ s }) {
   const [tutto, setTutto] = useState(false);
   const U = s.unita, dec = U.decimali;
-  const oggi = new Date().toISOString().slice(0, 10);
-  const inizio = tutto ? s.fatture[0].data : new Date(Date.now() - 3 * 365 * 86400000).toISOString().slice(0, 10);
+  const oggi = oggiRoma();
+  const inizio = tutto ? s.fatture[0].data : dataRoma(Date.now() - 3 * 365 * 86400000);
   const punti = s.fatture.filter(x => x.data >= inizio);
   if (!punti.length) return <p style={{ fontSize: 12.5, color: C.muted }}>Nessuna fattura negli ultimi 3 anni. <button onClick={() => setTutto(true)} style={{ fontSize: 12 }}>Mostra tutto lo storico</button></p>;
   const fornitori = [...new Set(s.fatture.map(x => x.fornitore))];

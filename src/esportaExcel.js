@@ -1,3 +1,4 @@
+import { oggiRoma } from "./dateRoma";
 import * as XLSX from "xlsx-js-style";
 
 // Palette allineata a style.js (C), in esadecimale senza # per xlsx-js-style
@@ -83,7 +84,7 @@ export function esportaExcel(nomeFile, fogli) {
     XLSX.utils.book_append_sheet(wb, ws, nomeSicuro);
   });
 
-  const dataOggi = new Date().toISOString().slice(0, 10);
+  const dataOggi = oggiRoma();
   XLSX.writeFile(wb, `${nomeFile}_${dataOggi}.xlsx`);
 }
 

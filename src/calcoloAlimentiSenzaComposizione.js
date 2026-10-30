@@ -1,6 +1,7 @@
 // Versione 320 (28/10/2026, ordine del Dott. Bizzarri): alimenti acquistati senza composizione.
 // La lista sta nella tabella ci_alimenti_senza_composizione (file contabilita_strutture_v320.sql).
 // L'avviso ⚠️ sulla cartella Alimentaria conta gli alimenti il cui stato non è ancora «Ricevuta».
+import { oggiRoma } from "./dateRoma";
 import { supabase } from "./supabase";
 
 export const STATI_COMPOSIZIONE = ["Da chiedere", "Richiesta inviata", "Ricevuta"];
@@ -23,7 +24,7 @@ export async function contaAlimentiSenzaComposizione() {
 }
 
 export async function aggiornaStatoComposizione(id, stato) {
-  const oggi = new Date().toISOString().slice(0, 10);
+  const oggi = oggiRoma();
   const campi = { stato, updated_at: new Date().toISOString() };
   if (stato === "Richiesta inviata") campi.data_richiesta = oggi;
   if (stato === "Ricevuta") campi.data_ricezione = oggi;

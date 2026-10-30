@@ -1,3 +1,4 @@
+import { oggiRoma } from "./dateRoma";
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
@@ -41,7 +42,7 @@ export default function CostruisciRazione({ onNavigate }) {
   const [idAperta, setIdAperta] = useState(null);
   const [classeMancante, setClasseMancante] = useState(null);
   const [salvando, setSalvando] = useState(false);
-  const [dataUso, setDataUso] = useState(new Date().toISOString().slice(0, 10));
+  const [dataUso, setDataUso] = useState(oggiRoma());
 
   useEffect(() => { carica(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

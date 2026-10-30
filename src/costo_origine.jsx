@@ -1,3 +1,4 @@
+import { oggiRoma } from "./dateRoma";
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "./supabase";
 
@@ -152,7 +153,7 @@ function DettaglioAnimale({animale, animali, costi, onBack, onAddCosto}) {
 
 // ─── FORM AGGIUNGI COSTO ──────────────────────────────────────────────────────
 function FormCosto({animale, onSave, onCancel}) {
-  const today=()=>new Date().toISOString().split("T")[0];
+  const today=()=>oggiRoma();
   const [form,setForm]=useState({animale_id:animale.id,voce:"alimentazione",importo:"",data:today(),descrizione:""});
   const [saving,setSaving]=useState(false);
   const salva=async()=>{

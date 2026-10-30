@@ -1,3 +1,4 @@
+import { oggiRoma } from "./dateRoma";
 import { useState } from "react";
 import * as XLSX from "xlsx-js-style";
 import { supabase } from "./supabase";
@@ -10,7 +11,7 @@ const C = {
   bovini:"#8B6914", suini:"#B5547A", ovini:"#4A7C59",
 };
 
-const today = () => new Date().toISOString().split("T")[0];
+const today = () => oggiRoma();
 
 // ─── Helpers foglio Excel ──────────────────────────────────────────────────────
 // Colonne "leggere": ogni colonna ha {key, label, width?, num?, cur?, center?, bold?, sumTotale?, media?}
@@ -780,7 +781,7 @@ function periodoNellAnnoExp(nascita, dataIngresso, dataUscita, stato, anno) {
   if(dataNascita === null) return null;
   const inizioAnno = Date.UTC(anno, 0, 1);
   const fineAnno   = Date.UTC(anno, 11, 31);
-  const oggi = giornoSoloData(new Date());
+  const oggi = giornoSoloData(oggiRoma());
   // Il periodo di presenza in azienda parte dall'ingresso (acquisto/trasferimento) se noto,
   // altrimenti dalla nascita (animale nato in azienda: nascita = ingresso).
   const dataPresenzaInizio = dataIngresso ? giornoSoloData(dataIngresso) : dataNascita;
@@ -895,7 +896,7 @@ function fogli_uba(animali, lotti, suiniLotto, prezziRiforma, annoRif, costiGene
     const costoNetto = Math.max(0, costoIniz + mantCum - quotaFig - vRiforma);
 
     const dataIngresso = a.data_ingresso || nascita;
-    const dataRif = a.data_uscita || new Date().toISOString().slice(0,10);
+    const dataRif = a.data_uscita || oggiRoma();
     const ggPermanenza = dataIngresso
       ? Math.round((new Date(dataRif)-new Date(dataIngresso))/86400000) : 0;
     const acquistatoA = a.provenienza==="Acquistato";
@@ -970,7 +971,7 @@ function fogli_uba(animali, lotti, suiniLotto, prezziRiforma, annoRif, costiGene
       const costoNettoU = Math.max(0, costoInizPerCapo - vRiformaU);
 
       const dataIngressoU = l.data_parto;
-      const dataRifU = u.data_uscita || new Date().toISOString().slice(0,10);
+      const dataRifU = u.data_uscita || oggiRoma();
       const ggPermanenzaU = dataIngressoU
         ? Math.round((new Date(dataRifU)-new Date(dataIngressoU))/86400000) : 0;
       const acquistatoU = l.tipo_provenienza==="acquistato";

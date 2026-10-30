@@ -1,3 +1,4 @@
+import { oggiRoma, dataRoma } from "./dateRoma";
 import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 
@@ -10,7 +11,7 @@ const C = {
 const specieColor = s=>({bovino:C.bovini,suino:C.suini,ovino:C.ovini}[s]||C.muted);
 const specieLabel = s=>({bovino:"Bovino",suino:"Suino",ovino:"Ovino"}[s]||s);
 const specieIcon  = s=>({bovino:"🐄",suino:"🐷",ovino:"🐑"}[s]||"🐾");
-const today = ()=>new Date().toISOString().split("T")[0];
+const today = ()=>oggiRoma();
 
 // ─── DATI PER SPECIE ──────────────────────────────────────────────────────────
 const RAZZE = {
@@ -1417,7 +1418,7 @@ function Anagrafica({animali,loading,aggiungi,aggiorna,elimina,ricaricaAnimali,e
                               const d=new Date(v);
                               d.setMonth(d.getMonth()+3);
                               d.setDate(d.getDate()+24); // 3 settimane + 3 giorni
-                              prevista=d.toISOString().split("T")[0];
+                              prevista=dataRoma(d);
                             }
                             setFormParto(f=>({...f,data_accoppiamento:v,_data_prevista:prevista}));
                           }}

@@ -22,6 +22,7 @@
 // - ovini: gli agnelli escono con il solo codice dell'allevamento e non sono nell'app: capi e chili dalle fatture
 //   (le fatture di gennaio contano per l'anno prima: vendite di settembre–dicembre fatturate a gennaio);
 // - le spese di macello e lavorazione non sono costi di allevamento (escluse, come nel Report Costi).
+import { oggiRoma } from "./dateRoma";
 import { supabase } from "./supabase";
 import { fetchAllPages, round2 } from "./parsingUtils";
 import { preparaBase, campione, SPECIE, ETICHETTE, destinazioneCespite, AREA_LAVORAZIONI } from "./calcoloBreakEven";
@@ -180,7 +181,7 @@ export function ubaPeriodo(A, P, escludi = new Set()) {
   const chiave = `${P.da}|${P.a}|${[...escludi].sort().join(",")}`;
   A._uba = A._uba || new Map();
   if (A._uba.has(chiave)) return A._uba.get(chiave);
-  const oggiMs = ms(isoDa(Date.now()));
+  const oggiMs = ms(oggiRoma());
   const righe = [];
   for (const a of animaliNormalizzati(A)) {
     if (!a.specie || !UBA_FASCE_EXP[a.specie]) continue;
@@ -285,7 +286,7 @@ function giorniDaMadre(parti, specie, da, a) {
 }
 function presenzaAnimale(a, P) {
   const nascita = a.nascita || a.data_ingresso; if (!nascita) return null;
-  return presenzaNelPeriodo(nascita, a.data_uscita, P, dataIngressoPresenza(a), ms(isoDa(Date.now())));
+  return presenzaNelPeriodo(nascita, a.data_uscita, P, dataIngressoPresenza(a), ms(oggiRoma()));
 }
 // Agnelli venduti: dalle fatture (destinazione Ovini). Le fatture di gennaio valgono per l'anno prima.
 export function agnelliFatturati(A, P) {
@@ -509,7 +510,7 @@ export function pareggioAzienda(risultati) {
 // ── Anomalie (pagina 7) ─────────────────────────────────────────────────────────────────────────
 export function anomalie(A, P, scenario = "base") {
   const parti = partiPerMadre(A);
-  const oggi = ms(isoDa(Date.now()));
+  const oggi = ms(oggiRoma());
   const fineP = Math.min(ms(P.a), oggi);
   const out = { madriImproduttive: [], scottoneSegnateMadri: [], partoriteNonSegnate: [], partiPrimaDellaNascita: [], suiniLotto: suiniLottoAnomali(A), senzaPeso: {}, mortalita: {}, causeMorte: {} };
   const grezzi = new Map((A.g.animali || []).map(a => [a.id, a]));

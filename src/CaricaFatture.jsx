@@ -1,3 +1,4 @@
+import { oggiRoma } from "./dateRoma";
 import { useState, useEffect, useRef } from "react";
 import * as XLSX from "xlsx-js-style";
 import JSZip from "jszip";
@@ -151,7 +152,7 @@ export default function CaricaFatture() {
     const blob = await zip.generateAsync({ type: "blob" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = `Fatture_rinominate_${new Date().toISOString().slice(0, 10)}.zip`;
+    a.href = url; a.download = `Fatture_rinominate_${oggiRoma()}.zip`;
     a.click();
     URL.revokeObjectURL(url);
   }

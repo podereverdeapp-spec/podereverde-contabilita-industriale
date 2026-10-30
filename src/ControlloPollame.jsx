@@ -2,6 +2,7 @@
 // «Quanto costa nutrire il pollame» (decisione del 28/10/2026): acquisti dei mangimi per il pollame, periodo per periodo
 // (tra un acquisto e il successivo dello stesso prodotto), capi che quel mangime può nutrire, confronto con le galline
 // presenti e resa in uova. Il pollame resta fuori dal costo di bovini, suini e ovini.
+import { oggiRoma } from "./dateRoma";
 import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
@@ -38,7 +39,7 @@ export default function ControlloPollame() {
   }, []);
 
   if (righe === null) return <div style={{ padding: 20, color: C.muted }}>Caricamento…</div>;
-  const oggi = new Date().toISOString().slice(0, 10);
+  const oggi = oggiRoma();
   const kgCapo = (Number(grammi) || 0) / 1000;
   const nGalline = Number(galline) > 0 ? Number(galline) : null;
   // periodi: per ogni prodotto, da un acquisto al successivo (stessa data = un acquisto solo)

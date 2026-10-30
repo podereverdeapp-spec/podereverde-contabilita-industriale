@@ -1,3 +1,4 @@
+import { oggiRoma } from "./dateRoma";
 import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
@@ -11,7 +12,7 @@ export default function NuovaFatturaAttiva({ onSalvata }) {
   const [clienti, setClienti] = useState([]);
   const [clienteId, setClienteId] = useState("");
   const [numero, setNumero] = useState("");
-  const [data, setData] = useState(() => new Date().toISOString().slice(0, 10));
+  const [data, setData] = useState(() => oggiRoma());
   const [righe, setRighe] = useState([nuovaRigaVuota()]);
   const [salvando, setSalvando] = useState(false);
 
@@ -68,7 +69,7 @@ export default function NuovaFatturaAttiva({ onSalvata }) {
       }
 
       alert("✓ Fattura di vendita salvata.");
-      setClienteId(""); setNumero(""); setData(new Date().toISOString().slice(0, 10)); setRighe([nuovaRigaVuota()]);
+      setClienteId(""); setNumero(""); setData(oggiRoma()); setRighe([nuovaRigaVuota()]);
       onSalvata?.();
     } catch (err) {
       alert(`⚠️ Errore nel salvataggio:\n\n${err.message}`);

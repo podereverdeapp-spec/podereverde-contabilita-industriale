@@ -1,3 +1,4 @@
+import { oggiRoma } from "./dateRoma";
 import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
@@ -34,7 +35,7 @@ export default function InserimentoManualeFattura() {
   const [fornitoreTesto, setFornitoreTesto] = useState("");
   const [fornitoreSelezionato, setFornitoreSelezionato] = useState(null);
   const [numero, setNumero] = useState("");
-  const [data, setData] = useState(new Date().toISOString().slice(0, 10));
+  const [data, setData] = useState(oggiRoma());
   const [righe, setRighe] = useState([rigaVuota()]);
   const [salvando, setSalvando] = useState(false);
   const [messaggioOk, setMessaggioOk] = useState(null);
@@ -185,7 +186,7 @@ export default function InserimentoManualeFattura() {
       if (eTot) throw new Error(`Righe salvate, ma i totali della fattura non sono stati aggiornati: ${eTot.message}`);
 
       setMessaggioOk(`Fattura ${numero} salvata con ${righe.length} righe${cespitiCreati ? `, di cui ${cespitiCreati} come cespite (con le quote fino all'anno in corso)` : ""}. Ricordarsi di aggiornare i costi.`);
-      setFornitoreTesto(""); setFornitoreSelezionato(null); setNumero(""); setData(new Date().toISOString().slice(0, 10));
+      setFornitoreTesto(""); setFornitoreSelezionato(null); setNumero(""); setData(oggiRoma());
       setRighe([rigaVuota()]);
       await carica();
     } catch (err) {
