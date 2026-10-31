@@ -48,8 +48,10 @@ import NumeroProgressivo from "./NumeroProgressivo";
 import VenditePerAnno from "./VenditePerAnno";
 import { contaAllarmiFatturazione } from "./calcoloAruba";
 import PromptCedolini from "./PromptCedolini";
-import { PromptSmistamentoF24, PromptCaricoF24 } from "./PromptF24";
-import CaricaF24 from "./CaricaF24"; // versione 336
+// Versione 339 (ordine del Dott. Bizzarri del 31/10/2026): la pagina «F24 arrivati: controlla e archivia» prende il posto dei prompt
+// di smistamento e di carico e della pagina «Carica F24» (i loro file restano, ma non sono più nel menu).
+import F24Arrivati from "./F24Arrivati";
+import { ISTRUZIONI_F24_ARRIVATI } from "./istruzioniF24Arrivati";
 // Versione 337: la cartella «Accessi» (chi entra nel programma e in quali parti)
 import PaginaAccessi, { IstruzioniAccessi } from "./PaginaAccessi";
 import { filtraMenu, pagineDelMenu, puoVedereParte } from "./accessiParti";
@@ -173,19 +175,10 @@ const MENU = [
     // sotto-sottocartella «Smistamento e Carico nel cloud» (terzo livello del menu); le cartelle seguenti passano da 4–6 a 5–7.
     // Da aggiungere: Istruzioni Generali F24 (in cima), Istruzioni Smistamento e Carico (con immagini), Carica F24, Ricerca F24.
     { tipo: "sottocartella", id: "sub-dati-f24", label: "4. Carica F24", icon: "🧾", voci: [
-      // Versione 327 (ordine del Dott. Bizzarri del 29/10/2026 ore 21:16): le Istruzioni Generali in cima.
+      // Versione 339 (ordine del Dott. Bizzarri del 31/10/2026): al posto delle due sottocartelle «Smistamento nel cloud» e
+      // «Carico nel programma», le istruzioni nuove e la pagina che legge, controlla e archivia (cloud e programma).
       { id: "istr-generali-f24", label: "Istruzioni Generali", icon: "📖" },
-      // Versione 328 (ordine del Dott. Bizzarri del 29/10/2026 ore 22:10): una cartella per lo smistamento e una per il carico.
-      { tipo: "sottocartella", id: "sub-f24-smistamento", label: "Smistamento nel cloud", icon: "☁️", voci: [
-        { id: "istr-smistamento-f24", label: "Istruzioni Prompt per smistamento", icon: "📖" },
-        { id: "prompt-smistamento-f24", label: "Prompt per smistamento F24", icon: "🤖" },
-      ]},
-      { tipo: "sottocartella", id: "sub-f24-carico", label: "Carico nel programma", icon: "📥", voci: [
-        { id: "istr-carico-f24", label: "Istruzioni Prompt per carico", icon: "📖" },
-        { id: "prompt-carico-f24", label: "Prompt per carico F24 nel programma", icon: "🤖" },
-        // Versione 333 (ordine del Dott. Bizzarri del 30/10/2026): la pagina che carica gli F24 nel programma.
-        { id: "carica-f24", label: "Carica F24", icon: "📥" },
-      ]},
+      { id: "f24-arrivati", label: "F24 arrivati: controlla e archivia", icon: "🧾" },
     ]},
     // Versione 289: le istruzioni, dal Word approvato dal Dott. Bizzarri il 23/10/2026.
     { tipo: "sottocartella", id: "sub-dati-sistema", label: "5. Sistema i dati caricati", icon: "🧹", voci: [
@@ -510,7 +503,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 338</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 339</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -726,12 +719,8 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
         {tab === "numero-progressivo" && <NumeroProgressivo />}
         {tab === "vendite-per-anno" && <VenditePerAnno />}
         {tab === "prompt-cedolini" && <PromptCedolini />}
-        {tab === "prompt-smistamento-f24" && <PromptSmistamentoF24 />}
-        {tab === "prompt-carico-f24" && <PromptCaricoF24 />}
-        {tab === "carica-f24" && <CaricaF24 />}
-        {tab === "istr-smistamento-f24" && <DocumentoIstruzioni doc={ISTRUZIONI_PROMPT_SMISTAMENTO_F24} />}
-        {tab === "istr-carico-f24" && <DocumentoIstruzioni doc={ISTRUZIONI_PROMPT_CARICO_F24} />}
-        {tab === "istr-generali-f24" && <DocumentoIstruzioni doc={ISTRUZIONI_GENERALI_F24} />}
+        {tab === "f24-arrivati" && <F24Arrivati utente={utente} accesso={accesso} />}
+        {tab === "istr-generali-f24" && <DocumentoIstruzioni doc={ISTRUZIONI_F24_ARRIVATI} />}
         {tab === "carica-costi-lavoro" && <CaricaCostiLavoro />}
         {tab === "consulta-costi-lavoro" && <ConsultaCostiLavoro />}
         {tab === "inserimento-manuale" && <InserimentoManualeFattura />}
