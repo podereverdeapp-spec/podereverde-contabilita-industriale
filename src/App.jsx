@@ -348,17 +348,17 @@ const MENU = [
       { id: "muratella-costi", label: "Contabilità Muratella", icon: "🏛️" },
     ]},
   ]},
-  // Versione 294 (decisione del Dott. Bizzarri del 24/10/2026 ore 16:02): il Registro delle Modifiche esce da
-  // «6. Controllo finale» e diventa una cartella del menu principale, con le sue istruzioni.
-  { tipo: "cartella", id: "cart-registro-modifiche", label: "Registro delle modifiche", icon: "🕓", contenuto: [
-    { tipo: "voce", id: "istr-registro-modifiche", label: "Istruzioni", icon: "📖" },
-    { tipo: "voce", id: "registro-modifiche", label: "Registro delle Modifiche", icon: "🕓" },
-  ]},
-  // Versione 337 (ordine del Dott. Bizzarri del 31/10/2026): chi entra nel programma e in quali parti.
-  // La vedono solo il Dott. Bizzarri e i gestori degli accessi (Colabucci e Demaria).
-  { tipo: "cartella", id: "cart-accessi", label: "Accessi", icon: "🔐", contenuto: [
-    { tipo: "voce", id: "istr-accessi", label: "Istruzioni", icon: "📖" },
-    { tipo: "voce", id: "accessi", label: "Chi entra nel programma", icon: "🔐" },
+  // Versione 338 (ordine del Dott. Bizzarri del 31/10/2026 ore 14:40): «Accessi» (versione 337) e «Registro delle modifiche»
+  // (versione 294) riuniti in una cartella con due sottocartelle. «Accessi» la vedono solo il Dott. Bizzarri e i gestori degli accessi.
+  { tipo: "cartella", id: "cart-accessi-registro", label: "Accessi e Registro Modifiche", icon: "🔐", contenuto: [
+    { tipo: "sottocartella", id: "sub-accessi", label: "Accessi", icon: "🔐", voci: [
+      { id: "istr-accessi", label: "Istruzioni", icon: "📖" },
+      { id: "accessi", label: "Chi entra nel programma", icon: "🔐" },
+    ]},
+    { tipo: "sottocartella", id: "sub-registro-modifiche", label: "Registro delle modifiche", icon: "🕓", voci: [
+      { id: "istr-registro-modifiche", label: "Istruzioni", icon: "📖" },
+      { id: "registro-modifiche", label: "Registro delle Modifiche", icon: "🕓" },
+    ]},
   ]},
   // Versione 248: Glossario dei termini usati nelle istruzioni (cresce sezione per sezione)
   { tipo: "voce", id: "glossario", label: "Glossario", icon: "📚" },
@@ -473,7 +473,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
   // Versione 323: punti degli ovini da verificare con Sborchia (avviso finché sono «Da verificare»)
   const [verificheAnimali, setVerificheAnimali] = useState(0);
   useEffect(() => { contaVerificheAnimali().then(setVerificheAnimali); }, [tab]);
-  const AVVISI = { "cart-animali": verificheAnimali, "verifiche-ovini": verificheAnimali, "cart-alimentaria": senzaComposizione, "alimenti-senza-composizione": senzaComposizione, "cart-fatture": anomalieAperte || 0, "sub-dati-controllo": anomalieAperte || 0, "registro-controlli": anomalieAperte || 0, "cart-emissione-fatture": daFatturare + allarmiAttiva, "sub-fatturazione-animali": daFatturare, "fatt-animali-da-fatturare": daFatturare, "fatt-animali-prepara": daFatturare, "sub-controllo-attiva": allarmiAttiva, "controllo-attiva": allarmiAttiva, "cart-accessi": richiesteAccesso, "accessi": richiesteAccesso };
+  const AVVISI = { "cart-animali": verificheAnimali, "verifiche-ovini": verificheAnimali, "cart-alimentaria": senzaComposizione, "alimenti-senza-composizione": senzaComposizione, "cart-fatture": anomalieAperte || 0, "sub-dati-controllo": anomalieAperte || 0, "registro-controlli": anomalieAperte || 0, "cart-emissione-fatture": daFatturare + allarmiAttiva, "sub-fatturazione-animali": daFatturare, "fatt-animali-da-fatturare": daFatturare, "fatt-animali-prepara": daFatturare, "sub-controllo-attiva": allarmiAttiva, "controllo-attiva": allarmiAttiva, "cart-accessi-registro": richiesteAccesso, "sub-accessi": richiesteAccesso, "accessi": richiesteAccesso };
 
   function vaiA(pageId) {
     if (!puo(pageId)) return; // versione 337: pagina non data a questa persona
@@ -510,7 +510,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 337</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 338</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>

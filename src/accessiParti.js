@@ -2,6 +2,8 @@
 // nella cartella «Accessi». L'id è quello della cartella (o sottocartella) del menu.
 // «Tutto il programma» comprende tutto TRANNE i costi del lavoro (buste paga), che vanno sempre spuntati a parte.
 export const PARTE_LAVORO = "sub-dati-lavoro";
+// Versione 338: la sottocartella «Accessi» (solo amministratore e gestori degli accessi; non si dà con le spunte)
+export const PARTE_ACCESSI = "sub-accessi";
 
 export const PARTI = [
   { id: "dashboard", label: "Dashboard" },
@@ -22,7 +24,8 @@ export const PARTI = [
   { id: "cart-modelli4", label: "Modelli 4" },
   { id: "cart-studi", label: "Studi" },
   { id: "cart-coltivazioni", label: "Coltivazioni" },
-  { id: "cart-registro-modifiche", label: "Registro delle modifiche" },
+  // Versione 338: il Registro delle modifiche è una sottocartella di «Accessi e Registro Modifiche»
+  { id: "sub-registro-modifiche", label: "Accessi e Registro Modifiche → Registro delle modifiche" },
   { id: "glossario", label: "Glossario" },
   { id: "parametri", label: "Parametri" },
 ];
@@ -34,7 +37,7 @@ export const ETICHETTA_PARTE = Object.fromEntries(PARTI.map(p => [p.id, p.label]
 export function puoVedereParte(accesso, id) {
   if (!accesso || accesso.stato !== "attivo") return false;
   if (accesso.admin) return true;
-  if (id === "cart-accessi") return !!accesso.gestore;
+  if (id === PARTE_ACCESSI) return !!accesso.gestore;
   if (id === PARTE_LAVORO) return !!accesso.lavoro;
   if (accesso.tutto) return true;
   return (accesso.parti || []).includes(id);
@@ -45,11 +48,12 @@ export function filtraMenu(menu, accesso) {
   const out = [];
   for (const m of menu) {
     if (m.tipo === "voce") { if (puoVedereParte(accesso, m.id)) out.push(m); continue; }
-    if (ID_PARTI.has(m.id) || m.id === "cart-accessi") { if (puoVedereParte(accesso, m.id)) out.push(m); continue; }
-    // Cartella divisa in parti (Carica Dati Contabilità): restano le sottocartelle permesse; le istruzioni in cima
-    // restano se c'è almeno una sottocartella
-    const contenuto = m.contenuto.filter(c => !(c.tipo === "sottocartella" && ID_PARTI.has(c.id)) || puoVedereParte(accesso, c.id));
-    if (contenuto.some(c => c.tipo === "sottocartella" && ID_PARTI.has(c.id))) out.push({ ...m, contenuto });
+    if (ID_PARTI.has(m.id)) { if (puoVedereParte(accesso, m.id)) out.push(m); continue; }
+    // Cartella divisa in parti (Carica Dati Contabilità; Accessi e Registro Modifiche): restano le sottocartelle permesse;
+    // le istruzioni in cima restano se c'è almeno una sottocartella
+    const controllata = c => c.tipo === "sottocartella" && (ID_PARTI.has(c.id) || c.id === PARTE_ACCESSI);
+    const contenuto = m.contenuto.filter(c => !controllata(c) || puoVedereParte(accesso, c.id));
+    if (contenuto.some(controllata)) out.push({ ...m, contenuto });
   }
   return out;
 }
