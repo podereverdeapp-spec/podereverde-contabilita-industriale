@@ -157,6 +157,16 @@ export async function cancellaOriginale(radiceProgramma, percorsoRelativo, md5At
   return "Cancellato";
 }
 
+// Versione 342: cerca un file per nome (senza distinguere maiuscole) dentro una cartella e nelle sue sottocartelle
+export async function cercaFile(dir, nome, base = "", profondita = 8) {
+  const out = []; const cerca = nome.toUpperCase();
+  for await (const [n, h] of dir.entries()) {
+    if (h.kind === "file" && n.toUpperCase() === cerca) out.push({ percorso: base ? `${base}\\${n}` : n, handle: h });
+    else if (h.kind === "directory" && profondita > 0) out.push(...await cercaFile(h, nome, base ? `${base}\\${n}` : n, profondita - 1));
+  }
+  return out;
+}
+
 // percorso dentro DA SMISTARE di un file del foglio «Documenti» (la colonna «Percorso» può essere completa)
 export function percorsoInDaSmistare(doc) {
   const p = String(doc?.percorso || doc?.nome || "");

@@ -1,4 +1,5 @@
 // Versione 339 (31/10/2026, ordine del Dott. Bizzarri): pagina «F24 arrivati: controlla e archivia».
+// Versione 342 (31/10/2026): scatola «F24 già nel programma da mettere nell'archivio nuovo» (solo amministratore): usa i PDF del programma, non rilegge.
 // 1) Claude legge DA SMISTARE con il «Prompt di lettura F24» e scrive un Excel in LETTURE; 2) qui si carica la lettura e si controlla
 // (tre scatole: F24, Quietanze, Comunicazioni e altro); 3) «Archivia» scrive nell'ARCHIVIO del cloud e nel programma, poi svuota DA SMISTARE.
 // Regola numero uno: un F24 da pagare entra nel programma (lista dei pagamenti) appena si apre la lettura, prima di ogni scelta.
@@ -12,7 +13,8 @@ import { md5 } from "./md5";
 import { completaFestivi, allarmiScadenze, TRATTAMENTI } from "./calcoloCaricoF24";
 import { leggiLettura, classifica, pianoArchivio, PREFISSO_ARCHIVIO, LIMITE_PERCORSO } from "./calcoloF24Arrivati";
 import { cartella, leggiFile, elenco, leggiRiconoscimento, testoRiconoscimento, nuovoCodiceCartella, FILE_RICONOSCIMENTO,
-  preparaPdf, scriviVerificato, mettiInSuperati, cancellaOriginale, percorsoInDaSmistare } from "./archivioF24";
+  preparaPdf, scriviVerificato, mettiInSuperati, cancellaOriginale, percorsoInDaSmistare, cercaFile } from "./archivioF24";
+import { pianoGiaPresenti } from "./giaPresentiF24";
 import { PROMPT_LETTURA_F24 } from "./promptLetturaF24";
 
 const COL = {
@@ -170,6 +172,81 @@ export default function F24Arrivati({ utente, accesso }) {
   }
 
   // il Dott. Bizzarri prepara la cartella F24 la prima volta: codice nel programma e file di riconoscimento
+  // Versione 342: gli F24 già nel programma prima della pagina nuova vanno nell'archivio nuovo con i PDF del programma, senza rileggerli
+  const [giaPresenti, setGiaPresenti] = useState(null); // { inCorso, righe: [testo, grave] }
+  const pianoVecchi = useMemo(() => (riconoscimento?.ok && admin ? pianoGiaPresenti(db, oggi) : []), [db, riconoscimento, admin, oggi]);
+  async function mettiGiaPresenti() {
+    if (!admin || !radice || !riconoscimento?.ok || giaPresenti?.inCorso) return;
+    const buoni = pianoVecchi.filter(x => !x.problemi.length);
+    if (!buoni.length) return;
+    if (!window.confirm(`Mettere nell'archivio nuovo ${buoni.length} F24 già nel programma? Si scrivono solo i file (con il controllo dell'impronta): importi e stati non cambiano.`)) return;
+    const righe = []; const scrivi = (t, grave = false) => { righe.push([t, grave]); setGiaPresenti({ inCorso: true, righe: [...righe] }); };
+    setGiaPresenti({ inCorso: true, righe: [] }); setErrore("");
+    try {
+      const inCorso = await supabase.from("ci_f24_lavori").select("id, proprietario_nome").eq("stato", "Archiviazione in corso");
+      if (inCorso.error) throw new Error(inCorso.error.message);
+      if (inCorso.data.length) throw new Error(`c'è un'archiviazione in corso di ${inCorso.data[0].proprietario_nome || "un'altra persona"}: si aspetta che finisca`);
+      const archivio = await cartella(radice, "ARCHIVIO");
+      const programma = await cartella(radice, "PROGRAMMA");
+      let base = await caricaDb(); if (!base) throw new Error("database non letto");
+      const annota = async (percorso, categoria, cosa, f24Id, documentoId, r) => {
+        if (base.fileArchivio.some(x => x.percorso.toUpperCase() === percorso.toUpperCase())) return;
+        const { error } = await supabase.from("ci_f24_file_archivio").insert({ percorso, cartella: categoria, cosa, f24_id: f24Id, documento_id: documentoId, md5: r.md5, dimensione: r.dimensione });
+        if (error) throw new Error(`file scritto ma non annotato nel programma (${percorso}): ${error.message}`);
+      };
+      for (const x of buoni) {
+        const f = x.f; scrivi(`F24 ${f.codice_delega} — ${f.oggetto} (${dataIt(f.data_scadenza)}, ${euro(f.saldo)}) → «${x.nome}»`);
+        const scaricati = new Map();
+        for (const p of x.file) {
+          if (!scaricati.has(p.archivio)) {
+            const { data, error } = await supabase.storage.from("f24").download(p.archivio);
+            if (error) throw new Error(`${p.cosa} di ${f.codice_delega} non trovato nel programma (${p.archivio}): ${error.message}`);
+            const byte = new Uint8Array(await data.arrayBuffer()); const imp = md5(byte);
+            if (p.md5Atteso && imp !== p.md5Atteso) throw new Error(`${p.cosa} di ${f.codice_delega}: l'impronta del PDF nel programma non è quella registrata — mi fermo`);
+            scaricati.set(p.archivio, { byte, md5: imp });
+            if (p.cosa !== "F24" && !base.documenti.some(d => d.md5 === imp)) {
+              const { error: eD } = await supabase.from("ci_f24_documenti").insert({ tipo: p.cosa, f24_id: f.id, nome_file_ricevuto: p.cosa === "Quietanza" ? (f.nome_file_quietanza || p.nomeFile) : (f.nome_file_contabile || p.nomeFile),
+                md5: imp, md5_file_ricevuto: imp, dimensione: byte.length, data_documento: f.data_pagamento, protocollo: f.protocollo_telematico || f.numero_operazione_banca, percorso_nel_programma: p.archivio });
+              if (eD) throw new Error(`${p.cosa} di ${f.codice_delega} non registrata: ${eD.message}`);
+              base = await caricaDb();
+            }
+          }
+          const v = scaricati.get(p.archivio);
+          const r = await scriviVerificato(archivio, p.destinazione, v.byte);
+          const docId = p.cosa === "F24" ? null : base.documenti.find(d => d.md5 === v.md5)?.id || null;
+          await annota(r.percorso, p.categoria, p.cosa, f.id, docId, r);
+          scrivi(`   ${r.esito}: ARCHIVIO\\${r.percorso}`);
+        }
+        if (x.daAltro) scrivi(`   (cartella presa dall'F24 ${x.daAltro}, arrivato nello stesso file: i codici di questo F24 da soli non la decidono)`);
+        if (x.originale) {
+          // il file ricevuto intero: si cerca nell'archivio vecchio; si usa solo se tutte le copie trovate sono identiche
+          let trovati = [];
+          try { trovati = await cercaFile(await cartella(programma, "ARCHIVIO VECCHIO DA SMISTARE"), x.originale.nome); } catch { trovati = []; }
+          const copie = await Promise.all(trovati.map(async t => { const byte = new Uint8Array(await (await t.handle.getFile()).arrayBuffer()); return { ...t, byte, md5: md5(byte) }; }));
+          const impronte = [...new Set(copie.map(c => c.md5))];
+          if (!copie.length) scrivi(`   Originale «${x.originale.nome}» non trovato nell'archivio vecchio: si sistemerà con il suo anno.`, true);
+          else if (impronte.length > 1) scrivi(`   Originale «${x.originale.nome}»: trovate ${copie.length} copie diverse tra loro (${copie.map(c => c.percorso).join("; ")}): non lo archivio, lo decide il Dott. Bizzarri.`, true);
+          else {
+            const c = copie[0];
+            let docId = base.documenti.find(d => d.md5 === c.md5)?.id;
+            if (!docId) {
+              const { data, error } = await supabase.from("ci_f24_documenti").insert({ tipo: "Originale ricevuto", nome_file_ricevuto: x.originale.nome, md5: c.md5, md5_file_ricevuto: c.md5, dimensione: c.byte.length,
+                note: `File ricevuto con più deleghe, preso dall'archivio vecchio (${copie.map(k => k.percorso).join("; ")}) il ${dataIt(oggi)}` }).select("id").single();
+              if (error) throw new Error(`originale «${x.originale.nome}» non registrato: ${error.message}`);
+              docId = data.id; base = await caricaDb();
+            }
+            const r = await scriviVerificato(archivio, x.originale.destinazione, c.byte);
+            await annota(r.percorso, x.originale.categoria, "Originale ricevuto", null, docId, r);
+            scrivi(`   ${r.esito}: ARCHIVIO\\${r.percorso} (copia identica trovata in: ${copie.map(k => k.percorso).join("; ")}; l'archivio vecchio non si tocca)`);
+          }
+        }
+        base = await caricaDb();
+      }
+      scrivi(`Finito: ${buoni.length} F24 nell'archivio nuovo.`);
+    } catch (e) { scrivi(`Mi sono fermato: ${e.message}. Si può premere di nuovo: quello già scritto e uguale non si riscrive.`, true); }
+    finally { await caricaDb(); setGiaPresenti(g => ({ ...(g || {}), inCorso: false, righe })); }
+  }
+
   // Versione 340: si può ripetere senza danni (se il codice è già nel programma si usa quello; il file si scrive solo se manca)
   const [preparazione, setPreparazione] = useState(false);
   async function preparaCartella() {
@@ -526,6 +603,22 @@ export default function F24Arrivati({ utente, accesso }) {
               : <span style={{ color: C.red }}>in «PROGRAMMA\LETTURE» non c'è nessuna lettura: fai prima il passo 1.</span>}
             {letture.length > 0 && <button style={bottone()} onClick={apriLettura}>Apri la lettura</button>}
           </div>
+        </div>
+      )}
+
+      {riconoscimento?.ok && admin && (pianoVecchi.length > 0 || giaPresenti) && (
+        <div style={{ ...scatola, padding: "12px 16px", fontSize: 13.5, lineHeight: 1.7 }}>
+          <div style={{ fontWeight: 800, marginBottom: 4 }}>📦 F24 già nel programma da mettere nell'archivio nuovo (solo il Dott. Bizzarri)</div>
+          {pianoVecchi.map(x => (
+            <div key={x.f.id} style={{ marginBottom: 6, color: x.problemi.length ? COL.rosso.testo : C.text }}>
+              {x.problemi.length ? "⛔" : "•"} <b>{x.f.codice_delega}</b> {x.f.oggetto} ({dataIt(x.f.data_scadenza)}, {euro(x.f.saldo)}, {x.f.stato}) → <b>{x.nome || "senza nome"}</b>
+              {x.file.map((p, i) => <div key={i} style={mono}>ARCHIVIO\{p.destinazione}</div>)}
+              {x.originale && <div style={mono}>ARCHIVIO\{x.originale.destinazione} (file ricevuto intero, preso dall'archivio vecchio)</div>}
+              {x.problemi.map((q, i) => <div key={i}>⛔ {q}</div>)}
+            </div>
+          ))}
+          {pianoVecchi.some(x => !x.problemi.length) && <button disabled={!!giaPresenti?.inCorso} style={bottone(!giaPresenti?.inCorso)} onClick={mettiGiaPresenti}>{giaPresenti?.inCorso ? "Sto scrivendo…" : "Metti nell'archivio nuovo gli F24 già nel programma"}</button>}
+          {giaPresenti?.righe?.length > 0 && <div style={{ marginTop: 8 }}>{giaPresenti.righe.map(([t, grave], i) => <div key={i} style={{ ...mono, color: grave ? COL.rosso.testo : C.text, fontWeight: grave ? 700 : 400 }}>{t}</div>)}</div>}
         </div>
       )}
 
