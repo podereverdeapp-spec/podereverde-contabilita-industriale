@@ -50,6 +50,9 @@ import { contaAllarmiFatturazione } from "./calcoloAruba";
 import PromptCedolini from "./PromptCedolini";
 import { PromptSmistamentoF24, PromptCaricoF24 } from "./PromptF24";
 import CaricaF24 from "./CaricaF24"; // versione 336
+// Versione 337: la cartella «Accessi» (chi entra nel programma e in quali parti)
+import PaginaAccessi, { IstruzioniAccessi } from "./PaginaAccessi";
+import { filtraMenu, pagineDelMenu, puoVedereParte } from "./accessiParti";
 import CaricaCostiLavoro from "./CaricaCostiLavoro";
 import ConsultaCostiLavoro from "./ConsultaCostiLavoro";
 import InserimentoManualeFattura from "./InserimentoManualeFattura";
@@ -106,10 +109,11 @@ import RegistroControlli from "./RegistroControlli";
 import AbbinamentiFatture from "./AbbinamentiFatture";
 import RegistroModifiche from "./RegistroModifiche";
 // Versione 295: le Istruzioni dei Controlli vengono dal Word «Istruzioni_Controllo_finale_v295» (IstruzioniControlli.jsx non è più usata)
-import AccessoProgramma, { useSessione, esci } from "./AccessoProgramma";
+import AccessoProgramma, { useSessione, esci, useAccesso, SchermataAttesa } from "./AccessoProgramma";
 import { eseguiControlli, contaAnomalieAperte } from "./controlliRegistri";
 import { statoCalcoli, testoAvvisoCalcoli } from "./statoCalcoli";
 import { C, FONT } from "./style";
+import { supabase } from "./supabase"; // versione 337: conteggio delle richieste di accesso
 
 const MENU = [
   { tipo: "voce", id: "dashboard", label: "Dashboard", icon: "📊" },
@@ -350,6 +354,12 @@ const MENU = [
     { tipo: "voce", id: "istr-registro-modifiche", label: "Istruzioni", icon: "📖" },
     { tipo: "voce", id: "registro-modifiche", label: "Registro delle Modifiche", icon: "🕓" },
   ]},
+  // Versione 337 (ordine del Dott. Bizzarri del 31/10/2026): chi entra nel programma e in quali parti.
+  // La vedono solo il Dott. Bizzarri e i gestori degli accessi (Colabucci e Demaria).
+  { tipo: "cartella", id: "cart-accessi", label: "Accessi", icon: "🔐", contenuto: [
+    { tipo: "voce", id: "istr-accessi", label: "Istruzioni", icon: "📖" },
+    { tipo: "voce", id: "accessi", label: "Chi entra nel programma", icon: "🔐" },
+  ]},
   // Versione 248: Glossario dei termini usati nelle istruzioni (cresce sezione per sezione)
   { tipo: "voce", id: "glossario", label: "Glossario", icon: "📚" },
   { tipo: "voce", id: "parametri", label: "Parametri", icon: "⚙️" },
@@ -401,11 +411,33 @@ export default function App() {
   const sessione = useSessione();
   if (sessione === undefined) return <div style={{ fontFamily: FONT, padding: 40, color: C.muted }}>Verifica dell'accesso…</div>;
   if (!sessione) return <AccessoProgramma />;
-  return <Programma utente={sessione.user} />;
+  return <ConAccesso key={sessione.user.id} utente={sessione.user} />;
 }
 
-function Programma({ utente }) {
-  const [tab, setTab] = useState("dashboard");
+// Versione 337: chi è entrato ma non è «Attivo» nella cartella «Accessi» vede solo la schermata d'attesa
+function ConAccesso({ utente }) {
+  const [accesso, ricarica] = useAccesso(utente);
+  if (accesso.stato === "verifica") return <div style={{ fontFamily: FONT, padding: 40, color: C.muted }}>Verifica dell'accesso…</div>;
+  if (accesso.stato !== "attivo") return <SchermataAttesa utente={utente} accesso={accesso} onRicontrolla={ricarica} />;
+  return <Programma utente={utente} accesso={accesso} ricaricaAccesso={ricarica} />;
+}
+
+function Programma({ utente, accesso, ricaricaAccesso }) {
+  // Versione 337: il menu mostra solo le parti date a questa persona; le altre pagine non si aprono
+  const menuVisibile = filtraMenu(MENU, accesso);
+  const pagineVisibili = pagineDelMenu(menuVisibile);
+  const pagineDelProgramma = pagineDelMenu(MENU);
+  const puo = (id) => pagineVisibili.has(id) || (!pagineDelProgramma.has(id) && (accesso.admin || accesso.tutto));
+  const primaPagina = [...pagineVisibili][0] || null;
+  const [tab, setTab] = useState(() => (pagineVisibili.has("dashboard") ? "dashboard" : primaPagina));
+  const completo = accesso.admin || accesso.tutto;
+  // Versione 337: richieste di accesso da decidere (solo per chi gestisce gli accessi)
+  const [richiesteAccesso, setRichiesteAccesso] = useState(0);
+  useEffect(() => {
+    if (!accesso.gestore || accesso.senzaTabella) return;
+    supabase.from("ci_accessi_programma").select("profilo_id", { count: "exact", head: true }).eq("stato", "In attesa")
+      .then(({ count }) => setRichiesteAccesso(count || 0));
+  }, [tab, accesso.gestore, accesso.senzaTabella]);
   const [cartelleAperte, setCartelleAperte] = useState(() => new Set());
   // Avviso «fatture da emettere»: capi usciti segnati «pronto da fatturare» nell'app.
   // Si ricontrolla all'apertura, a ogni cambio di pagina e ogni 5 minuti.
@@ -424,6 +456,8 @@ function Programma({ utente }) {
   const [anomalieAperte, setAnomalieAperte] = useState(null);
   const [controlloInCorso, setControlloInCorso] = useState(true);
   useEffect(() => {
+    // Versione 337: i controlli dei registri li fa partire solo chi vede tutto il programma (chi vede solo una parte li legge e basta)
+    if (!completo) { contaAnomalieAperte().then(setAnomalieAperte).finally(() => setControlloInCorso(false)); return; }
     eseguiControlli("apertura del programma").then(e => setAnomalieAperte(e.aperte))
       .catch(() => contaAnomalieAperte().then(setAnomalieAperte))
       .finally(() => setControlloInCorso(false));
@@ -439,9 +473,10 @@ function Programma({ utente }) {
   // Versione 323: punti degli ovini da verificare con Sborchia (avviso finché sono «Da verificare»)
   const [verificheAnimali, setVerificheAnimali] = useState(0);
   useEffect(() => { contaVerificheAnimali().then(setVerificheAnimali); }, [tab]);
-  const AVVISI = { "cart-animali": verificheAnimali, "verifiche-ovini": verificheAnimali, "cart-alimentaria": senzaComposizione, "alimenti-senza-composizione": senzaComposizione, "cart-fatture": anomalieAperte || 0, "sub-dati-controllo": anomalieAperte || 0, "registro-controlli": anomalieAperte || 0, "cart-emissione-fatture": daFatturare + allarmiAttiva, "sub-fatturazione-animali": daFatturare, "fatt-animali-da-fatturare": daFatturare, "fatt-animali-prepara": daFatturare, "sub-controllo-attiva": allarmiAttiva, "controllo-attiva": allarmiAttiva };
+  const AVVISI = { "cart-animali": verificheAnimali, "verifiche-ovini": verificheAnimali, "cart-alimentaria": senzaComposizione, "alimenti-senza-composizione": senzaComposizione, "cart-fatture": anomalieAperte || 0, "sub-dati-controllo": anomalieAperte || 0, "registro-controlli": anomalieAperte || 0, "cart-emissione-fatture": daFatturare + allarmiAttiva, "sub-fatturazione-animali": daFatturare, "fatt-animali-da-fatturare": daFatturare, "fatt-animali-prepara": daFatturare, "sub-controllo-attiva": allarmiAttiva, "controllo-attiva": allarmiAttiva, "cart-accessi": richiesteAccesso, "accessi": richiesteAccesso };
 
   function vaiA(pageId) {
+    if (!puo(pageId)) return; // versione 337: pagina non data a questa persona
     setTab(pageId);
     const posizione = cartellaDiPagina(pageId);
     if (posizione) {
@@ -475,14 +510,14 @@ function Programma({ utente }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 336</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 337</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
           </div>
         </div>
         <nav style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          {MENU.map(m => m.tipo === "voce" ? (
+          {menuVisibile.map(m => m.tipo === "voce" ? (
             <VoceMenuBottone key={m.id} v={m} attiva={tab === m.id} onClick={() => vaiA(m.id)} />
           ) : (
             <div key={m.id}>
@@ -561,38 +596,58 @@ function Programma({ utente }) {
       </aside>
 
       <main style={{ flex: 1, minWidth: 0 }}>
-        {anomalieAperte > 0 && tab !== "registro-controlli" && (
+        {accesso.senzaTabella && accesso.admin && (
+          <div style={{ background: "#FFF4D6", borderBottom: "2px solid #D4A017", color: "#6B5200", padding: "8px 20px", fontSize: 13 }}>
+            ⚠️ La cartella «Accessi» non funziona ancora: il database non ha la tabella degli accessi (SQL della versione 337, blocchi 1–6). Per ora il programma resta aperto a tutti i registrati, come prima.
+          </div>
+        )}
+        {richiesteAccesso > 0 && tab !== "accessi" && (
+          <div onClick={() => vaiA("accessi")}
+            style={{ background: "#C0392B", color: "#fff", padding: "10px 20px", fontSize: 13.5, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+            🔐 {richiesteAccesso === 1 ? "C'è 1 richiesta di accesso al programma" : `Ci sono ${richiesteAccesso} richieste di accesso al programma`} da decidere.
+            <span style={{ textDecoration: "underline", fontWeight: 800 }}>Vai agli Accessi →</span>
+          </div>
+        )}
+        {anomalieAperte > 0 && tab !== "registro-controlli" && puo("registro-controlli") && (
           <div onClick={() => vaiA("registro-controlli")}
             style={{ background: "#C0392B", color: "#fff", padding: "10px 20px", fontSize: 13.5, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
             ⚠️ {anomalieAperte === 1 ? "C'è 1 anomalia" : `Ci sono ${anomalieAperte} anomalie`} nei registri da decidere.
             <span style={{ textDecoration: "underline", fontWeight: 800 }}>Vai al Registro Controlli →</span>
           </div>
         )}
-        {avvisoCalcoli && tab !== "costi" && (
+        {avvisoCalcoli && tab !== "costi" && puo("costi") && (
           <div onClick={() => vaiA("costi")}
             style={{ background: "#FFF1DC", borderBottom: "2px solid #D4880F", color: "#7A4A00", padding: "9px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             🔄 {avvisoCalcoli}
             <span style={{ textDecoration: "underline", fontWeight: 800 }}>Vai al Report Costi →</span>
           </div>
         )}
-        {anomalieAperte === null && !controlloInCorso && (
+        {anomalieAperte === null && !controlloInCorso && puo("registro-controlli") && (
           <div style={{ background: "#FFF4D6", borderBottom: "2px solid #D4A017", color: "#6B5200", padding: "8px 20px", fontSize: 13 }}>
             ⚠️ I controlli dei registri non sono disponibili: il database non ha ancora le strutture della versione 232 (file contabilita_strutture_v232.sql).
           </div>
         )}
-        {daFatturare > 0 && tab !== "fatt-animali-da-fatturare" && tab !== "fatt-animali-prepara" && (
+        {daFatturare > 0 && tab !== "fatt-animali-da-fatturare" && tab !== "fatt-animali-prepara" && puo("fatt-animali-da-fatturare") && (
           <div onClick={() => vaiA("fatt-animali-da-fatturare")}
             style={{ background: "#FBE1DE", borderBottom: "2px solid #C0392B", color: "#8B1E14", padding: "10px 20px", fontSize: 13.5, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
             🔔 {daFatturare === 1 ? "C'è 1 capo uscito" : `Ci sono ${daFatturare} capi usciti`} dall'allevamento da fatturare.
             <span style={{ textDecoration: "underline", fontWeight: 800 }}>Vai alle uscite da fatturare →</span>
           </div>
-        )}        {allarmiAttiva > 0 && tab !== "controllo-attiva" && tab !== "lettura-aruba" && (
+        )}        {allarmiAttiva > 0 && tab !== "controllo-attiva" && tab !== "lettura-aruba" && puo("controllo-attiva") && (
           <div onClick={() => vaiA("controllo-attiva")}
             style={{ background: "#FBE1DE", borderBottom: "2px solid #C0392B", color: "#8B1E14", padding: "10px 20px", fontSize: 13.5, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
             🧾 {allarmiAttiva === 1 ? "C'è 1 fattura di vendita da controllare" : `Ci sono ${allarmiAttiva} fatture di vendita da controllare`} (non trovate in Aruba, scartate o con differenze).
             <span style={{ textDecoration: "underline", fontWeight: 800 }}>Vai ai controlli →</span>
           </div>
         )}
+        {/* Versione 337: una pagina non data a questa persona non si apre */}
+        {(!tab || !puo(tab)) && (
+          <div style={{ maxWidth: 700, margin: "40px auto", padding: 24, background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, color: C.text }}>
+            <div style={{ fontSize: 18, fontWeight: 800, color: C.primary, marginBottom: 8 }}>🔐 Pagina non disponibile</div>
+            {primaPagina ? "Questa pagina non fa parte delle parti del programma che Le sono state date. Usi il menu a sinistra." : "Non Le è stata ancora data nessuna parte del programma. Chieda al Dott. Filippo Bizzarri."}
+          </div>
+        )}
+        {tab && puo(tab) && <>
         {tab === "dashboard" && <Dashboard onNavigate={vaiA} />}
         {tab === "carica" && <CaricaFatture />}
         {tab === "passive" && <FatturePassive />}
@@ -739,6 +794,9 @@ function Programma({ utente }) {
         {tab === "abbinamenti-fatture" && <AbbinamentiFatture />}
         {tab === "istr-registro-modifiche" && <DocumentoIstruzioni doc={ISTRUZIONI_REGISTRO_MODIFICHE} />}
         {tab === "registro-modifiche" && <RegistroModifiche />}
+        {tab === "istr-accessi" && <IstruzioniAccessi />}
+        {tab === "accessi" && <PaginaAccessi accesso={accesso} utente={utente} onCambiato={() => { ricaricaAccesso(); setTab("accessi"); }} />}
+        </>}
       </main>
     </div>
   );
