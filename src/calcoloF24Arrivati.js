@@ -138,7 +138,7 @@ export function leggiLettura(XLSX, buffer) {
 export function nomeCartellaValido(n) {
   if (!n) return "manca il nome";
   if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2} /.test(n)) return "deve cominciare con la data, per esempio «2026-11-16 »";
-  if (/[\\/:*?"<>|]/.test(n)) return "non può contenere \\ / : * ? \" < > |";
+  if (/[\\/:*?"<>|~]/.test(n)) return "non può contenere \\ / : * ? \" < > | ~";
   if (/[ .]$/.test(n)) return "non può finire con uno spazio o un punto";
   if (n !== n.toUpperCase()) return "va scritto in maiuscolo";
   if (n.length > 60) return `è lungo ${n.length} caratteri: al massimo 60`;

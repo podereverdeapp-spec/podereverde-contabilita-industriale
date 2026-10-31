@@ -70,6 +70,13 @@ export async function preparaPdf(byte, nomeSorgente, pagine) {
   return new Uint8Array(await doc.save());
 }
 
+// Versione 341: i caratteri che Chrome non accetta nei nomi di file e cartelle sul disco (oltre a quelli vietati da Windows c'è «~»)
+export function nomeNonAccettato(n) {
+  if (!n) return "è vuoto";
+  if (/[\x00-\x1f"~*/:<>?\\|]/.test(n)) return "contiene un carattere non accettato (\" ~ * / : < > ? \\ |)";
+  if (/[ .]$/.test(n) || /^[ .]/.test(n)) return "comincia o finisce con uno spazio o un punto";
+  return null;
+}
 // ── Scrittura sicura di un file: nome provvisorio, rilettura, impronta, nome vero ─────────────────────
 // Ritorna { esito: "Scritto" | "Già presente uguale", md5, dimensione }. Un file con lo stesso nome ma diverso: errore (mai sovrascrivere).
 // rilegge un file: sul disco di rete la lettura subito dopo la scrittura può dare il contenuto vecchio, quindi si riprova
@@ -88,6 +95,8 @@ export async function scriviVerificato(radice, percorso, byte) {
   const p = parti(percorso); const nomeChiesto = p.pop();
   let passo = "apertura della cartella";
   try {
+    passo = "controllo dei nomi";
+    for (const n of [...p, nomeChiesto]) { const no = nomeNonAccettato(n); if (no) throw new Error(`il nome «${n}» ${no}`); }
     const dir = await cartella(radice, p.join("\\"), true);
     const impronta = md5(byte);
     // stesso nome già presente: se è lo stesso file non si riscrive; se è diverso si usa «_2», «_3» (mai sovrascrivere)
@@ -100,7 +109,7 @@ export async function scriviVerificato(radice, percorso, byte) {
       if (vecchio === impronta) return { esito: "Già presente uguale", md5: impronta, dimensione: byte.length, percorso: `${p.join("\\")}\\${gia}` };
       nome = nomeChiesto.replace(/(\.[^.]+)$/, `_${n}$1`);
     }
-    const provvisorio = `~provvisorio ${Date.now()} ${nome}`;
+    const provvisorio = `PROVVISORIO ${Date.now()} ${nome}`; // versione 341: senza «~», che Chrome non accetta nei nomi
     passo = "scrittura del file provvisorio";
     const fh = await dir.getFileHandle(provvisorio, { create: true });
     const w = await fh.createWritable(); await w.write(byte); await w.close();
