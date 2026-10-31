@@ -72,35 +72,56 @@ export async function preparaPdf(byte, nomeSorgente, pagine) {
 
 // ── Scrittura sicura di un file: nome provvisorio, rilettura, impronta, nome vero ─────────────────────
 // Ritorna { esito: "Scritto" | "Già presente uguale", md5, dimensione }. Un file con lo stesso nome ma diverso: errore (mai sovrascrivere).
+// rilegge un file: sul disco di rete la lettura subito dopo la scrittura può dare il contenuto vecchio, quindi si riprova
+const pausa = ms => new Promise(r => setTimeout(r, ms));
+async function rileggiFinoA(dirH, nome, impronta, tentativi = 6) {
+  let ultimo = null;
+  for (let k = 0; k < tentativi; k++) {
+    const b = new Uint8Array(await (await (await dirH.getFileHandle(nome)).getFile()).arrayBuffer());
+    ultimo = md5(b);
+    if (ultimo === impronta) return true;
+    await pausa(700);
+  }
+  return false;
+}
 export async function scriviVerificato(radice, percorso, byte) {
   const p = parti(percorso); const nomeChiesto = p.pop();
-  const dir = await cartella(radice, p.join("\\"), true);
-  const impronta = md5(byte);
-  // stesso nome già presente: se è lo stesso file non si riscrive; se è diverso si usa «_2», «_3» (mai sovrascrivere)
-  let nome = nomeChiesto;
-  for (let n = 2; ; n++) {
-    const gia = await esiste(dir, nome);
-    if (!gia) break;
-    const vecchio = md5(new Uint8Array(await (await (await dir.getFileHandle(gia)).getFile()).arrayBuffer()));
-    if (vecchio === impronta) return { esito: "Già presente uguale", md5: impronta, dimensione: byte.length, percorso: `${p.join("\\")}\\${gia}` };
-    nome = nomeChiesto.replace(/(\.[^.]+)$/, `_${n}$1`);
+  let passo = "apertura della cartella";
+  try {
+    const dir = await cartella(radice, p.join("\\"), true);
+    const impronta = md5(byte);
+    // stesso nome già presente: se è lo stesso file non si riscrive; se è diverso si usa «_2», «_3» (mai sovrascrivere)
+    passo = "controllo dei nomi già presenti";
+    let nome = nomeChiesto;
+    for (let n = 2; ; n++) {
+      const gia = await esiste(dir, nome);
+      if (!gia) break;
+      const vecchio = md5(new Uint8Array(await (await (await dir.getFileHandle(gia)).getFile()).arrayBuffer()));
+      if (vecchio === impronta) return { esito: "Già presente uguale", md5: impronta, dimensione: byte.length, percorso: `${p.join("\\")}\\${gia}` };
+      nome = nomeChiesto.replace(/(\.[^.]+)$/, `_${n}$1`);
+    }
+    const provvisorio = `~provvisorio ${Date.now()} ${nome}`;
+    passo = "scrittura del file provvisorio";
+    const fh = await dir.getFileHandle(provvisorio, { create: true });
+    const w = await fh.createWritable(); await w.write(byte); await w.close();
+    passo = "rilettura e controllo dell'impronta";
+    if (!(await rileggiFinoA(dir, provvisorio, impronta))) {
+      try { await dir.removeEntry(provvisorio); } catch { /* resta il provvisorio: lo si vede */ }
+      throw new Error("la copia scritta non è uguale all'originale (impronta diversa)");
+    }
+    passo = "cambio del nome provvisorio nel nome vero";
+    let rinominato = false;
+    if (typeof fh.move === "function") { try { await fh.move(nome); rinominato = true; } catch { rinominato = false; } }
+    if (!rinominato) { // senza «move» (o se non riesce): si scrive il nome vero e si toglie il provvisorio
+      const fv = await dir.getFileHandle(nome, { create: true }); const w2 = await fv.createWritable(); await w2.write(byte); await w2.close();
+      await dir.removeEntry(provvisorio);
+    }
+    passo = "controllo finale dell'impronta";
+    if (!(await rileggiFinoA(dir, nome, impronta))) throw new Error("dopo il cambio di nome l'impronta non torna");
+    return { esito: nome === nomeChiesto ? "Scritto" : `Scritto come «${nome}» (il nome era già usato)`, md5: impronta, dimensione: byte.length, percorso: `${p.join("\\")}\\${nome}` };
+  } catch (e) {
+    throw new Error(`«${nomeChiesto}», ${passo}: ${e?.name && e.name !== "Error" ? e.name + " — " : ""}${e?.message || e}`);
   }
-  const provvisorio = `~provvisorio ${Date.now()} ${nome}`;
-  const fh = await dir.getFileHandle(provvisorio, { create: true });
-  const w = await fh.createWritable(); await w.write(byte); await w.close();
-  const letto = new Uint8Array(await (await fh.getFile()).arrayBuffer());
-  if (md5(letto) !== impronta || letto.length !== byte.length) {
-    try { await dir.removeEntry(provvisorio); } catch { /* resta il provvisorio: lo si vede */ }
-    throw new Error(`«${nome}»: la copia scritta non è uguale all'originale (impronta diversa)`);
-  }
-  if (typeof fh.move === "function") await fh.move(nome);
-  else { // senza «move»: si scrive il nome vero e si toglie il provvisorio
-    const fv = await dir.getFileHandle(nome, { create: true }); const w2 = await fv.createWritable(); await w2.write(byte); await w2.close();
-    await dir.removeEntry(provvisorio);
-  }
-  const finale = new Uint8Array(await (await (await dir.getFileHandle(nome)).getFile()).arrayBuffer());
-  if (md5(finale) !== impronta) throw new Error(`«${nome}»: dopo il cambio di nome l'impronta non torna`);
-  return { esito: nome === nomeChiesto ? "Scritto" : `Scritto come «${nome}» (il nome era già usato)`, md5: impronta, dimensione: byte.length, percorso: `${p.join("\\")}\\${nome}` };
 }
 
 // sposta un file dentro la stessa cartella del pagamento in «SUPERATI» (versione corretta): copia verificata, poi toglie il vecchio

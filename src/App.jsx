@@ -48,6 +48,7 @@ import NumeroProgressivo from "./NumeroProgressivo";
 import VenditePerAnno from "./VenditePerAnno";
 import { contaAllarmiFatturazione } from "./calcoloAruba";
 import PromptCedolini from "./PromptCedolini";
+// Versione 340 (31/10/2026): «Prepara la cartella F24» si può ripetere senza errore (usa il codice già nel programma) e la scrittura dei file riprova la rilettura sul disco di rete.
 // Versione 339 (ordine del Dott. Bizzarri del 31/10/2026): la pagina «F24 arrivati: controlla e archivia» prende il posto dei prompt
 // di smistamento e di carico e della pagina «Carica F24» (i loro file restano, ma non sono più nel menu).
 import F24Arrivati from "./F24Arrivati";
@@ -503,7 +504,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 339</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 340</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>

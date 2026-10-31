@@ -170,17 +170,27 @@ export default function F24Arrivati({ utente, accesso }) {
   }
 
   // il Dott. Bizzarri prepara la cartella F24 la prima volta: codice nel programma e file di riconoscimento
+  // Versione 340: si può ripetere senza danni (se il codice è già nel programma si usa quello; il file si scrive solo se manca)
+  const [preparazione, setPreparazione] = useState(false);
   async function preparaCartella() {
-    if (!admin || !radice) return;
+    if (!admin || !radice || preparazione) return;
     if (!window.confirm("Preparare la cartella F24 di Podere Verde? Si scrive il file di riconoscimento in F24\\PROGRAMMA e il suo codice nel programma.")) return;
+    setPreparazione(true); setErrore("");
     try {
-      const codice = riconoscimento?.codiceFile || nuovoCodiceCartella();
-      const { error } = await supabase.from("ci_f24_codice_cartella").insert({ id: 1, codice });
-      if (error) throw new Error(error.message);
+      const base = await caricaDb(); if (!base) return;
+      let codice = base.codiceCartella;
+      if (codice && riconoscimento?.codiceFile && riconoscimento.codiceFile !== codice)
+        throw new Error(`il file di riconoscimento dice ${riconoscimento.codiceFile}, il programma ${codice}: avvisare il Capitano Contabilità`);
+      if (!codice) {
+        codice = riconoscimento?.codiceFile || nuovoCodiceCartella();
+        const { error } = await supabase.from("ci_f24_codice_cartella").insert({ id: 1, codice });
+        if (error) throw new Error(`codice nel programma: ${error.message}`);
+      }
       if (!riconoscimento?.codiceFile) await scriviVerificato(radice, `PROGRAMMA\\${FILE_RICONOSCIMENTO}`, new TextEncoder().encode(testoRiconoscimento(codice, oraRoma())));
       await caricaDb(); setRiconoscimento(null); setRadice(null);
       alert("Cartella preparata. Ora premi di nuovo «Scegli la cartella F24».");
     } catch (e) { setErrore(`Preparazione non riuscita: ${e.message}`); }
+    finally { setPreparazione(false); }
   }
 
   // ── Apertura della lettura, lavoro in corso, F24 da pagare subito nel programma ──
@@ -503,7 +513,7 @@ export default function F24Arrivati({ utente, accesso }) {
       {riconoscimento && !riconoscimento.ok && (
         <div style={{ ...scatola, padding: 14, background: COL.rosso.sfondo, color: COL.rosso.testo, fontWeight: 700 }}>
           ⛔ {riconoscimento.problema}
-          {riconoscimento.manca && admin && <div style={{ marginTop: 10 }}><button style={bottone(true, C.red)} onClick={preparaCartella}>Prepara la cartella F24 (solo la prima volta)</button></div>}
+          {riconoscimento.manca && admin && <div style={{ marginTop: 10 }}><button disabled={preparazione} style={bottone(!preparazione, C.red)} onClick={preparaCartella}>{preparazione ? "Preparazione in corso…" : "Prepara la cartella F24 (solo la prima volta)"}</button></div>}
         </div>
       )}
 
