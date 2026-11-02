@@ -328,7 +328,27 @@ export function classifica(letta, db, scelte = {}, lavoroId = null) {
 
   const scartati = letta.documenti.filter(x => ["Non è di Podere Verde", "Non è un F24", "Documento non riconosciuto", "Non letto"].includes(x.esito)
     || ["Non è un F24", "Documento non riconosciuto"].includes(x.tipo));
-  return { deleghe, comunicazioni, scartati };
+
+  // Versione 344 (decisione del Dott. Bizzarri): «Archivia» lavora sulle righe a posto e le rosse restano in sospeso.
+  // Un file ricevuto si archivia solo quando TUTTE le sue righe sono a posto: se una sua riga è rossa, il file resta in DA SMISTARE
+  // e aspettano anche le altre righe che lo usano (per esempio un PDF con due deleghe, o con le quietanze di più F24).
+  const fileDelega = d => [d.soloPagamento ? null : d.nome_file_ricevuto, d.nome_file_quietanza, d.nome_file_contabile].filter(Boolean);
+  const voci = [...deleghe.map(d => ({ x: d, file: fileDelega(d) })), ...comunicazioni.map(c => ({ x: c, file: [c.nome] }))];
+  const sospesi = new Set();
+  for (let cambiato = true; cambiato;) {
+    cambiato = false;
+    for (const v of voci) {
+      if (v.x.colore !== "rosso" && !v.x.inSospeso && !v.file.some(f => sospesi.has(f))) continue;
+      if (v.x.colore !== "rosso" && !v.x.inSospeso) { v.x.inSospeso = true; cambiato = true; }
+      for (const f of v.file) if (!sospesi.has(f)) { sospesi.add(f); cambiato = true; }
+    }
+    // un file estratto da un contenitore (zip, PDF firmato, mail) aspetta insieme al suo contenitore
+    for (const x of letta.documenti) if (x.estratto_da) {
+      if (sospesi.has(x.nome) && !sospesi.has(x.estratto_da)) { sospesi.add(x.estratto_da); cambiato = true; }
+      if (sospesi.has(x.estratto_da) && !sospesi.has(x.nome)) { sospesi.add(x.nome); cambiato = true; }
+    }
+  }
+  return { deleghe, comunicazioni, scartati, sospesi };
 }
 
 export function proponiCartellaComunicazione(c, cartelle) {
@@ -348,7 +368,7 @@ export function pianoArchivio(cl, oggi, documenti = []) {
   const passi = []; // { cosa, sorgente (nome ricevuto), pagine, destinazione, delega?, comunicazione? }
   const annoDi = d => String(d || oggi).slice(0, 4);
   for (const d of cl.deleghe) {
-    if (d.colore === "rosso" || d.nienteDiNuovo || d.doppioneDi) continue;
+    if (d.colore === "rosso" || d.inSospeso || d.nienteDiNuovo || d.doppioneDi) continue;
     const anno = annoDi(d.esistente?.data_scadenza || d.sostituisce?.data_scadenza || (d.soloPagamento ? d.data_pagamento : d.data_scadenza));
     for (const cat of d.cartelle) {
       const base = `${cat}\\${anno}\\${d.nome}`;
@@ -361,9 +381,9 @@ export function pianoArchivio(cl, oggi, documenti = []) {
     }
   }
   for (const c of cl.comunicazioni) {
-    if (c.colore === "rosso" || c.giaNelProgramma) continue;
+    if (c.colore === "rosso" || c.inSospeso || c.giaNelProgramma) continue;
     passi.push({ cosa: "Comunicazione o altro documento", sorgente: c.nome, destinazione: `${c.cartella}\\${annoDi(c.data)}\\${c.nomeFile}`, comunicazione: c.k, categoria: c.cartella });
-    const d = cl.deleghe.find(x => x.codice_delega === c.collegato && x.colore !== "rosso");
+    const d = cl.deleghe.find(x => x.codice_delega === c.collegato && x.colore !== "rosso" && !x.inSospeso);
     if (d) for (const cat of d.cartelle)
       passi.push({ cosa: "Comunicazione o altro documento", sorgente: c.nome, destinazione: `${cat}\\${annoDi(d.data_scadenza)}\\${d.nome}\\${c.nomeFile}`, comunicazione: c.k, categoria: cat });
   }

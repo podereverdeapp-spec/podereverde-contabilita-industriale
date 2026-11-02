@@ -1,4 +1,5 @@
 // Versione 339 (31/10/2026, ordine del Dott. Bizzarri): pagina «F24 arrivati: controlla e archivia».
+// Versione 344 (02/11/2026): «Archivia» archivia le righe a posto e lascia in sospeso le rosse (con i loro file in DA SMISTARE); il lavoro resta aperto finché non è tutto archiviato; la quietanza senza F24 riceve il nome «F24 <data del pagamento>.pdf».
 // Versione 343 (02/11/2026): prompt di lettura versione 3; i file si riconoscono dal percorso dentro DA SMISTARE.
 // Versione 342 (31/10/2026): scatola «F24 già nel programma da mettere nell'archivio nuovo» (solo amministratore): usa i PDF del programma, non rilegge.
 // 1) Claude legge DA SMISTARE con il «Prompt di lettura F24» e scrive un Excel in LETTURE; 2) qui si carica la lettura e si controlla
@@ -14,7 +15,7 @@ import { md5 } from "./md5";
 import { completaFestivi, allarmiScadenze, TRATTAMENTI } from "./calcoloCaricoF24";
 import { leggiLettura, classifica, pianoArchivio, PREFISSO_ARCHIVIO, LIMITE_PERCORSO } from "./calcoloF24Arrivati";
 import { cartella, leggiFile, elenco, leggiRiconoscimento, testoRiconoscimento, nuovoCodiceCartella, FILE_RICONOSCIMENTO,
-  preparaPdf, scriviVerificato, mettiInSuperati, cancellaOriginale, percorsoInDaSmistare, cercaFile } from "./archivioF24";
+  preparaPdf, scriviVerificato, mettiInSuperati, cancellaOriginale, percorsoInDaSmistare, cercaFile, esiste } from "./archivioF24";
 import { pianoGiaPresenti } from "./giaPresentiF24";
 import { PROMPT_LETTURA_F24 } from "./promptLetturaF24";
 
@@ -321,6 +322,9 @@ export default function F24Arrivati({ utente, accesso }) {
       numero_operazione_banca: d.numero_operazione_banca, note: d.note, corrisponde: d.verifica?.corrisponde, avvisi: d.verifica?.avvisi,
     };
     if (d.nome_file_pdf) p.nome_file_pdf = `F24 ${d.data_scadenza}.pdf`;
+    // versione 344: il nome è obbligatorio nel programma; per una quietanza senza il suo F24 vale la data del pagamento
+    // (quando l'F24 arriva, il programma completa nome e scadenza: è il caso «F24 arrivato dopo la quietanza»)
+    else p.nome_file_pdf = `F24 ${d.data_pagamento || d.data_scadenza}.pdf`;
     const righe = d.righe.map(r => ({ sezione: r.sezione, codice_tributo: r.codice_tributo, descrizione_codice: r.descrizione_codice, codice_ente_sede: r.codice_ente_sede,
       matricola_riferimento: r.matricola_riferimento, rateazione_mese: r.rateazione_mese, anno_riferimento: r.anno_riferimento, periodo_dal: r.periodo_dal,
       periodo_al: r.periodo_al, importo_debito: r.importo_debito, importo_credito: r.importo_credito, trattamento: r.trattamento, codice_confermato_da: r.codice_confermato_da }));
@@ -380,7 +384,10 @@ export default function F24Arrivati({ utente, accesso }) {
   const cal = db ? completaFestivi(db.festivi, [+oggi.slice(0, 4), +oggi.slice(0, 4) + 1]) : null;
   const allarmi = db ? allarmiScadenze(db.f24, oggi, cal.festivi) : null;
   const daSistemare = cl ? [...cl.deleghe, ...cl.comunicazioni].filter(x => x.colore === "rosso") : [];
-  const bloccato = !!archiviazione || lavoro?.stato !== "Aperto";
+  // versione 344: si archivia ciò che è a posto; le righe rosse (e quelle che usano un loro file) restano in sospeso
+  const inSospeso = cl ? [...cl.deleghe, ...cl.comunicazioni].filter(x => x.inSospeso) : [];
+  const archiviabili = cl ? [...cl.deleghe, ...cl.comunicazioni].filter(x => x.colore !== "rosso" && !x.inSospeso && !x.doppioneDi) : [];
+  const bloccato = !!archiviazione?.inCorso || lavoro?.stato !== "Aperto";
   const lavoroAltrui = lavoro && lavoro.proprietario !== utente.id && lavoro.stato !== "Chiuso";
   const fermoDaOre = lavoro ? (Date.now() - new Date(lavoro.aggiornato_il).getTime()) / 3600000 : 0;
 
@@ -392,9 +399,13 @@ export default function F24Arrivati({ utente, accesso }) {
 
   // ── Passo 3: Archivia ──
   async function archivia(riprendi = false) {
-    if (!cl || daSistemare.length) return;
-    if (!riprendi && !window.confirm(`Archiviare? Si scrivono ${piano.length} file nell'ARCHIVIO, si salvano i dati e i PDF nel programma e poi si cancellano da DA SMISTARE gli originali archiviati.`)) return;
-    const passi = [...(lavoro.passi || [])];
+    if (!cl || (!riprendi && !archiviabili.length)) return;
+    const attesa = daSistemare.length + inSospeso.length;
+    if (!riprendi && !window.confirm(`Archiviare? Si scrivono ${piano.length} file nell'ARCHIVIO, si salvano i dati e i PDF nel programma e poi si cancellano da DA SMISTARE gli originali archiviati.${attesa ? ` ${attesa} righe restano in sospeso con i loro file in DA SMISTARE: si archiviano dopo, quando sono a posto.` : ""}`)) return;
+    // versione 344: i passi si riprendono dal programma (il database accetta solo passi aggiunti in fondo)
+    const { data: lv, error: eLv } = await supabase.from("ci_f24_lavori").select("passi").eq("id", lavoro.id).single();
+    if (eLv) { setErrore(`Lavoro non letto: ${eLv.message}`); return; }
+    const passi = [...(lv?.passi || [])];
     const segna = async (testo, ok = true) => {
       passi.push({ quando: new Date().toISOString(), testo, ok });
       setArchiviazione(a => ({ ...a, passi: [...passi] }));
@@ -453,7 +464,7 @@ export default function F24Arrivati({ utente, accesso }) {
       // 3) le deleghe nel programma con la loro cartella, i PDF nell'archivio del programma
       const idDi = new Map();
       for (const d of cl.deleghe) {
-        if (d.colore === "rosso" || d.nienteDiNuovo || d.doppioneDi) continue;
+        if (d.colore === "rosso" || d.inSospeso || d.nienteDiNuovo || d.doppioneDi) continue;
         // versione 343: un F24 già nell'archivio non si ritaglia di nuovo (il PDF nuovo avrebbe un'impronta diversa da quello archiviato)
         const g = d.esistente && !d.suo ? d.esistente : null;
         const f24 = !d.soloPagamento && !d.giaArchiviato ? (g?.md5_pdf ? await dalProgramma(g.codice_delega, "F24.pdf", g.md5_pdf, d.nome_file_ricevuto, d.pagine) : await pdf(d.nome_file_ricevuto, d.pagine)) : null;
@@ -505,7 +516,7 @@ export default function F24Arrivati({ utente, accesso }) {
       // 4) comunicazioni e originali nell'elenco dei documenti e nell'archivio del programma
       const docId = new Map();
       for (const c of cl.comunicazioni) {
-        if (c.colore === "rosso" || c.giaNelProgramma) continue;
+        if (c.colore === "rosso" || c.inSospeso || c.giaNelProgramma) continue;
         const v = await pdf(c.nome, null);
         let id = base.documenti.find(x => x.md5 === v.md5)?.id;
         if (!id) {
@@ -592,23 +603,33 @@ export default function F24Arrivati({ utente, accesso }) {
       // 6) solo alla fine: via da DA SMISTARE gli originali archiviati e verificati (e i doppioni già archiviati identici)
       const daCancellare = new Map();
       for (const s of usati.keys()) daCancellare.set(s, docDi(s));
-      for (const d of cl.deleghe.filter(x => x.nienteDiNuovo)) {
+      for (const d of cl.deleghe.filter(x => x.nienteDiNuovo && !x.inSospeso && x.colore !== "rosso")) {
         const doc = docDi(d.nome_file_ricevuto);
         if (doc?.md5 && (base.fileArchivio.some(x => x.md5 === doc.md5) || base.documenti.some(x => x.md5_file_ricevuto === doc.md5))) daCancellare.set(doc.nome, doc);
       }
-      for (const c of cl.comunicazioni.filter(x => x.giaNelProgramma)) daCancellare.set(c.nome, c.doc);
+      for (const c of cl.comunicazioni.filter(x => x.giaNelProgramma && !x.inSospeso && x.colore !== "rosso")) daCancellare.set(c.nome, c.doc);
       for (const x of letta.documenti.filter(x => x.estratto_da && daCancellare.has(x.estratto_da))) daCancellare.set(x.nome, x);
+      for (const f of cl.sospesi) daCancellare.delete(f); // versione 344: un file con una riga in sospeso resta dov'è
       for (const [nome, doc] of daCancellare) {
         const esito = await cancellaOriginale(programma, `DA SMISTARE\\${percorsoInDaSmistare(doc)}`, doc?.md5);
         await segna(`${esito} da DA SMISTARE: ${nome}`);
       }
-      const restano = letta.documenti.filter(x => !daCancellare.has(x.nome)).map(x => x.nome);
+      // versione 344: «restano» sono i file davvero ancora in DA SMISTARE (con l'archiviazione a più riprese alcuni sono già stati tolti prima)
+      const restano = [];
+      for (const x of letta.documenti) {
+        const p = `DA SMISTARE\\${percorsoInDaSmistare(x)}`.split("\\"); const n = p.pop();
+        let c = null; try { c = await esiste(await cartella(programma, p.join("\\")), n); } catch { c = null; }
+        if (c) restano.push(x.nome);
+      }
       const esito = `${piano.length + interi} file nell'ARCHIVIO; ${idDi.size} F24 e ${docId.size} documenti nel programma; ${daCancellare.size} originali tolti da DA SMISTARE${restano.length ? `; restano in DA SMISTARE: ${restano.join(", ")}` : ""}.`;
-      await segna(`Lavoro chiuso: ${esito}`);
-      const { error: eC } = await supabase.from("ci_f24_lavori").update({ stato: "Chiuso", esito }).eq("id", lavoro.id);
+      // versione 344: se restano righe in sospeso il lavoro resta aperto, per archiviarle quando sono a posto
+      const sospese = daSistemare.length + inSospeso.length;
+      const statoFinale = sospese ? "Aperto" : "Chiuso";
+      await segna(sospese ? `Archiviate le righe a posto: ${esito} Restano in sospeso ${sospese} righe: sistemale e premi di nuovo «Archivia».` : `Lavoro chiuso: ${esito}`);
+      const { error: eC } = await supabase.from("ci_f24_lavori").update({ stato: statoFinale, esito }).eq("id", lavoro.id);
       if (eC) throw new Error(`Lavoro non chiuso: ${eC.message}`);
-      setLavoro(l => ({ ...l, stato: "Chiuso", esito }));
-      setArchiviazione(a => ({ ...a, inCorso: false, fine: esito }));
+      setLavoro(l => ({ ...l, stato: statoFinale, esito, passi: [...passi] }));
+      setArchiviazione(a => ({ ...a, inCorso: false, fine: esito, parziale: sospese }));
       await caricaDb();
     } catch (e) {
       await segna(`FERMO: ${e.message}`, false).catch(() => {});
@@ -836,8 +857,9 @@ export default function F24Arrivati({ utente, accesso }) {
             Il programma scriverà <b>{piano.length} file</b> nell'ARCHIVIO ({PREFISSO_ARCHIVIO}…), ognuno con un nome provvisorio: lo rilegge, controlla l'impronta e solo allora gli dà il nome vero.
             Poi salva tutto nel programma e, alla fine, toglie da DA SMISTARE gli originali archiviati e verificati.
           </div>}
-          {daSistemare.length > 0 && lavoro.stato !== "Chiuso" && <div style={{ color: COL.rosso.testo, fontWeight: 700, marginTop: 10 }}>«Archivia» si accende quando non ci sono più righe rosse ({daSistemare.length} da sistemare).</div>}
-          {lavoro.stato === "Aperto" && !archiviazione && <button style={{ ...bottone(!daSistemare.length), marginTop: 12, padding: "11px 22px", fontSize: 14.5 }} disabled={!!daSistemare.length} onClick={() => archivia(false)}>📦 Archivia</button>}
+          {(daSistemare.length + inSospeso.length) > 0 && lavoro.stato !== "Chiuso" && <div style={{ color: COL.rosso.testo, fontWeight: 700, marginTop: 10 }}>
+            {daSistemare.length} righe rosse da sistemare{inSospeso.length ? ` e ${inSospeso.length} righe che usano un loro file` : ""}: restano in sospeso, con i loro file in DA SMISTARE. «Archivia» archivia il resto; le righe in sospeso si archiviano dopo, premendo di nuovo «Archivia».</div>}
+          {lavoro.stato === "Aperto" && !archiviazione?.inCorso && <button style={{ ...bottone(archiviabili.length > 0), marginTop: 12, padding: "11px 22px", fontSize: 14.5 }} disabled={!archiviabili.length} onClick={() => archivia(false)}>📦 Archivia</button>}
           {lavoro.stato === "Archiviazione in corso" && !archiviazione?.inCorso && <button style={{ ...bottone(true, C.accent), marginTop: 12 }} onClick={() => archivia(true)}>▶️ Riprendi l'archiviazione interrotta</button>}
           {archiviazione && (
             <div style={{ marginTop: 12 }}>
@@ -848,7 +870,7 @@ export default function F24Arrivati({ utente, accesso }) {
               {archiviazione.errore && <div style={{ marginTop: 10, background: COL.rosso.sfondo, border: `1.5px solid ${COL.rosso.bordo}`, borderRadius: 10, padding: 12, fontWeight: 700, color: COL.rosso.testo }}>
                 ⛔ Archiviazione ferma: {archiviazione.errore}. Niente è andato perso: quello che è stato fatto è annotato; risolto il problema, premi «Riprendi l'archiviazione interrotta». Gli originali in DA SMISTARE non sono stati toccati.
               </div>}
-              {archiviazione.fine && <div style={{ marginTop: 10, background: COL.verde.sfondo, border: `1.5px solid ${COL.verde.bordo}`, borderRadius: 10, padding: 12, fontWeight: 700, color: COL.verde.testo }}>✅ Lavoro chiuso: {archiviazione.fine}</div>}
+              {archiviazione.fine && <div style={{ marginTop: 10, background: COL.verde.sfondo, border: `1.5px solid ${COL.verde.bordo}`, borderRadius: 10, padding: 12, fontWeight: 700, color: COL.verde.testo }}>{archiviazione.parziale ? `✅ Archiviate le righe a posto: ${archiviazione.fine} Restano in sospeso ${archiviazione.parziale} righe: sistemale e premi di nuovo «Archivia».` : `✅ Lavoro chiuso: ${archiviazione.fine}`}</div>}
             </div>
           )}
         </div>
