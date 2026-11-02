@@ -14,7 +14,9 @@ function categorieDi(f, db) {
 
 export function pianoGiaPresenti(db, oggi) {
   if (!db) return [];
-  const daFare = db.f24.filter(f => f.stato !== "Sostituito" && !db.fileArchivio.some(x => x.f24_id === f.id && x.cosa === "F24" && !x.superato));
+  // Versione 343: solo gli F24 entrati PRIMA della pagina «F24 arrivati» (senza lavoro): quelli entrati da una lettura
+  // si archiviano con la loro lettura, dai file in DA SMISTARE (non da qui)
+  const daFare = db.f24.filter(f => f.lavoro_id == null && f.stato !== "Sostituito" && !db.fileArchivio.some(x => x.f24_id === f.id && x.cosa === "F24" && !x.superato));
   const originaliVisti = new Set();
   return daFare.map(f => {
     const problemi = [];
@@ -28,6 +30,7 @@ export function pianoGiaPresenti(db, oggi) {
     const nome = f.cartella_pagamento;
     if (!nome) problemi.push("manca il nome della cartella del pagamento nel programma");
     else { const no = nomeCartellaValido(nome); if (no) problemi.push(`nome della cartella: ${no}`); }
+    if (!f.md5_pdf) problemi.push("il PDF di questo F24 non è nel programma: si archivia con la sua lettura");
     const anno = String(f.data_scadenza || "").slice(0, 4);
     if (!/^\d{4}$/.test(anno)) problemi.push("manca la scadenza");
     const pezzi = [{ cosa: "F24", archivio: `${f.codice_delega}/F24.pdf`, md5Atteso: f.md5_pdf, nomeFile: `F24 ${f.data_scadenza}.pdf` }];

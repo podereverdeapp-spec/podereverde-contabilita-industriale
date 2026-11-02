@@ -3,7 +3,7 @@
 // Ogni file si scrive con un nome provvisorio, si rilegge, si controlla l'impronta e solo allora prende il nome vero.
 import { PDFDocument } from "pdf-lib";
 import { md5 } from "./md5";
-import { pagineDa, CODICE_FISCALE } from "./calcoloF24Arrivati";
+import { pagineDa, CODICE_FISCALE, percorsoUnico } from "./calcoloF24Arrivati";
 
 export const FILE_RICONOSCIMENTO = "RICONOSCIMENTO CARTELLA F24 - NON TOCCARE.txt";
 
@@ -168,8 +168,7 @@ export async function cercaFile(dir, nome, base = "", profondita = 8) {
 }
 
 // percorso dentro DA SMISTARE di un file del foglio «Documenti» (la colonna «Percorso» può essere completa)
+// versione 343: il nome del documento è già il suo percorso dentro DA SMISTARE (forma unica)
 export function percorsoInDaSmistare(doc) {
-  const p = String(doc?.percorso || doc?.nome || "");
-  const i = p.toUpperCase().lastIndexOf("DA SMISTARE\\");
-  return i >= 0 ? p.slice(i + "DA SMISTARE\\".length) : doc?.nome;
+  return percorsoUnico(doc?.nome || doc?.percorso);
 }

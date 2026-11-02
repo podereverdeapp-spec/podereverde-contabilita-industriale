@@ -1,11 +1,13 @@
 // Versione 339 (31/10/2026, ordine del Dott. Bizzarri): regole della pagina «F24 arrivati: controlla e archivia».
+// Versione 343 (02/11/2026): i file si riconoscono dal percorso dentro DA SMISTARE, non dal solo nome.
 // Lettura dell'Excel scritto dal «Prompt di lettura F24» (versione 2), confronto con il database, proposte di archiviazione
 // e piano dei file da scrivere nell'ARCHIVIO. Qui non si scrive niente: scrivono la pagina e archivioF24.js.
-import { leggiData, testo, r2, improntaRighe, SEZIONI, TRATTAMENTI } from "./calcoloCaricoF24";
+import { leggiData, testo, r2, vuoto, SEZIONI, TRATTAMENTI } from "./calcoloCaricoF24";
 
 export const PREFISSO_ARCHIVIO = "Z:\\SOCIETA\\SOCIETA' AGRICOLA PODERE VERDE A R.L\\F24\\ARCHIVIO\\"; // 61 caratteri
 export const LIMITE_PERCORSO = 250;
 export const CODICE_FISCALE = "15117871002";
+export const VERSIONE_PROMPT = "Lettura F24 versione 3"; // deve essere uguale a quella scritta nel prompt di lettura
 // il nome di file più lungo che può finire in una cartella del pagamento (serve a controllare la lunghezza prima di scrivere)
 const PEGGIOR_FILE = "SUPERATI\\CONTABILE BANCA 2026-12-31 superato il 2026-12-31_2.pdf";
 
@@ -60,6 +62,15 @@ function cella(campo, grezzo, scritto) {
   return { valore: testo(scritto ?? grezzo) };
 }
 
+// Versione 343: ogni file si indica con il suo percorso dentro DA SMISTARE (due file con lo stesso nome in sottocartelle diverse
+// non si confondono più). Forma unica: «\\» al posto di «/», solo il pezzo dopo «DA SMISTARE\\», senza «\\» all'inizio.
+export function percorsoUnico(p) {
+  let s = String(p ?? "").trim().replace(/\//g, "\\");
+  const i = s.toUpperCase().lastIndexOf("DA SMISTARE\\");
+  if (i >= 0) s = s.slice(i + "DA SMISTARE\\".length);
+  return s.replace(/^\\+/, "");
+}
+const conta = s => (s.match(/\\/g) || []).length;
 // ── Lettura dell'Excel della lettura ────────────────────────────────────────────────────────────────
 export function leggiLettura(XLSX, buffer) {
   const wb = XLSX.read(buffer, { type: "array", cellDates: false });
@@ -86,6 +97,9 @@ export function leggiLettura(XLSX, buffer) {
   if (anomalie.length) return { anomalie };
   const lettura = fogli["Lettura"][0];
   if (!lettura) anomalie.push("Il foglio «Lettura» è vuoto.");
+  // Versione 343: solo letture fatte con il prompt di questa versione (le vecchie indicavano i file solo per nome)
+  if (lettura && String(lettura.versione || "").trim().toUpperCase() !== VERSIONE_PROMPT.toUpperCase())
+    return { anomalie: [`La lettura è stata fatta con il prompt «${lettura.versione || "senza versione"}»: questa pagina accetta solo letture fatte con il prompt «${VERSIONE_PROMPT}». Rifare la lettura copiando il prompt da questa pagina.`] };
   const documenti = fogli["Documenti"];
   const deleghe = fogli["F24"].map(d => ({ ...d, righe: [], verifica: null }));
   const perCodice = new Map(deleghe.map(d => [d.codice_delega, d]));
@@ -121,11 +135,43 @@ export function leggiLettura(XLSX, buffer) {
       d.errori.push(...r.errori);
     }
     if (d.righe.length && (r2(deb) !== r2(d.totale_debito) || r2(cred) !== r2(d.totale_credito))) d.errori.push("La somma delle righe non è uguale ai totali.");
-    if (!d.verifica) d.errori.push("Manca la riga nel foglio «Verifica».");
+    // versione 343: la riga di «Verifica» si chiede per ogni F24; per una riga «solo quietanza» o «solo contabile» (senza il PDF dell'F24) basta il controllo delle somme
+    if (!d.verifica) { if (!vuoto(d.nome_file_pdf)) d.errori.push("Manca la riga nel foglio «Verifica»."); }
     else if (!["SI", "DA CONFERMARE"].includes(d.verifica.corrisponde)) d.errori.push(`Verifica: «Corrisponde?» è «${d.verifica.corrisponde ?? ""}».`);
     d.scansione = d.verifica?.corrisponde === "DA CONFERMARE";
   }
   const comunicazioni = fogli["Comunicazioni"].map(c => ({ ...c, chiede_pagamento: String(c.chiede_pagamento || "").toUpperCase() === "SI" }));
+  // Versione 343: il nome di ogni documento è il suo percorso dentro DA SMISTARE (si prende la scrittura più completa tra «Nome» e «Percorso»)
+  for (const x of documenti) {
+    const a = percorsoUnico(x.nome), b = percorsoUnico(x.percorso);
+    x.nome = conta(b) > conta(a) ? b : a || b;
+  }
+  const perChiave = new Map(), perNomeFinale = new Map();
+  for (const x of documenti) {
+    const k = x.nome.toUpperCase();
+    if (perChiave.has(k)) anomalie.push(`Il file «${x.nome}» è scritto due volte nel foglio «Documenti».`); else perChiave.set(k, x);
+    const f = k.split("\\").pop(); if (!perNomeFinale.has(f)) perNomeFinale.set(f, []); perNomeFinale.get(f).push(x);
+  }
+  // un riferimento trova il suo documento dal percorso; se Claude ha scritto solo il nome, vale solo se quel nome è unico
+  const trova = v => {
+    const k = percorsoUnico(v).toUpperCase(); if (!k) return null;
+    if (perChiave.has(k)) return perChiave.get(k);
+    const l = perNomeFinale.get(k.split("\\").pop()) || [];
+    return !k.includes("\\") && l.length === 1 ? l[0] : null;
+  };
+  const risolvi = (o, campo, etichetta, mancanti) => {
+    if (!o[campo]) return;
+    const doc = trova(o[campo]);
+    if (doc) o[campo] = doc.nome; else mancanti.push(`${etichetta} «${o[campo]}» non è nel foglio «Documenti» (o il nome è uguale a un altro file: va scritto il percorso dentro DA SMISTARE)`);
+  };
+  for (const d of deleghe) {
+    d.fileMancanti = [];
+    risolvi(d, "nome_file_ricevuto", "Nome del file ricevuto", d.fileMancanti);
+    risolvi(d, "nome_file_quietanza", "Nome file quietanza", d.fileMancanti);
+    risolvi(d, "nome_file_contabile", "Nome file contabile della banca", d.fileMancanti);
+  }
+  for (const c of comunicazioni) { c.fileMancanti = []; risolvi(c, "nome", "Nome del file ricevuto", c.fileMancanti); }
+  for (const x of documenti) if (x.estratto_da) { const m = []; risolvi(x, "estratto_da", "Estratto da", m); anomalie.push(...m.map(t => `«${x.nome}»: ${t}.`)); }
   // conto dei file: quelli trovati da Claude devono avere tutti la loro riga
   if (lettura && documenti.filter(x => !x.estratto_da).length !== lettura.file_trovati)
     anomalie.push(`Claude ha trovato ${lettura.file_trovati} file, ma nel foglio «Documenti» ce ne sono ${documenti.filter(x => !x.estratto_da).length} (senza contare gli estratti): manca qualcosa.`);
@@ -153,13 +199,22 @@ const nomeEnte = chi => {
 export const nomeFileComunicazione = c => `${String(c.cosa || "LETTERA").toUpperCase()} ${nomeEnte(c.chi)} ${c.data || "SENZA DATA"}.pdf`.replace(/\s+/g, " ");
 
 // ── Confronto con il database e proposte ───────────────────────────────────────────────────────────
+// Versione 343: lo stesso F24 letto due volte (anche da due Claude diversi) deve risultare uguale.
+// I testi delle righe (ente, matricola, mese, anno, periodo) si confrontano senza spazi, punteggiatura, maiuscole e zeri davanti:
+// «codice ditta 20418885 - c.c. 61» e «Codice ditta 20418885, c.c. 61» sono la stessa cosa. Codici e importi restano esatti.
+const testoConfronto = v => (vuoto(v) ? "" : String(v).toUpperCase().match(/[A-Z0-9]+/g)?.map(x => (/^\d+$/.test(x) ? x.replace(/^0+(?=\d)/, "") : x)).join("") ?? "");
+export function improntaConfronto(righe) {
+  return (righe || []).map(r => [String(r.sezione ?? "").trim().toUpperCase(), String(r.codice_tributo ?? "").trim().toUpperCase().replace(/\s+/g, ""),
+    ...[r.codice_ente_sede, r.matricola_riferimento, r.rateazione_mese, r.anno_riferimento, r.periodo_dal, r.periodo_al].map(testoConfronto),
+    Number(r.importo_debito || 0).toFixed(2), Number(r.importo_credito || 0).toFixed(2)].join("|")).sort().join("#");
+}
 // db: { f24, righe, codici, cartelle, documenti, fileArchivio }; scelte: le scelte salvate nel lavoro in corso
 // lavoroId: il lavoro di questa lettura (gli F24 salvati nel programma appena caricata la lettura sono «suoi», non doppioni)
 export function classifica(letta, db, scelte = {}, lavoroId = null) {
   const codici = new Map(db.codici.map(c => [c.codice, c]));
   const righePerF24 = new Map();
   for (const r of db.righe) { if (!righePerF24.has(r.f24_id)) righePerF24.set(r.f24_id, []); righePerF24.get(r.f24_id).push(r); }
-  const dbF24 = db.f24.map(f => ({ ...f, righe: righePerF24.get(f.id) || [], impronta: improntaRighe(righePerF24.get(f.id) || []) }));
+  const dbF24 = db.f24.map(f => ({ ...f, righe: righePerF24.get(f.id) || [], impronta: improntaConfronto(righePerF24.get(f.id) || []) }));
   const docPerNome = new Map(letta.documenti.map(x => [x.nome, x]));
   const documentiMd5 = new Set(db.documenti.map(x => x.md5));
   const nomiCodiciNuovi = scelte.codici || {};
@@ -174,8 +229,8 @@ export function classifica(letta, db, scelte = {}, lavoroId = null) {
     const s = (scelte.deleghe || {})[d.codice_delega] || {};
     const doc = docPerNome.get(d.nome_file_ricevuto);
     const soloPagamento = !d.nome_file_pdf; // riga nata da una quietanza o contabile senza il suo F24
-    const impronta = improntaRighe(d.righe);
-    const problemi = [...d.errori];
+    const impronta = improntaConfronto(d.righe);
+    const problemi = [...d.errori, ...(d.fileMancanti || [])];
     let esistente = null, decisione = null, colore = "verde";
     // 1) stesso F24 già nel programma (stesse righe; per un F24 anche la stessa scadenza)
     const uguali = dbF24.filter(f => f.impronta === impronta && f.stato !== "Sostituito" && (soloPagamento || f.data_scadenza === d.data_scadenza));
@@ -235,11 +290,25 @@ export function classifica(letta, db, scelte = {}, lavoroId = null) {
       giaArchiviato, nuovaQuietanza, nuovaContabile, nienteDiNuovo, problemi, colore };
   });
 
+  // Versione 343: lo stesso F24 due volte nella stessa lettura (per esempio in digitale e in scansione) entra una volta sola.
+  // Stesso F24 = stessa scadenza, stesso saldo, stessi codici. Resta il digitale; l'altro è grigio, non si paga e non si archivia.
+  const gruppi = new Map();
+  for (const d of deleghe) if (!d.soloPagamento && d.data_scadenza) {
+    const k = `${d.data_scadenza}|${r2(d.saldo)}|${d.righe.map(r => r.codice_tributo).sort().join(",")}`;
+    if (!gruppi.has(k)) gruppi.set(k, []); gruppi.get(k).push(d);
+  }
+  for (const g of gruppi.values()) if (g.length > 1) {
+    // resta quello senza errori di lettura e non scansionato; se tutti hanno errori, nessuno diventa doppione (il pagamento non deve mai saltare)
+    const principale = g.find(x => !x.errori.length && !x.scansione) || g.find(x => !x.errori.length);
+    if (!principale) continue;
+    for (const d of g) if (d !== principale) { d.doppioneDi = principale.codice_delega; d.problemi = []; d.colore = "grigio"; }
+  }
+
   // nomi uguali tra pagamenti diversi di questa lettura e del programma (Windows non distingue maiuscole e minuscole)
   const usati = new Map();
   for (const f of dbF24) if (f.cartella_pagamento && f.stato !== "Sostituito" && !(lavoroId && f.lavoro_id === lavoroId)) usati.set(f.cartella_pagamento.toUpperCase(), f.codice_delega);
   for (const d of deleghe) {
-    if ((d.esistente && !d.suo) || d.sostituisce) continue;
+    if ((d.esistente && !d.suo) || d.sostituisce || d.doppioneDi) continue;
     const k = d.nome.toUpperCase();
     if (usati.has(k)) { d.problemi.push(`il nome «${d.nome}» è già usato (${usati.get(k)}): aggiungi «_2»`); d.colore = "rosso"; }
     else usati.set(k, d.codice_delega);
@@ -250,7 +319,7 @@ export function classifica(letta, db, scelte = {}, lavoroId = null) {
     const doc = docPerNome.get(c.nome);
     const cartella = s.cartella ?? proponiCartellaComunicazione(c, db.cartelle);
     const collegato = s.collegato ?? (deleghe.some(d => d.codice_delega === c.collegato) ? c.collegato : "");
-    const problemi = [...c.errori];
+    const problemi = [...c.errori, ...(c.fileMancanti || [])];
     if (!cartella) problemi.push("scegli la cartella");
     const giaNelProgramma = doc?.md5 && documentiMd5.has(doc.md5);
     return { ...c, k: c.nome + "|" + i, s, doc, cartella, collegato, nomeFile: nomeFileComunicazione(c), giaNelProgramma, problemi,
@@ -279,7 +348,7 @@ export function pianoArchivio(cl, oggi, documenti = []) {
   const passi = []; // { cosa, sorgente (nome ricevuto), pagine, destinazione, delega?, comunicazione? }
   const annoDi = d => String(d || oggi).slice(0, 4);
   for (const d of cl.deleghe) {
-    if (d.colore === "rosso" || d.nienteDiNuovo) continue;
+    if (d.colore === "rosso" || d.nienteDiNuovo || d.doppioneDi) continue;
     const anno = annoDi(d.esistente?.data_scadenza || d.sostituisce?.data_scadenza || (d.soloPagamento ? d.data_pagamento : d.data_scadenza));
     for (const cat of d.cartelle) {
       const base = `${cat}\\${anno}\\${d.nome}`;
@@ -302,10 +371,10 @@ export function pianoArchivio(cl, oggi, documenti = []) {
   const usiPerFile = new Map();
   for (const p of passi) { const k = p.sorgente; if (!usiPerFile.has(k)) usiPerFile.set(k, new Set()); usiPerFile.get(k).add(p.pagine || "tutto"); }
   for (const [f, pagine] of usiPerFile) if (pagine.size > 1)
-    passi.push({ cosa: "Originale ricevuto", sorgente: f, destinazione: `ORIGINALI RICEVUTI\\${annoDi(oggi)}\\${f}`, categoria: "ORIGINALI RICEVUTI" });
+    passi.push({ cosa: "Originale ricevuto", sorgente: f, destinazione: `ORIGINALI RICEVUTI\\${annoDi(oggi)}\\${f.split("\\").pop()}`, categoria: "ORIGINALI RICEVUTI" });
   // i contenitori (zip, PDF firmati, mail) da cui Claude ha estratto i file: si conservano interi in ORIGINALI RICEVUTI
   for (const x of documenti) if (documenti.some(y => y.estratto_da === x.nome) && passi.some(p => documenti.some(y => y.estratto_da === x.nome && y.nome === p.sorgente)))
-    passi.push({ cosa: "Originale ricevuto", sorgente: x.nome, destinazione: `ORIGINALI RICEVUTI\\${annoDi(oggi)}\\${x.nome}`, categoria: "ORIGINALI RICEVUTI" });
+    passi.push({ cosa: "Originale ricevuto", sorgente: x.nome, destinazione: `ORIGINALI RICEVUTI\\${annoDi(oggi)}\\${x.nome.split("\\").pop()}`, categoria: "ORIGINALI RICEVUTI" });
   // due file con lo stesso nome nella stessa cartella: «_2», «_3» (senza distinguere maiuscole e minuscole)
   const visti = new Map();
   for (const p of passi) {

@@ -1,4 +1,5 @@
 // Versione 339 (31/10/2026, ordine del Dott. Bizzarri): pagina «F24 arrivati: controlla e archivia».
+// Versione 343 (02/11/2026): prompt di lettura versione 3; i file si riconoscono dal percorso dentro DA SMISTARE.
 // Versione 342 (31/10/2026): scatola «F24 già nel programma da mettere nell'archivio nuovo» (solo amministratore): usa i PDF del programma, non rilegge.
 // 1) Claude legge DA SMISTARE con il «Prompt di lettura F24» e scrive un Excel in LETTURE; 2) qui si carica la lettura e si controlla
 // (tre scatole: F24, Quietanze, Comunicazioni e altro); 3) «Archivia» scrive nell'ARCHIVIO del cloud e nel programma, poi svuota DA SMISTARE.
@@ -299,6 +300,17 @@ export default function F24Arrivati({ utente, accesso }) {
   }
 
   // payload per ci_f24_salva_delega
+  // Versione 343: per un F24 già nel programma vale quello che c'è già, righe tributo comprese (lo stesso PDF letto da un altro Claude
+  // può avere un testo scritto in modo diverso): la lettura completa solo i campi vuoti; lo stato può solo passare a «Pagato».
+  function payloadEsistente(d, e, extra = {}) {
+    const { p, righe } = payload(d, extra);
+    for (const k of Object.keys(p)) if (!["stato", "note", "avvisi"].includes(k) && e[k] != null) p[k] = e[k];
+    p.stato = p.stato === "Pagato" ? "Pagato" : e.stato;
+    const righeE = [...(e.righe || [])].sort((a, b) => a.numero_riga - b.numero_riga).map(r => ({ sezione: r.sezione, codice_tributo: r.codice_tributo, descrizione_codice: r.descrizione_codice,
+      codice_ente_sede: r.codice_ente_sede, matricola_riferimento: r.matricola_riferimento, rateazione_mese: r.rateazione_mese, anno_riferimento: r.anno_riferimento,
+      periodo_dal: r.periodo_dal, periodo_al: r.periodo_al, importo_debito: r.importo_debito, importo_credito: r.importo_credito, trattamento: r.trattamento, codice_confermato_da: r.codice_confermato_da }));
+    return { p, righe: righeE.length ? righeE : righe };
+  }
   function payload(d, extra = {}) {
     const p = {
       codice_delega: d.codice_delega, origine: "lettura", nome_file_pdf: null, nome_file_ricevuto: d.nome_file_ricevuto, delega_nel_file_ricevuto: d.delega_nel_file_ricevuto,
@@ -320,12 +332,14 @@ export default function F24Arrivati({ utente, accesso }) {
     const cl = classifica(lt, base, l.scelte || {}, l.id);
     const esiti = [];
     for (const d of cl.deleghe) {
+      if (d.doppioneDi) { esiti.push({ d, esito: `È lo stesso F24 di ${d.doppioneDi} (copia o scansione): entra una volta sola, non si paga due volte` }); continue; }
       if (d.errori.length) { esiti.push({ d, esito: "NON nel programma: errori nella lettura", grave: d.stato === "Da pagare" }); continue; }
       if (d.decisione && !(d.decisione.tipo === "versione" && d.s.versione === "in più")) { esiti.push({ d, esito: d.decisione.tipo === "versione" ? "NON ancora nel programma: prima decidi se è una versione corretta o un F24 in più" : "NON ancora nel programma: scegli quale F24 paga", grave: true }); continue; }
       if (d.esistente && !(d.soloPagamento || d.stato === "Pagato") ) { esiti.push({ d, esito: d.suo ? "Già nel programma (aperta prima)" : "Già nel programma" }); continue; }
       const esistente = d.esistente;
       if (esistente && esistente.stato === "Pagato") { esiti.push({ d, esito: "Già pagato nel programma" }); continue; }
-      const { p, righe } = payload(d, esistente ? { codice_delega: esistente.codice_delega, nome_file_pdf: esistente.nome_file_pdf, oggetto: esistente.oggetto, data_scadenza: esistente.data_scadenza, origine: esistente.origine, note: [esistente.note, d.note].filter(Boolean).join(" | ") || null } : {});
+      const extra = esistente ? { codice_delega: esistente.codice_delega, nome_file_pdf: esistente.nome_file_pdf, oggetto: esistente.oggetto, data_scadenza: esistente.data_scadenza, origine: esistente.origine, note: [esistente.note, d.note].filter(Boolean).join(" | ") || null } : {};
+      const { p, righe } = esistente ? payloadEsistente(d, esistente, extra) : payload(d, extra);
       const { data, error } = await supabase.rpc("ci_f24_salva_delega", { p_delega: p, p_righe: righe });
       if (error) { esiti.push({ d, esito: `NON nel programma: ${error.message}`, grave: true }); continue; }
       if (!esistente) await supabase.from("ci_f24").update({ lavoro_id: l.id }).eq("codice_delega", p.codice_delega);
@@ -420,19 +434,33 @@ export default function F24Arrivati({ utente, accesso }) {
       async function pdf(sorgente, pagine) {
         const k = `${sorgente}|${pagine || ""}`; if (pronti.has(k)) return pronti.get(k);
         const doc = docDi(sorgente);
-        const byte = await leggiFile(programma, `DA SMISTARE\\${percorsoInDaSmistare(doc)}`);
+        const dove = `DA SMISTARE\\${percorsoInDaSmistare(doc)}`;
+        let byte;
+        try { byte = await leggiFile(programma, dove); }
+        catch (e) { throw new Error(`il file «PROGRAMMA\\${dove}» non si trova (${e?.name || e?.message}): è stato spostato, rinominato o cancellato dopo la lettura? Rimetterlo dov'era, oppure rifare la lettura`); }
         if (doc?.md5 && md5(byte) !== doc.md5) throw new Error(`«${sorgente}» è cambiato dopo la lettura di Claude: va riletto`);
         const out = await preparaPdf(byte, sorgente, pagine);
         const v = { byte: out, md5: md5(out), md5Ricevuto: md5(byte) }; pronti.set(k, v); return v;
       }
+      // versione 343: se il programma ha già il PDF di un F24 (impronta registrata) si usa quello, controllato, e non un ritaglio nuovo
+      async function dalProgramma(codice, nomeArch, md5Atteso, sorgente, pagine) {
+        const { data, error } = await supabase.storage.from("f24").download(`${codice}/${nomeArch}`);
+        if (error) throw new Error(`${nomeArch} di ${codice} non trovato nel programma (${error.message})`);
+        const byte = new Uint8Array(await data.arrayBuffer()); const imp = md5(byte);
+        if (imp !== md5Atteso) throw new Error(`${nomeArch} di ${codice}: l'impronta del PDF nel programma non è quella registrata — mi fermo`);
+        const v = { byte, md5: imp, md5Ricevuto: null, dalProgramma: true }; pronti.set(`${sorgente}|${pagine || ""}`, v); return v;
+      }
       // 3) le deleghe nel programma con la loro cartella, i PDF nell'archivio del programma
       const idDi = new Map();
       for (const d of cl.deleghe) {
-        if (d.colore === "rosso" || d.nienteDiNuovo) continue;
-        const f24 = !d.soloPagamento ? await pdf(d.nome_file_ricevuto, d.pagine) : null;
-        const qui = d.nome_file_quietanza && d.nuovaQuietanza ? await pdf(d.nome_file_quietanza, d.pagine_quietanza) : null;
-        const con = d.nome_file_contabile && d.nuovaContabile ? await pdf(d.nome_file_contabile, d.pagine_contabile) : null;
-        const impronte = { ...(f24 ? { md5_pdf: f24.md5 } : {}), ...(qui ? { md5_quietanza: qui.md5 } : {}), ...(con ? { md5_contabile: con.md5 } : {}) };
+        if (d.colore === "rosso" || d.nienteDiNuovo || d.doppioneDi) continue;
+        // versione 343: un F24 già nell'archivio non si ritaglia di nuovo (il PDF nuovo avrebbe un'impronta diversa da quello archiviato)
+        const g = d.esistente && !d.suo ? d.esistente : null;
+        const f24 = !d.soloPagamento && !d.giaArchiviato ? (g?.md5_pdf ? await dalProgramma(g.codice_delega, "F24.pdf", g.md5_pdf, d.nome_file_ricevuto, d.pagine) : await pdf(d.nome_file_ricevuto, d.pagine)) : null;
+        const qui = d.nome_file_quietanza && d.nuovaQuietanza ? (g?.md5_quietanza ? await dalProgramma(g.codice_delega, "quietanza.pdf", g.md5_quietanza, d.nome_file_quietanza, d.pagine_quietanza) : await pdf(d.nome_file_quietanza, d.pagine_quietanza)) : null;
+        const con = d.nome_file_contabile && d.nuovaContabile ? (g?.md5_contabile ? await dalProgramma(g.codice_delega, "contabile.pdf", g.md5_contabile, d.nome_file_contabile, d.pagine_contabile) : await pdf(d.nome_file_contabile, d.pagine_contabile)) : null;
+        const archiviato = d.giaArchiviato ? base.fileArchivio.find(x => x.f24_id === d.esistente.id && x.cosa === "F24" && !x.superato) : null;
+        const impronte = { ...(f24 ? { md5_pdf: f24.md5 } : archiviato?.md5 ? { md5_pdf: archiviato.md5 } : {}), ...(qui ? { md5_quietanza: qui.md5 } : {}), ...(con ? { md5_contabile: con.md5 } : {}) };
         const e = d.esistente && !d.suo ? d.esistente : null;
         let codice = e?.codice_delega || d.codice_delega;
         if (d.sostituisce && d.sostituisce.stato !== "Sostituito") {
@@ -445,8 +473,8 @@ export default function F24Arrivati({ utente, accesso }) {
           if (error) throw new Error(`Versione corretta ${d.codice_delega}: ${error.message}`);
           await segna(`${vecchia.codice_delega} «Sostituito»; ${d.codice_delega} nel programma al suo posto`);
         } else {
-          const { p, righe } = payload(d, { ...impronte, ...(e ? { codice_delega: e.codice_delega, nome_file_pdf: e.nome_file_pdf, oggetto: e.oggetto, data_scadenza: e.data_scadenza, origine: e.origine, note: e.note } : {}) });
-          if (e?.stato === "Pagato") { p.stato = "Pagato"; ["data_pagamento", "codice_banca_sportello", "banca_addebito", "protocollo_telematico", "nome_file_quietanza", "nome_file_contabile", "numero_operazione_banca"].forEach(k => { p[k] = e[k] ?? p[k]; }); }
+          const extra = { ...impronte, ...(e ? { codice_delega: e.codice_delega, nome_file_pdf: e.nome_file_pdf, oggetto: e.oggetto, data_scadenza: e.data_scadenza, origine: e.origine, note: e.note } : {}) };
+          const { p, righe } = e ? payloadEsistente(d, e, extra) : payload(d, extra);
           const { error } = await supabase.rpc("ci_f24_salva_delega", { p_delega: p, p_righe: righe });
           if (error) throw new Error(`F24 ${codice}: ${error.message}`);
         }
@@ -459,7 +487,7 @@ export default function F24Arrivati({ utente, accesso }) {
         if (eU) throw new Error(`F24 ${codice}, cartella del pagamento: ${eU.message}`);
         idDi.set(d.codice_delega, riga.id);
         for (const [nomeArch, v] of [["F24.pdf", f24], ["quietanza.pdf", qui], ["contabile.pdf", con]]) {
-          if (!v) continue;
+          if (!v || v.dalProgramma) continue;
           const { error } = await supabase.storage.from("f24").upload(`${codice}/${nomeArch}`, new Blob([v.byte], { type: "application/pdf" }), { upsert: true, contentType: "application/pdf" });
           if (error) throw new Error(`PDF ${nomeArch} di ${codice} non caricato nel programma: ${error.message}`);
         }
@@ -494,7 +522,10 @@ export default function F24Arrivati({ utente, accesso }) {
         await segna(`«${c.nome}» nel programma`);
       }
       for (const p of piano.filter(x => x.cosa === "Originale ricevuto")) {
-        const byte = await leggiFile(programma, `DA SMISTARE\\${percorsoInDaSmistare(docDi(p.sorgente))}`);
+        const dove = `DA SMISTARE\\${percorsoInDaSmistare(docDi(p.sorgente))}`;
+        let byte;
+        try { byte = await leggiFile(programma, dove); }
+        catch (e) { throw new Error(`il file «PROGRAMMA\\${dove}» non si trova (${e?.name || e?.message}): è stato spostato, rinominato o cancellato dopo la lettura? Rimetterlo dov'era, oppure rifare la lettura`); }
         const imp = md5(byte);
         let id = base.documenti.find(x => x.md5 === imp)?.id;
         if (!id) {
@@ -532,6 +563,32 @@ export default function F24Arrivati({ utente, accesso }) {
         usati.set(p.sorgente, true);
         await segna(`${r.esito}: ARCHIVIO\\${r.percorso}`);
       }
+      // versione 343: un file ricevuto di cui si è archiviata solo una parte (per esempio la pagina dell'F24 e non la fattura che c'è dopo)
+      // non si perde: prima di toglierlo da DA SMISTARE si conserva intero in ORIGINALI RICEVUTI
+      let interi = 0;
+      for (const s of usati.keys()) {
+        const pezzi = [...pronti.entries()].filter(([k]) => k.slice(0, k.lastIndexOf("|")) === s).map(([, v]) => v);
+        if (pezzi.some(v => v.md5Ricevuto && v.md5 === v.md5Ricevuto) || piano.some(p => p.cosa === "Originale ricevuto" && p.sorgente === s)) continue;
+        const dove = `DA SMISTARE\\${percorsoInDaSmistare(docDi(s))}`;
+        const byte = await leggiFile(programma, dove); const imp = md5(byte);
+        let id = base.documenti.find(x => x.md5 === imp)?.id;
+        if (!id) {
+          const { data, error } = await supabase.from("ci_f24_documenti").insert({ tipo: "Originale ricevuto", nome_file_ricevuto: s, md5: imp, md5_file_ricevuto: imp, dimensione: byte.length, lavoro_id: lavoro.id,
+            note: "Archiviata solo una parte: il file ricevuto si conserva intero" }).select("id").single();
+          if (error) throw new Error(`Originale «${s}» non registrato: ${error.message}`);
+          id = data.id;
+        }
+        const r = await scriviVerificato(archivio, `ORIGINALI RICEVUTI\\${oggi.slice(0, 4)}\\${s.split("\\").pop()}`, byte);
+        base = await caricaDb();
+        if (!base.fileArchivio.some(x => x.percorso.toUpperCase() === r.percorso.toUpperCase())) {
+          const { error } = await supabase.from("ci_f24_file_archivio").insert({ percorso: r.percorso, cartella: "ORIGINALI RICEVUTI", cosa: "Originale ricevuto", f24_id: null,
+            documento_id: id, md5: r.md5, dimensione: r.dimensione, lavoro_id: lavoro.id });
+          if (error) throw new Error(`File scritto ma non annotato nel programma (${r.percorso}): ${error.message}`);
+        }
+        interi++;
+        await segna(`${r.esito}: ARCHIVIO\\${r.percorso} (file ricevuto intero: ne è stata archiviata solo una parte)`);
+      }
+      base = await caricaDb();
       // 6) solo alla fine: via da DA SMISTARE gli originali archiviati e verificati (e i doppioni già archiviati identici)
       const daCancellare = new Map();
       for (const s of usati.keys()) daCancellare.set(s, docDi(s));
@@ -546,7 +603,7 @@ export default function F24Arrivati({ utente, accesso }) {
         await segna(`${esito} da DA SMISTARE: ${nome}`);
       }
       const restano = letta.documenti.filter(x => !daCancellare.has(x.nome)).map(x => x.nome);
-      const esito = `${piano.length} file nell'ARCHIVIO; ${idDi.size} F24 e ${docId.size} documenti nel programma; ${daCancellare.size} originali tolti da DA SMISTARE${restano.length ? `; restano in DA SMISTARE: ${restano.join(", ")}` : ""}.`;
+      const esito = `${piano.length + interi} file nell'ARCHIVIO; ${idDi.size} F24 e ${docId.size} documenti nel programma; ${daCancellare.size} originali tolti da DA SMISTARE${restano.length ? `; restano in DA SMISTARE: ${restano.join(", ")}` : ""}.`;
       await segna(`Lavoro chiuso: ${esito}`);
       const { error: eC } = await supabase.from("ci_f24_lavori").update({ stato: "Chiuso", esito }).eq("id", lavoro.id);
       if (eC) throw new Error(`Lavoro non chiuso: ${eC.message}`);
@@ -576,8 +633,8 @@ export default function F24Arrivati({ utente, accesso }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 18 }}>
         <div style={{ ...scatola, marginBottom: 0, padding: 16 }}>
           <div style={{ fontWeight: 800, marginBottom: 6 }}>1. Fai leggere i documenti a Claude</div>
-          <div style={{ fontSize: 13.5, marginBottom: 10 }}>Metti i PDF in <b>F24\PROGRAMMA\DA SMISTARE</b>, copia il prompt, incollalo nel tuo Claude e aspetta che scriva la lettura in <b>LETTURE</b>.</div>
-          <button style={bottone()} onClick={() => navigator.clipboard?.writeText(PROMPT_LETTURA_F24).then(() => alert("Prompt di lettura copiato: incollalo nel tuo Claude."))}>📋 Copia il prompt di lettura (versione 2)</button>
+          <div style={{ fontSize: 13.5, marginBottom: 10 }}>Metti i PDF in <b>F24\PROGRAMMA\DA SMISTARE</b>. Nel tuo Claude sul computer collega la cartella <b>F24</b>, incolla il prompt e aspetta che scriva la lettura in <b>LETTURE</b>.</div>
+          <button style={bottone()} onClick={() => navigator.clipboard?.writeText(PROMPT_LETTURA_F24).then(() => alert("Prompt di lettura copiato: incollalo nel tuo Claude."))}>📋 Copia il prompt di lettura (versione 3)</button>
         </div>
         <div style={{ ...scatola, marginBottom: 0, padding: 16 }}>
           <div style={{ fontWeight: 800, marginBottom: 6 }}>2. Carica la lettura</div>
@@ -662,7 +719,7 @@ export default function F24Arrivati({ utente, accesso }) {
           <div style={testataScatola}>📄 F24 e pagamenti <span style={{ color: C.muted, fontWeight: 600, fontSize: 13 }}>({cl.deleghe.length})</span></div>
           {cl.deleghe.map(d => (
             <Riga key={d.codice_delega} colore={d.colore} aperta={aperte.has(d.codice_delega)} onApri={() => apri(d.codice_delega)} testata={<>
-              <Etichetta colore={d.colore}>{d.nienteDiNuovo ? "Già nel programma e in archivio" : d.soloPagamento ? (d.esistente && !d.suo ? "Paga un F24 del programma" : "Quietanza senza F24") : COL[d.colore].nome}</Etichetta>
+              <Etichetta colore={d.colore}>{d.doppioneDi ? `Doppione di ${d.doppioneDi}` : d.nienteDiNuovo ? "Già nel programma e in archivio" : d.soloPagamento ? (d.esistente && !d.suo ? "Paga un F24 del programma" : "Quietanza senza F24") : COL[d.colore].nome}</Etichetta>
               <b>{d.oggetto}</b>
               <span style={{ color: C.muted }}>{d.soloPagamento ? `pagato il ${dataIt(d.data_pagamento)}` : `scade il ${dataIt(d.data_scadenza)}`}</span>
               <b>{euro(d.saldo)}</b>
@@ -720,7 +777,8 @@ export default function F24Arrivati({ utente, accesso }) {
                   <input type="checkbox" disabled={bloccato} checked={!!d.s.confermato} onChange={() => setDelega(d.codice_delega, { confermato: !d.s.confermato })} /> Ho controllato: è di Podere Verde e l'F24 manca davvero.
                 </label>
               </>)}
-              {!d.nienteDiNuovo && !(d.esistente && !d.suo && d.esistente.cartella_pagamento) && !d.sostituisce && <>
+              {d.doppioneDi && <div style={{ color: COL.grigio.testo, marginTop: 8, fontWeight: 700 }}>È lo stesso F24 di {d.doppioneDi}: stessa scadenza, stesso saldo, stessi codici (una copia o una scansione). Entra nel programma una volta sola e non si paga due volte. Il file non si archivia e resta in DA SMISTARE: lo vede il Dott. Bizzarri.</div>}
+              {!d.nienteDiNuovo && !d.doppioneDi && !(d.esistente && !d.suo && d.esistente.cartella_pagamento) && !d.sostituisce && <>
                 <div style={{ marginTop: 12, fontWeight: 800 }}>Nome della cartella del pagamento <span style={{ fontWeight: 600, color: C.muted, fontSize: 12.5 }}>(uguale in tutte le copie, massimo 60 caratteri)</span></div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4, flexWrap: "wrap" }}>
                   <input disabled={bloccato} list={`nomi-${d.codice_delega}`} value={d.nome} onChange={e => setDelega(d.codice_delega, { nome: e.target.value.toUpperCase() })} style={{ ...campo, width: 480 }} />
@@ -729,7 +787,7 @@ export default function F24Arrivati({ utente, accesso }) {
                   {d.nome !== d.proposto && !bloccato && <button style={bottone(true, C.muted)} onClick={() => setDelega(d.codice_delega, { nome: null })}>Rimetti la proposta</button>}
                 </div>
               </>}
-              {!d.nienteDiNuovo && <>
+              {!d.nienteDiNuovo && !d.doppioneDi && <>
                 <div style={{ marginTop: 10, fontWeight: 800 }}>Dove va nell'ARCHIVIO:</div>
                 {piano.filter(p => p.delega === d.codice_delega).map(p => <div key={p.destinazione} style={mono}>📁 ARCHIVIO\{p.destinazione} <span style={{ color: p.lunghezza > LIMITE_PERCORSO ? C.red : C.muted, fontFamily: FONT }}>({p.lunghezza}/{LIMITE_PERCORSO})</span></div>)}
                 {d.colore === "rosso" && <div style={{ color: C.muted }}>(si vede quando la riga non è più rossa)</div>}
