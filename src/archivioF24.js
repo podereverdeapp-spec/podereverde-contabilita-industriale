@@ -109,10 +109,22 @@ export async function scriviVerificato(radice, percorso, byte) {
       if (vecchio === impronta) return { esito: "Già presente uguale", md5: impronta, dimensione: byte.length, percorso: `${p.join("\\")}\\${gia}` };
       nome = nomeChiesto.replace(/(\.[^.]+)$/, `_${n}$1`);
     }
-    const provvisorio = `PROVVISORIO ${Date.now()} ${nome}`; // versione 341: senza «~», che Chrome non accetta nei nomi
+    // versione 345: sul disco di rete la scrittura può fallire per un attimo (InvalidStateError: il file è cambiato mentre lo si scriveva):
+    // si toglie il provvisorio e si riprova, al massimo 3 volte
     passo = "scrittura del file provvisorio";
-    const fh = await dir.getFileHandle(provvisorio, { create: true });
-    const w = await fh.createWritable(); await w.write(byte); await w.close();
+    let provvisorio, fh;
+    for (let tentativo = 1; ; tentativo++) {
+      provvisorio = `PROVVISORIO ${Date.now()} ${nome}`; // versione 341: senza «~», che Chrome non accetta nei nomi
+      try {
+        fh = await dir.getFileHandle(provvisorio, { create: true });
+        const w = await fh.createWritable(); await w.write(byte); await w.close();
+        break;
+      } catch (e) {
+        try { await dir.removeEntry(provvisorio); } catch { /* resta: si vede */ }
+        if (tentativo >= 3 || !["InvalidStateError", "NotReadableError", "NoModificationAllowedError", "AbortError"].includes(e?.name)) throw e;
+        await pausa(1500);
+      }
+    }
     passo = "rilettura e controllo dell'impronta";
     if (!(await rileggiFinoA(dir, provvisorio, impronta))) {
       try { await dir.removeEntry(provvisorio); } catch { /* resta il provvisorio: lo si vede */ }

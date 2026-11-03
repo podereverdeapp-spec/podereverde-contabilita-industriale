@@ -48,6 +48,7 @@ import NumeroProgressivo from "./NumeroProgressivo";
 import VenditePerAnno from "./VenditePerAnno";
 import { contaAllarmiFatturazione } from "./calcoloAruba";
 import PromptCedolini from "./PromptCedolini";
+// Versione 345 (02/11/2026): pagina F24 arrivati — un'archiviazione sola alla volta; un file esce da DA SMISTARE solo se è identico a un file dell'ARCHIVIO (altrimenti prima si conserva intero in ORIGINALI RICEVUTI); scrittura riprovata sul disco di rete.
 // Versione 344 (02/11/2026): pagina F24 arrivati — «Archivia» archivia le righe a posto e lascia in sospeso le rosse con i loro file; la quietanza senza F24 ha il nome «F24 <data del pagamento>.pdf».
 // Versione 343 (02/11/2026): pagina F24 arrivati provata sullo stato vero — prompt di lettura versione 3 (file indicati con il percorso dentro DA SMISTARE);
 //   un F24 già nel programma resta com'è (righe e campi già scritti) e si riconosce anche se trascritto con punteggiatura diversa;
@@ -511,7 +512,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 344</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 345</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>

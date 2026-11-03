@@ -1,4 +1,5 @@
 // Versione 339 (31/10/2026, ordine del Dott. Bizzarri): pagina «F24 arrivati: controlla e archivia».
+// Versione 345 (02/11/2026): un'archiviazione sola alla volta; un file esce da DA SMISTARE solo se è identico a un file dell'ARCHIVIO (altrimenti prima si conserva intero in ORIGINALI RICEVUTI), anche quando l'archiviazione riprende; scrittura riprovata sul disco di rete.
 // Versione 344 (02/11/2026): «Archivia» archivia le righe a posto e lascia in sospeso le rosse (con i loro file in DA SMISTARE); il lavoro resta aperto finché non è tutto archiviato; la quietanza senza F24 riceve il nome «F24 <data del pagamento>.pdf».
 // Versione 343 (02/11/2026): prompt di lettura versione 3; i file si riconoscono dal percorso dentro DA SMISTARE.
 // Versione 342 (31/10/2026): scatola «F24 già nel programma da mettere nell'archivio nuovo» (solo amministratore): usa i PDF del programma, non rilegge.
@@ -398,7 +399,14 @@ export default function F24Arrivati({ utente, accesso }) {
   }
 
   // ── Passo 3: Archivia ──
+  // versione 345: un'archiviazione sola alla volta anche nella stessa pagina (un secondo clic mentre parte non ne avvia un'altra)
+  const inArchiviazione = useRef(false);
   async function archivia(riprendi = false) {
+    if (inArchiviazione.current) return;
+    inArchiviazione.current = true;
+    try { await archiviaUnaVolta(riprendi); } finally { inArchiviazione.current = false; }
+  }
+  async function archiviaUnaVolta(riprendi) {
     if (!cl || (!riprendi && !archiviabili.length)) return;
     const attesa = daSistemare.length + inSospeso.length;
     if (!riprendi && !window.confirm(`Archiviare? Si scrivono ${piano.length} file nell'ARCHIVIO, si salvano i dati e i PDF nel programma e poi si cancellano da DA SMISTARE gli originali archiviati.${attesa ? ` ${attesa} righe restano in sospeso con i loro file in DA SMISTARE: si archiviano dopo, quando sono a posto.` : ""}`)) return;
@@ -414,8 +422,10 @@ export default function F24Arrivati({ utente, accesso }) {
     setArchiviazione({ passi, inCorso: true });
     try {
       if (lavoro.stato === "Aperto") {
-        const { error } = await supabase.from("ci_f24_lavori").update({ stato: "Archiviazione in corso", scelte }).eq("id", lavoro.id);
+        // versione 345: il lucchetto si prende solo se il lavoro è ancora «Aperto» (nessun'altra finestra lo ha già preso)
+        const { data: preso, error } = await supabase.from("ci_f24_lavori").update({ stato: "Archiviazione in corso", scelte }).eq("id", lavoro.id).eq("stato", "Aperto").select("id");
         if (error) throw new Error(/una_archiviazione/i.test(error.message) ? "Un'altra persona sta archiviando in questo momento: riprova tra poco." : error.message);
+        if (!preso?.length) throw new Error("l'archiviazione di questa lettura è già partita (un altro clic o un'altra finestra): ricarica la pagina e, se serve, premi «Riprendi l'archiviazione interrotta»");
         setLavoro(l => ({ ...l, stato: "Archiviazione in corso" }));
       }
       const programma = await cartella(radice, "PROGRAMMA");
@@ -550,6 +560,7 @@ export default function F24Arrivati({ utente, accesso }) {
       base = await caricaDb();
       // 5) i file nell'ARCHIVIO del cloud, uno per uno, con il controllo dell'impronta
       const usati = new Map(); // sorgente → tutti i suoi file scritti bene?
+      const annotati = new Set(base.fileArchivio.map(x => x.percorso.toUpperCase()));
       for (const p of piano) {
         const v = p.cosa === "Originale ricevuto" ? pronti.get(`${p.sorgente}|Originale ricevuto`) : await pdf(p.sorgente, p.pagine);
         const d = p.delega ? cl.deleghe.find(x => x.codice_delega === p.delega) : null;
@@ -566,50 +577,61 @@ export default function F24Arrivati({ utente, accesso }) {
         const f24Id = d ? idDi.get(d.codice_delega) : null;
         const documentoId = p.comunicazione ? docId.get(p.comunicazione) : p.cosa === "Originale ricevuto" ? docId.get(`orig|${p.sorgente}`)
           : p.cosa !== "F24" ? base.documenti.find(x => x.md5 === v.md5)?.id || null : null;
-        if (!base.fileArchivio.some(x => x.percorso.toUpperCase() === r.percorso.toUpperCase())) {
+        if (!annotati.has(r.percorso.toUpperCase())) {
           const { error } = await supabase.from("ci_f24_file_archivio").insert({ percorso: r.percorso, cartella: p.categoria, cosa: p.cosa, f24_id: f24Id || null,
             documento_id: documentoId, md5: r.md5, dimensione: r.dimensione, lavoro_id: lavoro.id });
-          if (error) throw new Error(`File scritto ma non annotato nel programma (${r.percorso}): ${error.message}`);
+          if (error) {
+            // versione 345: se è già annotato con la stessa impronta va bene (archiviazione ripresa); altrimenti ci si ferma
+            const { data: gia } = await supabase.from("ci_f24_file_archivio").select("percorso, md5").eq("percorso", r.percorso);
+            if (!(gia || []).some(x => x.md5 === r.md5)) throw new Error(`File scritto ma non annotato nel programma (${r.percorso}): ${error.message}`);
+          }
+          annotati.add(r.percorso.toUpperCase());
         }
         usati.set(p.sorgente, true);
         await segna(`${r.esito}: ARCHIVIO\\${r.percorso}`);
       }
-      // versione 343: un file ricevuto di cui si è archiviata solo una parte (per esempio la pagina dell'F24 e non la fattura che c'è dopo)
-      // non si perde: prima di toglierlo da DA SMISTARE si conserva intero in ORIGINALI RICEVUTI
-      let interi = 0;
-      for (const s of usati.keys()) {
-        const pezzi = [...pronti.entries()].filter(([k]) => k.slice(0, k.lastIndexOf("|")) === s).map(([, v]) => v);
-        if (pezzi.some(v => v.md5Ricevuto && v.md5 === v.md5Ricevuto) || piano.some(p => p.cosa === "Originale ricevuto" && p.sorgente === s)) continue;
-        const dove = `DA SMISTARE\\${percorsoInDaSmistare(docDi(s))}`;
-        const byte = await leggiFile(programma, dove); const imp = md5(byte);
-        let id = base.documenti.find(x => x.md5 === imp)?.id;
-        if (!id) {
-          const { data, error } = await supabase.from("ci_f24_documenti").insert({ tipo: "Originale ricevuto", nome_file_ricevuto: s, md5: imp, md5_file_ricevuto: imp, dimensione: byte.length, lavoro_id: lavoro.id,
-            note: "Archiviata solo una parte: il file ricevuto si conserva intero" }).select("id").single();
-          if (error) throw new Error(`Originale «${s}» non registrato: ${error.message}`);
-          id = data.id;
-        }
-        const r = await scriviVerificato(archivio, `ORIGINALI RICEVUTI\\${oggi.slice(0, 4)}\\${s.split("\\").pop()}`, byte);
-        base = await caricaDb();
-        if (!base.fileArchivio.some(x => x.percorso.toUpperCase() === r.percorso.toUpperCase())) {
-          const { error } = await supabase.from("ci_f24_file_archivio").insert({ percorso: r.percorso, cartella: "ORIGINALI RICEVUTI", cosa: "Originale ricevuto", f24_id: null,
-            documento_id: id, md5: r.md5, dimensione: r.dimensione, lavoro_id: lavoro.id });
-          if (error) throw new Error(`File scritto ma non annotato nel programma (${r.percorso}): ${error.message}`);
-        }
-        interi++;
-        await segna(`${r.esito}: ARCHIVIO\\${r.percorso} (file ricevuto intero: ne è stata archiviata solo una parte)`);
-      }
+      // versione 345 — REGOLA: un file esce da DA SMISTARE solo se è identico, byte per byte (stessa impronta), a un file dell'ARCHIVIO.
+      // Se dell'originale si è archiviata solo una parte (una pagina, una delega), prima si conserva intero in ORIGINALI RICEVUTI.
+      // Vale anche quando l'archiviazione riprende dopo un'interruzione o si fa a più riprese.
       base = await caricaDb();
-      // 6) solo alla fine: via da DA SMISTARE gli originali archiviati e verificati (e i doppioni già archiviati identici)
+      const fileDiDelega = d => [d.soloPagamento ? null : d.nome_file_ricevuto, d.nome_file_quietanza, d.nome_file_contabile].filter(Boolean);
+      const candidati = new Map();
+      for (const s of usati.keys()) candidati.set(s, docDi(s));
+      for (const d of cl.deleghe.filter(x => x.colore !== "rosso" && !x.inSospeso && !x.doppioneDi && (x.nienteDiNuovo || idDi.has(x.codice_delega))))
+        for (const f of fileDiDelega(d)) candidati.set(f, docDi(f));
+      for (const c of cl.comunicazioni.filter(x => x.colore !== "rosso" && !x.inSospeso && (x.giaNelProgramma || docId.has(x.k)))) candidati.set(c.nome, c.doc);
+      for (const x of letta.documenti.filter(x => x.estratto_da && candidati.has(x.estratto_da))) candidati.set(x.nome, x);
+      for (const f of cl.sospesi) candidati.delete(f); // versione 344: un file con una riga in sospeso resta dov'è
+      let interi = 0;
       const daCancellare = new Map();
-      for (const s of usati.keys()) daCancellare.set(s, docDi(s));
-      for (const d of cl.deleghe.filter(x => x.nienteDiNuovo && !x.inSospeso && x.colore !== "rosso")) {
-        const doc = docDi(d.nome_file_ricevuto);
-        if (doc?.md5 && (base.fileArchivio.some(x => x.md5 === doc.md5) || base.documenti.some(x => x.md5_file_ricevuto === doc.md5))) daCancellare.set(doc.nome, doc);
+      for (const [nome, doc] of candidati) {
+        const dove = `DA SMISTARE\\${percorsoInDaSmistare(doc)}`;
+        let byte;
+        try { byte = await leggiFile(programma, dove); } catch { continue; } // già tolto in un passaggio precedente
+        const imp = md5(byte);
+        if (doc?.md5 && imp !== doc.md5) throw new Error(`«${nome}» è cambiato dopo la lettura di Claude: non si toglie da DA SMISTARE, va riletto`);
+        if (!base.fileArchivio.some(x => x.md5 === imp && !x.superato)) {
+          let id = base.documenti.find(x => x.md5 === imp)?.id;
+          if (!id) {
+            const { data, error } = await supabase.from("ci_f24_documenti").insert({ tipo: "Originale ricevuto", nome_file_ricevuto: nome, md5: imp, md5_file_ricevuto: imp, dimensione: byte.length, lavoro_id: lavoro.id,
+              note: "File ricevuto conservato intero: nell'archivio ne è stata messa solo una parte" }).select("id").single();
+            if (error) throw new Error(`Originale «${nome}» non registrato: ${error.message}`);
+            id = data.id;
+          }
+          const r = await scriviVerificato(archivio, `ORIGINALI RICEVUTI\\${oggi.slice(0, 4)}\\${nome.split("\\").pop()}`, byte);
+          base = await caricaDb();
+          if (!base.fileArchivio.some(x => x.percorso.toUpperCase() === r.percorso.toUpperCase())) {
+            const { error } = await supabase.from("ci_f24_file_archivio").insert({ percorso: r.percorso, cartella: "ORIGINALI RICEVUTI", cosa: "Originale ricevuto", f24_id: null,
+              documento_id: id, md5: r.md5, dimensione: r.dimensione, lavoro_id: lavoro.id });
+            if (error) throw new Error(`File scritto ma non annotato nel programma (${r.percorso}): ${error.message}`);
+            base = await caricaDb();
+          }
+          interi++;
+          await segna(`${r.esito}: ARCHIVIO\\${r.percorso} (file ricevuto conservato intero)`);
+        }
+        daCancellare.set(nome, doc);
       }
-      for (const c of cl.comunicazioni.filter(x => x.giaNelProgramma && !x.inSospeso && x.colore !== "rosso")) daCancellare.set(c.nome, c.doc);
-      for (const x of letta.documenti.filter(x => x.estratto_da && daCancellare.has(x.estratto_da))) daCancellare.set(x.nome, x);
-      for (const f of cl.sospesi) daCancellare.delete(f); // versione 344: un file con una riga in sospeso resta dov'è
+      // 6) solo alla fine: via da DA SMISTARE i file che sono nell'ARCHIVIO identici
       for (const [nome, doc] of daCancellare) {
         const esito = await cancellaOriginale(programma, `DA SMISTARE\\${percorsoInDaSmistare(doc)}`, doc?.md5);
         await segna(`${esito} da DA SMISTARE: ${nome}`);

@@ -2,6 +2,8 @@
 // Qui si vede chi si è registrato e si decide chi entra nel programma e in quali parti.
 // La vedono il Dott. Bizzarri (amministratore) e i gestori degli accessi (Colabucci e Demaria).
 // Gestore degli accessi e porta di servizio li cambia solo l'amministratore (lo controlla anche il database).
+// Versione 346 (03/11/2026, ore 20:27): permesso «Può spedire mail dal programma», separato da «Tutto il programma»;
+// lo danno o lo tolgono solo l'amministratore e i gestori degli accessi (lo controlla anche il database).
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "./supabase";
 import { C, FONT } from "./style";
@@ -27,7 +29,7 @@ function anomalieDi(r) {
 }
 
 function SchedaPersona({ r, io, admin, onSalvato }) {
-  const iniziale = { stato: r.stato || "In attesa", tutto: !!r.tutto_il_programma, parti: r.parti || [], gestore: !!r.gestore_accessi, porta: r.porta_servizio || "No", note: r.note || "" };
+  const iniziale = { stato: r.stato || "In attesa", tutto: !!r.tutto_il_programma, parti: r.parti || [], gestore: !!r.gestore_accessi, porta: r.porta_servizio || "No", mail: !!r.puo_spedire_mail, note: r.note || "" };
   const [b, setB] = useState(iniziale);
   const [salva, setSalva] = useState(false);
   const [esito, setEsito] = useState(null);
@@ -45,7 +47,7 @@ function SchedaPersona({ r, io, admin, onSalvato }) {
 
   async function salvaScelte() {
     setSalva(true); setEsito(null);
-    const dati = { stato: b.stato, tutto_il_programma: b.tutto, parti: b.parti, note: b.note.trim() || null };
+    const dati = { stato: b.stato, tutto_il_programma: b.tutto, parti: b.parti, puo_spedire_mail: b.mail, note: b.note.trim() || null };
     if (admin) { dati.gestore_accessi = b.gestore; dati.porta_servizio = b.porta; }
     const { error } = r.stato == null
       ? await supabase.from("ci_accessi_programma").insert([{ profilo_id: r.profilo_id, ...dati }])
@@ -64,6 +66,7 @@ function SchedaPersona({ r, io, admin, onSalvato }) {
         <div style={{ color: C.muted, fontSize: 13 }}>{r.email}</div>
         <span style={{ background: COLORE_STATO[r.stato] || "#9A958A", color: "#fff", borderRadius: 10, padding: "2px 9px", fontSize: 11.5, fontWeight: 800 }}>{eAdmin ? "Amministratore" : statoMostrato}</span>
         {r.gestore_accessi && <span style={{ background: C.blue, color: "#fff", borderRadius: 10, padding: "2px 9px", fontSize: 11.5, fontWeight: 800 }}>Gestore degli accessi</span>}
+        {r.puo_spedire_mail && <span style={{ background: C.green, color: "#fff", borderRadius: 10, padding: "2px 9px", fontSize: 11.5, fontWeight: 800 }}>✉️ Può spedire mail</span>}
         {r.porta_servizio !== "No" && <span style={{ background: C.accent, color: "#fff", borderRadius: 10, padding: "2px 9px", fontSize: 11.5, fontWeight: 800 }}>Porta di servizio: {r.porta_servizio}</span>}
         <span style={{ marginLeft: "auto", color: C.muted, fontSize: 12 }}>{aperta ? "▾ chiudi" : "▸ apri"}</span>
       </div>
@@ -106,7 +109,13 @@ function SchedaPersona({ r, io, admin, onSalvato }) {
               <span><b>Costi del Lavoro (buste paga)</b> — sono dati riservati: si spunta sempre a parte, anche con «Tutto il programma».</span>
             </label>
 
-            <div style={{ fontWeight: 800, marginBottom: 6 }}>3. Solo per il Dott. Bizzarri</div>
+            <div style={{ fontWeight: 800, marginBottom: 6 }}>3. Mail dal programma</div>
+            <label style={{ display: "flex", gap: 8, alignItems: "center", background: "#EEF5EF", border: "1px solid #A9C9B0", borderRadius: 8, padding: "8px 10px", marginBottom: 14, cursor: "pointer" }}>
+              <input type="checkbox" checked={b.mail} onChange={() => setB(x => ({ ...x, mail: !x.mail }))} />
+              <span><b>Può spedire mail dal programma</b> (dalla casella podereverdeapp@gmail.com) — si spunta sempre a parte: «Tutto il programma» non la comprende.</span>
+            </label>
+
+            <div style={{ fontWeight: 800, marginBottom: 6 }}>4. Solo per il Dott. Bizzarri</div>
             {admin ? (
               <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "center", marginBottom: 14 }}>
                 <label style={{ display: "flex", gap: 8, alignItems: "center", cursor: "pointer" }}>
@@ -127,7 +136,7 @@ function SchedaPersona({ r, io, admin, onSalvato }) {
               </div>
             )}
 
-            <div style={{ fontWeight: 800, marginBottom: 6 }}>4. Note (facoltative)</div>
+            <div style={{ fontWeight: 800, marginBottom: 6 }}>5. Note (facoltative)</div>
             <input value={b.note} onChange={e => setB(x => ({ ...x, note: e.target.value }))} placeholder="Per esempio: impiegata dello studio, solo F24"
               style={{ width: "100%", boxSizing: "border-box", border: `1.5px solid ${C.border}`, borderRadius: 8, padding: "8px 10px", fontSize: 13.5, fontFamily: FONT, marginBottom: 12 }} />
 
@@ -239,10 +248,15 @@ export function IstruzioniAccessi() {
       <h3 style={h}>4. Come si toglie l'accesso</h3>
       <p style={p}>Nella scheda della persona si preme <b>«⛔ Blocca»</b> e poi «💾 Salva». Al prossimo ingresso vedrà «Accesso bloccato». Per togliere solo una parte, si toglie la spunta e si salva.</p>
 
-      <h3 style={h}>5. Che cosa non si può fare (lo blocca anche il database)</h3>
-      <p style={p}>Nessuno può cambiare il proprio accesso: lo fa un altro gestore o il Dott. Bizzarri. Nessuno può toccare l'accesso del Dott. Bizzarri. Solo il Dott. Bizzarri decide chi è <b>gestore degli accessi</b> e chi ha la <b>porta di servizio</b>.</p>
+      <h3 style={h}>5. Le mail dal programma</h3>
+      <p style={p}>Spedire mail dal programma (dalla casella <b>podereverdeapp@gmail.com</b>) è un permesso a parte: <b>non è compreso in «Tutto il programma»</b>. Si dà spuntando, al punto 3 della scheda, <b>«Può spedire mail dal programma»</b> e premendo «💾 Salva». Lo danno o lo tolgono solo il Dott. Bizzarri e i gestori degli accessi.</p>
+      <p style={p}>Chi non ha la spunta, nella scheda di un cliente o di un fornitore, vede l'avviso che non ha il permesso e non può spedire.</p>
+      <p style={p}>Con la stessa spunta si possono anche <b>togliere comunicazioni dal registro</b> (con il motivo: restano conservate e si possono rimettere) e <b>bloccare un mittente</b>, perché le sue mail non entrino più.</p>
 
-      <h3 style={h}>6. La porta di servizio (entrare con il proprio Claude)</h3>
+      <h3 style={h}>6. Che cosa non si può fare (lo blocca anche il database)</h3>
+      <p style={p}>Nessuno può cambiare il proprio accesso: lo fa un altro gestore o il Dott. Bizzarri. Nessuno può toccare l'accesso del Dott. Bizzarri. Solo il Dott. Bizzarri decide chi è <b>gestore degli accessi</b> e chi ha la <b>porta di servizio</b>. Il permesso di spedire mail lo cambiano solo il Dott. Bizzarri e i gestori.</p>
+
+      <h3 style={h}>7. La porta di servizio (entrare con il proprio Claude)</h3>
       <p style={p}>La «porta principale» è il programma: si entra con email e password. La «porta di servizio» serve a far lavorare il <b>proprio Claude</b> direttamente nel database, senza passare dal programma. Il Dott. Bizzarri ce l'ha sempre. Gli altri solo se lui lo decide.</p>
       <p style={p}><b>Come si apre la porta di servizio a una persona</b> (lo fa solo il Dott. Bizzarri):</p>
       <p style={p}>1) Nella scheda della persona, al punto 3, si sceglie «Sola lettura» o «Completa» e si salva: è il promemoria. 2) Si apre la pagina <b>«Team» di Supabase</b> (c'è il collegamento in cima alla pagina «Chi entra nel programma»). 3) Si preme <b>«Invite»</b>, si scrive l'email della persona e si sceglie il ruolo: per «Sola lettura» il ruolo di sola lettura («Read-only», se la pagina lo offre); per «Completa» il ruolo <b>«Developer»</b>. Mai «Owner» o «Administrator». 4) La persona riceve un'email, accetta l'invito e da quel momento il suo Claude, collegato a Supabase con il suo nome, può entrare.</p>

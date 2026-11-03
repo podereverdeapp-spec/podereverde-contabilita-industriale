@@ -8,7 +8,8 @@ import { fetchAllPages } from "./parsingUtils";
 // - Una comunicazione appartiene a un cliente o a un fornitore se è stata registrata dalla sua scheda, oppure se è stata
 //   mandata al suo indirizzo email o PEC, o al suo numero di telefono: così le mail partite da altre sezioni
 //   (fatture all'amministrazione, report mensile) compaiono da sole nella scheda giusta.
-// - Le comunicazioni non si cancellano.
+// - Le comunicazioni non si cancellano. Dalla versione 346 (03/11/2026, ore 21:47) si possono TOGLIERE dal registro:
+//   nascoste, conservate e recuperabili, con chi, quando e perché; e si possono bloccare i mittenti indesiderati.
 
 export const CAMPI_ANAGRAFICA = [
   { campo: "nome", etichetta: "Nome", obbligatorio: true, largo: true },
@@ -133,6 +134,7 @@ export async function caricaComunicazioni() {
 
 // Le comunicazioni che appartengono a una scheda
 export function comunicazioniDi(tipo, record, tutte) {
+  tutte = tutte.filter(c => !c.tolta_il); // le comunicazioni tolte dal registro non compaiono nelle schede
   const indirizzi = new Set([record.email, record.pec].map(pulisciEmail).filter(Boolean));
   const telefoni = new Set([record.telefono, record.telefono_2].map(pulisciTelefono).filter(t => t.length >= 6));
   return tutte.filter(c => {
@@ -194,9 +196,27 @@ export async function apriAllegato(a) {
   }
 }
 
-// Manda una mail dal programma al cliente o al fornitore (funzione del server invia-mail-anagrafica)
+// Versione 346 (decisioni del Dott. Bizzarri del 03/11/2026, ore 18:42–21:34): la mail al cliente o al fornitore parte
+// dalla casella podereverdeapp@gmail.com attraverso il postino (funzione del server «spedisci-mail»), con intestazione,
+// logo, firma scelta di volta in volta e piè di pagina di legge (art. 2250 c.c.). Serve il permesso
+// «Può spedire mail dal programma» (cartella «Accessi»). Le risposte tornano a quella casella e entrano da sole nel registro.
 export const LIMITE_ALLEGATI = 8 * 1024 * 1024;
-export async function mandaMail({ tipo, id, oggetto, testo, files }) {
+export const CASELLA_COMUNICAZIONI = "podereverdeapp@gmail.com";
+export const FIRMA_PREDEFINITA = "Amministrazione";
+export const INTESTAZIONE_MAIL = "SOCIETÀ AGRICOLA PODERE VERDE a r.l.\nVia Portuense 1118 – 00148 Roma";
+export const PIEDE_MAIL = "Società Agricola Podere Verde a r.l. – Sede legale: Via Portuense 1118, 00148 Roma\nRegistro Imprese di Roma, codice fiscale e partita IVA 15117871002 – REA RM-1568951\nCapitale sociale euro 10.000,00 interamente versato – PEC: agricolapodereverdesrl@pec.it";
+
+// Chi è collegato può spedire mail dal programma? (lo decide il database: ci_puo_spedire_mail)
+export async function puoSpedireMail() {
+  const { data, error } = await supabase.rpc("ci_puo_spedire_mail");
+  return !error && data === true;
+}
+// Codice di una richiesta di spedizione: lo stesso clic ripetuto non fa partire una seconda mail
+export function nuovoCodiceRichiesta() {
+  return crypto.randomUUID();
+}
+
+export async function mandaMail({ tipo, id, oggetto, testo, firma, files, codiceRichiesta }) {
   const totale = files.reduce((s, f) => s + f.size, 0);
   if (totale > LIMITE_ALLEGATI) throw new Error(`Gli allegati pesano ${(totale / 1048576).toFixed(1)} MB: il massimo è 8 MB.`);
   const allegati = [];
@@ -205,17 +225,17 @@ export async function mandaMail({ tipo, id, oggetto, testo, files }) {
     let s = ""; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000));
     allegati.push({ nome: f.name, tipo: f.type || "application/octet-stream", contenuto: btoa(s) });
   }
-  const { data, error } = await supabase.functions.invoke("invia-mail-anagrafica", { body: { tipo, id, oggetto, testo, allegati } });
+  const { data, error } = await supabase.functions.invoke("spedisci-mail", {
+    body: { tipo, id, oggetto, testo, firma, allegati, codice_richiesta: codiceRichiesta },
+  });
   if (error) {
     let messaggio = error.message;
-    try { const j = await error.context.json(); if (j?.error) messaggio = j.error; } catch { /* risposta senza testo */ }
+    try { const j = await error.context.json(); if (j?.errore || j?.error) messaggio = j.errore || j.error; } catch { /* risposta senza testo */ }
     throw new Error(`Mail non mandata: ${messaggio}`);
   }
-  if (!data?.ok) throw new Error(`Mail non mandata: ${data?.error || "risposta non valida"}`);
+  if (!data?.ok) throw new Error(`Mail non mandata: ${data?.errore || data?.error || "risposta non valida"}`);
   return data;
 }
-
-export const FIRMA = "Società Agricola Podere Verde a r.l.\nVia Portuense 1118, 00148 Roma\nPartita IVA 15117871002";
 
 export function quando(iso) {
   if (!iso) return "";
@@ -225,4 +245,61 @@ export function quando(iso) {
 export function adessoLocale() {
   const d = new Date(); const z = n => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}T${z(d.getHours())}:${z(d.getMinutes())}`;
+}
+
+// ── Versione 346 (03/11/2026, ore 21:47): togliere e rimettere nel registro, mittenti bloccati ──────────
+// Il database controlla che lo faccia solo chi ha il permesso «Può spedire mail dal programma» e che ci sia il motivo.
+export const MOTIVI_TOLTA = ["Pubblicità", "Prova", "Doppione", "Altro"];
+const comeLike = v => String(v).replace(/[%_\\]/g, "\\$&");
+export const dominioDi = indirizzo => { const m = pulisciEmail(indirizzo); return m.includes("@") ? m.split("@").pop() : ""; };
+
+export async function togliDalRegistro(id, motivo) {
+  const { error } = await supabase.from("ci_comunicazioni").update({ tolta_il: new Date().toISOString(), motivo_tolta: motivo }).eq("id", id);
+  if (error) throw new Error(`Non tolta: ${error.message}`);
+}
+export async function rimettiNelRegistro(id) {
+  const { error } = await supabase.from("ci_comunicazioni").update({ tolta_il: null }).eq("id", id);
+  if (error) throw new Error(`Non rimessa: ${error.message}`);
+}
+export async function caricaBloccati() {
+  const { data, error } = await supabase.from("ci_comunicazioni_bloccati").select("*").order("bloccato_il", { ascending: false });
+  if (error) throw new Error(`Mittenti bloccati: ${error.message}`);
+  return data || [];
+}
+// Quante mail ricevute da quel mittente (indirizzo o dominio) sono oggi nel registro
+export async function contaRicevuteDa({ valore, genere }) {
+  const schema = genere === "dominio" ? `%@${comeLike(valore)}` : comeLike(valore);
+  const { count, error } = await supabase.from("ci_comunicazioni").select("id", { count: "exact", head: true })
+    .eq("direzione", "ricevuta").is("tolta_il", null).ilike("indirizzo", schema);
+  if (error) throw new Error(error.message);
+  return count || 0;
+}
+// Clienti e fornitori che hanno quell'indirizzo, o un indirizzo di quel dominio (per l'avviso prima di bloccare)
+export async function anagraficheDi({ valore, genere }) {
+  const v = String(valore).trim().toLowerCase();
+  const trova = async tabella => {
+    const { data } = await supabase.from(tabella).select("nome, email, pec");
+    return (data || []).filter(r => [r.email, r.pec].map(pulisciEmail).some(m => m && (genere === "dominio" ? dominioDi(m) === v : m === v))).map(r => r.nome);
+  };
+  const [c, f] = await Promise.all([trova("ci_clienti"), trova("ci_fornitori")]);
+  return [...c.map(n => `cliente ${n}`), ...f.map(n => `fornitore ${n}`)];
+}
+export async function bloccaMittente({ valore, genere, motivo, togliGia }) {
+  const v = String(valore).trim().toLowerCase();
+  const { error } = await supabase.from("ci_comunicazioni_bloccati").insert([{ valore: v, genere, motivo: motivo.trim() }]);
+  if (error && String(error.code) !== "23505") throw new Error(`Non bloccato: ${error.message}`);
+  let tolte = 0;
+  if (togliGia) {
+    const schema = genere === "dominio" ? `%@${comeLike(v)}` : comeLike(v);
+    const { data, error: e2 } = await supabase.from("ci_comunicazioni")
+      .update({ tolta_il: new Date().toISOString(), motivo_tolta: `Mittente bloccato (${v}): ${motivo.trim()}` })
+      .eq("direzione", "ricevuta").is("tolta_il", null).ilike("indirizzo", schema).select("id");
+    if (e2) throw new Error(`Bloccato, ma le mail già entrate non sono state tolte: ${e2.message}`);
+    tolte = (data || []).length;
+  }
+  return { tolte };
+}
+export async function sbloccaMittente(id) {
+  const { error } = await supabase.from("ci_comunicazioni_bloccati").delete().eq("id", id);
+  if (error) throw new Error(`Non sbloccato: ${error.message}`);
 }
