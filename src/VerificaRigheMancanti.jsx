@@ -211,7 +211,9 @@ export default function VerificaRigheMancanti() {
     reader.onload = evt => {
       try {
         const wb = XLSX.read(evt.target.result, { type: "binary", cellDates: true });
-        const foglio = wb.Sheets[wb.SheetNames[0]];
+        // Versione 348: le righe si leggono dal foglio «Fatture» (una riga per voce) se c'è, come nel carico; prima si
+        // prendeva sempre il primo foglio, e con un file che comincia con il foglio «Verifica Fatture» non c'erano le righe
+        const foglio = wb.Sheets[wb.SheetNames.find(n => n.trim().toLowerCase() === "fatture") || wb.SheetNames[0]];
         const dati = XLSX.utils.sheet_to_json(foglio, { defval: "" });
         if (dati.length === 0) { setErrore("Il file sembra vuoto."); return; }
         setColonne(Object.keys(dati[0]));

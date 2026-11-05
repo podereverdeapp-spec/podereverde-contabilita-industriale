@@ -116,13 +116,13 @@ export default function IstruzioniFatture() {
         },
         {
           pagina: "Verifica Fatture Mancanti", icon: "🔍",
-          aCosaServe: "Controllare che nel programma ci siano tutte le fatture di acquisto di un anno, confrontandole con un elenco Excel (dal cassetto fiscale, dal commercialista, dalla PEC).",
+          aCosaServe: "Controllare che nel programma ci siano tutte le fatture di un elenco (Report di Aruba, cassetto fiscale, commercialista), e trovare quelle quasi uguali, con importi diversi o presenti solo nel programma.",
           comeSiUsa: [
-            "Scegliere l'anno e il file con «📎 Scegli file Excel».",
-            "Indicare le colonne: «Numero fattura» (obbligatoria), «Fornitore» (consigliata), «Data» (per l'anno). Il programma prova a riconoscerle da solo.",
-            "«🔍 Confronta con il database»: compare l'elenco delle fatture del file che nel programma non ci sono.",
+            "Scegliere «Fatture d'acquisto» o «Fatture di vendita» e il file con «📎 Scegli il file (Excel o CSV)».",
+            "Il programma propone il foglio con una riga per fattura (le righe per voce si raggruppano) e le colonne: numero, data, fornitore, partita IVA, totale e imponibile. Si possono cambiare.",
+            "«🔍 Confronta con il programma»: mancanti, da guardare, importi diversi, nomi scritti in modo diverso, documenti del programma non nel file, righe scartate. «⬇️ Scarica tutto in Excel» li porta in un file.",
           ],
-          note: "Il confronto è per numero (senza zeri iniziali, spazi, barre e trattini) e, se indicato, per nome del fornitore scritto esattamente come in anagrafica. Le fatture d'acquisto di animali registrate solo nel Report Acquisto Animali risultano mancanti: verificarle lì.",
+          note: "Dalla versione 348: la fattura si riconosce da numero, data e fornitore (partita IVA, oppure nome senza SRL, S.R.L., punteggiatura e maiuscole). Comprende gli acquisti di animali del Report Acquisto Animali. Il confronto legge soltanto.",
         },
         {
           pagina: "Verifica Righe Mancanti", icon: "🔎",
