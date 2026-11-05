@@ -7,6 +7,7 @@ import { supabase } from "./supabase";
 import { C } from "./style";
 import { fetchAllPages } from "./parsingUtils";
 import { eseguiControlli, personePerRecord, STATI_ANOMALIA, dataIt } from "./controlliRegistri";
+import { eEsterna } from "./anomalieEsterne";
 
 const COLORE_AREA = { "Fatture": C.primaryLight, "Lotti suini": C.suini, "Parti": "#7A5C8E", "Animali": C.bovini, "Cespiti": C.blue, "Costi": C.accent, "Fatture acquisto": C.green };
 const bottone = (colore, pieno = true) => ({ background: pieno ? colore : "transparent", color: pieno ? "#fff" : colore, border: `1.5px solid ${colore}`, borderRadius: 8, padding: "6px 12px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" });
@@ -200,8 +201,10 @@ export default function RegistroControlli({ onCambiaAperte }) {
       personePerRecord(),
     ]);
     if (error) { setErrore(`${error.message} — il database è stato aggiornato con le strutture della versione 232?`); return; }
-    setAnomalie(data || []); setDiario(d || []); setPersone(mappa);
-    onCambiaAperte?.((data || []).filter(x => x.stato === "aperta").length);
+    // Versione 349: i modelli 4 e il controllo delle cartelle hanno la loro pagina («Modelli 4: chiusi e non chiusi»)
+    const proprie = (data || []).filter(x => !eEsterna(x));
+    setAnomalie(proprie); setDiario(d || []); setPersone(mappa);
+    onCambiaAperte?.(proprie.filter(x => x.stato === "aperta").length);
   }
   useEffect(() => { carica(); }, []);
 

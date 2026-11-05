@@ -97,6 +97,8 @@ import IstruzioniStudi from "./IstruzioniStudi";
 import IstruzioniColtivazioni from "./IstruzioniColtivazioni";
 import Modelli4 from "./Modelli4";
 import IstruzioniModelli4 from "./IstruzioniModelli4";
+import Modelli4Chiusure from "./Modelli4Chiusure"; // versione 349
+import { contaModelli4Aperti } from "./anomalieEsterne"; // versione 349
 import FattureCompetenza from "./FattureCompetenza";
 import UsciteDaFatturare from "./UsciteDaFatturare";
 import PreparaFatture from "./PreparaFatture";
@@ -330,6 +332,7 @@ const MENU = [
   { tipo: "cartella", id: "cart-modelli4", label: "Modelli 4", icon: "📑", contenuto: [
     { tipo: "voce", id: "istr-modelli4", label: "Istruzioni", icon: "📖" },
     { tipo: "voce", id: "modelli4-elenco", label: "Elenco dei Modelli 4", icon: "📑" },
+    { tipo: "voce", id: "modelli4-chiusure", label: "Modelli 4: chiusi e non chiusi", icon: "🚦" }, // versione 349
     { tipo: "voce", id: "modelli4-altri", label: "Altri documenti di Stefano Cortesi", icon: "🗂️" },
   ]},
   { tipo: "cartella", id: "cart-studi", label: "Studi", icon: "🔎", contenuto: [
@@ -479,7 +482,10 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
   // Versione 323: punti degli ovini da verificare con Sborchia (avviso finché sono «Da verificare»)
   const [verificheAnimali, setVerificheAnimali] = useState(0);
   useEffect(() => { contaVerificheAnimali().then(setVerificheAnimali); }, [tab]);
-  const AVVISI = { "cart-animali": verificheAnimali, "verifiche-ovini": verificheAnimali, "cart-alimentaria": senzaComposizione, "alimenti-senza-composizione": senzaComposizione, "cart-fatture": anomalieAperte || 0, "sub-dati-controllo": anomalieAperte || 0, "registro-controlli": anomalieAperte || 0, "cart-emissione-fatture": daFatturare + allarmiAttiva, "sub-fatturazione-animali": daFatturare, "fatt-animali-da-fatturare": daFatturare, "fatt-animali-prepara": daFatturare, "sub-controllo-attiva": allarmiAttiva, "controllo-attiva": allarmiAttiva, "cart-accessi-registro": richiesteAccesso, "sub-accessi": richiesteAccesso, "accessi": richiesteAccesso };
+  // Versione 349: modelli 4 non chiusi con la fattura (anomalie «M4» aperte, per colore)
+  const [modelli4Aperti, setModelli4Aperti] = useState({ rosso: 0, arancione: 0, azzurro: 0, totale: 0 });
+  useEffect(() => { contaModelli4Aperti().then(setModelli4Aperti); }, [tab]);
+  const AVVISI = { "cart-modelli4": modelli4Aperti.totale, "modelli4-chiusure": modelli4Aperti.totale, "cart-animali": verificheAnimali, "verifiche-ovini": verificheAnimali, "cart-alimentaria": senzaComposizione, "alimenti-senza-composizione": senzaComposizione, "cart-fatture": anomalieAperte || 0, "sub-dati-controllo": anomalieAperte || 0, "registro-controlli": anomalieAperte || 0, "cart-emissione-fatture": daFatturare + allarmiAttiva, "sub-fatturazione-animali": daFatturare, "fatt-animali-da-fatturare": daFatturare, "fatt-animali-prepara": daFatturare, "sub-controllo-attiva": allarmiAttiva, "controllo-attiva": allarmiAttiva, "cart-accessi-registro": richiesteAccesso, "sub-accessi": richiesteAccesso, "accessi": richiesteAccesso };
 
   function vaiA(pageId) {
     if (!puo(pageId)) return; // versione 337: pagina non data a questa persona
@@ -516,7 +522,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 348</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 349</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -619,6 +625,18 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
             style={{ background: "#C0392B", color: "#fff", padding: "10px 20px", fontSize: 13.5, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
             ⚠️ {anomalieAperte === 1 ? "C'è 1 anomalia" : `Ci sono ${anomalieAperte} anomalie`} nei registri da decidere.
             <span style={{ textDecoration: "underline", fontWeight: 800 }}>Vai al Registro Controlli →</span>
+          </div>
+        )}
+        {modelli4Aperti.totale > 0 && tab !== "modelli4-chiusure" && puo("modelli4-chiusure") && (
+          <div onClick={() => vaiA("modelli4-chiusure")}
+            style={{ background: modelli4Aperti.rosso > 0 ? "#C0392B" : "#FFF1DC", color: modelli4Aperti.rosso > 0 ? "#fff" : "#7A4A00", borderBottom: modelli4Aperti.rosso > 0 ? "none" : "2px solid #D4880F", padding: "10px 20px", fontSize: 13.5, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            🚦 Modelli 4 non chiusi con la fattura: {[modelli4Aperti.rosso ? `${modelli4Aperti.rosso} del 2026 (allarme)` : "", modelli4Aperti.azzurro ? `${modelli4Aperti.azzurro} scambio da verificare` : "", modelli4Aperti.arancione ? `${modelli4Aperti.arancione} degli anni precedenti da controllare` : ""].filter(Boolean).join(", ")}.
+            <span style={{ textDecoration: "underline", fontWeight: 800 }}>Vai ai Modelli 4 →</span>
+          </div>
+        )}
+        {modelli4Aperti.errore && puo("modelli4-chiusure") && (
+          <div style={{ background: "#FFF4D6", borderBottom: "2px solid #D4A017", color: "#6B5200", padding: "8px 20px", fontSize: 13 }}>
+            ⚠️ Non riesco a leggere gli allarmi dei Modelli 4 ({modelli4Aperti.errore}): aprire «Modelli 4 → Modelli 4: chiusi e non chiusi».
           </div>
         )}
         {avvisoCalcoli && tab !== "costi" && puo("costi") && (
@@ -776,6 +794,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
         {tab === "altre-emesse" && <FattureEmesse tipo="altre_fatturazioni" />}
         {tab === "fatture-competenza" && <FattureCompetenza />}
         {tab === "modelli4-elenco" && <Modelli4 />}
+        {tab === "modelli4-chiusure" && <Modelli4Chiusure />}
         {tab === "modelli4-altri" && <AltriDocumentiCortesi />}
         {tab === "colt-fatture-elenco" && <FattureColtivazioneElenco />}
         {tab === "colt-fatture-riepilogo" && <FattureColtivazioneRiepilogo />}

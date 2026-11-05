@@ -4,6 +4,7 @@
 // fanno solo dalla pagina «Registro Controlli», una alla volta, con conferma.
 import { supabase } from "./supabase";
 import { fetchAllPages } from "./parsingUtils";
+import { eEsterna, contaAnomalieRegistriAperte } from "./anomalieEsterne";
 
 export const STATI_ANOMALIA = {
   aperta: "Da decidere",
@@ -244,7 +245,10 @@ async function eseguiControlliDavvero(origine) {
   const { data: esistenti, error } = await fetchAllPages((da, a) => supabase.from("ci_anomalie").select("*").order("id").range(da, a));
   if (error) throw new Error(`Lettura del quaderno delle anomalie: ${error.message}. Il database è stato aggiornato con le strutture della versione 232?`);
   const chiave = x => `${x.codice}|${x.tabella}|${x.riga_id}`;
-  const perChiave = new Map((esistenti || []).map(x => [chiave(x), x]));
+  // Versione 349: le anomalie scritte dal database (modelli 4, controllo cartelle) non sono di questi controlli:
+  // il programma non le guarda e non le chiude mai (alle 14:52 del 05/11/2026 le aveva chiuse tutte e 39).
+  const proprie = (esistenti || []).filter(x => !eEsterna(x));
+  const perChiave = new Map(proprie.map(x => [chiave(x), x]));
   const adesso = new Date().toISOString();
   const trovateChiavi = new Set();
   let nuove = 0, risolte = 0;
@@ -269,13 +273,13 @@ async function eseguiControlliDavvero(origine) {
   }
   // Non più trovate → risolte (solo se il controllo che le trova è stato eseguito davvero)
   const codiciNonEseguiti = nonEseguibili.some(n => n.startsWith("Parti")) ? ["P1", "P2", "P3"] : [];
-  for (const x of esistenti || []) {
+  for (const x of proprie) {
     if (x.stato === "risolta" || trovateChiavi.has(chiave(x)) || codiciNonEseguiti.includes(x.codice)) continue;
     const { error: eR } = await supabase.from("ci_anomalie").update({ stato: "risolta", risolta_at: adesso }).eq("id", x.id).neq("stato", "risolta");
     if (eR) throw new Error(eR.message);
     risolte++;
   }
-  const { count } = await supabase.from("ci_anomalie").select("id", { count: "exact", head: true }).eq("stato", "aperta");
+  const count = await contaAnomalieRegistriAperte(); // versione 349: senza modelli 4 e cartelle
   await supabase.from("ci_controlli_eseguiti").insert([{
     origine, controlli_eseguiti: controlliEseguiti, controlli_non_eseguibili: nonEseguibili.join("; ") || null,
     anomalie_trovate: trovateChiavi.size, nuove, risolte, aperte: count || 0,
@@ -284,9 +288,8 @@ async function eseguiControlliDavvero(origine) {
 }
 
 export async function contaAnomalieAperte() {
-  const { count, error } = await supabase.from("ci_anomalie").select("id", { count: "exact", head: true }).eq("stato", "aperta");
-  if (error) return null;
-  return count || 0;
+  // Versione 349: solo le anomalie dei registri; i modelli 4 hanno il loro avviso
+  return contaAnomalieRegistriAperte();
 }
 
 // Da chiamare prima di un ricalcolo dei costi: avvisa se ci sono anomalie aperte.
