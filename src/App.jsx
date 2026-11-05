@@ -48,6 +48,8 @@ import NumeroProgressivo from "./NumeroProgressivo";
 import VenditePerAnno from "./VenditePerAnno";
 import { contaAllarmiFatturazione } from "./calcoloAruba";
 import PromptCedolini from "./PromptCedolini";
+// Versione 347 (04/11/2026): «Scadenzari Clienti e Fornitori» nella cartella «Ricerca: Fatture e Anagrafiche» — posizione di ogni cliente e fornitore, scadenze dagli XML, pagamenti e incassi dagli estratti conto BPER abbinati alle fatture, dilazione concessa, dilazione media reale e ritardo; PDF delle fatture e PDF delle distinte dei pagamenti (archivio «distinte»); compensazioni (note di credito e tra cliente e fornitore con la stessa partita IVA, lettera di proposta nel Registro delle Comunicazioni «da inviare», accettazione, «Togli»).
+import ScadenzariClientiFornitori from "./ScadenzariClientiFornitori";
 // Versione 346 (03/11/2026): posta del programma — le mail ai clienti e ai fornitori partono da podereverdeapp@gmail.com attraverso il postino (funzione spedisci-mail), con intestazione, logo, firma modificabile e piè di pagina di legge; permesso «Può spedire mail dal programma» nella cartella Accessi; le mail della casella entrano da sole nel Registro delle Comunicazioni (cassetta comunicazioni-ricevi, ritiro ogni 5 minuti); «Togli dal registro» (recuperabile) e «Blocca mittente».
 // Versione 345 (02/11/2026): pagina F24 arrivati — un'archiviazione sola alla volta; un file esce da DA SMISTARE solo se è identico a un file dell'ARCHIVIO (altrimenti prima si conserva intero in ORIGINALI RICEVUTI); scrittura riprovata sul disco di rete.
 // Versione 344 (02/11/2026): pagina F24 arrivati — «Archivia» archivia le righe a posto e lascia in sospeso le rosse con i loro file; la quietanza senza F24 ha il nome «F24 <data del pagamento>.pdf».
@@ -247,6 +249,7 @@ const MENU = [
   { tipo: "cartella", id: "cart-ricerca", label: "Ricerca: Fatture e Anagrafiche", icon: "🔎", contenuto: [
     { tipo: "voce", id: "istr-ricerca", label: "Istruzioni", icon: "📖" },
     { tipo: "voce", id: "ricerca", label: "Ricerca Fatture", icon: "🔎" },
+    { tipo: "voce", id: "scadenzari", label: "Scadenzari Clienti e Fornitori", icon: "📅" }, // versione 347
     // Versione 304 (decisioni del Dott. Bizzarri del 26/10/2026): anagrafiche modificabili, Registro delle Comunicazioni,
     // completamento delle anagrafiche dai file di Aruba
     { tipo: "voce", id: "fornitori", label: "Fornitori", icon: "🏢" },
@@ -513,7 +516,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 346</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 347</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -784,6 +787,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
         {tab === "colt-piano" && <ColtPianoCampagna />}
         {tab === "colt-archivio-report" && <ColtArchivioReport />}
         {tab === "ricerca" && <Ricerca />}
+        {tab === "scadenzari" && <ScadenzariClientiFornitori />}
         {tab === "registro-comunicazioni" && <RegistroComunicazioni />}
         {tab === "completa-anagrafiche" && <CompletaAnagraficheAruba />}
         {tab === "glossario" && <Glossario />}
