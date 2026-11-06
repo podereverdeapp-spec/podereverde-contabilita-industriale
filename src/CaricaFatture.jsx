@@ -6,6 +6,8 @@ import { supabase } from "./supabase";
 import { C } from "./style";
 import { classificaRiga } from "./motoreClassificazione";
 import { CATEGORIE_AMMORTAMENTO, IMPUTAZIONI_CESPITE, creaCespiteDaRiga, anniDaRiga, percentualeDaAnni } from "./cespitiDaFatture";
+import { applicaDocumento, assicuraScadenze, chiaveDocumento } from "./documentoFattura"; // versione 350
+import { leggiFattureRicevute } from "./letturaXmlRicevute"; // versione 350
 import { round2, numeroRobusto, calcolaImponibile, leggiAliquotaIva, formattaData, formattaEuro, formattaNumero, fetchAllPages, leggiInBlocchi } from "./parsingUtils";
 
 // Versione 261: categorie, anni e creazione del cespite nel modulo comune cespitiDaFatture.js
@@ -33,6 +35,7 @@ export default function CaricaFatture() {
   const [bozzaTrovata, setBozzaTrovata] = useState(null);
   const fileInputRef = useRef(null);
   const cartellaInputRef = useRef(null);
+  const xmlInputRef = useRef(null); // versione 350
   const salvataggioBozzaTimeout = useRef(null);
 
   useEffect(() => { caricaDatiRiferimento(); }, []);
@@ -173,6 +176,7 @@ export default function CaricaFatture() {
     const erroriFile = [];
     const fattureNonQuadrano = [];
     const nuoviPdfRinominati = [];
+    const documentiPdf = new Map(); // versione 350
 
     for (const file of pdfFile) {
       try {
@@ -189,6 +193,11 @@ export default function CaricaFatture() {
           const est = risultato.estratto;
           const nomeSuggerito = costruisciNomeFilePdf(est.fornitore, est.data, est.numero, file.name);
           nuoviPdfRinominati.push({ file, nomeSuggerito });
+          // Versione 350: totali del documento letti sul PDF
+          if (est.verifica_totali && [est.verifica_totali.imponibile_pdf, est.verifica_totali.iva_pdf, est.verifica_totali.totale_pdf].every(x => x !== null && x !== undefined && String(x).trim() !== "" && Number.isFinite(Number(x)))) {
+            documentiPdf.set(chiaveDocumento(est.piva || est.fornitore, est.numero, formattaData(est.data)), {
+              imponibile: Number(est.verifica_totali.imponibile_pdf), iva: Number(est.verifica_totali.iva_pdf), totale: Number(est.verifica_totali.totale_pdf), rate: [] });
+          }
           (est.righe || []).forEach(riga => {
             datiCombinati.push({
               "Fornitore": est.fornitore || "", "P.IVA": est.piva || "",
@@ -218,10 +227,33 @@ export default function CaricaFatture() {
     if (erroriFile.length > 0) {
       alert(`⚠️ ${erroriFile.length} file su ${pdfFile.length} non sono stati letti correttamente:\n\n${erroriFile.join("\n")}`);
     }
-    if (datiCombinati.length > 0) await elaboraRigheGrezze(datiCombinati);
+    if (datiCombinati.length > 0) await elaboraRigheGrezze(datiCombinati, [], documentiPdf);
   }
 
-  async function elaboraRigheGrezze(dati, verifica = []) {
+  // Versione 350: fatture elettroniche (XML, .p7m o .zip di Aruba). Totali e scadenze dal documento.
+  async function gestisciXml(e) {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    try {
+      const { documenti, scartati } = await leggiFattureRicevute(files);
+      const perChiave = new Map(); const dati = [];
+      for (const d of documenti) {
+        perChiave.set(chiaveDocumento(d.piva || d.fornitore, d.numero, formattaData(d.data)), d);
+        (d.righe.length ? d.righe : [{ descrizione: "(documento senza righe)", quantita: 1, prezzo_unitario: d.imponibile, imponibile: d.imponibile, aliquota_iva: 0 }]).forEach(r => dati.push({
+          "Fornitore": d.fornitore, "P.IVA": d.piva, "Numero": d.numero, "Data": d.data, "Descrizione": r.descrizione,
+          "Quantità": r.quantita, "U.M.": r.unita_misura, "Prezzo unitario": r.prezzo_unitario, "Imponibile": r.imponibile, "Aliquota IVA": r.aliquota_iva,
+        }));
+      }
+      if (scartati.length) alert(`⚠️ ${scartati.length} file non letti:\n\n${scartati.join("\n")}`);
+      alert(`Lette ${documenti.length} fatture elettroniche con ${dati.length} righe. Totali e scadenze verranno presi dal documento.`);
+      if (dati.length > 0) await elaboraRigheGrezze(dati, [], perChiave);
+    } catch (err) {
+      alert(`⚠️ Errore nella lettura delle fatture elettroniche:\n\n${err.message}`);
+    }
+    if (xmlInputRef.current) xmlInputRef.current.value = "";
+  }
+
+  async function elaboraRigheGrezze(dati, verifica = [], documentiPerChiave = null) {
     const risultati = dati.map((r, i) => {
       const grezza = {
         id: `riga-${Date.now()}-${i}`,
@@ -252,6 +284,8 @@ export default function CaricaFatture() {
         anniAmmortamento: "",
         memorizzaRegola: "nessuna", parolaChiaveRegola: "",
         giaCaricata: false,
+        // Versione 350: totali e pagamento del documento (XML o PDF), se noti
+        documento: documentiPerChiave ? (documentiPerChiave.get(chiaveDocumento(grezza.piva || grezza.fornitore, grezza.numero, grezza.data)) || null) : null,
         nonQuadra: false, dettaglioQuadratura: null,
         scartata: false, giaScartataInPrecedenza: false,
         salvata: false, salvataggioInCorso: false, idsSalvati: null, regolaCreata: null,
@@ -271,11 +305,19 @@ export default function CaricaFatture() {
           corrisponde: corrisponde === "SI",
           totaleCalcolato: v["Totale calcolato"],
           totalePdf: v["Totale da PDF"],
+          // Versione 350: totali del documento (riepilogo IVA del PDF) e, se ci sono, i dati di pagamento
+          documento: {
+            imponibile: numeroRobusto(v["Imponibile da PDF"]), iva: numeroRobusto(v["IVA da PDF"]), totale: numeroRobusto(v["Totale da PDF"]),
+            rate: (v["Data scadenza"] || v["Scadenza"]) ? [{ importo: numeroRobusto(v["Importo da pagare"] || v["Totale da PDF"]),
+              scadenza: formattaData(v["Data scadenza"] || v["Scadenza"]), modalita: String(v["Modalità di pagamento"] || "").trim() || null,
+              iban: String(v["IBAN"] || "").replace(/\s+/g, "") || null }] : [],
+          },
         });
       });
       risultati.forEach(r => {
         const chiave = `${r.fornitore.trim().toLowerCase()}|${r.numero}|${r.data}`;
         const match = mappaVerifica.get(chiave);
+        if (match && !r.documento) r.documento = match.documento; // versione 350
         if (match && !match.corrisponde) {
           r.nonQuadra = true;
           r.dettaglioQuadratura = match;
@@ -394,11 +436,21 @@ export default function CaricaFatture() {
     return nuova.id;
   }
 
-  async function ricalcolaTotaliFattura(fatturaId) {
-    const { data: righeArt } = await supabase.from("ci_articoli_fattura").select("totale_riga, totale_iva").eq("fattura_id", fatturaId);
-    const netto = (righeArt || []).reduce((s, r) => s + (parseFloat(r.totale_riga) || 0), 0);
-    const iva = (righeArt || []).reduce((s, r) => s + (parseFloat(r.totale_iva) || 0), 0);
-    await supabase.from("ci_fatture").update({ totale_netto: round2(netto), totale_iva: round2(iva), totale_lordo: round2(netto + iva) }).eq("id", fatturaId);
+  // Versione 350: testata dal documento (XML o PDF) e scadenze create al carico. Senza documento:
+  // somma delle righe e scadenza «da completare». Una scadenza già nata dall'XML (acquisto di animali
+  // salvato prima delle altre righe) passa alla fattura, con i suoi pagamenti.
+  async function ricalcolaTotaliFattura(fatturaId, documento = null) {
+    const { data: giaSue } = await supabase.from("ci_scadenze").select("id").eq("fattura_id", fatturaId).limit(1);
+    if ((giaSue || []).length === 0) {
+      const { data: f } = await supabase.from("ci_fatture").select("fornitore_id, numero, data").eq("id", fatturaId).single();
+      // stesso file XML, oppure stesso fornitore, numero e data (fattura caricata da PDF o Excel)
+      let q = supabase.from("ci_scadenze").update({ fattura_id: fatturaId, file_xml: null }).is("fattura_id", null).eq("lato", "fornitore");
+      q = documento?.fileXml ? q.eq("file_xml", documento.fileXml)
+        : q.not("file_xml", "is", null).eq("fornitore_id", f.fornitore_id).eq("numero_documento", f.numero).eq("data_documento", f.data);
+      const { error: eSp } = await q;
+      if (eSp) throw new Error(`Scadenza dell'XML non collegata alla fattura: ${eSp.message}`);
+    }
+    await applicaDocumento(fatturaId, documento);
   }
 
   async function salvaRiga(riga) {
@@ -422,6 +474,16 @@ export default function CaricaFatture() {
         }]).select().single();
         if (error) throw new Error(error.message);
         idsSalvati.reportAcquistoId = data.id;
+        // Versione 350: anche gli acquisti di animali vanno nello scadenzario (decisione del 04/11/2026)
+        const { data: fatturaStessoDoc } = await supabase.from("ci_fatture").select("id").eq("fornitore_id", fornitoreId).eq("numero", riga.numero).eq("data", riga.data).maybeSingle();
+        if (fatturaStessoDoc) await ricalcolaTotaliFattura(fatturaStessoDoc.id, riga.documento);
+        else if (riga.documento?.fileXml) {
+          const esitoScad = await assicuraScadenze({ lato: "fornitore", fileXml: riga.documento.fileXml, fornitoreId, numero: riga.numero, data: riga.data,
+            tipoDocumento: riga.documento.tipoDocumento, totale: riga.documento.totale, ritenuta: riga.documento.ritenuta, rate: riga.documento.rate });
+          idsSalvati.scadenzeCreate = esitoScad.ids || [];
+        } else {
+          alert(`⚠️ Riga salvata nel Report Acquisto Animali, ma la scadenza della fattura ${riga.numero} non è stata creata: per gli acquisti di animali la scadenza nasce dall'XML. Caricare la fattura dall'XML di Aruba.`);
+        }
       } else if (riga.editArea === "TRASPORTO ANIMALI") {
         const fatturaId = await trovaOCreaFattura(fornitoreId, riga.numero, riga.data);
         const importoMacello = parseFloat(riga.importoMacello) || 0;
@@ -443,7 +505,7 @@ export default function CaricaFatture() {
         }]).select().single();
         if (eAcq) throw new Error(eAcq.message);
         idsSalvati.reportAcquistoId = acq.id;
-        await ricalcolaTotaliFattura(fatturaId);
+        await ricalcolaTotaliFattura(fatturaId, riga.documento);
       } else {
         if (riga.editArea === "Ammortamenti" && fornitoreId) {
           // Controllo anti-duplicati PRIMA di creare qualunque riga (richiesto da
@@ -491,7 +553,7 @@ export default function CaricaFatture() {
           });
           idsSalvati.cespiteId = creato.cespiteId;
         }
-        await ricalcolaTotaliFattura(fatturaId);
+        await ricalcolaTotaliFattura(fatturaId, riga.documento);
       }
 
       let regolaCreata = null;
@@ -543,10 +605,26 @@ export default function CaricaFatture() {
       if (ids.dettaglioAmmortamentoId) await supabase.from("ci_articolo_dettaglio_ammortamento").delete().eq("id", ids.dettaglioAmmortamentoId);
       if (ids.cespiteId) await supabase.from("ci_cespiti").delete().eq("id", ids.cespiteId);
       if (ids.reportAcquistoId) await supabase.from("ci_report_acquisto_animali").delete().eq("id", ids.reportAcquistoId);
+      // Versione 350: le scadenze nate dall'XML con questo salvataggio se ne vanno, se non hanno pagamenti
+      for (const idScad of ids.scadenzeCreate || []) {
+        const { data: abb } = await supabase.from("ci_abbinamenti_pagamenti").select("id").eq("scadenza_id", idScad).limit(1);
+        if ((abb || []).length === 0) await supabase.from("ci_scadenze").delete().eq("id", idScad).is("fattura_id", null);
+      }
       if (ids.articoloFatturaId) await supabase.from("ci_articoli_fattura").delete().eq("id", ids.articoloFatturaId);
       if (riga.regolaCreata?.tipo === "fissa") await supabase.from("ci_regole_fornitore_fissa").delete().eq("id", riga.regolaCreata.id);
       if (riga.regolaCreata?.tipo === "parolaChiave") await supabase.from("ci_regole_fornitore_variabile").delete().eq("id", riga.regolaCreata.id);
-      if (ids.fatturaId) await ricalcolaTotaliFattura(ids.fatturaId);
+      if (ids.fatturaId) {
+        // Versione 350: se la fattura resta senza righe, le sue scadenze senza pagamenti se ne vanno con lei
+        const { data: rimaste } = await supabase.from("ci_articoli_fattura").select("id").eq("fattura_id", ids.fatturaId).limit(1);
+        if ((rimaste || []).length === 0) {
+          const { data: scad } = await supabase.from("ci_scadenze").select("id, ci_abbinamenti_pagamenti(id)").eq("fattura_id", ids.fatturaId);
+          const conPagamenti = (scad || []).filter(sc => (sc.ci_abbinamenti_pagamenti || []).length > 0);
+          for (const sc of (scad || []).filter(x => !conPagamenti.includes(x))) await supabase.from("ci_scadenze").delete().eq("id", sc.id);
+          if (conPagamenti.length) alert(`⚠️ La fattura è rimasta senza righe ma ha ${conPagamenti.length} scadenze con pagamenti abbinati: restano nello scadenzario. Togliere prima l'abbinamento dei pagamenti.`);
+        } else {
+          await ricalcolaTotaliFattura(ids.fatturaId);
+        }
+      }
       aggiornaRiga(riga.id, { salvata: false, idsSalvati: null, regolaCreata: null });
     } catch (err) {
       alert(`⚠️ Errore nell'annullamento:\n\n${err.message}`);
@@ -598,9 +676,17 @@ export default function CaricaFatture() {
         <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
           <button onClick={() => setModalita("excel")} style={toggleBtn(modalita === "excel")}>📊 File Excel</button>
           <button onClick={() => setModalita("pdf")} style={toggleBtn(modalita === "pdf")}>📁 Cartella PDF</button>
+          <button onClick={() => setModalita("xml")} style={toggleBtn(modalita === "xml")}>🧾 Fatture elettroniche (XML)</button>
         </div>
 
-        {modalita === "excel" ? (
+        {modalita === "xml" ? (
+          <>
+            <label style={{ fontSize: 13, fontWeight: 700, color: C.muted, display: "block", marginBottom: 8 }}>
+              Scegli i file XML delle fatture ricevute (anche .p7m) oppure lo .zip scaricato da Aruba: totali e scadenze si prendono dal documento
+            </label>
+            <input ref={xmlInputRef} type="file" accept=".xml,.p7m,.zip" multiple onChange={gestisciXml} />
+          </>
+        ) : modalita === "excel" ? (
           <>
             <label style={{ fontSize: 13, fontWeight: 700, color: C.muted, display: "block", marginBottom: 8 }}>
               File Excel (colonne: Fornitore, P.IVA, Numero, Data, Descrizione, Quantità, U.M., Prezzo unitario, Imponibile, Aliquota IVA)

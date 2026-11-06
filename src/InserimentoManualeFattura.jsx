@@ -4,6 +4,7 @@ import { supabase } from "./supabase";
 import { C } from "./style";
 import { round2, formattaEuro, fetchAllPages } from "./parsingUtils";
 import { classificaRiga } from "./motoreClassificazione";
+import { applicaDocumento } from "./documentoFattura"; // versione 350
 import { CATEGORIE_AMMORTAMENTO, IMPUTAZIONI_CESPITE, creaCespiteDaRiga, anniValidi, percentualeDaAnni } from "./cespitiDaFatture";
 
 // Versione 261: anche qui si possono inserire i cespiti (Area «Ammortamenti»), con gli stessi dati
@@ -38,6 +39,8 @@ export default function InserimentoManualeFattura() {
   const [data, setData] = useState(oggiRoma());
   const [righe, setRighe] = useState([rigaVuota()]);
   const [salvando, setSalvando] = useState(false);
+  // Versione 350: totali e scadenza scritti sul documento (non la somma delle righe)
+  const [documento, setDocumento] = useState({ imponibile: "", iva: "", totale: "", scadenza: "", modalita: "" });
   const [messaggioOk, setMessaggioOk] = useState(null);
 
   useEffect(() => { carica(); }, []);
@@ -120,6 +123,14 @@ export default function InserimentoManualeFattura() {
       return;
     }
 
+    // Versione 350: imponibile, IVA e totale si scrivono come sono sul documento
+    const nD = v => (v === "" || v === null || isNaN(parseFloat(v))) ? null : round2(parseFloat(v));
+    const docImp = nD(documento.imponibile), docIva = nD(documento.iva), docTot = nD(documento.totale);
+    if (docImp === null || docIva === null || docTot === null) { alert("Scrivere Imponibile, IVA e Totale come sono scritti sul documento (riepilogo IVA della fattura)."); return; }
+    if (Math.abs(round2(docImp + docIva) - docTot) > 0.005 && !window.confirm(`Sul documento imponibile + IVA (${(docImp + docIva).toFixed(2)} €) non è uguale al totale (${docTot.toFixed(2)} €). Può succedere (bollo, arrotondamenti). Salvare con il totale scritto sul documento?`)) return;
+    const sommaRighe = round2(righe.reduce((t, r) => t + (parseFloat(r.imponibile) || 0), 0));
+    if (Math.abs(sommaRighe - docImp) > 0.005 && !window.confirm(`La somma delle righe (${sommaRighe.toFixed(2)} €) è diversa dall'imponibile del documento (${docImp.toFixed(2)} €): differenza ${(docImp - sommaRighe).toFixed(2)} €. Forse manca una riga. Salvare lo stesso? (la testata sarà quella del documento)`)) return;
+
     setSalvando(true);
     try {
       // 1) Trova o crea il fornitore
@@ -178,16 +189,20 @@ export default function InserimentoManualeFattura() {
         }
       }
 
-      // 4) Ricalcola i totali fattura
-      const { data: righeArt } = await supabase.from("ci_articoli_fattura").select("totale_riga, totale_iva").eq("fattura_id", fatturaId);
-      const netto = (righeArt || []).reduce((s, x) => s + (parseFloat(x.totale_riga) || 0), 0);
-      const iva = (righeArt || []).reduce((s, x) => s + (parseFloat(x.totale_iva) || 0), 0);
-      const { error: eTot } = await supabase.from("ci_fatture").update({ totale_netto: round2(netto), totale_iva: round2(iva), totale_lordo: round2(netto + iva) }).eq("id", fatturaId);
-      if (eTot) throw new Error(`Righe salvate, ma i totali della fattura non sono stati aggiornati: ${eTot.message}`);
+      // 4) Versione 350: testata dal documento e scadenza
+      try {
+        await applicaDocumento(fatturaId, {
+          imponibile: docImp, iva: docIva, totale: docTot,
+          rate: documento.scadenza ? [{ importo: docTot, scadenza: documento.scadenza, modalita: documento.modalita || null }] : [],
+        });
+      } catch (eDoc) {
+        throw new Error(`Righe salvate, ma totali o scadenza della fattura non sono stati scritti: ${eDoc.message}`);
+      }
 
       setMessaggioOk(`Fattura ${numero} salvata con ${righe.length} righe${cespitiCreati ? `, di cui ${cespitiCreati} come cespite (con le quote fino all'anno in corso)` : ""}. Ricordarsi di aggiornare i costi.`);
       setFornitoreTesto(""); setFornitoreSelezionato(null); setNumero(""); setData(oggiRoma());
       setRighe([rigaVuota()]);
+      setDocumento({ imponibile: "", iva: "", totale: "", scadenza: "", modalita: "" });
       await carica();
     } catch (err) {
       alert(`⚠️ Errore nel salvataggio:\n\n${err.message}`);
@@ -291,8 +306,35 @@ export default function InserimentoManualeFattura() {
             + Aggiungi riga
           </button>
 
+          {/* Versione 350: i totali e la scadenza come sono scritti sul documento */}
+          <div style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 8, padding: "12px 16px", marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Dal documento (riepilogo IVA della fattura): sono questi i totali che valgono per i debiti, il registro IVA e lo scadenzario</div>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <CampoNumero label="Imponibile del documento" value={documento.imponibile} onChange={v => setDocumento(d => ({ ...d, imponibile: v }))} />
+              <CampoNumero label="IVA del documento" value={documento.iva} onChange={v => setDocumento(d => ({ ...d, iva: v }))} />
+              <CampoNumero label="Totale del documento" value={documento.totale} onChange={v => setDocumento(d => ({ ...d, totale: v }))} />
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <label style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>Data di scadenza (se scritta)</label>
+                <input type="date" value={documento.scadenza} onChange={e => setDocumento(d => ({ ...d, scadenza: e.target.value }))}
+                  style={{ padding: "8px 10px", borderRadius: 6, border: `1px solid ${C.border}`, fontSize: 13 }} />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <label style={{ fontSize: 12, color: C.muted, fontWeight: 700 }}>Modalità di pagamento</label>
+                <select value={documento.modalita} onChange={e => setDocumento(d => ({ ...d, modalita: e.target.value }))}
+                  style={{ padding: "8px 10px", borderRadius: 6, border: `1px solid ${C.border}`, fontSize: 13 }}>
+                  <option value="">non indicata</option>
+                  <option value="MP05">Bonifico</option>
+                  <option value="MP01">Contanti</option>
+                  <option value="MP02">Assegno</option>
+                  <option value="MP08">Carta di pagamento</option>
+                </select>
+              </div>
+            </div>
+            <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>Senza data di scadenza la fattura entra nello scadenzario alla sua data, con la scritta «da completare».</div>
+          </div>
+
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: C.primary + "10", borderRadius: 8, padding: "10px 16px" }}>
-            <div style={{ fontSize: 14, fontWeight: 700 }}>Totale imponibile: {formattaEuro(totaleImponibile)}</div>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>Somma delle righe (imponibile): {formattaEuro(totaleImponibile)}</div>
             <button onClick={salvaFattura} disabled={salvando}
               style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "10px 22px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
               {salvando ? "Salvataggio..." : "✓ Salva Fattura"}

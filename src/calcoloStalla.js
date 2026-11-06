@@ -33,7 +33,7 @@ const ETA_RIFORMA_MESI = 36;
 const MATRICOLA = /\b(IT\s?\d{6,})\b/gi;
 export async function prezziDaFatture(anno) {
   const [{ data: fatture }, { data: emesse }, { data: animali }] = await Promise.all([
-    fetchAllPages((da, a) => supabase.from("ci_fatture").select("id, data").eq("tipo", "ATTIVA").lte("data", `${anno}-12-31`).order("id").range(da, a)),
+    fetchAllPages((da, a) => supabase.from("ci_fatture").select("id, data").eq("tipo", "ATTIVA").is("fattura_emessa_id", null).lte("data", `${anno}-12-31`).order("id").range(da, a)), // versione 350: senza doppioni delle emesse
     fetchAllPages((da, a) => supabase.from("ci_fatture_emesse_righe").select("specie, matricola, quantita_kg, importo, ci_fatture_emesse(data, stato)").order("id").range(da, a)),
     fetchAllPages((da, a) => supabase.from("animali").select("id, bdn, nascita, data_uscita").order("id").range(da, a)),
   ]);

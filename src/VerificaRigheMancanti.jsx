@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { applicaDocumento } from "./documentoFattura"; // versione 350
 import * as XLSX from "xlsx-js-style";
 import { esportaExcel } from "./esportaExcel";
 import { supabase } from "./supabase";
@@ -174,11 +175,10 @@ export default function VerificaRigheMancanti() {
         if (error) throw new Error(error.message);
       }
 
-      const { data: righeArt } = await supabase.from("ci_articoli_fattura").select("totale_riga, totale_iva").eq("fattura_id", fatturaId);
-      const netto = (righeArt || []).reduce((s, x) => s + (parseFloat(x.totale_riga) || 0), 0);
-      const iva = (righeArt || []).reduce((s, x) => s + (parseFloat(x.totale_iva) || 0), 0);
-      const { error: eTot } = await supabase.from("ci_fatture").update({ totale_netto: round2(netto), totale_iva: round2(iva), totale_lordo: round2(netto + iva) }).eq("id", fatturaId);
-      if (eTot) throw new Error(`Riga registrata, ma i totali della fattura non sono stati aggiornati: ${eTot.message}`);
+      // Versione 350: se la fattura ha già i totali del documento, la riga mancante non li cambia
+      // (completa i costi); altrimenti la testata è la somma delle righe finché non arriva il documento.
+      try { await applicaDocumento(fatturaId, null); }
+      catch (eDoc) { throw new Error(`Riga registrata, ma totali o scadenza della fattura non sono stati aggiornati: ${eDoc.message}`); }
 
       setRisultato(prev => ({ ...prev, mancanti: prev.mancanti.filter(m => m !== r) }));
       setRegistrandoIndice(null);

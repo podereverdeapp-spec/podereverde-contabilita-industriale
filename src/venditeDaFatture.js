@@ -51,7 +51,9 @@ export function fattureStornate(fatture, articoli) {
 export async function caricaRigheVendita() {
   const righe = [];
   const { data: fatture, error: eF } = await fetchAllPages((da, a) => supabase.from("ci_fatture")
-    .select("id, numero, data, totale_netto, ci_clienti(nome)").eq("tipo", "ATTIVA").order("id").range(da, a));
+    .select("id, numero, data, totale_netto, ci_clienti(nome)").eq("tipo", "ATTIVA")
+    // Versione 350: le fatture emesse dal programma (fattura_emessa_id) si leggono più sotto da ci_fatture_emesse_righe; qui si saltano per non contare due volte il capo
+    .is("fattura_emessa_id", null).order("id").range(da, a));
   if (eF) throw new Error(`Errore leggendo le fatture attive: ${eF.message}`);
   const perId = new Map((fatture || []).map(f => [f.id, f]));
   if (perId.size) {

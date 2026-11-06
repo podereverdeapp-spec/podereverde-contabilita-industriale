@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { dopoEmissione } from "./documentoFattura"; // versione 350
 import { fetchAllPages } from "./parsingUtils";
 
 // Emissione Fatture di Vendita → Emissione delle Altre Fatture Attive
@@ -110,7 +111,7 @@ export async function caricaFatturePrecedenti() {
   const [emesse, attive] = await Promise.all([
     supabase.from("ci_fatture_emesse").select("id, numero, data, cliente_id, cliente_denominazione, ci_fatture_emesse_righe(*)").eq("tipo", TIPO_ALTRE).eq("stato", "emessa").order("data", { ascending: false }),
     fetchAllPages((da, a) => supabase.from("ci_fatture").select("id, numero, data, cliente_id, ci_clienti(nome), ci_articoli_fattura(id, descrizione, quantita, unita_misura, prezzo_unitario, aliquota_iva)")
-      .eq("tipo", "ATTIVA").order("data", { ascending: false }).range(da, a)),
+      .eq("tipo", "ATTIVA").is("fattura_emessa_id", null).order("data", { ascending: false }).range(da, a)), // versione 350: senza doppioni delle emesse
   ]);
   if (emesse.error) throw new Error(emesse.error.message);
   if (attive.error) throw new Error(attive.error.message);
@@ -156,5 +157,7 @@ export async function emettiFatturaLibera({ numero, anno, data, cliente, calcolo
   const { xml, nomeFile } = creaXml(testata.id);
   const { error: eX } = await supabase.from("ci_fatture_emesse").update({ xml, nome_file_xml: nomeFile }).eq("id", testata.id);
   if (eX) throw new Error(eX.message);
-  return { ...testata, xml, nome_file_xml: nomeFile };
+  // Versione 350 (punti 26 e 28): registrazione nella tabella delle fatture e scadenza dall'XML
+  const avvisi = await dopoEmissione({ emessaId: testata.id, clienteId: cliente.id, numero, data, totale: calcolo.totale, xml, nomeFile });
+  return { ...testata, xml, nome_file_xml: nomeFile, avvisi };
 }

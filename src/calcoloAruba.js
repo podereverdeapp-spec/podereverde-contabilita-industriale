@@ -370,7 +370,7 @@ export async function caricaUltimaLettura() {
 export async function caricaControlli() {
   const [em, att, lettura] = await Promise.all([
     fetchAllPages((da, a) => supabase.from("ci_fatture_emesse").select("id, numero, anno, data, cliente_denominazione, totale, stato, in_aruba_il, stato_aruba, differenza_aruba, inviata_amministrazione_il").eq("stato", "emessa").order("id").range(da, a)),
-    fetchAllPages((da, a) => supabase.from("ci_fatture").select("id, numero, data, totale_lordo, stato_aruba, provenienza, ci_clienti(nome)").eq("tipo", "ATTIVA").order("id").range(da, a)),
+    fetchAllPages((da, a) => supabase.from("ci_fatture").select("id, numero, data, totale_lordo, stato_aruba, provenienza, ci_clienti(nome)").eq("tipo", "ATTIVA").is("fattura_emessa_id", null).order("id").range(da, a)),
     caricaUltimaLettura(),
   ]);
   if (em.error) throw new Error(em.error.message);
@@ -391,7 +391,7 @@ export async function contaAllarmiFatturazione() {
 // ── Numero progressivo per anno ───────────────────────────────────────────────────────────────────
 export async function caricaNumeri() {
   const [att, em, lettura] = await Promise.all([
-    fetchAllPages((da, a) => supabase.from("ci_fatture").select("numero, data, tipo_documento, provenienza").eq("tipo", "ATTIVA").order("id").range(da, a)),
+    fetchAllPages((da, a) => supabase.from("ci_fatture").select("numero, data, tipo_documento, provenienza").eq("tipo", "ATTIVA").is("fattura_emessa_id", null).order("id").range(da, a)),
     fetchAllPages((da, a) => supabase.from("ci_fatture_emesse").select("numero, anno, data, stato, in_aruba_il").order("id").range(da, a)),
     caricaUltimaLettura(),
   ]);
@@ -420,10 +420,12 @@ export async function caricaNumeri() {
   return { anni, lettura };
 }
 
-// ── Elenco delle fatture attive (contabilità + programma), con le righe ─────────────────────────────
+// ── Elenco delle fatture attive (contabilità + programma), con le righe
+// Versione 350: le registrazioni in contabilità delle fatture emesse dal programma (fattura_emessa_id)
+// non si leggono qui, nei controlli e nel numero progressivo: la fattura c'è già come «programma». ─────────────────────────────
 export async function caricaElencoAttive() {
   const [att, em] = await Promise.all([
-    fetchAllPages((da, a) => supabase.from("ci_fatture").select("id, numero, data, totale_netto, totale_iva, totale_lordo, provenienza, tipo_documento, stato_aruba, letta_da_aruba_il, ci_clienti(nome, partita_iva), ci_articoli_fattura(id, descrizione, quantita, unita_misura, prezzo_unitario, totale_riga, aliquota_iva, destinazione)").eq("tipo", "ATTIVA").order("data", { ascending: false }).order("id").range(da, a)),
+    fetchAllPages((da, a) => supabase.from("ci_fatture").select("id, numero, data, totale_netto, totale_iva, totale_lordo, provenienza, tipo_documento, stato_aruba, letta_da_aruba_il, ci_clienti(nome, partita_iva), ci_articoli_fattura(id, descrizione, quantita, unita_misura, prezzo_unitario, totale_riga, aliquota_iva, destinazione)").eq("tipo", "ATTIVA").is("fattura_emessa_id", null).order("data", { ascending: false }).order("id").range(da, a)),
     fetchAllPages((da, a) => supabase.from("ci_fatture_emesse").select("id, numero, anno, data, tipo, cliente_denominazione, cliente_partita_iva, imponibile, imposta, totale, stato, in_aruba_il, stato_aruba, ci_fatture_emesse_righe(id, numero_linea, descrizione, quantita_kg, unita_misura, prezzo_kg, importo, aliquota_iva, attiva, specie)").eq("stato", "emessa").order("data", { ascending: false }).order("id").range(da, a)),
   ]);
   if (att.error) throw new Error(att.error.message);

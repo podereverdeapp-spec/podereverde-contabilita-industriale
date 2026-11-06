@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
+import { scriviTestata, confrontoRigheTestata, applicaDocumento } from "./documentoFattura"; // versione 350
 import { etichettaTipo } from "./documentiCompetenza";
 import { supabase } from "./supabase";
 import { C } from "./style";
@@ -119,6 +120,12 @@ export default function Ricerca() {
         numero: formModificaFattura.numero, data: formModificaFattura.data, fornitore_id: formModificaFattura.fornitore_id || null,
       }).eq("id", fatturaId);
       if (error) throw new Error(error.message);
+      // Versione 350: le scadenze della fattura riportano lo stesso numero, la stessa data e lo stesso fornitore
+      const { error: eScad } = await supabase.from("ci_scadenze").update({
+        numero_documento: formModificaFattura.numero, data_documento: formModificaFattura.data,
+        ...(formModificaFattura.fornitore_id ? { fornitore_id: formModificaFattura.fornitore_id } : {}),
+      }).eq("fattura_id", fatturaId);
+      if (eScad) throw new Error(`Fattura salvata, ma le sue scadenze non sono state aggiornate: ${eScad.message}`);
 
       if (formModificaFattura.fornitore_id) {
         const { error: eForn } = await supabase.from("ci_fornitori").update({
@@ -157,7 +164,7 @@ export default function Ricerca() {
     if (formModificaRiga.quantita === "" || isNaN(parseFloat(formModificaRiga.quantita))) { alert("Indicare la Quantità."); return; }
     if (formModificaRiga.prezzo_unitario === "" || isNaN(parseFloat(formModificaRiga.prezzo_unitario))) { alert("Indicare il Prezzo unitario."); return; }
     if (risultati.find(x => x.id === fatturaId)?.tipo === "PASSIVA" && !formModificaRiga.tipo_costo) { alert("Indicare il Tipo di Costo: senza, la riga resta fuori dai calcoli dei costi."); return; }
-    if (!window.confirm(`Confermi la modifica della riga?\n\n${cambi.join("\n")}\n\nI totali della fattura verranno ricalcolati.`)) return;
+    if (!window.confirm(`Confermi la modifica della riga?\n\n${cambi.join("\n")}\n\nIl totale della fattura resta quello del documento.`)) return;
     setSalvandoRiga(rigaId);
     try {
       const { error } = await supabase.from("ci_articoli_fattura").update({
@@ -176,12 +183,15 @@ export default function Ricerca() {
       // Ricarico le righe di questa fattura (con il trasporto attribuito ai capi, versione 283)
       const data = await leggiRigheFattura(fatturaId);
       setRighePerFattura(prev => ({ ...prev, ["F" + fatturaId]: data }));
-      // Ricalcolo i totali della fattura, dato che l'importo della riga può essere cambiato
-      const righeFattura = (data || []);
-      const netto = righeFattura.reduce((s, x) => s + (parseFloat(x.totale_riga) || 0), 0);
-      const iva = righeFattura.reduce((s, x) => s + (parseFloat(x.totale_iva) || 0), 0);
-      const { error: eTot } = await supabase.from("ci_fatture").update({ totale_netto: round2(netto), totale_iva: round2(iva), totale_lordo: round2(netto + iva) }).eq("id", fatturaId);
-      if (eTot) throw new Error(`Riga salvata, ma i totali della fattura non sono stati aggiornati: ${eTot.message}`);
+      // Versione 350: la testata è quella del documento e non si ricalcola dalle righe.
+      // Si ricalcola solo se la fattura non ha ancora i totali del documento (totali_da = 'somma_righe').
+      const esito = await scriviTestata(fatturaId, null);
+      if (!esito.scritto) {
+        const c = await confrontoRigheTestata(fatturaId);
+        if (!c.uguali) alert(`Riga salvata. Attenzione: la somma delle righe (imponibile ${c.somma.netto.toFixed(2)} €) non coincide con l'imponibile del documento (${Number(c.testata.totale_netto).toFixed(2)} €): differenza ${c.differenzaImponibile.toFixed(2)} €. Il totale della fattura resta quello del documento.`);
+      } else {
+        await applicaDocumento(fatturaId, null);
+      }
       cerca(); // numero, totali ed elenco si rileggono dal database
     } catch (err) {
       alert(`⚠️ Errore nel salvataggio:\n\n${err.message}`);

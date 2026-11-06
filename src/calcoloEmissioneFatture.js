@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { dopoEmissione, registraEmessaInContabilita, togliEmessaDaContabilita } from "./documentoFattura"; // versione 350
 import { fetchAllPages } from "./parsingUtils";
 
 // Emissione Fatture → Fatturazione Animali Allevamento
@@ -416,7 +417,9 @@ export async function emettiFattura({ numero, anno, data, cliente, calcolo, aliq
     cliente_id: cliente.id, prodotto, prezzo_kg: Number(prezzo), fonte: `fattura ${numero} del ${data}`, aggiornato_il: oggi,
   }));
   if (prezziDaSalvare.length) await supabase.from("ci_prezzi_clienti").upsert(prezziDaSalvare);
-  return { ...testata, xml, nome_file_xml: nomeFile };
+  // Versione 350 (punti 26 e 28): registrazione nella tabella delle fatture e scadenza dall'XML
+  const avvisi = await dopoEmissione({ emessaId: testata.id, clienteId: cliente.id, numero, data, totale: calcolo.totale, xml, nomeFile });
+  return { ...testata, xml, nome_file_xml: nomeFile, avvisi };
 }
 
 export async function caricaFattureEmesse() {
@@ -427,8 +430,14 @@ export async function caricaFattureEmesse() {
 }
 
 export async function annullaFattura(id, motivo) {
+  // Versione 350: prima esce la registrazione nella tabella delle fatture; se non si può (per esempio ha
+  // pagamenti propri), la fattura emessa NON si annulla e si dà l'errore
+  await togliEmessaDaContabilita(id);
   const { error } = await supabase.from("ci_fatture_emesse").update({ stato: "annullata", annullata_il: new Date().toISOString(), motivo_annullamento: motivo }).eq("id", id);
-  if (error) throw new Error(error.message);
+  if (error) {
+    try { await registraEmessaInContabilita(id); } catch { /* si segnala l'errore dell'annullamento qui sotto */ }
+    throw new Error(error.message);
+  }
   const { error: eR } = await supabase.from("ci_fatture_emesse_righe").update({ attiva: false }).eq("fattura_id", id);
   if (eR) throw new Error(eR.message);
 }
