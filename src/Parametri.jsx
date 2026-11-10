@@ -15,7 +15,9 @@ export default function Parametri() {
     setLoading(true);
     const { data, error } = await supabase.from("ci_parametri").select("*").order("chiave");
     if (error) alert(`⚠️ Errore nel caricamento parametri:\n\n${error.message}`);
-    else setParametri(data || []);
+    // Versione 355: i due dati di lavoro della pagina «Documenti arrivati» (codice della cartella, fatture in lavorazione)
+    // non sono parametri da cambiare a mano: qui non si mostrano
+    else setParametri((data || []).filter(p => !["codice_cartella_fatture_passive", "fatture_passive_in_lavorazione"].includes(p.chiave)));
     setLoading(false);
   }
 

@@ -50,6 +50,12 @@ import { contaAllarmiFatturazione } from "./calcoloAruba";
 import PromptCedolini from "./PromptCedolini";
 // Versione 347 (04/11/2026): «Scadenzari Clienti e Fornitori» nella cartella «Ricerca: Fatture e Anagrafiche» — posizione di ogni cliente e fornitore, scadenze dagli XML, pagamenti e incassi dagli estratti conto BPER abbinati alle fatture, dilazione concessa, dilazione media reale e ritardo; PDF delle fatture e PDF delle distinte dei pagamenti (archivio «distinte»); compensazioni (note di credito e tra cliente e fornitore con la stessa partita IVA, lettera di proposta nel Registro delle Comunicazioni «da inviare», accettazione, «Togli»).
 import ScadenzariClientiFornitori from "./ScadenzariClientiFornitori";
+// Versione 352 (10/11/2026): cartella «Banche, carte e cassa» (progetto della prima nota, sezione 10-bis); prima pagina «Conti: stato e controlli»
+import BancheConti from "./BancheConti";
+import CaricaDocumentiBanca from "./CaricaDocumentiBanca";
+import ConsultaEstratti from "./ConsultaEstratti";
+import ConfermaMovimenti from "./ConfermaMovimenti";
+import PrimaNota from "./PrimaNota";
 // Versione 346 (03/11/2026): posta del programma — le mail ai clienti e ai fornitori partono da podereverdeapp@gmail.com attraverso il postino (funzione spedisci-mail), con intestazione, logo, firma modificabile e piè di pagina di legge; permesso «Può spedire mail dal programma» nella cartella Accessi; le mail della casella entrano da sole nel Registro delle Comunicazioni (cassetta comunicazioni-ricevi, ritiro ogni 5 minuti); «Togli dal registro» (recuperabile) e «Blocca mittente».
 // Versione 345 (02/11/2026): pagina F24 arrivati — un'archiviazione sola alla volta; un file esce da DA SMISTARE solo se è identico a un file dell'ARCHIVIO (altrimenti prima si conserva intero in ORIGINALI RICEVUTI); scrittura riprovata sul disco di rete.
 // Versione 344 (02/11/2026): pagina F24 arrivati — «Archivia» archivia le righe a posto e lascia in sospeso le rosse con i loro file; la quietanza senza F24 ha il nome «F24 <data del pagamento>.pdf».
@@ -63,6 +69,7 @@ import ScadenzariClientiFornitori from "./ScadenzariClientiFornitori";
 // Versione 339 (ordine del Dott. Bizzarri del 31/10/2026): la pagina «F24 arrivati: controlla e archivia» prende il posto dei prompt
 // di smistamento e di carico e della pagina «Carica F24» (i loro file restano, ma non sono più nel menu).
 import F24Arrivati from "./F24Arrivati";
+import DocumentiArrivati from "./DocumentiArrivati"; // versione 355
 import { ISTRUZIONI_F24_ARRIVATI } from "./istruzioniF24Arrivati";
 // Versione 337: la cartella «Accessi» (chi entra nel programma e in quali parti)
 import PaginaAccessi, { IstruzioniAccessi } from "./PaginaAccessi";
@@ -165,6 +172,8 @@ const MENU = [
     { tipo: "voce", id: "piano-dei-conti", label: "Piano dei Conti", icon: "📖" },
     { tipo: "sottocartella", id: "sub-dati-fatture-passive", label: "1. Carica Fatture Passive", icon: "📥", voci: [
       { id: "istr-fatture", label: "Istruzioni Carica Fatture Passive", icon: "📖" },
+      // Versione 355 (procedura unica di carico, ordine del Dott. Bizzarri del 10/11/2026): gli scarichi di Aruba e gli F24 in una pagina
+      { id: "documenti-arrivati", label: "Documenti arrivati: controlla, carica e archivia", icon: "📬" },
       { id: "prompt-estrazione-pdf", label: "Prompt per carico Massivo", icon: "🤖" },
       // Versione 293: il carico diretto da Aruba con Claude (decisione del Dott. Bizzarri del 24/10/2026)
       { id: "prompt-carico-aruba", label: "Prompt per carico da Aruba", icon: "🌐" },
@@ -258,6 +267,18 @@ const MENU = [
     { tipo: "voce", id: "clienti", label: "Clienti", icon: "🤝" },
     { tipo: "voce", id: "registro-comunicazioni", label: "Registro delle Comunicazioni", icon: "✉️" },
     { tipo: "voce", id: "completa-anagrafiche", label: "Completa le Anagrafiche da Aruba", icon: "🧾" },
+  ]},
+  // Versione 352 (decisioni del Dott. Bizzarri del 09/11/2026 ore 21:13–21:14 e del 10/11/2026): la sezione «Banche, carte e cassa».
+  // Prima pagina: i conti con «Controllo … ok alla data …», «Quadratura con prima nota ok alla data …», periodi mancanti e partenza.
+  { tipo: "cartella", id: "cart-banche", label: "Banche, carte e cassa", icon: "🏦", contenuto: [
+    { tipo: "voce", id: "banche-conti", label: "Conti: stato e controlli", icon: "🏦" },
+    { tipo: "voce", id: "banche-carica", label: "Carica documenti della banca", icon: "📥" },
+    { tipo: "voce", id: "banche-consulta", label: "Estratti e movimenti: consulta", icon: "🔎" },
+    { tipo: "voce", id: "banche-conferma", label: "Conferma dei movimenti", icon: "✅" }, // versione 354
+  ]},
+  // Versione 354 (10/11/2026): la prima nota (progetto della prima nota, sezioni 3, 4.1, 8 e 9)
+  { tipo: "cartella", id: "cart-prima-nota", label: "Prima nota", icon: "📒", contenuto: [
+    { tipo: "voce", id: "prima-nota", label: "Prima nota", icon: "📒" },
   ]},
   { tipo: "cartella", id: "cart-costi", label: "Analisi Costi", icon: "📊", contenuto: [
     { tipo: "voce", id: "istr-costi", label: "Istruzioni Generali", icon: "📖" }, // versione 319 (28/10/2026): riepilogo delle sottocartelle
@@ -522,7 +543,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 350</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 355</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -751,6 +772,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
         {tab === "vendite-per-anno" && <VenditePerAnno />}
         {tab === "prompt-cedolini" && <PromptCedolini />}
         {tab === "f24-arrivati" && <F24Arrivati utente={utente} accesso={accesso} />}
+        {tab === "documenti-arrivati" && <DocumentiArrivati utente={utente} accesso={accesso} vediF24={puo("f24-arrivati")} />}
         {tab === "istr-generali-f24" && <DocumentoIstruzioni doc={ISTRUZIONI_F24_ARRIVATI} />}
         {tab === "carica-costi-lavoro" && <CaricaCostiLavoro />}
         {tab === "consulta-costi-lavoro" && <ConsultaCostiLavoro />}
@@ -807,6 +829,11 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
         {tab === "colt-archivio-report" && <ColtArchivioReport />}
         {tab === "ricerca" && <Ricerca />}
         {tab === "scadenzari" && <ScadenzariClientiFornitori />}
+        {tab === "banche-conti" && <BancheConti />}
+        {tab === "banche-carica" && <CaricaDocumentiBanca />}
+        {tab === "banche-consulta" && <ConsultaEstratti />}
+        {tab === "banche-conferma" && <ConfermaMovimenti />}
+        {tab === "prima-nota" && <PrimaNota />}
         {tab === "registro-comunicazioni" && <RegistroComunicazioni />}
         {tab === "completa-anagrafiche" && <CompletaAnagraficheAruba />}
         {tab === "glossario" && <Glossario />}

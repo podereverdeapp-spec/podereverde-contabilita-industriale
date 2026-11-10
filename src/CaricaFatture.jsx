@@ -7,6 +7,7 @@ import { C } from "./style";
 import { classificaRiga } from "./motoreClassificazione";
 import { CATEGORIE_AMMORTAMENTO, IMPUTAZIONI_CESPITE, creaCespiteDaRiga, anniDaRiga, percentualeDaAnni } from "./cespitiDaFatture";
 import { applicaDocumento, assicuraScadenze, chiaveDocumento } from "./documentoFattura"; // versione 350
+import { righeMancanti, normDescr } from "./arubaCarico"; // versione 355
 import { leggiFattureRicevute } from "./letturaXmlRicevute"; // versione 350
 import { round2, numeroRobusto, calcolaImponibile, leggiAliquotaIva, formattaData, formattaEuro, formattaNumero, fetchAllPages, leggiInBlocchi } from "./parsingUtils";
 
@@ -20,7 +21,10 @@ const RAZZE_PER_SPECIE = {
   "Piu' specie acquistate insieme": ["Da definire in podereverdeapp.it"],
 };
 
-export default function CaricaFatture() {
+// Versione 355 (procedura unica di carico): la pagina può stare dentro «Documenti arrivati» (incorporata), con i documenti
+// già letti dallo scarico di Aruba. Incorporata: niente bozza (non tocca quella del carico normale) e, se si annulla una riga,
+// il debito creato da «Prima di tutto» resta (il pagamento non deve mai saltare).
+export default function CaricaFatture({ documentiIniziali = null, incorporata = false } = {}) {
   const [fornitori, setFornitori] = useState([]);
   const [regoleFisse, setRegoleFisse] = useState([]);
   const [regoleVariabili, setRegoleVariabili] = useState([]);
@@ -39,16 +43,32 @@ export default function CaricaFatture() {
   const salvataggioBozzaTimeout = useRef(null);
 
   useEffect(() => { caricaDatiRiferimento(); }, []);
+  const documentiGiaPassati = useRef(false);
+  useEffect(() => {
+    if (loadingDati || !documentiIniziali || documentiGiaPassati.current) return;
+    documentiGiaPassati.current = true;
+    const perChiave = new Map(); const dati = [];
+    for (const d of documentiIniziali) {
+      perChiave.set(chiaveDocumento(d.piva || d.fornitore, d.numero, formattaData(d.data)), d);
+      (d.righe.length ? d.righe : [{ descrizione: "(documento senza righe)", quantita: 1, prezzo_unitario: d.imponibile, imponibile: d.imponibile, aliquota_iva: 0 }]).forEach(r => dati.push({
+        "Fornitore": d.fornitore, "P.IVA": d.piva, "Numero": d.numero, "Data": d.data, "Descrizione": r.descrizione,
+        "Quantità": r.quantita, "U.M.": r.unita_misura, "Prezzo unitario": r.prezzo_unitario, "Imponibile": r.imponibile, "Aliquota IVA": r.aliquota_iva,
+      }));
+    }
+    if (dati.length > 0) elaboraRigheGrezze(dati, [], perChiave);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadingDati, documentiIniziali]);
 
   // Salvataggio automatico della bozza (con debounce) ogni volta che le righe cambiano
   useEffect(() => {
-    if (righe.length === 0) return;
+    if (righe.length === 0 || incorporata) return;
     if (salvataggioBozzaTimeout.current) clearTimeout(salvataggioBozzaTimeout.current);
     salvataggioBozzaTimeout.current = setTimeout(async () => {
       await supabase.from("ci_bozze_import").delete().neq("id", 0);
       await supabase.from("ci_bozze_import").insert([{ contenuto: righe }]);
     }, 1500);
     return () => clearTimeout(salvataggioBozzaTimeout.current);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [righe]);
 
   async function caricaDatiRiferimento() {
@@ -74,6 +94,7 @@ export default function CaricaFatture() {
     }
     if (eRA) console.error("Regole armonizzazione non caricate:", eRA.message);
     setLoadingDati(false);
+    if (incorporata) return;
 
     const { data: bozza } = await supabase
       .from("ci_bozze_import")
@@ -345,6 +366,28 @@ export default function CaricaFatture() {
             r.giaCaricata = chiaviEsistenti.has(`${r.fornitore_obj.id}|${r.numero}|${r.data}`);
           }
         });
+        // Versione 355: dentro «Documenti arrivati» una fattura può essere registrata in parte (pagina chiusa a metà):
+        // «già caricata» vale riga per riga, confrontando con le righe e gli acquisti di animali già salvati
+        if (incorporata) {
+          const gruppi = new Map();
+          risultati.filter(r => r.giaCaricata && r.fornitore_obj).forEach(r => {
+            const k = `${r.fornitore_obj.id}|${r.numero}|${r.data}`;
+            if (!gruppi.has(k)) gruppi.set(k, { fid: r.fornitore_obj.id, numero: r.numero, data: r.data, righe: [] });
+            gruppi.get(k).righe.push(r);
+          });
+          for (const g of gruppi.values()) {
+            const { data: fat, error: eF } = await supabase.from("ci_fatture").select("id").eq("fornitore_id", g.fid).eq("numero", g.numero).eq("data", g.data).eq("tipo", "PASSIVA").maybeSingle();
+            const { data: art, error: eA } = fat ? await supabase.from("ci_articoli_fattura").select("descrizione").eq("fattura_id", fat.id) : { data: [], error: null };
+            const { data: acq, error: eQ } = await supabase.from("ci_report_acquisto_animali").select("importo, articolo_fattura_id").eq("fornitore_id", g.fid).eq("numero_fattura", g.numero).eq("data_fattura", g.data);
+            const { data: scart, error: eR } = await supabase.from("ci_righe_scartate").select("descrizione").eq("fornitore_id", g.fid);
+            if (eF || eA || eQ || eR) { alert(`⚠️ Non sono riuscito a controllare le righe già salvate di ${g.numero}: le lascio bloccate.\n\n${(eF || eA || eQ || eR).message}`); continue; }
+            const esitoRighe = righeMancanti(g.righe, { descrizioni: (art || []).map(x => x.descrizione), importiAcquisti: (acq || []).filter(x => x.articolo_fattura_id == null).map(x => x.importo),
+              scartate: new Set((scart || []).map(x => normDescr(x.descrizione))) });
+            const mancano = new Set(esitoRighe); const ambigue = new Set(esitoRighe.ambigue);
+            // righe ambigue: un acquisto di animali salvato ha lo stesso importo di più righe; non si sa quale: si lasciano tutte aperte con l'avviso
+            g.righe.forEach((r, i) => { r.giaCaricata = !mancano.has(i) && !ambigue.has(i); r.ambigua = ambigue.has(i); });
+          }
+        }
       }
 
       const { data: scartatePrecedenti } = await leggiInBlocchi(fornitoreIds, (blocco, da, a) => supabase
@@ -356,6 +399,13 @@ export default function CaricaFatture() {
           r.giaScartataInPrecedenza = true;
         }
       });
+    }
+
+    // Versione 355 (pagina «Documenti arrivati»): una riga a 0 € non ha importo e non si registra (come nel carico di sempre da Aruba)
+    // (solo se il documento ha almeno una riga con importo: un documento di sole righe a 0 € si registra come sempre, se no la fattura non nascerebbe)
+    if (incorporata) {
+      const conImporto = new Set(risultati.filter(r => Math.abs(Number(r.imponibile) || 0) >= 0.005).map(r => `${r.piva}|${r.numero}|${r.data}`));
+      risultati.forEach(r => { if (!r.giaCaricata && !r.scartata && Math.abs(Number(r.imponibile) || 0) < 0.005 && conImporto.has(`${r.piva}|${r.numero}|${r.data}`)) { r.scartata = true; r.rigaAZero = true; } });
     }
 
     setRighe(prev => [...prev, ...risultati]);
@@ -425,12 +475,24 @@ export default function CaricaFatture() {
     return nuovo.id;
   }
 
-  async function trovaOCreaFattura(fornitoreId, numero, data) {
-    const { data: esistente } = await supabase
-      .from("ci_fatture").select("id").eq("fornitore_id", fornitoreId).eq("numero", numero).eq("data", data).maybeSingle();
-    if (esistente) return esistente.id;
+  // Versione 355: con lo scarico di Aruba la fattura nasce con il suo Identificativo SdI, il nome del file e il tipo di documento
+  async function trovaOCreaFattura(fornitoreId, numero, data, documento = null) {
+    // un file con più fatture ha un solo Identificativo SdI (indice unico nel database): non si scrive su nessuna (revisione, N5)
+    const sdi = documento?.identificativoSdi && (documento.corpi || 1) <= 1 ? String(documento.identificativoSdi) : null;
+    const { data: esistente, error: eE } = await supabase
+      .from("ci_fatture").select("id, identificativo_sdi").eq("fornitore_id", fornitoreId).eq("numero", numero).eq("data", data).maybeSingle();
+    if (eE) throw new Error(`Errore cercando la fattura ${numero}: ${eE.message}`);
+    if (esistente) {
+      if (sdi && !esistente.identificativo_sdi) {
+        const { error: eS } = await supabase.from("ci_fatture").update({ identificativo_sdi: sdi, nome_file_xml: documento.nomeFileSdi || null, tipo_documento: documento.tipoDocumento || null })
+          .eq("id", esistente.id).is("identificativo_sdi", null);
+        if (eS) throw new Error(`Identificativo SdI della fattura ${numero} non scritto: ${eS.message}`);
+      }
+      return esistente.id;
+    }
     const { data: nuova, error } = await supabase.from("ci_fatture").insert([{
       numero, data, tipo: "PASSIVA", fornitore_id: fornitoreId, totale_netto: 0, totale_iva: 0, totale_lordo: 0,
+      ...(sdi ? { identificativo_sdi: sdi, nome_file_xml: documento.nomeFileSdi || null, tipo_documento: documento.tipoDocumento || null } : {}),
     }]).select().single();
     if (error) throw new Error(`Errore creando fattura ${numero}: ${error.message}`);
     return nuova.id;
@@ -485,7 +547,7 @@ export default function CaricaFatture() {
           alert(`⚠️ Riga salvata nel Report Acquisto Animali, ma la scadenza della fattura ${riga.numero} non è stata creata: per gli acquisti di animali la scadenza nasce dall'XML. Caricare la fattura dall'XML di Aruba.`);
         }
       } else if (riga.editArea === "TRASPORTO ANIMALI") {
-        const fatturaId = await trovaOCreaFattura(fornitoreId, riga.numero, riga.data);
+        const fatturaId = await trovaOCreaFattura(fornitoreId, riga.numero, riga.data, riga.documento);
         const importoMacello = parseFloat(riga.importoMacello) || 0;
         const { data: art, error: eArt } = await supabase.from("ci_articoli_fattura").insert([{
           fattura_id: fatturaId, descrizione: riga.descrizione, quantita: riga.quantita, unita_misura: riga.unita_misura || null,
@@ -533,7 +595,7 @@ export default function CaricaFatture() {
           }
         }
 
-        const fatturaId = await trovaOCreaFattura(fornitoreId, riga.numero, riga.data);
+        const fatturaId = await trovaOCreaFattura(fornitoreId, riga.numero, riga.data, riga.documento);
         const { data: art, error } = await supabase.from("ci_articoli_fattura").insert([{
           fattura_id: fatturaId, descrizione: riga.descrizione, quantita: riga.quantita, unita_misura: riga.unita_misura || null,
           prezzo_unitario: riga.prezzo_unitario, totale_riga: riga.imponibile,
@@ -616,7 +678,9 @@ export default function CaricaFatture() {
       if (ids.fatturaId) {
         // Versione 350: se la fattura resta senza righe, le sue scadenze senza pagamenti se ne vanno con lei
         const { data: rimaste } = await supabase.from("ci_articoli_fattura").select("id").eq("fattura_id", ids.fatturaId).limit(1);
-        if ((rimaste || []).length === 0) {
+        if ((rimaste || []).length === 0 && incorporata) {
+          // Versione 355: il debito è nato con «Prima di tutto» e resta con la fattura (vuota) finché la riga non si salva di nuovo
+        } else if ((rimaste || []).length === 0) {
           const { data: scad } = await supabase.from("ci_scadenze").select("id, ci_abbinamenti_pagamenti(id)").eq("fattura_id", ids.fatturaId);
           const conPagamenti = (scad || []).filter(sc => (sc.ci_abbinamenti_pagamenti || []).length > 0);
           for (const sc of (scad || []).filter(x => !conPagamenti.includes(x))) await supabase.from("ci_scadenze").delete().eq("id", sc.id);
@@ -632,8 +696,11 @@ export default function CaricaFatture() {
   }
 
   async function salvaTutteLeRimanenti() {
-    const daSalvare = righe.filter(r => !r.giaCaricata && !r.salvata && !r.scartata);
-    if (daSalvare.length === 0) { alert("Non ci sono righe da salvare."); return; }
+    // le righe «ambigue» (un acquisto di animali già salvato con lo stesso importo) si salvano solo una per una, dopo il controllo
+    const ambigue = righe.filter(r => r.ambigua && !r.salvata && !r.scartata);
+    const daSalvare = righe.filter(r => !r.giaCaricata && !r.salvata && !r.scartata && !r.ambigua);
+    if (ambigue.length) alert(`${ambigue.length} righe con l'avviso giallo non si salvano con «Salva tutte»: controllare il Report Acquisto Animali e salvarle una per una (o scartarle).`);
+    if (daSalvare.length === 0) { if (!ambigue.length) alert("Non ci sono righe da salvare."); return; }
     for (const r of daSalvare) {
       // eslint-disable-next-line no-await-in-loop
       await salvaRiga(r);
@@ -655,7 +722,7 @@ export default function CaricaFatture() {
 
   return (
     <div style={{ padding: 20, maxWidth: 1300, margin: "0 auto" }}>
-      <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Carica Fatture</h1>
+      <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>{incorporata ? "Classifica e registra le fatture nuove" : "Carica Fatture"}</h1>
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 20 }}>
         Carica un file, classifica e salva riga per riga — non serve aspettare la fine.
       </p>
@@ -672,7 +739,7 @@ export default function CaricaFatture() {
         </div>
       )}
 
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 20 }}>
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 20, display: incorporata ? "none" : undefined }}>
         <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
           <button onClick={() => setModalita("excel")} style={toggleBtn(modalita === "excel")}>📊 File Excel</button>
           <button onClick={() => setModalita("pdf")} style={toggleBtn(modalita === "pdf")}>📁 Cartella PDF</button>
@@ -818,9 +885,17 @@ function RigaFattura({ riga, aree, centriPerArea, regoleArmonizzazione, onChange
 
       {r.scartata && (
         <div style={{ fontSize: 12, color: C.muted, fontStyle: "italic" }}>
-          {r.giaScartataInPrecedenza
+          {r.rigaAZero ? "Riga a 0 €: non ha importo e non si registra."
+            : r.giaScartataInPrecedenza
             ? "Scartata automaticamente: avevi già deciso di ignorare questa descrizione per questo fornitore."
             : "Scartata — non verrà salvata. Le prossime fatture di questo fornitore con questa stessa descrizione verranno scartate automaticamente."}
+        </div>
+      )}
+
+      {r.ambigua && !r.salvata && !r.scartata && (
+        <div style={{ fontSize: 12, color: "#B8860B", background: "#B8860B15", borderRadius: 8, padding: "8px 10px", marginBottom: 10, fontWeight: 600 }}>
+          ⚠️ Nel Report Acquisto Animali c'è già un acquisto di {formattaEuro(Math.abs(Number(r.imponibile) || 0))} per questa fattura, e la fattura ha più righe con questo importo:
+          il programma non sa quale è già stata salvata. Prima di salvare, controllare nel Report Acquisto Animali per non salvarla due volte.
         </div>
       )}
 

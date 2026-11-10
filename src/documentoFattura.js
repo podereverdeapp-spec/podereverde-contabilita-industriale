@@ -63,11 +63,16 @@ export async function assicuraScadenze(documento) {
   const colonna = documento.fatturaId ? "fattura_id" : documento.fatturaEmessaId ? "fattura_emessa_id" : "file_xml";
   const valore = documento.fatturaId || documento.fatturaEmessaId || documento.fileXml;
   if (!valore) return { create: 0, aggiornate: 0, motivo: "documento senza fattura né file XML: scadenza non creata" };
-  const { data: esistenti, error } = await supabase.from("ci_scadenze").select("id, importo, note, scadenza_indicata").eq(colonna, valore);
+  const { data: esistenti, error } = await supabase.from("ci_scadenze").select("id, importo, note, scadenza_indicata, ritenuta").eq(colonna, valore);
   if (error) throw new Error(`Lettura delle scadenze: ${error.message}`);
   const segno = num(documento.totale) < 0 ? -1 : 1;
   const totaleDocumento = round2(Math.abs(num(documento.totale)));
   const rate = (documento.rate || []).filter(r => Number.isFinite(Number(r.importo)) && Number(r.importo) !== 0);
+  // Versione 355 (approvato dal Dott. Bizzarri il 10/11/2026 ore 16:52): senza rate nel documento il debito verso il fornitore è
+  // il totale meno la ritenuta d'acconto, che si versa con l'F24. Se chi ricalcola non ha il documento, vale la ritenuta già scritta
+  // sulla scadenza: così il debito non cambia a seconda della pagina che lo ricalcola.
+  const haRitenuta = documento.ritenuta !== undefined && documento.ritenuta !== null && documento.ritenuta !== "";
+  const debitoSenzaRate = rit => round2(Math.max(0, totaleDocumento - Math.abs(num(rit))));
 
   if ((esistenti || []).length > 0) {
     // Si aggiorna solo la scadenza automatica, senza pagamenti abbinati, quando il totale cambia
@@ -76,9 +81,10 @@ export async function assicuraScadenze(documento) {
     const s = automatiche[0];
     const { data: abb } = await supabase.from("ci_abbinamenti_pagamenti").select("id").eq("scadenza_id", s.id).limit(1);
     if ((abb || []).length > 0) return { create: 0, aggiornate: 0, motivo: "scadenza con pagamenti: non si cambia" };
-    if (rate.length === 0 && round2(num(s.importo)) === round2(segno * totaleDocumento)) return { create: 0, aggiornate: 0 };
+    const ritenuta = haRitenuta ? round2(num(documento.ritenuta)) : round2(num(s.ritenuta));
+    if (rate.length === 0 && round2(num(s.importo)) === round2(segno * debitoSenzaRate(ritenuta))) return { create: 0, aggiornate: 0 };
     if (rate.length === 0) {
-      const { error: eU } = await supabase.from("ci_scadenze").update({ importo: round2(segno * totaleDocumento), totale_documento: totaleDocumento }).eq("id", s.id);
+      const { error: eU } = await supabase.from("ci_scadenze").update({ importo: round2(segno * debitoSenzaRate(ritenuta)), totale_documento: totaleDocumento, ritenuta }).eq("id", s.id);
       if (eU) throw new Error(`Scadenza non aggiornata: ${eU.message}`);
       return { create: 0, aggiornate: 1 };
     }
@@ -100,7 +106,7 @@ export async function assicuraScadenze(documento) {
         data_scadenza: r.scadenza || documento.data, scadenza_indicata: !!r.scadenza,
         giorni_termine: Number.isFinite(Number(r.giorni)) && r.giorni !== null && r.giorni !== "" ? Number(r.giorni) : null,
         modalita_pagamento: r.modalita || null, iban: r.iban || null, note: r.scadenza ? null : "Il documento non indica la data di scadenza" }))
-    : [{ ...base, numero_rata: 1, importo: round2(segno * totaleDocumento), data_scadenza: documento.data, scadenza_indicata: false, note: NOTA_SCADENZA_AUTOMATICA }];
+    : [{ ...base, numero_rata: 1, importo: round2(segno * debitoSenzaRate(documento.ritenuta)), data_scadenza: documento.data, scadenza_indicata: false, note: NOTA_SCADENZA_AUTOMATICA }];
   const { data: inserite, error: eI } = await supabase.from("ci_scadenze").insert(nuove).select("id");
   if (eI) throw new Error(`Scadenze non create: ${eI.message}`);
   return { create: nuove.length, aggiornate: 0, ids: (inserite || []).map(r => r.id) };

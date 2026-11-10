@@ -18,6 +18,8 @@ export const PARTI = [
   { id: "sub-dati-controllo", label: "Carica Dati Contabilità → 7. Controllo finale" },
   { id: "cart-emissione-fatture", label: "Emissione Fatture di Vendita" },
   { id: "cart-ricerca", label: "Ricerca: Fatture e Anagrafiche" },
+  { id: "cart-banche", label: "Banche, carte e cassa" }, // versione 352
+  { id: "cart-prima-nota", label: "Prima nota" }, // versione 354
   { id: "cart-costi", label: "Analisi Costi" },
   { id: "cart-alimentaria", label: "Alimentaria" },
   { id: "cart-animali", label: "Animali" },
