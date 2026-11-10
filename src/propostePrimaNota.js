@@ -1,4 +1,4 @@
-// Versione 354 — proposte del programma per la conferma dei movimenti della banca (il programma propone, l'operatore conferma:
+// Versioni 354 e 356 — proposte del programma per la conferma dei movimenti della banca (il programma propone, l'operatore conferma:
 // regola del Dott. Bizzarri del 09/11/2026 ore 17:00). Nessuna scrittura qui: solo calcolo.
 export const MODALITA = ["Bonifico", "Bonifico istantaneo", "Assegno bancario", "Assegno circolare", "Contanti", "Carta di debito", "Carta di credito",
   "Carta prepagata", "Modello F24", "Bollettino", "Addebito diretto SEPA", "Addebito della banca", "Altro"];
@@ -58,7 +58,16 @@ export function propostaPerRiga(r, conto, movimenti) {
   return p;
 }
 
-// abbinamento righe della banca ↔ movimenti già nel programma: stesso conto, verso, importo; data = contabile o valuta
+// abbinamento righe della banca ↔ movimenti già nel programma: stesso conto, verso, importo; data = contabile o valuta.
+// Versione 357: un movimento disposto dal programma (codice di attesa P-0001) si cerca con una tolleranza sulla data: la banca addebita
+// di norma il giorno stesso o quello dopo (D.Lgs. 11/2010); si accetta dalla data di disposizione meno 2 giorni a più 15 giorni.
+// Se più righe o più disposizioni sono possibili, decide l'operatore («da scegliere»).
+const giorniTra = (a, b) => Math.round((Date.parse(`${b}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / 86400000);
+export const dentroTolleranza = (m, r) => {
+  if (!m.codice_attesa) return m.data === r.data_contabile || (r.data_valuta && m.data === r.data_valuta);
+  const d = giorniTra(m.data_disposizione || m.data, r.data_contabile);
+  return d >= -2 && d <= 15;
+};
 export function abbina(righe, movimenti) {
   const liberiM = movimenti.filter(m => !m.riga_fonte_id && !m.confermato_il);
   const chiave = (c, v, i) => `${c}|${v}|${Number(i).toFixed(2)}`;
@@ -66,7 +75,7 @@ export function abbina(righe, movimenti) {
   for (const m of liberiM) { const k = chiave(m.conto_id, m.verso, m.importo); (perChiave.get(k) || perChiave.set(k, []).get(k)).push(m); }
   const candidati = new Map(); const usatiDa = new Map();
   for (const r of righe) {
-    const lista = (perChiave.get(chiave(r.conto_id, r.verso, r.importo)) || []).filter(m => m.data === r.data_contabile || (r.data_valuta && m.data === r.data_valuta));
+    const lista = (perChiave.get(chiave(r.conto_id, r.verso, r.importo)) || []).filter(m => dentroTolleranza(m, r));
     candidati.set(r.id, lista);
     for (const m of lista) (usatiDa.get(m.id) || usatiDa.set(m.id, []).get(m.id)).push(r.id);
   }
@@ -78,4 +87,45 @@ export function abbina(righe, movimenti) {
     esito.set(r.id, { tipo: univoca ? "univoca" : "da scegliere", candidati: lista });
   }
   return esito;
+}
+
+// ---- Versione 357: soggetto e fatture aperte per una riga della banca senza movimento ----
+// Il nome dell'ordinante o del beneficiario (colonna «controparte» della riga, oppure «a favore di … EUR» nella descrizione)
+// si confronta con l'anagrafica parola per parola, senza forme societarie e parole brevi. Proposta, mai decisione.
+const FORME = new Set(["SRL", "SRLS", "SPA", "SAS", "SNC", "SCA", "SCARL", "SOC", "SOCIETA", "COOP", "COOPERATIVA", "AGRICOLA", "AZIENDA", "DITTA", "INDIVIDUALE",
+  "DEI", "DEL", "DELLA", "DELLE", "DI", "DA", "E", "C", "F", "LLI", "FLLI", "STABILE", "ORGANIZZAZIONE", "SEDE", "SECONDARIA", "ITALIA", "SERVIZI", "SEMPLIFICATA"]);
+export const parole = t => String(t || "").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/S\.?\s?R\.?\s?L\.?/g, " SRL ")
+  .replace(/[^A-Z0-9]+/g, " ").split(" ").filter(w => w.length >= 4 && !FORME.has(w));
+export const nomeDellaRiga = r => {
+  if (r.controparte) return r.controparte;
+  const m = /a favore di (.+?) EUR /i.exec(r.descrizione || "") || /o\/c:\s*(.+?) ABI-CAB/i.exec(r.descrizione || "");
+  return m ? m[1] : "";
+};
+export function soggettoPerNome(nome, anagrafica) {
+  const p = new Set(parole(nome)); if (!p.size) return null;
+  let migliore = null, punti = 0;
+  for (const a of anagrafica) {
+    const q = parole(a.nome); if (!q.length) continue;
+    const comuni = q.filter(w => p.has(w)).length; const s = comuni / Math.max(q.length, 1);
+    // almeno due parole in comune, oppure tutte le parole di un nome di una parola sola («MARTENS»)
+    if (comuni && (comuni >= 2 || q.length === 1) && s > punti) { punti = s; migliore = a; }
+  }
+  return punti >= 0.5 ? migliore : null;
+}
+// fatture aperte del soggetto che la riga può chiudere: una con resto uguale, oppure tutte insieme se la somma torna;
+// la fattura deve avere data non successiva al giorno della banca (un pagamento non chiude una fattura emessa dopo)
+export function fatturePerRiga(r, aperte, soggettoId) {
+  const lato = r.verso === "uscita" ? "fornitore" : "cliente";
+  const sue = aperte.filter(s => s.lato === lato && (lato === "fornitore" ? s.fornitore_id : s.cliente_id) === soggettoId
+    && s.data_documento <= r.data_contabile && Number(s.residuo) > 0.005 && !(Number(s.in_attesa_della_banca) > 0));
+  const imp = Number(r.importo);
+  const una = sue.filter(s => Math.abs(Number(s.residuo) - imp) < 0.005);
+  if (una.length === 1) return { scelte: [una[0].scadenza_id], perche: "una fattura aperta del soggetto con lo stesso resto" };
+  // il numero della fattura scritto nella descrizione della banca
+  const D = String(r.descrizione || "").toUpperCase();
+  const perNumero = sue.filter(s => s.numero_documento && D.includes(String(s.numero_documento).toUpperCase()));
+  const somma = l => l.reduce((t, s) => t + Number(s.residuo), 0);
+  if (perNumero.length && Math.abs(somma(perNumero) - imp) < 0.005) return { scelte: perNumero.map(s => s.scadenza_id), perche: "fatture citate nella causale della banca, somma uguale" };
+  if (sue.length > 1 && sue.length <= 12 && Math.abs(somma(sue) - imp) < 0.005) return { scelte: sue.map(s => s.scadenza_id), perche: "tutte le fatture aperte del soggetto, somma uguale" };
+  return { scelte: [], perche: sue.length ? "fatture aperte del soggetto: scegliere quelle pagate con questo movimento" : "nessuna fattura aperta del soggetto prima di questa data" };
 }

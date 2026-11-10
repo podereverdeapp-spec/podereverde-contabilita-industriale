@@ -56,6 +56,8 @@ import CaricaDocumentiBanca from "./CaricaDocumentiBanca";
 import ConsultaEstratti from "./ConsultaEstratti";
 import ConfermaMovimenti from "./ConfermaMovimenti";
 import PrimaNota from "./PrimaNota";
+import GestioneIncassiPagamenti from "./GestioneIncassiPagamenti";
+import { ISTRUZIONI_BANCHE, ISTRUZIONI_INCASSI_PAGAMENTI, ISTRUZIONI_PRIMA_NOTA } from "./istruzioniBancheIncassiPrimaNota";
 // Versione 346 (03/11/2026): posta del programma — le mail ai clienti e ai fornitori partono da podereverdeapp@gmail.com attraverso il postino (funzione spedisci-mail), con intestazione, logo, firma modificabile e piè di pagina di legge; permesso «Può spedire mail dal programma» nella cartella Accessi; le mail della casella entrano da sole nel Registro delle Comunicazioni (cassetta comunicazioni-ricevi, ritiro ogni 5 minuti); «Togli dal registro» (recuperabile) e «Blocca mittente».
 // Versione 345 (02/11/2026): pagina F24 arrivati — un'archiviazione sola alla volta; un file esce da DA SMISTARE solo se è identico a un file dell'ARCHIVIO (altrimenti prima si conserva intero in ORIGINALI RICEVUTI); scrittura riprovata sul disco di rete.
 // Versione 344 (02/11/2026): pagina F24 arrivati — «Archivia» archivia le righe a posto e lascia in sospeso le rosse con i loro file; la quietanza senza F24 ha il nome «F24 <data del pagamento>.pdf».
@@ -273,13 +275,20 @@ const MENU = [
   // Versione 352 (decisioni del Dott. Bizzarri del 09/11/2026 ore 21:13–21:14 e del 10/11/2026): la sezione «Banche, carte e cassa».
   // Prima pagina: i conti con «Controllo … ok alla data …», «Quadratura con prima nota ok alla data …», periodi mancanti e partenza.
   { tipo: "cartella", id: "cart-banche", label: "Banche, carte e cassa", icon: "🏦", contenuto: [
+    { tipo: "voce", id: "istr-banche", label: "Istruzioni", icon: "📖" }, // versione 357
     { tipo: "voce", id: "banche-conti", label: "Conti: stato e controlli", icon: "🏦" },
     { tipo: "voce", id: "banche-carica", label: "Carica documenti della banca", icon: "📥" },
     { tipo: "voce", id: "banche-consulta", label: "Estratti e movimenti: consulta", icon: "🔎" },
     { tipo: "voce", id: "banche-conferma", label: "Conferma dei movimenti", icon: "✅" }, // versione 354
   ]},
+  // Versione 357 (10/11/2026): Gestione incassi e pagamenti, il motore che scrive la prima nota (progetto della prima nota, sezioni 2, 3, 5, 6, 10)
+  { tipo: "cartella", id: "cart-incassi-pagamenti", label: "Gestione incassi e pagamenti", icon: "💶", contenuto: [
+    { tipo: "voce", id: "istr-incassi-pagamenti", label: "Istruzioni", icon: "📖" },
+    { tipo: "voce", id: "incassi-pagamenti", label: "Incassi e pagamenti", icon: "💶" },
+  ]},
   // Versione 354 (10/11/2026): la prima nota (progetto della prima nota, sezioni 3, 4.1, 8 e 9)
   { tipo: "cartella", id: "cart-prima-nota", label: "Prima nota", icon: "📒", contenuto: [
+    { tipo: "voce", id: "istr-prima-nota", label: "Istruzioni", icon: "📖" }, // versione 357
     { tipo: "voce", id: "prima-nota", label: "Prima nota", icon: "📒" },
   ]},
   { tipo: "cartella", id: "cart-costi", label: "Analisi Costi", icon: "📊", contenuto: [
@@ -545,7 +554,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 356</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 357</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -837,6 +846,10 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
         {tab === "banche-consulta" && <ConsultaEstratti />}
         {tab === "banche-conferma" && <ConfermaMovimenti />}
         {tab === "prima-nota" && <PrimaNota />}
+        {tab === "incassi-pagamenti" && <GestioneIncassiPagamenti />}
+        {tab === "istr-banche" && <DocumentoIstruzioni doc={ISTRUZIONI_BANCHE} />}
+        {tab === "istr-incassi-pagamenti" && <DocumentoIstruzioni doc={ISTRUZIONI_INCASSI_PAGAMENTI} />}
+        {tab === "istr-prima-nota" && <DocumentoIstruzioni doc={ISTRUZIONI_PRIMA_NOTA} />}
         {tab === "registro-comunicazioni" && <RegistroComunicazioni />}
         {tab === "completa-anagrafiche" && <CompletaAnagraficheAruba />}
         {tab === "glossario" && <Glossario />}

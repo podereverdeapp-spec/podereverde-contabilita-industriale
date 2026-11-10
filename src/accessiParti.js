@@ -20,6 +20,7 @@ export const PARTI = [
   { id: "cart-ricerca", label: "Ricerca: Fatture e Anagrafiche" },
   { id: "cart-banche", label: "Banche, carte e cassa" }, // versione 352
   { id: "cart-prima-nota", label: "Prima nota" }, // versione 354
+  { id: "cart-incassi-pagamenti", label: "Gestione incassi e pagamenti" }, // versione 357
   { id: "cart-costi", label: "Analisi Costi" },
   { id: "cart-alimentaria", label: "Alimentaria" },
   { id: "cart-animali", label: "Animali" },

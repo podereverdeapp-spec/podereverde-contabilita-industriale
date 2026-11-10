@@ -34,9 +34,9 @@ export default function PrimaNota() {
     const conti = (c.data || []).filter(x => x.tipo !== "cassa" && (s.data || []).some(y => y.conto_id === x.id && y.partenza_alla_data && y.partenza_alla_data < `${anno}-01-01`));
     const senzaPartenza = (c.data || []).filter(x => !conti.includes(x) && x.stato !== "chiuso");
     const [mov, att, righe] = await Promise.all([
-      fetchAllPages((a, b) => supabase.from("ci_pagamenti_fatture").select("id, conto_id, data, data_valuta, verso, importo, controparte, causale, causale_gruppo, causale_voce, causale_altro, natura, modalita, modalita_altro, numero_bonifico, esercizio, progressivo, confermato_il, riga_fonte_id, creato_il, stornato_il, motivo_storno, movimento_collegato_id")
+      fetchAllPages((a, b) => supabase.from("ci_pagamenti_fatture").select("id, conto_id, data, data_valuta, verso, importo, controparte, causale, causale_gruppo, causale_voce, causale_altro, natura, modalita, modalita_altro, numero_bonifico, esercizio, progressivo, confermato_il, riga_fonte_id, creato_il, stornato_il, motivo_storno, movimento_collegato_id, codice_attesa, data_disposizione")
         .eq("esercizio", anno).order("progressivo").range(a, b)),
-      fetchAllPages((a, b) => supabase.from("ci_pagamenti_fatture").select("id, conto_id, data, verso, importo, controparte, causale, confermato_il")
+      fetchAllPages((a, b) => supabase.from("ci_pagamenti_fatture").select("id, conto_id, data, verso, importo, controparte, causale, confermato_il, codice_attesa, data_disposizione, causale_voce")
         .gte("data", `${anno}-01-01`).lte("data", `${anno}-12-31`).order("id").range(a, b)),
       fetchAllPages((a, b) => supabase.from("ci_righe_fonte").select("id, conto_id, data_contabile, documento_id").gte("data_contabile", `${anno}-01-01`).lte("data_contabile", `${anno}-12-31`).order("id").range(a, b)),
     ]);
@@ -57,8 +57,8 @@ export default function PrimaNota() {
       const err = res.find(x => x.error); if (err) throw new Error("saldo dell'estratto: " + err.error.message);
       giorni.forEach((g, i) => { estratto[cc.id][g] = { saldo: res[i].data === null ? null : Number(res[i].data), coperto: !!st?.controllo_ok_alla_data && g <= st.controllo_ok_alla_data }; });
     }
-    setD({ conti, provvisori, senzaPartenza, movimenti: mov.data || [], inAttesa: (att.data || []).filter(m => !m.confermato_il && conti.some(c => c.id === m.conto_id) && !copertoAl(m.conto_id, m.data)),
-      nonConfermati: (att.data || []).filter(m => !m.confermato_il && conti.some(c => c.id === m.conto_id) && copertoAl(m.conto_id, m.data)), daConfermare, estratto });
+    setD({ conti, provvisori, senzaPartenza, movimenti: mov.data || [], inAttesa: (att.data || []).filter(m => !m.confermato_il && conti.some(c => c.id === m.conto_id) && (m.codice_attesa || !copertoAl(m.conto_id, m.data))),
+      nonConfermati: (att.data || []).filter(m => !m.confermato_il && !m.codice_attesa && conti.some(c => c.id === m.conto_id) && copertoAl(m.conto_id, m.data)), daConfermare, estratto });
   }
   useEffect(() => { carica().catch(x => setErrore("Lettura non riuscita: " + x.message)); }, [anno]);
 
@@ -88,22 +88,22 @@ export default function PrimaNota() {
   function excel() {
     const wb = XLSX.utils.book_new(); const ora = new Date().toLocaleString("it-IT", { timeZone: "Europe/Rome" });
     const testa = (titolo) => [["SOCIETA' AGRICOLA PODERE VERDE A R.L."], [titolo], [`Scaricato il ${ora}${contoFiltro ? " — conto: " + conti[0]?.nome : ""}${cerca ? " — ricerca: " + cerca : ""}`], []];
-    const intest = ["Numero", "Data dell'addebito o dell'accredito", "Data valuta", "Natura", "Conto", "Soggetto", "Causale contabile", "Modalità", "Descrizione", ...conti.flatMap(c => [`${c.nome} entrate`, `${c.nome} uscite`])];
+    const intest = ["Numero", "Data dell'addebito o dell'accredito", "Data di disposizione", "Data valuta", "Natura", "Conto", "Soggetto", "Causale contabile", "Modalità", "Descrizione", ...conti.flatMap(c => [`${c.nome} entrate`, `${c.nome} uscite`])];
     const riepilogo = [...testa(`Prima nota ${anno} — riepilogo PROVVISORIO (mesi non chiusi)`), ["Mese", ...conti.flatMap(c => [`${c.nome} saldo iniziale`, "entrate", "uscite", "saldo finale", "saldo estratto conto"])]];
     for (const b of blocchi) {
       const righe = [...testa(`Prima nota ${MESI[b.mese - 1]} ${anno} — PROVVISORIA (mese non chiuso)`), intest,
-        ["", "", "", "", "", "SALDI AL " + dataIt(`${anno}-${String(b.mese).padStart(2, "0")}-01`), "", "", "", ...conti.flatMap(c => [b.iniziale[c.id] / 100, ""])],
-        ...b.righe.map(m => [numero(m), dataIt(m.data), m.data_valuta ? dataIt(m.data_valuta) : "", m.natura, conti.find(c => c.id === m.conto_id)?.nome, m.controparte || "",
+        ["", "", "", "", "", "SALDI AL " + dataIt(`${anno}-${String(b.mese).padStart(2, "0")}-01`), "", "", "", "", ...conti.flatMap(c => [b.iniziale[c.id] / 100, ""])],
+        ...b.righe.map(m => [numero(m), dataIt(m.data), m.data_disposizione ? dataIt(m.data_disposizione) : "", m.data_valuta ? dataIt(m.data_valuta) : "", m.natura, conti.find(c => c.id === m.conto_id)?.nome, m.controparte || "",
           m.causale_voce === "Altro" ? `Altro: ${m.causale_altro}` : m.causale_voce, m.modalita === "Altro" ? `Altro: ${m.modalita_altro}` : m.modalita, m.causale || "",
           ...conti.flatMap(c => c.id === m.conto_id ? [m.verso === "entrata" ? Number(m.importo) : "", m.verso === "uscita" ? Number(m.importo) : ""] : ["", ""])]),
-        ["", "", "", "", "", "TOTALI", "", "", "", ...conti.flatMap(c => [b.tot[c.id].e / 100, b.tot[c.id].u / 100])],
-        ["", "", "", "", "", "SALDO FINALE", "", "", "", ...conti.flatMap(c => [b.finale[c.id] / 100, ""])]];
+        ["", "", "", "", "", "TOTALI", "", "", "", "", ...conti.flatMap(c => [b.tot[c.id].e / 100, b.tot[c.id].u / 100])],
+        ["", "", "", "", "", "SALDO FINALE", "", "", "", "", ...conti.flatMap(c => [b.finale[c.id] / 100, ""])]];
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(righe), `${anno}-${String(b.mese).padStart(2, "0")}`);
       riepilogo.push([MESI[b.mese - 1], ...b.controllo.flatMap(k => [b.iniziale[k.conto.id] / 100, b.tot[k.conto.id].e / 100, b.tot[k.conto.id].u / 100, k.prima / 100, k.estratto == null ? "" : k.estratto / 100])]);
     }
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(riepilogo), "Riepilogo", true);
     const att = [...testa(`In attesa di conferma della banca — fuori da totali e saldi`), ["Movimento", "Data di disposizione", "Conto", "Entrata o uscita", "Importo", "Soggetto", "Causale"],
-      ...d.inAttesa.map(m => [m.id, dataIt(m.data), d.conti.find(c => c.id === m.conto_id)?.nome, m.verso, Number(m.importo), m.controparte || "", m.causale || ""])];
+      ...d.inAttesa.map(m => [m.codice_attesa || m.id, dataIt(m.data_disposizione || m.data), d.conti.find(c => c.id === m.conto_id)?.nome, m.verso, Number(m.importo), m.controparte || "", m.causale || ""])];
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(att), "In attesa");
     const quali = mesi.length ? mesi.map(m => String(m).padStart(2, "0")).join("+") : "anno";
     XLSX.writeFile(wb, `Prima nota Podere Verde ${anno}-${quali}${contoFiltro ? " " + sigla(conti[0]) : ""}.xlsx`);
@@ -131,8 +131,8 @@ export default function PrimaNota() {
         <div style={{ fontWeight: 800, color: C.blue, marginBottom: 4 }}>In attesa di conferma della banca ({d.inAttesa.length}) — fuori da totali e saldi</div>
         {d.nonConfermati.length > 0 && <div style={{ fontSize: 13, color: C.red, fontWeight: 700, marginBottom: 4 }}>{d.nonConfermati.length} movimenti del programma hanno già la riga nell'estratto caricato ma non sono ancora confermati: pagina «Conferma dei movimenti».</div>}
         {d.inAttesa.length === 0 ? <div style={{ fontSize: 13 }}>Nessun movimento in attesa.</div>
-          : <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12.5 }}><tbody>{d.inAttesa.map(m => { const giorni = Math.round((Date.now() - new Date(m.data + "T12:00:00Z")) / 864e5); return <tr key={m.id} style={{ borderBottom: `1px solid ${C.border}`, color: giorni > 2 ? C.red : C.text }}>
-            <td style={th}>movimento n. {m.id}</td><td style={th}>disposto il {dataIt(m.data)} ({giorni} giorni)</td><td style={th}>{d.conti.find(c => c.id === m.conto_id)?.nome}</td><td style={th}>{m.verso}</td><td style={{ ...th, textAlign: "right" }}>{euro(m.importo)}</td><td style={th}>{m.controparte}</td><td style={th}>{m.causale}</td></tr>; })}</tbody></table>}
+          : <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12.5 }}><tbody>{d.inAttesa.map(m => { const giorni = Math.round((Date.now() - new Date((m.data_disposizione || m.data) + "T12:00:00Z")) / 864e5); return <tr key={m.id} style={{ borderBottom: `1px solid ${C.border}`, color: giorni > 2 ? C.red : C.text }}>
+            <td style={th}>{m.codice_attesa ? <b>{m.codice_attesa}</b> : `movimento n. ${m.id}`}</td><td style={th}>disposto il {dataIt(m.data_disposizione || m.data)} ({giorni} giorni)</td><td style={th}>{d.conti.find(c => c.id === m.conto_id)?.nome}</td><td style={th}>{m.verso}</td><td style={{ ...th, textAlign: "right" }}>{euro(m.importo)}</td><td style={th}>{m.controparte}</td><td style={th}>{m.causale}</td></tr>; })}</tbody></table>}
       </div>
 
       {blocchi.map(b => <div key={b.mese} style={scheda}>
@@ -144,7 +144,7 @@ export default function PrimaNota() {
             <tr style={{ background: `${C.primary}22` }}><td colSpan={9} style={{ ...th, fontWeight: 800 }}>SALDI AL {dataIt(`${anno}-${String(b.mese).padStart(2, "0")}-01`)}</td>{conti.map(c => <td key={c.id} colSpan={2} style={{ ...th, textAlign: "center", fontWeight: 800 }}>{euro(b.iniziale[c.id] / 100)}{d.provvisori.has(c.id) ? <div style={{ fontSize: 10.5, color: C.red }}>partenza provvisoria</div> : null}</td>)}</tr>
             <tr style={{ background: `${C.primary}11`, fontSize: 11 }}><td colSpan={9} />{conti.map(c => [<td key={c.id + "e"} style={{ ...th, textAlign: "right" }}>Entrate</td>, <td key={c.id + "u"} style={{ ...th, textAlign: "right" }}>Uscite</td>])}</tr></thead>
           <tbody>{b.righe.map(m => <tr key={m.id} style={{ borderBottom: `1px solid ${C.border}` }}>
-            <td style={{ ...th, fontWeight: 700, textDecoration: m.stornato_il ? "line-through" : "none" }} title={m.stornato_il ? `stornato: ${m.motivo_storno}` : ""}>{numero(m)}{m.stornato_il ? <div style={{ fontSize: 10, color: C.red, textDecoration: "none" }}>STORNATO</div> : null}</td><td style={th}>{dataIt(m.data)}</td><td style={th}>—</td><td style={th}>{m.data_valuta ? dataIt(m.data_valuta) : ""}</td>
+            <td style={{ ...th, fontWeight: 700, textDecoration: m.stornato_il ? "line-through" : "none" }} title={m.stornato_il ? `stornato: ${m.motivo_storno}` : ""}>{numero(m)}{m.stornato_il ? <div style={{ fontSize: 10, color: C.red, textDecoration: "none" }}>STORNATO</div> : null}</td><td style={th}>{dataIt(m.data)}</td><td style={th}>{m.data_disposizione ? dataIt(m.data_disposizione) : "—"}</td><td style={th}>{m.data_valuta ? dataIt(m.data_valuta) : ""}</td>
             <td style={th} title={NATURA[m.natura]}>{m.natura}</td><td style={{ ...th, whiteSpace: "normal" }}>{m.controparte}</td>
             <td style={{ ...th, whiteSpace: "normal" }}>{m.causale_voce === "Altro" ? `Altro: ${m.causale_altro}` : m.causale_voce}</td><td style={th}>{m.modalita === "Altro" ? `Altro: ${m.modalita_altro}` : m.modalita}</td>
             <td style={{ ...th, whiteSpace: "normal", maxWidth: 240, fontSize: 11 }}>{m.causale}</td>

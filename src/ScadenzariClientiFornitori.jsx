@@ -28,6 +28,8 @@ const STATI = {
   "pagata in parte, il resto è scaduto": C.red,
   "pagata in parte": C.yellow,
   "da scadere": C.blue,
+  "in pagamento: in attesa della banca": C.blue, // versione 357
+  "in pagamento in parte: in attesa della banca": C.blue,
   "pagata più del dovuto": C.accent,
   "nota di credito da compensare": C.accent,
   "annullata da nota di credito": C.green,
