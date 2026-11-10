@@ -70,6 +70,7 @@ import PrimaNota from "./PrimaNota";
 // di smistamento e di carico e della pagina «Carica F24» (i loro file restano, ma non sono più nel menu).
 import F24Arrivati from "./F24Arrivati";
 import DocumentiArrivati from "./DocumentiArrivati"; // versione 355
+import { ISTRUZIONI_DOCUMENTI_ARRIVATI } from "./istruzioniDocumentiArrivati"; // versione 356
 import { ISTRUZIONI_F24_ARRIVATI } from "./istruzioniF24Arrivati";
 // Versione 337: la cartella «Accessi» (chi entra nel programma e in quali parti)
 import PaginaAccessi, { IstruzioniAccessi } from "./PaginaAccessi";
@@ -173,6 +174,7 @@ const MENU = [
     { tipo: "sottocartella", id: "sub-dati-fatture-passive", label: "1. Carica Fatture Passive", icon: "📥", voci: [
       { id: "istr-fatture", label: "Istruzioni Carica Fatture Passive", icon: "📖" },
       // Versione 355 (procedura unica di carico, ordine del Dott. Bizzarri del 10/11/2026): gli scarichi di Aruba e gli F24 in una pagina
+      { id: "istr-documenti-arrivati", label: "Istruzioni Documenti arrivati (anche lo scarico da Aruba)", icon: "📖" }, // versione 356
       { id: "documenti-arrivati", label: "Documenti arrivati: controlla, carica e archivia", icon: "📬" },
       { id: "prompt-estrazione-pdf", label: "Prompt per carico Massivo", icon: "🤖" },
       // Versione 293: il carico diretto da Aruba con Claude (decisione del Dott. Bizzarri del 24/10/2026)
@@ -543,7 +545,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 355</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 356</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -772,6 +774,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
         {tab === "vendite-per-anno" && <VenditePerAnno />}
         {tab === "prompt-cedolini" && <PromptCedolini />}
         {tab === "f24-arrivati" && <F24Arrivati utente={utente} accesso={accesso} />}
+        {tab === "istr-documenti-arrivati" && <DocumentoIstruzioni doc={ISTRUZIONI_DOCUMENTI_ARRIVATI} />}
         {tab === "documenti-arrivati" && <DocumentiArrivati utente={utente} accesso={accesso} vediF24={puo("f24-arrivati")} />}
         {tab === "istr-generali-f24" && <DocumentoIstruzioni doc={ISTRUZIONI_F24_ARRIVATI} />}
         {tab === "carica-costi-lavoro" && <CaricaCostiLavoro />}

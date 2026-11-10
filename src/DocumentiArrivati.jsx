@@ -95,6 +95,23 @@ async function leggiProgramma() {
   };
 }
 
+// ── Che cosa manca nello scarico, detto con le parole di Aruba (versione 356) ──────────────────────────
+const IN_ARUBA = "in Aruba: «Fatture ricevute», l'anno giusto, casella in alto, poi «Seleziona tutti (N)», poi la tendina «Azioni»";
+export function cosaMancaNelloScarico(file, conti) {
+  const ha = t => file.some(f => f.contenuto === t);
+  const out = [];
+  if (!ha("REPORT")) out.push(`Manca il Report. Si scarica ${IN_ARUBA} → «Scarica Report Excel» → «APPLICA». Il file .zip va messo in DA SMISTARE.`);
+  if (!ha("XML")) out.push(`Manca lo scarico degli XML. Si scarica ${IN_ARUBA} → «Scarica XML» → «APPLICA». Il file .zip va messo in DA SMISTARE.`);
+  if (!ha("PDF")) out.push(`Manca lo scarico dei PDF. Si scarica ${IN_ARUBA} → «Scarica PDF» → «APPLICA». Il file .zip va messo in DA SMISTARE.`);
+  if (out.length) return out;
+  for (const c of conti) {
+    if (c.xml !== c.report) out.push(`${c.anno}: il Report ha ${c.report} fatture, lo scarico degli XML ne ha ${c.xml}. Uno dei due è stato scaricato in un altro momento o senza «Seleziona tutti»: si riscaricano tutti e tre insieme, si tolgono i vecchi da DA SMISTARE e si rilegge.`);
+    if (c.pdf !== c.report) out.push(`${c.anno}: il Report ha ${c.report} fatture, lo scarico dei PDF ne ha ${c.pdf}. Si riscaricano tutti e tre insieme, si tolgono i vecchi da DA SMISTARE e si rilegge.`);
+    if (c.aruba !== null && c.aruba !== undefined && c.aruba !== c.report) out.push(`${c.anno}: Aruba dice ${c.aruba} fatture, il Report ne ha ${c.report}. Controllare il numero scritto; se è giusto, lo scarico è stato fatto senza «Seleziona tutti»: si rifà.`);
+  }
+  return out;
+}
+
 // ── Lo stato di ogni fattura dello scarico (lo usano l'elenco, l'archiviazione e la chiusura) ──────────
 const ANOMALIA_GRAVE = /cliente non è|manca l'XML|numero diverso|data diversa|totale diverso/;
 export function statoFatture(collegato, prog, scelte = {}) {
@@ -235,6 +252,8 @@ function SchedaFatture({ accesso }) {
   const riconosciute = useMemo(() => (lettura && programma ? statoFatture(lettura.collegato, programma, scelte) : null), [lettura, programma, scelte]);
   const conti = useMemo(() => (lettura ? contiPerAnno(lettura.collegato, totaliAruba) : []), [lettura, totaliAruba]);
   const contiOk = conti.length > 0 && conti.every(c => c.torna && c.aruba !== null);
+  // Versione 356 (ordine del Dott. Bizzarri del 10/11/2026 ore 19:51): la pagina dice in chiaro che cosa manca e dove si prende in Aruba
+  const cosaManca = lettura ? cosaMancaNelloScarico(lettura.file, conti) : [];
   const lista = congelate || riconosciute || [];
   const nuove = lista.filter(x => x.esito === "nuova" && x.colore !== "rosso");
   const arancioniAperte = lista.filter(x => x.colore === "arancione" && x.esito === "arancione");
@@ -389,6 +408,7 @@ function SchedaFatture({ accesso }) {
       <p style={{ color: C.muted, marginTop: 0, fontSize: 13 }}>
         I tre file scaricati da Aruba (XML, PDF, Report Excel) si mettono in <b>FATTURE PASSIVE\PROGRAMMA\DA SMISTARE</b>. Il programma li legge, riconosce ciò che ha già,
         crea subito il debito delle fatture nuove, le fa classificare, archivia PDF e XML nel cloud e chiude solo se il confronto con il Report di Aruba torna.
+        <br /><b style={{ color: C.primary }}>📖 Come si fa, passo per passo (anche lo scarico da Aruba): voce «Istruzioni Documenti arrivati», subito sopra questa nel menu.</b>
       </p>
       {!conFinestra && <div style={{ ...riquadro, background: COLORI.rosso }}>Questa pagina funziona solo con Chrome o Edge (serve la finestra per scegliere le cartelle).</div>}
       {errore && <div style={{ ...riquadro, background: COLORI.rosso }}>⚠️ {errore}</div>}
@@ -422,6 +442,7 @@ function SchedaFatture({ accesso }) {
               <td><input type="number" style={{ width: 90 }} value={totaliAruba[c.anno] ?? ""} onChange={e => setTotaliAruba(t => ({ ...t, [c.anno]: e.target.value === "" ? undefined : Number(e.target.value) }))} placeholder="es. 209" /></td>
               <td style={{ fontSize: 12, padding: "0 8px" }}>{c.aruba === null || c.aruba === undefined ? "scrivi il numero «righe totali» di Aruba" : c.torna ? "✅ torna" : "⛔ non torna: scarico incompleto o «Seleziona tutti» non premuto"}</td></tr>)}</tbody>
           </table>
+          {cosaManca.length > 0 && <div style={{ marginTop: 8, padding: 10, background: COLORI.rosso, fontSize: 13, lineHeight: 1.5 }}><b>Che cosa manca e come si rimedia:</b><ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>{cosaManca.map((m, i) => <li key={i}>{m}</li>)}</ul></div>}
           {lettura.collegato.copieDoppie > 0 && <div style={{ marginTop: 8, padding: 8, background: COLORI.arancione, fontSize: 12 }}>Ci sono {lettura.collegato.copieDoppie} copie doppie dello stesso documento (lo stesso scarico messo due volte): si usa una copia sola; vanno comunque in SCARICHI ARUBA.</div>}
           {fileNonSpiegati.length > 0 && <div style={{ marginTop: 8, padding: 8, background: COLORI.rosso, fontSize: 12 }}>Finché ci sono questi, niente esce da DA SMISTARE: {fileNonSpiegati.join(" · ")}</div>}
         </>}
