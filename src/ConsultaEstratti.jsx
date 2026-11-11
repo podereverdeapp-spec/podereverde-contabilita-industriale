@@ -1,14 +1,18 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { btn, input, scheda } from "./stileAruba";
 import { fetchAllPages } from "./parsingUtils";
 import { dataIt, euro } from "./analisiDocumentoBanca";
 import { browserAdatto, controllaCartella, leggiByte } from "./cartellaBanche";
+import { apriEstratto, impronteNelProgramma, salvaNelProgramma } from "./estrattiProgramma";
+import { md5 } from "./md5";
 
 // Versione 353 — «Banche, carte e cassa» → «Estratti e movimenti: consulta» (decisioni del 09/11/2026 ore 21:35–21:37, 10-bis.10).
 // Per ogni conto: saldo, periodi mancanti, quadratura, costi della banca nel periodo; documenti caricati (apri il PDF alla pagina,
 // elimina per chi gestisce i conti; versione 361: «Annulla» → «Elimina» con conferma); una sola ricerca su tutti i movimenti della banca, con il collegamento alla prima nota.
+// Versione 365: «Apri» prende il file dall'archivio DENTRO il programma, subito e senza scegliere la cartella; solo se lì non c'è
+// lo prende dalla cartella BANCHE del cloud, come prima. Chi gestisce i conti ha «Copia nel programma» per gli estratti che sono solo nel cloud.
 const COSTI = /^(COMMISSIONI|COMM\.|CANONE|IMPOSTA DI BOLLO|SPESE|COMPETENZE|INTERESSI|ADDEBITO BOLLO)/i;
 
 export default function ConsultaEstratti() {
@@ -22,6 +26,9 @@ export default function ConsultaEstratti() {
   const [vista, setVista] = useState(null);
   const [daTogliere, setDaTogliere] = useState(null);       // { impronta, percorso } — copia registrata ma non trovata
   const [inAttesa, setInAttesa] = useState(null);           // versione 361: { doc, pagina } — documento da aprire dopo la scelta della cartella BANCHE
+  const [copia, setCopia] = useState(null);                 // versione 365: { lavoro, fatto } — copia nel programma degli estratti che sono solo nel cloud
+  const copiaInCorso = useRef(false);                       // versione 365: niente doppio clic su «Copia nel programma»
+  const [avvisoCopia, setAvvisoCopia] = useState("");       // versione 365: la copia nel programma è rovinata, si mostra quella del cloud
 
   async function carica() {
     const [c, s, m, g, k] = await Promise.all([
@@ -39,13 +46,16 @@ export default function ConsultaEstratti() {
       fetchAllPages((a, b) => supabase.from("ci_pagamenti_fatture").select("id, riga_fonte_id, data, importo").order("id").range(a, b)),
     ]);
     for (const x of [docs, righe, arch, mov]) if (x.error) throw new Error(x.error.message);
+    // versione 365: quali file sono già dentro il programma (se l'elenco non si legge, si apre dal cloud come prima)
+    let nelProgramma = new Set(), notaProgramma = "";
+    try { nelProgramma = await impronteNelProgramma(); } catch (x) { notaProgramma = x.message; }
     const saldi = {};
     for (const st of s.data || []) if (st.controllo_ok_alla_data && (c.data || []).some(x => x.id === st.conto_id && x.tipo !== "cassa")) {
       const r = await supabase.rpc("ci_saldo_al", { p_conto: st.conto_id, p_giorno: st.controllo_ok_alla_data }); saldi[st.conto_id] = r.data;
     }
     const collegati = new Map((mov.data || []).filter(x => x.riga_fonte_id).map(x => [x.riga_fonte_id, x]));
     setD({ conti: (c.data || []).filter(x => x.tipo !== "cassa" || (s.data || []).some(y => y.conto_id === x.id && y.partenza_alla_data)), stati: s.data || [], mancanti: m.data || [], gestore: g.data === true,
-      codice: k.data?.[0]?.codice || null, documenti: docs.data || [], righe: righe.data || [], archivio: new Map((arch.data || []).map(a => [a.impronta, a.percorso])), collegati, saldi });
+      codice: k.data?.[0]?.codice || null, documenti: docs.data || [], righe: righe.data || [], archivio: new Map((arch.data || []).map(a => [a.impronta, a.percorso])), collegati, saldi, nelProgramma, notaProgramma });
   }
   useEffect(() => { carica().catch(x => setErrore("Lettura non riuscita: " + x.message)); }, []);
 
@@ -76,6 +86,17 @@ export default function ConsultaEstratti() {
   async function apri(doc, pagina) {
     setMessaggio("");
     const imp = doc.pdf_impronta || doc.file_digitale_impronta; const percorso = d.archivio.get(imp);
+    // versione 365: se il file è dentro il programma si apre subito, senza la cartella BANCHE
+    setAvvisoCopia("");
+    if (d.nelProgramma.has(imp)) {
+      // il nome (e quindi il tipo, PDF o Excel) viene dal percorso dell'archivio o da quello registrato nel documento
+      const nome = String((doc.pdf_impronta ? doc.pdf_percorso : doc.file_digitale_percorso) || "").split("\\").pop() || `documento n. ${doc.id}.pdf`;
+      try { const e = await apriEstratto({ impronta: imp, percorso, nome }); if (e.byte) { vedi(e.byte, e.nome, e.tipo, pagina); return; } }
+      catch (x) {
+        if (!percorso) { setMessaggio("Apertura dal programma non riuscita: " + x.message); return; }
+        setAvvisoCopia(x.message + " Si mostra la copia della cartella BANCHE del cloud.");   // si prosegue con il cloud, come prima della 365
+      }
+    }
     if (!percorso) { setMessaggio(`Il documento n. ${doc.id} non è ancora nell'archivio di BANCHE: metterne una copia in «ESTRATTI CONTO DA SMISTARE» e fare «Leggi» e «Archivia e carica» (risulterà già caricato e verrà archiviato).`); return; }
     // versione 361: la prima volta la finestra di Windows si apre solo dopo la spiegazione, con il pulsante «Scegli la cartella BANCHE»
     if (!radice) { setInAttesa({ doc, pagina }); return; }
@@ -88,13 +109,17 @@ export default function ConsultaEstratti() {
     const imp = att.doc.pdf_impronta || att.doc.file_digitale_impronta;
     await mostra(att.doc, att.pagina, d.archivio.get(imp), imp, h);
   }
+  function vedi(byte, nome, tipo, pagina) {
+    if (vista?.url) URL.revokeObjectURL(vista.url);
+    const url = URL.createObjectURL(new Blob([byte], { type: tipo }));
+    setVista({ url, nome, pagina: pagina || 1, pdf: tipo === "application/pdf" });
+  }
   async function mostra(doc, pagina, percorso, imp, h) {
     try {
       const byte = await leggiByte(h, percorso);
+      if (md5(byte) !== imp) throw new Error("nella cartella BANCHE il file non è più quello caricato (impronta diversa)");   // versione 365
       const tipo = percorso.toLowerCase().endsWith(".pdf") ? "application/pdf" : percorso.toLowerCase().endsWith(".xlsx") ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "application/vnd.ms-excel";
-      if (vista?.url) URL.revokeObjectURL(vista.url);
-      const url = URL.createObjectURL(new Blob([byte], { type: tipo }));
-      setVista({ url, nome: percorso.split("\\").pop(), pagina: pagina || 1, pdf: tipo === "application/pdf" });
+      vedi(byte, percorso.split("\\").pop(), tipo, pagina);
     } catch (x) {
       setMessaggio("Apertura non riuscita: " + x.message + (d.gestore ? " — Se il file è stato spostato o rinominato nel cloud: «Togli la registrazione» qui sotto, poi rimettere il file in «ESTRATTI CONTO DA SMISTARE» e fare «Leggi» e «Archivia e carica»." : " — Avvisare chi gestisce i conti."));
       if (d.gestore) setDaTogliere({ impronta: imp, percorso });
@@ -104,6 +129,31 @@ export default function ConsultaEstratti() {
     const { error } = await supabase.from("ci_banche_archivio").delete().eq("impronta", daTogliere.impronta);
     if (error) { setMessaggio("Non tolta: " + error.message); return; }
     setDaTogliere(null); setMessaggio(`Registrazione tolta: ${daTogliere.percorso}. Ora rimettere il file in «ESTRATTI CONTO DA SMISTARE».`); await carica();
+  }
+  // versione 365: copia DENTRO il programma degli estratti che sono solo nella cartella BANCHE del cloud (chi gestisce i conti).
+  // Ogni file si rilegge dal cloud e si controlla l'impronta prima di salvarlo; i file di documenti eliminati non si copiano.
+  const daCopiare = useMemo(() => {
+    if (!d) return [];
+    const vivi = new Set(d.documenti.filter(x => !x.annullato_il).flatMap(x => [x.pdf_impronta, x.file_digitale_impronta]).filter(Boolean));
+    return [...d.archivio.entries()].filter(([imp]) => vivi.has(imp) && !d.nelProgramma.has(imp)).map(([impronta, percorso]) => ({ impronta, percorso }));
+  }, [d]);
+  async function copiaNelProgramma() {
+    if (copiaInCorso.current) return;
+    copiaInCorso.current = true;
+    try { await copiaTutti(); } finally { copiaInCorso.current = false; }
+  }
+  async function copiaTutti() {
+    const h = await prendiCartella(); if (!h) return;
+    const fatto = { copiati: 0, gia: 0, errori: [] };
+    for (let i = 0; i < daCopiare.length; i++) {
+      const f = daCopiare[i]; setCopia({ lavoro: `${i + 1} di ${daCopiare.length}: ${f.percorso.split("\\").pop()}` });
+      try {
+        const byte = await leggiByte(h, f.percorso);
+        const e = await salvaNelProgramma(f.impronta, byte, f.percorso);
+        if (e.gia) fatto.gia++; else fatto.copiati++;
+      } catch (x) { fatto.errori.push(`${f.percorso.split("\\").pop()}: ${x.message}`); }
+    }
+    setCopia({ fatto }); await carica().catch(x => setMessaggio("Copia fatta, ma la pagina non si è aggiornata: " + x.message + ". Ricaricare la pagina."));
   }
   // versione 361: «Annulla» diventa «Elimina», con la finestra di conferma. La funzione del database resta ci_annulla_documento:
   // il documento resta nell'elenco barrato, con il motivo; i suoi movimenti escono dal programma e il periodo torna mancante.
@@ -123,10 +173,11 @@ export default function ConsultaEstratti() {
       <h2 style={{ color: C.primary, margin: "0 0 4px" }}>Estratti e movimenti della banca</h2>
       <div style={{ color: C.muted, fontSize: 13, marginBottom: 12 }}>Saldi, documenti caricati e ricerca di un movimento su tutti i conti.{!browserAdatto() && " Per aprire i PDF serve Chrome o Edge."}</div>
       {/* versione 361: documento, messaggi, scelta della cartella e conferme si aprono in una finestra sopra la pagina, davanti a chi ha premuto */}
-      {vista && <Finestra larga onChiudi={() => { URL.revokeObjectURL(vista.url); setVista(null); }}>
+      {vista && <Finestra larga onChiudi={() => { URL.revokeObjectURL(vista.url); setVista(null); setAvvisoCopia(""); }}>
+        {avvisoCopia && <div style={{ fontSize: 13, color: C.red, fontWeight: 700, borderLeft: `4px solid ${C.red}`, paddingLeft: 8, marginBottom: 6 }}>Attenzione: {avvisoCopia} Avvisare chi gestisce i conti.</div>}
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}><b style={{ flex: 1 }}>{vista.nome}{vista.pdf ? ` — pagina ${vista.pagina}` : ""}</b>
           <a href={vista.url} download={vista.nome} style={{ fontSize: 13 }}>Scarica una copia</a>
-          <button style={btn(false)} onClick={() => { URL.revokeObjectURL(vista.url); setVista(null); }}>Chiudi</button></div>
+          <button style={btn(false)} onClick={() => { URL.revokeObjectURL(vista.url); setVista(null); setAvvisoCopia(""); }}>Chiudi</button></div>
         {vista.pdf ? <iframe key={vista.url + vista.pagina} title="documento della banca" src={`${vista.url}#page=${vista.pagina}`} style={{ width: "100%", height: "calc(92vh - 70px)", border: `1px solid ${C.border}` }} />
           : <div style={{ fontSize: 13 }}>È un file Excel: usare «Scarica una copia» per aprirlo.</div>}
       </Finestra>}
@@ -162,6 +213,21 @@ export default function ConsultaEstratti() {
           {daTogliere && <button style={btn(true, C.red)} onClick={togliRegistrazione}>Togli la registrazione della copia</button>}
           <button style={btn(false)} onClick={() => { setMessaggio(""); setDaTogliere(null); }}>Chiudi</button></div>
       </Finestra>}
+
+      {copia && <Finestra onChiudi={() => { if (!copia.lavoro) setCopia(null); }}>
+        <div style={{ fontWeight: 800, color: C.primary, fontSize: 15, marginBottom: 8 }}>Copia degli estratti dentro il programma</div>
+        {copia.lavoro ? <div style={{ fontSize: 13.5 }}>Copia in corso: {copia.lavoro}. Non chiudere la pagina.</div>
+          : <div style={{ fontSize: 13.5, lineHeight: 1.55 }}>Copiati: <b>{copia.fatto.copiati}</b>; erano già dentro: <b>{copia.fatto.gia}</b>; non copiati: <b style={{ color: copia.fatto.errori.length ? C.red : C.text }}>{copia.fatto.errori.length}</b>.
+            {copia.fatto.errori.length > 0 && <ul style={{ margin: "4px 0", paddingLeft: 22 }}>{copia.fatto.errori.map(x => <li key={x}>{x}</li>)}</ul>}
+            <div>La cartella BANCHE del cloud non è stata toccata.</div>
+            <button style={{ ...btn(false), marginTop: 8 }} onClick={() => setCopia(null)}>Chiudi</button></div>}
+      </Finestra>}
+
+      {d.gestore && (daCopiare.length > 0 || d.notaProgramma) && <div style={{ ...scheda, borderLeft: `4px solid ${C.yellow}` }}>
+        {d.notaProgramma ? <div style={{ fontSize: 13, color: C.red }}>Archivio dentro il programma: {d.notaProgramma}</div>
+          : <><div style={{ fontSize: 13.5 }}><b>{daCopiare.length}</b> {daCopiare.length === 1 ? "estratto è" : "estratti sono"} solo nella cartella BANCHE del cloud. Copiandoli dentro il programma, «Apri» li mostra subito, senza scegliere la cartella. Il cloud non viene toccato.</div>
+            <button style={{ ...btn(true), marginTop: 8 }} disabled={!!copia?.lavoro} onClick={copiaNelProgramma}>Copia nel programma ({daCopiare.length})</button></>}
+      </div>}
 
       <div style={scheda}>
         <div style={{ fontWeight: 800, color: C.primary, marginBottom: 6 }}>Cerca un movimento</div>
@@ -205,7 +271,7 @@ export default function ConsultaEstratti() {
                 <td style={{ padding: "4px 8px", textAlign: "right" }}>{euro(x.saldo_finale)}</td>
                 <td style={{ padding: "4px 8px" }}>{x.numero_righe}{x.righe_gia_presenti ? ` + ${x.righe_gia_presenti} già presenti` : ""}</td>
                 <td style={{ padding: "4px 8px" }}>{dataIt(x.caricato_il)}{x.annullato_il ? ` — eliminato il ${dataIt(String(x.annullato_il).slice(0, 10))}: ${x.motivo_annullamento}` : ""}</td>
-                <td style={{ padding: "4px 8px" }}>{d.archivio.has(x.pdf_impronta || x.file_digitale_impronta) ? "sì" : "non ancora"}</td>
+                <td style={{ padding: "4px 8px" }}>{d.nelProgramma.has(x.pdf_impronta || x.file_digitale_impronta) ? "nel programma" : d.archivio.has(x.pdf_impronta || x.file_digitale_impronta) ? "solo nel cloud" : "non ancora"}</td>
                 <td style={{ padding: "4px 8px", whiteSpace: "nowrap" }}>
                   {!x.annullato_il && <button style={btn(false)} onClick={() => apri(x, 1)}>Apri</button>}{" "}
                   {!x.annullato_il && d.gestore && <button style={btn(false, C.red)} onClick={() => setAnnulla({ id: x.id, motivo: "", doc: x, conto: c.nome })}>Elimina</button>}

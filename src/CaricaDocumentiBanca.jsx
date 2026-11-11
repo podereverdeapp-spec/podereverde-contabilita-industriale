@@ -8,6 +8,7 @@ import { leggiDocumento, contoDelDocumento, analizza, dataIt, euro, TIPO_DOCUMEN
 import { browserAdatto, cartella, fileDiCartella, controllaCartella, nuovoCodice, testoRiconoscimento, FILE_RICONOSCIMENTO, DA_SMISTARE,
   permesso, scriviVerificato, togliDaSmistare, leggiByte, esiste, posizioneInArchivio } from "./cartellaBanche";
 import { oggiRoma } from "./dateRoma";
+import { salvaNelProgramma } from "./estrattiProgramma";
 
 // Versione 353 — «Banche, carte e cassa» → «Carica documenti della banca».
 // Procedura (Dott. Bizzarri, 10/11/2026 ore 14:59–15:57; regole 10-bis.6 e 10-bis.7 del 09/11):
@@ -18,6 +19,8 @@ import { oggiRoma } from "./dateRoma";
 //  5. «Archivia e carica»: per ogni verde, in ordine di data, copia nell'archivio del conto con il nome del programma, rilegge la copia
 //     (impronta), carica nel database con ci_carica_documento, registra la copia e toglie l'originale da DA SMISTARE. Al primo intoppo si ferma.
 //     I gialli (già caricati) si archiviano se manca la copia e si tolgono da DA SMISTARE. I rossi restano dove sono.
+// Versione 365: ogni file archiviato si salva anche DENTRO il programma (archivio «banche», nome = impronta). Se quel salvataggio
+//     non riesce il lavoro non si ferma: il file resta nel cloud e si copia dopo con «Copia nel programma» nella pagina di consultazione.
 
 const COLORE = { verde: C.green, giallo: C.yellow, rosso: C.red, fatto: C.blue };
 const NOME_STATO = { verde: "Pronto", giallo: "Già caricato", rosso: "Da sistemare", fatto: "Archiviato e caricato" };
@@ -142,8 +145,13 @@ export default function CaricaDocumentiBanca() {
   async function archiviaECarica() {
     if (!files || occupato.current) return;
     occupato.current = true; setErrore("");
-    const lista = files.map(f => ({ ...f })); const fatti = { caricati: 0, archiviatiGia: 0, righe: 0, fermato: false };
+    const lista = files.map(f => ({ ...f })); const fatti = { caricati: 0, archiviatiGia: 0, righe: 0, fermato: false, nelProgramma: 0, nonNelProgramma: [] };
     const aggiorna = () => setFiles(lista.map(f => ({ ...f })));
+    // versione 365: copia anche nel programma; un errore qui non ferma il lavoro
+    const copiaNelProgramma = async (r, byte, percorso) => {
+      try { await salvaNelProgramma(r.impronta, byte, percorso); fatti.nelProgramma++; return "; salvato anche nel programma"; }
+      catch (x) { fatti.nonNelProgramma.push(r.nome); return `; NON salvato nel programma (${x.message}): resta nel cloud`; }
+    };
     try {
       let b = await caricaBase();
       for (let i = 0; i < lista.length; i++) {
@@ -170,8 +178,9 @@ export default function CaricaDocumentiBanca() {
               if (error) throw new Error("registrazione della copia: " + error.message);
               percorso = w.percorso; b.archivio.set(r.impronta, percorso);
             }
+            const nota = await copiaNelProgramma(r, byte, percorso);
             await togliDaSmistare(radice, r.nome, r.impronta);
-            r.stato = "fatto"; r.motivo = `già caricato; copia nell'archivio: ${percorso}`; fatti.archiviatiGia++; aggiorna();
+            r.stato = "fatto"; r.motivo = `già caricato; copia nell'archivio: ${percorso}${nota}`; fatti.archiviatiGia++; aggiorna();
             continue;
           }
           // verde: controlli rifatti adesso, con lo stato vero del database
@@ -190,8 +199,9 @@ export default function CaricaDocumentiBanca() {
             if (e2) throw new Error(`documento n. ${idDoc} caricato, ma la registrazione della copia non è riuscita: ${e2.message}`);
             b.archivio.set(r.impronta, w.percorso);
           }
+          const nota = await copiaNelProgramma(r, byte, w.percorso);
           await togliDaSmistare(radice, r.nome, r.impronta);
-          r.stato = "fatto"; r.motivo = `documento n. ${idDoc}: ${a.righeNuove} righe nuove${a.giaPresenti ? `, ${a.giaPresenti} già presenti e confermate` : ""}; copia: ${w.percorso}`;
+          r.stato = "fatto"; r.motivo = `documento n. ${idDoc}: ${a.righeNuove} righe nuove${a.giaPresenti ? `, ${a.giaPresenti} già presenti e confermate` : ""}; copia: ${w.percorso}${nota}`;
           fatti.caricati++; fatti.righe += a.righeNuove; aggiorna();
         } catch (x) {
           r.stato = "rosso"; r.motivo = "fermato qui: " + x.message; fatti.fermato = true; aggiorna();
@@ -293,7 +303,7 @@ export default function CaricaDocumentiBanca() {
           <button style={{ ...btn(true), marginTop: 8 }} disabled={!!lavoro || pronti === 0} onClick={archiviaECarica}>Archivia e carica</button>
         </div>}
         {lavoro && <div style={{ marginTop: 8, color: C.blue, fontWeight: 700 }}>{lavoro}</div>}
-        {esitoFinale && <Riga colore={esitoFinale.fermato ? C.yellow : C.blue}><b>{esitoFinale.fermato ? "Fatto prima di fermarsi:" : "Fatto:"}</b> {esitoFinale.caricati} documenti caricati ({esitoFinale.righe} righe nuove), {esitoFinale.archiviatiGia} già caricati messi nell'archivio. Lo stato dei conti al passo 2 è aggiornato.{esitoFinale.fermato ? " Il file fermato e quelli dopo non sono stati toccati: sistemare il motivo scritto sopra e ripremere «Leggi»." : ""}</Riga>}
+        {esitoFinale && <Riga colore={esitoFinale.fermato ? C.yellow : C.blue}><b>{esitoFinale.fermato ? "Fatto prima di fermarsi:" : "Fatto:"}</b> {esitoFinale.caricati} documenti caricati ({esitoFinale.righe} righe nuove), {esitoFinale.archiviatiGia} già caricati messi nell'archivio; {esitoFinale.nelProgramma} salvati anche dentro il programma.{esitoFinale.nonNelProgramma.length ? ` NON salvati nel programma: ${esitoFinale.nonNelProgramma.join(", ")} (sono nel cloud: copiarli con «Copia nel programma» in «Estratti e movimenti: consulta»).` : ""} Lo stato dei conti al passo 2 è aggiornato.{esitoFinale.fermato ? " Il file fermato e quelli dopo non sono stati toccati: sistemare il motivo scritto sopra e ripremere «Leggi»." : ""}</Riga>}
       </Passo>}
       {errore && <Riga colore={C.red}><b>{errore}</b></Riga>}
     </div>
