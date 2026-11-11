@@ -114,7 +114,9 @@ export async function scriviVerificato(radice, percorso, byte) {
     passo = "scrittura del file provvisorio";
     let provvisorio, fh;
     for (let tentativo = 1; ; tentativo++) {
-      provvisorio = `PROVVISORIO ${Date.now()} ${nome}`; // versione 341: senza «~», che Chrome non accetta nei nomi
+      // versione 368: nome provvisorio corto, come per le banche (versione 360). Con «PROVVISORIO <13 cifre> <nome>» (26 caratteri in più)
+      // il percorso nella cartella vera dell'archivio superava i 260 caratteri di Windows. Senza «~», che Chrome non accetta (versione 341).
+      provvisorio = `PROVV ${String(Date.now() % 1000000).padStart(6, "0")}${Math.floor(Math.random() * 1000).toString().padStart(3, "0")}${tentativo}${(nome.match(/\.[^.]+$/) || [""])[0]}`;
       try {
         fh = await dir.getFileHandle(provvisorio, { create: true });
         const w = await fh.createWritable(); await w.write(byte); await w.close();

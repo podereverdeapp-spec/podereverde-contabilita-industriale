@@ -4,12 +4,17 @@
 // e piano dei file da scrivere nell'ARCHIVIO. Qui non si scrive niente: scrivono la pagina e archivioF24.js.
 import { leggiData, testo, r2, vuoto, SEZIONI, TRATTAMENTI } from "./calcoloCaricoF24";
 
-export const PREFISSO_ARCHIVIO = "Z:\\SOCIETA\\SOCIETA' AGRICOLA PODERE VERDE A R.L\\F24\\ARCHIVIO\\"; // 61 caratteri
+// Versione 368 (11/11/2026): la cartella F24 dal 03/11/2026 è dentro «00.DATI PROGRAMMA CONTABILITA' INDUSTRIALE» (104 caratteri, non più 61):
+// il controllo della lunghezza dei percorsi si fa sul percorso vero (l'archiviazione della lettura del 02/11 si è fermata l'11/11 alle 15:10).
+export const PREFISSO_ARCHIVIO = "Z:\\SOCIETA\\SOCIETA' AGRICOLA PODERE VERDE A R.L\\00.DATI PROGRAMMA CONTABILITA' INDUSTRIALE\\F24\\ARCHIVIO\\"; // 104 caratteri
 export const LIMITE_PERCORSO = 250;
 export const CODICE_FISCALE = "15117871002";
 export const VERSIONE_PROMPT = "Lettura F24 versione 3"; // deve essere uguale a quella scritta nel prompt di lettura
 // il nome di file più lungo che può finire in una cartella del pagamento (serve a controllare la lunghezza prima di scrivere)
+// versione 368: due casi. Un F24 «Da pagare» può essere sostituito da una versione corretta e il suo file andare in SUPERATI;
+// un F24 già «Pagato» non si sostituisce mai: il file più lungo è la contabile della banca con «_2».
 const PEGGIOR_FILE = "SUPERATI\\CONTABILE BANCA 2026-12-31 superato il 2026-12-31_2.pdf";
+const PEGGIOR_FILE_PAGATO = "CONTABILE BANCA 2026-12-31_2.pdf";
 
 export const COLONNE = {
   "Lettura": ["Data e ora della lettura", "Operatore", "Codice della cartella", "Numero di file trovati", "Numero di righe del foglio «Documenti»", "Versione del prompt"],
@@ -191,7 +196,7 @@ export function nomeCartellaValido(n) {
   return null;
 }
 export const proponiNome = (data, oggetto) => `${data} ${String(oggetto || "").toUpperCase().replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, " ")}`.slice(0, 60).replace(/[ .]+$/, "");
-export const lunghezzaPeggiore = (cartella, nome) => PREFISSO_ARCHIVIO.length + cartella.length + 1 + 5 + nome.length + 1 + PEGGIOR_FILE.length;
+export const lunghezzaPeggiore = (cartella, nome, pagato = false) => PREFISSO_ARCHIVIO.length + cartella.length + 1 + 5 + nome.length + 1 + (pagato ? PEGGIOR_FILE_PAGATO : PEGGIOR_FILE).length;
 const nomeEnte = chi => {
   const s = String(chi || "ALTRO").toUpperCase().replace(/\./g, "").replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, " ").trim();
   return s.slice(0, 40);
@@ -272,7 +277,11 @@ export function classifica(letta, db, scelte = {}, lavoroId = null) {
     }
     const cartelle = soloPagamento && (!esistente || suo) ? (s.categoria ? [s.categoria] : []) : esistente ? cartelleDi(esistente).length ? cartelleDi(esistente) : categorie : categorie;
     if (!cartelle.length && !nuovi.length && !(soloPagamento && (!esistente || suo))) problemi.push("nessun codice a debito decide la cartella");
-    for (const c of cartelle) { const l = lunghezzaPeggiore(c, nome); if (l > LIMITE_PERCORSO) problemi.push(`percorso troppo lungo in ${c}: ${l} caratteri (massimo ${LIMITE_PERCORSO}): accorcia il nome`); }
+    // una versione corretta mette il file vecchio in SUPERATI anche se la nuova arriva già «Pagato» (ricontrollo indipendente, punto 1)
+    const giaPagato = !sostituisce && (esistente?.stato === "Pagato" || (!esistente && d.stato === "Pagato"));
+    // versione 368: il controllo vale solo se si scrive qualcosa (un F24 già nel programma e nell'archivio non scrive niente)
+    const troppoLunghi = [];
+    for (const c of cartelle) { const l = lunghezzaPeggiore(c, nome, giaPagato); if (l > LIMITE_PERCORSO) troppoLunghi.push(`percorso troppo lungo in ${c}: ${l} caratteri (massimo ${LIMITE_PERCORSO}): accorcia il nome`); }
     const scansione = d.scansione || doc?.digitale === "Scansione";
     if (scansione && !s.scansioneConfermata) problemi.push("scansione: confronta scadenza, saldo, codici e importi con il PDF");
     // il file dell'F24 è già nell'archivio? (stesso F24 arrivato di nuovo)
@@ -283,6 +292,7 @@ export function classifica(letta, db, scelte = {}, lavoroId = null) {
     const nuovaQuietanza = !!d.nome_file_quietanza && !quietanzaArchiviata;
     const nuovaContabile = !!d.nome_file_contabile && !contabileArchiviata;
     const nienteDiNuovo = esistente && (giaArchiviato || soloPagamento) && !nuovaQuietanza && !nuovaContabile;
+    if (!nienteDiNuovo) problemi.push(...troppoLunghi);
     if (problemi.length) colore = "rosso";
     else if (nienteDiNuovo) colore = "grigio";
     else if (scansione || (soloPagamento && (!esistente || suo))) colore = "arancione";

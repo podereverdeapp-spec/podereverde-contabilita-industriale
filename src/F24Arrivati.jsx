@@ -408,6 +408,9 @@ export default function F24Arrivati({ utente, accesso }) {
   }
   async function archiviaUnaVolta(riprendi) {
     if (!cl || (!riprendi && !archiviabili.length)) return;
+    // versione 368: nessun file oltre il limite dei percorsi (la cartella vera dell'archivio è lunga 104 caratteri): ci si ferma prima di scrivere
+    const lunghi = piano.filter(p => p.lunghezza > LIMITE_PERCORSO);
+    if (lunghi.length) { setErrore(`Archiviazione non partita: ${lunghi.length} percorsi superano ${LIMITE_PERCORSO} caratteri (${lunghi.map(p => `ARCHIVIO\\${p.destinazione}: ${p.lunghezza}`).join("; ")}). Accorcia il nome della cartella del pagamento; se è una lettera, avvisa il Dott. Bizzarri. Niente è stato scritto.`); return; }
     const attesa = daSistemare.length + inSospeso.length;
     if (!riprendi && !window.confirm(`Archiviare? Si scrivono ${piano.length} file nell'ARCHIVIO, si salvano i dati e i PDF nel programma e poi si cancellano da DA SMISTARE gli originali archiviati.${attesa ? ` ${attesa} righe restano in sospeso con i loro file in DA SMISTARE: si archiviano dopo, quando sono a posto.` : ""}`)) return;
     // versione 344: i passi si riprendono dal programma (il database accetta solo passi aggiunti in fondo)
@@ -476,13 +479,17 @@ export default function F24Arrivati({ utente, accesso }) {
       for (const d of cl.deleghe) {
         if (d.colore === "rosso" || d.inSospeso || d.nienteDiNuovo || d.doppioneDi) continue;
         // versione 343: un F24 già nell'archivio non si ritaglia di nuovo (il PDF nuovo avrebbe un'impronta diversa da quello archiviato)
-        const g = d.esistente && !d.suo ? d.esistente : null;
+        // versione 368: stessa regola di «e» qui sotto (ricontrollo indipendente): un F24 «suo» che non è più «Da pagare» usa il PDF già nel programma
+        const g = d.esistente && (!d.suo || d.esistente.stato !== "Da pagare") ? d.esistente : null;
         const f24 = !d.soloPagamento && !d.giaArchiviato ? (g?.md5_pdf ? await dalProgramma(g.codice_delega, "F24.pdf", g.md5_pdf, d.nome_file_ricevuto, d.pagine) : await pdf(d.nome_file_ricevuto, d.pagine)) : null;
         const qui = d.nome_file_quietanza && d.nuovaQuietanza ? (g?.md5_quietanza ? await dalProgramma(g.codice_delega, "quietanza.pdf", g.md5_quietanza, d.nome_file_quietanza, d.pagine_quietanza) : await pdf(d.nome_file_quietanza, d.pagine_quietanza)) : null;
         const con = d.nome_file_contabile && d.nuovaContabile ? (g?.md5_contabile ? await dalProgramma(g.codice_delega, "contabile.pdf", g.md5_contabile, d.nome_file_contabile, d.pagine_contabile) : await pdf(d.nome_file_contabile, d.pagine_contabile)) : null;
         const archiviato = d.giaArchiviato ? base.fileArchivio.find(x => x.f24_id === d.esistente.id && x.cosa === "F24" && !x.superato) : null;
         const impronte = { ...(f24 ? { md5_pdf: f24.md5 } : archiviato?.md5 ? { md5_pdf: archiviato.md5 } : {}), ...(qui ? { md5_quietanza: qui.md5 } : {}), ...(con ? { md5_contabile: con.md5 } : {}) };
-        const e = d.esistente && !d.suo ? d.esistente : null;
+        // versione 368: anche un F24 entrato con questa lettura («suo») si riscrive partendo da quello che c'è nel programma, se nel frattempo
+        // non è più «Da pagare» (per esempio confermato «Pagato» nella Chiusura con la riga della banca): la lettura non lo riporta indietro.
+        // È l'errore dell'11/11 alle 15:10 («una riga della banca si collega solo a un F24 Pagato»).
+        const e = d.esistente && (!d.suo || d.esistente.stato !== "Da pagare") ? d.esistente : null;
         let codice = e?.codice_delega || d.codice_delega;
         if (d.sostituisce && d.sostituisce.stato !== "Sostituito") {
           const vecchia = d.sostituisce;
