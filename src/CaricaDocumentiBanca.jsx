@@ -158,7 +158,7 @@ export default function CaricaDocumentiBanca() {
             const doc = r.analisi.documentoGia;
             const ancora = await supabase.from("ci_documenti_fonte").select("id, annullato_il").eq("id", doc.id);
             if (ancora.error) throw new Error(ancora.error.message);
-            if (!ancora.data?.[0] || ancora.data[0].annullato_il) throw new Error(`il documento n. ${doc.id} è stato annullato dopo la lettura: rileggere`);
+            if (!ancora.data?.[0] || ancora.data[0].annullato_il) throw new Error(`il documento n. ${doc.id} è stato eliminato dopo la lettura: rileggere`);
             let percorso = b.archivio.get(r.impronta);
             if (percorso) {
               let uguale = false; try { uguale = md5(await leggiByte(radice, percorso)) === r.impronta; } catch { uguale = false; }
@@ -215,24 +215,37 @@ export default function CaricaDocumentiBanca() {
       <h2 style={{ color: C.primary, margin: "0 0 4px" }}>Carica documenti della banca</h2>
       <div style={{ color: C.muted, fontSize: 13, marginBottom: 14 }}>Estratti conto e liste movimenti delle carte, in PDF o in Excel, presi dalla cartella BANCHE del cloud.</div>
 
-      {/* versione 360: istruzioni nella pagina (ordine del Dott. Bizzarri dell'11/11/2026 ore 10:11) */}
+      {/* versione 361: istruzioni riscritte, testo approvato dal Dott. Bizzarri l'11/11/2026 alle 10:48 (bozza 4) */}
       <details open style={{ ...scheda, fontSize: 13.5, lineHeight: 1.55 }}>
-        <summary style={{ fontWeight: 800, color: C.primary, cursor: "pointer", fontSize: 15 }}>Come si fa, passo per passo</summary>
-        <div style={{ fontWeight: 700, marginTop: 8 }}>A. Mettere i file nel cloud (fuori dal programma): si entra fino in <u>ESTRATTI CONTO DA SMISTARE</u></div>
-        <ol style={{ margin: "4px 0 8px", paddingLeft: 22 }}>
-          <li>Scaricare dalla banca il documento: l'<b>estratto conto ufficiale BPER</b> (PDF), oppure il <b>«Saldi e movimenti EC»</b> di Smart CBI (PDF), oppure la <b>lista movimenti della carta</b> (Excel o PDF). Le scansioni non si leggono.</li>
-          <li>Aprire <b>Esplora file</b> di Windows; a sinistra, in <b>Questo PC</b>, aprire <b>Company (\\192.168.120.2) (Z:)</b>.</li>
-          <li>Entrare, una cartella dopo l'altra, in <code>SOCIETA</code> → <code>SOCIETA' AGRICOLA PODERE VERDE A R.L</code> → <code>00.DATI PROGRAMMA CONTABILITA' INDUSTRIALE</code> → <code>BANCHE</code> → <code>ESTRATTI CONTO DA SMISTARE</code>.</li>
-          <li>Copiare lì i file scaricati. Il nome del file non conta: il programma riconosce il documento dal contenuto e gli dà il nome giusto quando lo archivia.</li>
+        <summary style={{ fontWeight: 800, color: C.primary, cursor: "pointer", fontSize: 15 }}>Come si caricano gli estratti conto</summary>
+        <div style={{ marginTop: 6 }}>Questa pagina prende i documenti della banca che si trovano nella cartella ESTRATTI CONTO DA SMISTARE del cloud «Company». Li mette nell'archivio del conto giusto e ne carica i movimenti nel programma.</div>
+        <div style={{ fontWeight: 700, marginTop: 8 }}>Passo 1 – La cartella BANCHE</div>
+        <ol style={{ margin: "2px 0 4px", paddingLeft: 22 }}>
+          <li>Premere <b>«Scegli la cartella BANCHE»</b>.</li>
+          <li>Nella finestra che si apre, a sinistra in <b>Questo PC</b>, aprire il cloud <b>Company</b>. La lettera del disco accanto al nome cambia da un computer all'altro.</li>
+          <li>Entrare, una cartella dopo l'altra, in <code>SOCIETA</code> → <code>SOCIETA' AGRICOLA PODERE VERDE A R.L</code> → <code>00.DATI PROGRAMMA CONTABILITA' INDUSTRIALE</code>.</li>
+          <li>Cliccare <b>una sola volta</b> su <code>BANCHE</code>, senza aprirla.</li>
+          <li>Premere <b>«Seleziona cartella»</b>. Se il browser lo chiede, premere <b>«Modifica file»</b>.</li>
         </ol>
-        <div style={{ fontWeight: 700 }}>B. Nel programma (Google Chrome o Microsoft Edge): si sceglie la cartella <u>BANCHE</u>, un gradino sopra (da lì il programma legge DA SMISTARE e scrive nell'archivio di ogni conto)</div>
-        <ol style={{ margin: "4px 0 8px", paddingLeft: 22 }}>
-          <li>Passo 1: premere <b>«Scegli la cartella BANCHE»</b>. Nella finestra che si apre andare in <b>Z:</b> → <code>SOCIETA</code> → <code>SOCIETA' AGRICOLA PODERE VERDE A R.L</code> → <code>00.DATI PROGRAMMA CONTABILITA' INDUSTRIALE</code>, cliccare <b>una volta</b> sulla cartella <code>BANCHE</code> (non entrarci e non scegliere «ESTRATTI CONTO DA SMISTARE») e premere <b>«Seleziona cartella»</b>. Se Chrome chiede il permesso, premere <b>«Modifica file»</b>. Deve comparire la riga verde «Cartella BANCHE di Podere Verde riconosciuta».</li>
-          <li>Passo 2: guardare che cosa manca per ogni conto (periodi non ancora caricati).</li>
-          <li>Passo 3: premere <b>«Leggi i file da smistare»</b>. Ogni file prende un colore: <b>verde</b> = da caricare; <b>giallo</b> = già caricato, viene solo messo nell'archivio; <b>rosso</b> = da sistemare (il motivo è scritto accanto; resta in DA SMISTARE).</li>
-          <li>Premere <b>«Archivia e carica»</b>. Il programma, un file alla volta: lo copia nell'archivio del conto con il nome giusto, rilegge la copia, carica le righe e toglie il file da DA SMISTARE. Se si ferma, scrive dove e perché: i file prima sono a posto, quel file e quelli dopo restano in DA SMISTARE.</li>
-          <li>Controllo finale: nella pagina <b>«Estratti e movimenti: consulta»</b> la colonna «Archivio» deve dire «sì» per ogni documento.</li>
+        <div><b>Risultato:</b> compare la riga verde «Cartella BANCHE di Podere Verde riconosciuta».</div>
+        <div>Si sceglie BANCHE, non ESTRATTI CONTO DA SMISTARE: quella il programma la trova da solo.</div>
+        <div style={{ fontWeight: 700, marginTop: 8 }}>Passo 2 – Che cosa manca</div>
+        <div>Per ogni conto il programma scrive fino a che giorno è caricato e quali periodi mancano. Qui non si preme niente: serve a sapere quali documenti scaricare dalla banca.</div>
+        <div style={{ fontWeight: 700, marginTop: 8 }}>Passo 3 – Leggere, archiviare e caricare</div>
+        <ol style={{ margin: "2px 0 4px", paddingLeft: 22 }}>
+          <li>Premere <b>«Leggi i file da smistare»</b>. Accanto a ogni file compare l'esito:
+            <div>🟢 <b>Pronto</b>: il file sarà caricato.</div>
+            <div>🟡 <b>Già caricato</b>: i movimenti ci sono già, il file viene solo messo nell'archivio.</div>
+            <div>🔴 <b>Da sistemare</b>: il file non viene toccato e resta in ESTRATTI CONTO DA SMISTARE. Il motivo è scritto accanto.</div></li>
+          <li>Premere <b>«Archivia e carica»</b>. Il programma lavora un file alla volta: lo sposta nell'archivio del conto, gli dà il nome giusto e ne carica i movimenti.</li>
         </ol>
+        <div><b>Risultato:</b> i file diventano 🔵 «Archiviato e caricato» ed escono da ESTRATTI CONTO DA SMISTARE.</div>
+        <div style={{ fontWeight: 700, marginTop: 8 }}>Se qualcosa non va</div>
+        <ul style={{ margin: "2px 0 0", paddingLeft: 22 }}>
+          <li><b>Riga rossa al Passo 1, «Hai scelto … che sta dentro BANCHE»:</b> è stata scelta la cartella sbagliata. Premere di nuovo il pulsante e scegliere BANCHE.</li>
+          <li><b>File rosso al Passo 3:</b> leggere il motivo. Di solito è una scansione, o un documento che il programma non conosce. Il file resta dov'è. Mandare lo schermo a chi gestisce i conti (Dott. Bizzarri, Teresa Demaria, Colabucci).</li>
+          <li><b>Il programma si ferma a metà:</b> i file precedenti sono già a posto. Quello fermato e i seguenti restano in ESTRATTI CONTO DA SMISTARE. Mandare lo schermo con la scritta rossa a chi gestisce i conti.</li>
+        </ul>
       </details>
 
       <Passo n={1} titolo="La cartella BANCHE">

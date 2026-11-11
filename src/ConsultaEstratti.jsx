@@ -8,7 +8,7 @@ import { browserAdatto, controllaCartella, leggiByte } from "./cartellaBanche";
 
 // Versione 353 — «Banche, carte e cassa» → «Estratti e movimenti: consulta» (decisioni del 09/11/2026 ore 21:35–21:37, 10-bis.10).
 // Per ogni conto: saldo, periodi mancanti, quadratura, costi della banca nel periodo; documenti caricati (apri il PDF alla pagina,
-// annulla per chi gestisce i conti); una sola ricerca su tutti i movimenti della banca, con il collegamento alla prima nota.
+// elimina per chi gestisce i conti; versione 361: «Annulla» → «Elimina» con conferma); una sola ricerca su tutti i movimenti della banca, con il collegamento alla prima nota.
 const COSTI = /^(COMMISSIONI|COMM\.|CANONE|IMPOSTA DI BOLLO|SPESE|COMPETENZE|INTERESSI|ADDEBITO BOLLO)/i;
 
 export default function ConsultaEstratti() {
@@ -20,7 +20,8 @@ export default function ConsultaEstratti() {
   const [annulla, setAnnulla] = useState(null);   // { id, motivo }
   const [messaggio, setMessaggio] = useState("");
   const [vista, setVista] = useState(null);
-  const [daTogliere, setDaTogliere] = useState(null);       // { url, nome, pagina } — il PDF mostrato dentro la pagina
+  const [daTogliere, setDaTogliere] = useState(null);       // { impronta, percorso } — copia registrata ma non trovata
+  const [inAttesa, setInAttesa] = useState(null);           // versione 361: { doc, pagina } — documento da aprire dopo la scelta della cartella BANCHE
 
   async function carica() {
     const [c, s, m, g, k] = await Promise.all([
@@ -76,7 +77,18 @@ export default function ConsultaEstratti() {
     setMessaggio("");
     const imp = doc.pdf_impronta || doc.file_digitale_impronta; const percorso = d.archivio.get(imp);
     if (!percorso) { setMessaggio(`Il documento n. ${doc.id} non è ancora nell'archivio di BANCHE: metterne una copia in «ESTRATTI CONTO DA SMISTARE» e fare «Leggi» e «Archivia e carica» (risulterà già caricato e verrà archiviato).`); return; }
-    const h = await prendiCartella(); if (!h) return;
+    // versione 361: la prima volta la finestra di Windows si apre solo dopo la spiegazione, con il pulsante «Scegli la cartella BANCHE»
+    if (!radice) { setInAttesa({ doc, pagina }); return; }
+    const h = await prendiCartella(); if (!h) return;          // ricontrolla la cartella a ogni apertura, come nella 360
+    await mostra(doc, pagina, percorso, imp, h);
+  }
+  async function scegliEApri() {
+    const att = inAttesa; setInAttesa(null);
+    const h = await prendiCartella(); if (!h || !att) return;
+    const imp = att.doc.pdf_impronta || att.doc.file_digitale_impronta;
+    await mostra(att.doc, att.pagina, d.archivio.get(imp), imp, h);
+  }
+  async function mostra(doc, pagina, percorso, imp, h) {
     try {
       const byte = await leggiByte(h, percorso);
       const tipo = percorso.toLowerCase().endsWith(".pdf") ? "application/pdf" : percorso.toLowerCase().endsWith(".xlsx") ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "application/vnd.ms-excel";
@@ -93,11 +105,15 @@ export default function ConsultaEstratti() {
     if (error) { setMessaggio("Non tolta: " + error.message); return; }
     setDaTogliere(null); setMessaggio(`Registrazione tolta: ${daTogliere.percorso}. Ora rimettere il file in «ESTRATTI CONTO DA SMISTARE».`); await carica();
   }
-  async function confermaAnnulla() {
-    if (!annulla?.motivo?.trim()) { setMessaggio("Scrivere il motivo dell'annullamento."); return; }
+  // versione 361: «Annulla» diventa «Elimina», con la finestra di conferma. La funzione del database resta ci_annulla_documento:
+  // il documento resta nell'elenco barrato, con il motivo; i suoi movimenti escono dal programma e il periodo torna mancante.
+  async function confermaElimina() {
+    if (!annulla?.motivo?.trim()) { setAnnulla({ ...annulla, avviso: "Scrivere il motivo: è obbligatorio." }); return; }
+    if (annulla.inCorso) return;                               // niente doppio clic mentre il database risponde
+    setAnnulla({ ...annulla, inCorso: true, avviso: "" });
     const { error } = await supabase.rpc("ci_annulla_documento", { p_documento: annulla.id, p_motivo: annulla.motivo.trim() });
-    if (error) { setMessaggio("Annullamento rifiutato: " + error.message); return; }
-    setAnnulla(null); setMessaggio(`Documento n. ${annulla.id} annullato.`); await carica();
+    if (error) { setAnnulla({ ...annulla, inCorso: false, avviso: "Il programma non lo elimina: " + parole(error.message) }); return; }
+    const n = annulla.id; setAnnulla(null); setMessaggio(`Documento n. ${n} eliminato. Il periodo che copriva risulta di nuovo mancante.`); await carica();
   }
 
   if (errore) return <div style={{ color: C.red }}>{errore}</div>;
@@ -106,15 +122,46 @@ export default function ConsultaEstratti() {
     <div style={{ maxWidth: 1200 }}>
       <h2 style={{ color: C.primary, margin: "0 0 4px" }}>Estratti e movimenti della banca</h2>
       <div style={{ color: C.muted, fontSize: 13, marginBottom: 12 }}>Saldi, documenti caricati e ricerca di un movimento su tutti i conti.{!browserAdatto() && " Per aprire i PDF serve Chrome o Edge."}</div>
-      {messaggio && <div style={{ ...scheda, borderLeft: `4px solid ${C.yellow}` }}>{messaggio}
-        {daTogliere && <div style={{ marginTop: 8 }}><button style={btn(true, C.red)} onClick={togliRegistrazione}>Togli la registrazione della copia</button></div>}</div>}
-      {vista && <div style={scheda}>
+      {/* versione 361: documento, messaggi, scelta della cartella e conferme si aprono in una finestra sopra la pagina, davanti a chi ha premuto */}
+      {vista && <Finestra larga onChiudi={() => { URL.revokeObjectURL(vista.url); setVista(null); }}>
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}><b style={{ flex: 1 }}>{vista.nome}{vista.pdf ? ` — pagina ${vista.pagina}` : ""}</b>
           <a href={vista.url} download={vista.nome} style={{ fontSize: 13 }}>Scarica una copia</a>
           <button style={btn(false)} onClick={() => { URL.revokeObjectURL(vista.url); setVista(null); }}>Chiudi</button></div>
-        {vista.pdf ? <iframe key={vista.url + vista.pagina} title="documento della banca" src={`${vista.url}#page=${vista.pagina}`} style={{ width: "100%", height: "75vh", border: `1px solid ${C.border}` }} />
+        {vista.pdf ? <iframe key={vista.url + vista.pagina} title="documento della banca" src={`${vista.url}#page=${vista.pagina}`} style={{ width: "100%", height: "calc(92vh - 70px)", border: `1px solid ${C.border}` }} />
           : <div style={{ fontSize: 13 }}>È un file Excel: usare «Scarica una copia» per aprirlo.</div>}
-      </div>}
+      </Finestra>}
+      {inAttesa && <Finestra onChiudi={() => setInAttesa(null)}>
+        <div style={{ fontWeight: 800, color: C.primary, fontSize: 15, marginBottom: 8 }}>Per aprire il documento serve la cartella BANCHE</div>
+        <div style={{ fontSize: 13.5, lineHeight: 1.55 }}>Il programma prende il documento dall'archivio nel cloud. La cartella si sceglie una volta: finché la pagina resta aperta, gli altri documenti si aprono subito.
+          <ol style={{ margin: "6px 0", paddingLeft: 22 }}>
+            <li>Premere <b>«Scegli la cartella BANCHE»</b> qui sotto.</li>
+            <li>Nella finestra che si apre, a sinistra in <b>Questo PC</b>, aprire il cloud <b>Company</b>.</li>
+            <li>Entrare, una cartella dopo l'altra, in <code>SOCIETA</code> → <code>SOCIETA' AGRICOLA PODERE VERDE A R.L</code> → <code>00.DATI PROGRAMMA CONTABILITA' INDUSTRIALE</code>.</li>
+            <li>Cliccare <b>una sola volta</b> su <code>BANCHE</code>, senza aprirla, e premere <b>«Seleziona cartella»</b>. Se il browser chiede il permesso, confermare.</li>
+          </ol></div>
+        <div style={{ display: "flex", gap: 8, marginTop: 8 }}><button style={btn(true)} onClick={scegliEApri}>Scegli la cartella BANCHE</button><button style={btn(false)} onClick={() => setInAttesa(null)}>Lascia stare</button></div>
+      </Finestra>}
+      {annulla && <Finestra onChiudi={() => setAnnulla(null)}>
+        <div style={{ fontWeight: 800, color: C.red, fontSize: 15, marginBottom: 8 }}>Eliminare il documento n. {annulla.id}?</div>
+        <div style={{ fontSize: 13.5, lineHeight: 1.55 }}>
+          {annulla.doc && <div><b>{annulla.conto}</b>: dal {dataIt(annulla.doc.periodo_dal)} al {dataIt(annulla.doc.periodo_al)}, {annulla.doc.numero_righe} movimenti.</div>}
+          <div style={{ marginTop: 6 }}>Se si elimina:</div>
+          <ul style={{ margin: "4px 0", paddingLeft: 22 }}>
+            <li>i suoi movimenti escono dal programma e quel periodo risulta di nuovo <b>mancante</b>;</li>
+            <li>il documento resta nell'elenco, barrato, con il motivo;</li>
+            <li>il file nell'archivio non viene toccato, e lo stesso documento si può caricare di nuovo.</li>
+          </ul>
+          <div>Non si può eliminare un documento se dopo ne è stato caricato un altro sullo stesso periodo, o se i suoi movimenti sono già usati nella prima nota: il programma lo dice.</div></div>
+        <input style={{ ...input, width: "100%", marginTop: 8 }} placeholder="motivo (obbligatorio)" value={annulla.motivo} onChange={e => setAnnulla({ ...annulla, motivo: e.target.value, avviso: "" })} />
+        {annulla.avviso && <div style={{ color: C.red, fontWeight: 700, fontSize: 13, marginTop: 6 }}>{annulla.avviso}</div>}
+        <div style={{ display: "flex", gap: 8, marginTop: 10 }}><button style={btn(true, C.red)} disabled={!!annulla.inCorso} onClick={confermaElimina}>{annulla.inCorso ? "Eliminazione in corso…" : "Sì, elimina il documento"}</button><button style={btn(false)} onClick={() => setAnnulla(null)}>No, lascia stare</button></div>
+      </Finestra>}
+      {messaggio && <Finestra onChiudi={() => { setMessaggio(""); setDaTogliere(null); }}>
+        <div style={{ fontSize: 13.5, lineHeight: 1.5, borderLeft: `4px solid ${C.yellow}`, paddingLeft: 10 }}>{messaggio}</div>
+        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+          {daTogliere && <button style={btn(true, C.red)} onClick={togliRegistrazione}>Togli la registrazione della copia</button>}
+          <button style={btn(false)} onClick={() => { setMessaggio(""); setDaTogliere(null); }}>Chiudi</button></div>
+      </Finestra>}
 
       <div style={scheda}>
         <div style={{ fontWeight: 800, color: C.primary, marginBottom: 6 }}>Cerca un movimento</div>
@@ -157,20 +204,30 @@ export default function ConsultaEstratti() {
                 <td style={{ padding: "4px 8px", textAlign: "right" }}>{euro(x.saldo_iniziale)}</td>
                 <td style={{ padding: "4px 8px", textAlign: "right" }}>{euro(x.saldo_finale)}</td>
                 <td style={{ padding: "4px 8px" }}>{x.numero_righe}{x.righe_gia_presenti ? ` + ${x.righe_gia_presenti} già presenti` : ""}</td>
-                <td style={{ padding: "4px 8px" }}>{dataIt(x.caricato_il)}{x.annullato_il ? ` — annullato: ${x.motivo_annullamento}` : ""}</td>
+                <td style={{ padding: "4px 8px" }}>{dataIt(x.caricato_il)}{x.annullato_il ? ` — eliminato il ${dataIt(String(x.annullato_il).slice(0, 10))}: ${x.motivo_annullamento}` : ""}</td>
                 <td style={{ padding: "4px 8px" }}>{d.archivio.has(x.pdf_impronta || x.file_digitale_impronta) ? "sì" : "non ancora"}</td>
                 <td style={{ padding: "4px 8px", whiteSpace: "nowrap" }}>
                   {!x.annullato_il && <button style={btn(false)} onClick={() => apri(x, 1)}>Apri</button>}{" "}
-                  {!x.annullato_il && d.gestore && <button style={btn(false, C.red)} onClick={() => setAnnulla({ id: x.id, motivo: "" })}>Annulla</button>}
+                  {!x.annullato_il && d.gestore && <button style={btn(false, C.red)} onClick={() => setAnnulla({ id: x.id, motivo: "", doc: x, conto: c.nome })}>Elimina</button>}
                 </td>
               </tr>)}</tbody>
             </table>
-            {annulla && docs.some(x => x.id === annulla.id) && <div style={{ marginTop: 8, fontSize: 13 }}>Annullare il documento n. {annulla.id}? Il periodo tornerà mancante. Si annulla dal più recente; non si annulla se ha righe collegate alla prima nota.
-              <div style={{ display: "flex", gap: 6, marginTop: 6 }}><input style={{ ...input, flex: 1 }} placeholder="motivo (obbligatorio)" value={annulla.motivo} onChange={e => setAnnulla({ ...annulla, motivo: e.target.value })} />
-                <button style={btn(true, C.red)} onClick={confermaAnnulla}>Annulla il documento</button><button style={btn(false)} onClick={() => setAnnulla(null)}>Lascia stare</button></div></div>}
+            {/* versione 361: la conferma dell'eliminazione è nella finestra sopra la pagina */}
           </details>}
         </div>;
       })}
     </div>
   );
+}
+
+// versione 361: i messaggi del database dicono «annullare»: nella pagina il pulsante si chiama «Elimina»
+function parole(t) { return String(t || "").replace(/Annullano/g, "Eliminano").replace(/annullare/g, "eliminare").replace(/annullato/g, "eliminato").replace(/annullamento/g, "eliminazione").replace(/si annulla/g, "si elimina"); }
+
+// versione 361: finestra sopra la pagina (sfondo scuro; si chiude con «Chiudi», con il tasto Esc o cliccando fuori)
+function Finestra({ children, onChiudi, larga }) {
+  useEffect(() => { const k = e => { if (e.key === "Escape") onChiudi(); }; window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k); }, [onChiudi]);
+  return <div role="dialog" aria-modal="true" onClick={e => { if (e.target === e.currentTarget) onChiudi(); }}
+    style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+    <div style={{ background: "#fff", borderRadius: 10, padding: 14, width: larga ? "min(1200px, 96vw)" : "min(640px, 96vw)", maxHeight: "94vh", overflow: "auto", boxShadow: "0 8px 30px rgba(0,0,0,0.3)" }}>{children}</div>
+  </div>;
 }
