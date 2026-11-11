@@ -6,7 +6,7 @@
 //   e registrare le righe con la pagina di sempre (CaricaFatture, incorporata), archivia PDF e XML nel cloud e chiude solo
 //   se il confronto con il Report di Aruba torna.
 // - F24: la pagina «F24 arrivati» di oggi, senza cambiamenti (fase 4 del progetto).
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import * as XLSX from "xlsx-js-style";
 import { supabase } from "./supabase";
 import { fetchAllPages, leggiInBlocchi, formattaEuro } from "./parsingUtils";
@@ -94,6 +94,20 @@ async function leggiProgramma() {
     haDebito: k => scadPerDoc.has(k), inLavorazione: lav.sdi, articoli, scartate,
   };
 }
+
+// ── La cartella si sceglie una volta sola: il programma la ricorda in questo browser (versione 356) ──────
+// Si conserva solo il «permesso» del browser sulla cartella (IndexedDB); se il browser lo perde, si sceglie di nuovo.
+const DB_CARTELLE = "podere-verde-cartelle";
+function apriDbCartelle() {
+  return new Promise((ok, ko) => { const r = indexedDB.open(DB_CARTELLE, 1); r.onupgradeneeded = () => r.result.createObjectStore("cartelle"); r.onsuccess = () => ok(r.result); r.onerror = () => ko(r.error); });
+}
+async function ricordaCartella(chiave, h) {
+  try { const db = await apriDbCartelle(); await new Promise((ok, ko) => { const t = db.transaction("cartelle", "readwrite"); t.objectStore("cartelle").put(h, chiave); t.oncomplete = ok; t.onerror = () => ko(t.error); }); } catch { /* senza memoria si sceglie a mano */ }
+}
+async function cartellaRicordata(chiave) {
+  try { const db = await apriDbCartelle(); return await new Promise(ok => { const q = db.transaction("cartelle").objectStore("cartelle").get(chiave); q.onsuccess = () => ok(q.result || null); q.onerror = () => ok(null); }); } catch { return null; }
+}
+const CHIAVE_CARTELLA = "fatture-passive";
 
 // ── Che cosa manca nello scarico, detto con le parole di Aruba (versione 356) ──────────────────────────
 const IN_ARUBA = "in Aruba: «Fatture ricevute», l'anno giusto, casella in alto, poi «Seleziona tutti (N)», poi la tendina «Azioni»";
@@ -183,10 +197,29 @@ function SchedaFatture({ accesso }) {
 
   // ── 1. La cartella e il suo file di riconoscimento ──
   async function scegliCartella() {
-    setErrore(""); setLettura(null); setProgramma(null); setEsitoDebiti(null); setCongelate(null); setInCarico(null); setEsitoArchivio(null); setEsitoChiusura(null);
     let h;
     try { h = await window.showDirectoryPicker({ id: "fatture-passive-podere-verde", mode: "readwrite" }); }
     catch (e) { if (e?.name !== "AbortError") setErrore(`La finestra per scegliere la cartella non si è aperta: ${e.message}`); return; }
+    await verificaCartella(h);
+  }
+  // la cartella ricordata: con il permesso del browser ancora valido si apre da sola, altrimenti con un clic su «Usa la cartella di sempre»
+  const [ricordata, setRicordata] = useState(null);
+  useEffect(() => { (async () => {
+    const h = await cartellaRicordata(CHIAVE_CARTELLA); if (!h) return; setRicordata(h);
+    try { if ((await h.queryPermission({ mode: "readwrite" })) === "granted") await verificaCartella(h); } catch { /* si usa il pulsante */ }
+  })(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  async function usaCartellaRicordata() {
+    if (!ricordata) return;
+    try { if ((await ricordata.requestPermission({ mode: "readwrite" })) !== "granted") { setErrore("Il browser non ha dato il permesso sulla cartella: premi «Scegli un'altra volta la cartella» e scegli FATTURE PASSIVE."); return; } }
+    catch (e) { setErrore(`La cartella di sempre non si apre (${e.message}): premi «Scegli un'altra volta la cartella» e scegli FATTURE PASSIVE.`); return; }
+    await verificaCartella(ricordata);
+  }
+  async function verificaCartella(h) {
+    setErrore(""); setLettura(null); setProgramma(null); setEsitoDebiti(null); setCongelate(null); setInCarico(null); setEsitoArchivio(null); setEsitoChiusura(null);
+    if (h.name === "DA SMISTARE" || h.name === "PROGRAMMA" || h.name === "CARTA") {
+      setRicon({ ok: false, problema: `È stata scelta la cartella «${h.name}», che sta DENTRO quella giusta. Nella finestra si sale con la freccia ↑ finché si vedono le cartelle 2019…2026 e PROGRAMMA: lì si è dentro «FATTURE PASSIVE» e si preme «Selezione cartella». Oppure: si sale a «00.DATI PROGRAMMA CONTABILITA' INDUSTRIALE», si clicca UNA volta «FATTURE PASSIVE» e si preme «Selezione cartella».` });
+      return;
+    }
     if (h.name !== "FATTURE PASSIVE") { setRicon({ ok: false, problema: `È stata scelta la cartella «${h.name}»: si sceglie solo la cartella «FATTURE PASSIVE» dentro «00.DATI PROGRAMMA CONTABILITA' INDUSTRIALE». Mi fermo.` }); return; }
     const { data: par, error } = await supabase.from("ci_parametri").select("valore").eq("chiave", PARAMETRO_CODICE).maybeSingle();
     if (error) { setErrore(`Lettura del codice della cartella: ${error.message}`); return; }
@@ -206,6 +239,7 @@ function SchedaFatture({ accesso }) {
     if (!par?.valore) { setRadice(h); setRicon({ ok: false, manca: true, codiceFile: r.codice, problema: "Nel programma non c'è ancora il codice della cartella delle fatture: lo scrive il Dott. Bizzarri con «Prepara la cartella»." }); return; }
     if (r.codice !== par.valore) { setRicon({ ok: false, problema: `Il codice del file (${r.codice}) è diverso da quello del programma (${par.valore}): non è la cartella giusta. Mi fermo.` }); return; }
     setRadice(h); setRicon({ ok: true, codice: r.codice });
+    ricordaCartella(CHIAVE_CARTELLA, h); setRicordata(h);
   }
   async function preparaCartella() {
     if (!admin || !radice) return;
@@ -237,7 +271,13 @@ function SchedaFatture({ accesso }) {
       const voci = (await elenco(dir)).filter(x => x.tipo === "file" && !x.nome.startsWith("~$") && !/^PROVVISORIO /.test(x.nome));
       const carta = await (async () => { try { return (await elenco(await cartella(radice, "PROGRAMMA\\DA SMISTARE\\CARTA"))).filter(x => x.tipo === "file").length; } catch { return 0; } })();
       const file = [];
-      for (const v of voci) { const b = new Uint8Array(await (await v.handle.getFile()).arrayBuffer()); file.push({ nome: v.nome, bytes: b, md5: md5(b), byte: b.length }); }
+      // versione 356: un file che il disco del cloud non dà (per esempio non ancora scaricato sul computer) si dice per nome, non si salta in silenzio
+      const nonLetti = [];
+      for (const v of voci) {
+        try { const b = new Uint8Array(await (await v.handle.getFile()).arrayBuffer()); if (!b.length) throw new Error("il file è vuoto"); file.push({ nome: v.nome, bytes: b, md5: md5(b), byte: b.length }); }
+        catch (e) { nonLetti.push(`${v.nome}: ${e.message}`); }
+      }
+      if (nonLetti.length) { setErrore(`Questi file di DA SMISTARE non si riescono a leggere: ${nonLetti.join(" · ")}. Aprire la cartella in Esplora file, aspettare che il cloud li scarichi (icona senza nuvola) e premere di nuovo «Leggi la cartella».`); return; }
       if (!file.length) { setErrore("In DA SMISTARE non ci sono file."); return; }
       setPasso("Riconosco il contenuto dei file…");
       const scarico = await leggiScaricoAruba(XLSX, file);
@@ -266,6 +306,29 @@ function SchedaFatture({ accesso }) {
     ...lettura.collegato.xmlSenzaReport.map(d => `XML senza riga nel Report: ${d.fileXml}`),
     ...lettura.collegato.pdfSenzaReport.map(p => `PDF senza riga nel Report: ${p.nome}`),
   ] : [];
+  // Versione 356: che cosa si fa ADESSO, in una riga, in cima alla pagina (giudizio del Dott. Bizzarri delle 20:18: «poco intuibile»)
+  const adesso = (() => {
+    if (!ricon?.ok) {
+      if (ricon?.manca && admin) return "Prima volta in assoluto: premi «Prepara la cartella (solo la prima volta)» e conferma; poi scegli di nuovo la cartella.";
+      if (ricon && !ricon.ok) return ricordata ? "Questa cartella non va (il motivo è nel riquadro rosso): premi «Scegli un'altra volta la cartella» e scegli FATTURE PASSIVE." : "Il motivo è nel riquadro rosso: premi di nuovo «Scegli la cartella FATTURE PASSIVE» e scegli FATTURE PASSIVE.";
+      return ricordata ? "Premi «Usa la cartella di sempre»." : "Premi «Scegli la cartella FATTURE PASSIVE»: nella finestra sali a «00.DATI PROGRAMMA CONTABILITA' INDUSTRIALE», clicca UNA volta «FATTURE PASSIVE» e premi «Selezione cartella».";
+    }
+    if (!lettura) return "Metti in DA SMISTARE i tre file scaricati da Aruba (Report, XML, PDF), poi premi «Leggi la cartella».";
+    if (cosaManca.length && cosaManca.some(m => /^Manca/.test(m))) return cosaManca.find(m => /^Manca/.test(m));
+    const senzaNumero = conti.find(c => c.aruba === null || c.aruba === undefined);
+    if (senzaNumero) return `Nella casella gialla scrivi quante fatture del ${senzaNumero.anno} dice Aruba: è il numero che Aruba mostra in «Seleziona tutti (N)», per esempio 210.`;
+    if (!contiOk) return cosaManca[0] || "I conti non tornano: si rifà lo scarico da Aruba con «Seleziona tutti» e si rilegge.";
+    if (arancioniAperte.length) return `Decidi le ${arancioniAperte.length} fatture con i pulsanti «È la stessa» / «È un'altra».`;
+    if (!esitoDebiti) return "Premi «Prima di tutto: crea i debiti e scrivi gli Identificativi SdI».";
+    if (esitoDebiti.errori.length) return "Ci sono stati errori: premi di nuovo «Leggi la cartella» e poi «Prima di tutto».";
+    if (nuove.length && !inCarico) return `Premi «Apri la classificazione delle ${nuove.length} fatture nuove».`;
+    if (!esitoArchivio) return nuove.length ? "Classifica e salva tutte le righe; poi premi «Archivia PDF e XML e conserva gli scarichi»." : "Premi «Archivia PDF e XML e conserva gli scarichi».";
+    if (esitoArchivio.errori.length) return `L'archiviazione ha avuto errori (sono nel riquadro rosso «5. Archivia»): premi «Leggi la cartella» e rifai i passi; ciò che è già fatto non si rifà.`;
+    if (esitoArchivio.fermo.length) return `Archiviazione ferma: ${esitoArchivio.fermo.join("; ")}. Sistema il problema, poi premi «Leggi la cartella» e rifai i passi; ciò che è già fatto non si rifà.`;
+    if (!esitoChiusura) return "Premi «Confronta con il Report di Aruba».";
+    if (!(esitoChiusura.righe || []).every(x => x.torna)) return "La chiusura NON torna: le fatture mancanti sono elencate nel riquadro «6. Chiusura». Premi «Leggi la cartella»: compariranno da caricare o da completare.";
+    return "Fatto: la chiusura torna. Ora ricalcola il Report Costi dell'anno e poi il Report Riproduttori.";
+  })();
 
   // ── 3. Prima di tutto: debiti delle nuove, Identificativi SdI, acquisti senza debito ──
   async function trovaOCreaFornitore(x) {
@@ -325,8 +388,9 @@ function SchedaFatture({ accesso }) {
     setInCarico({ docs, quando: Date.now() });
   }
 
-  // ── 5. Archivia: PDF e XML delle nuove in FATTURE PASSIVE\anno; gli scarichi interi in FATTURE PASSIVE\SCARICHI ARUBA\anno; poi DA SMISTARE ──
+  // ── 5. Archivia: PDF e XML delle nuove in FATTURE PASSIVE\anno\FORNITORE\PDF e \XML (versione 359); gli scarichi interi in FATTURE PASSIVE\SCARICHI ARUBA\anno; poi DA SMISTARE ──
   const archivia = () => unoAllaVolta(async () => {
+    setEsitoChiusura(null); // un confronto fatto prima dell'archiviazione non vale più (revisione 358, B2)
     setErrore(""); const esito = { scritti: [], gia: [], nonRegistrate: [], errori: [], scarichi: [], pdfProgramma: 0, pdfGiaNelProgramma: 0, fermo: [] };
     try {
       setPasso("Controllo che le nuove siano registrate per intero…");
@@ -339,12 +403,15 @@ function SchedaFatture({ accesso }) {
       for (const x of daArchiviare) {
         const adesso = ora.get(x.chiave);
         if (!adesso || adesso.esito === "nuova" || adesso.esito === "arancione") { esito.nonRegistrate.push(`${x.report.fornitore} ${x.report.numero} del ${dataIt(x.report.data)}${adesso?.inParte ? ` (${adesso.motivo})` : ""}`); continue; }
-        const n = nomeArchivio(x, percorsoBase);
+        // la cartella del fornitore: il nome scritto nel programma per quella partita IVA (il primo per numero, sempre lo stesso)
+        const pivaDoc = pulisciPiva(x.xml?.piva || x.report.piva);
+        const fornProg = pivaDoc ? prog.fornitori.filter(fo => pulisciPiva(fo.partita_iva) === pivaDoc).sort((p1, p2) => p1.id - p2.id)[0] : null;
+        const n = nomeArchivio(x, percorsoBase, fornProg?.nome || "");
         try {
           setPasso(`Archivio: ${n.nome}`);
-          if (x.pdf) { const r = await scriviVerificato(radice, `${n.cartella}${n.nome}.pdf`, x.pdf.bytes); (r.esito === "Già presente uguale" ? esito.gia : esito.scritti).push(r.percorso); }
+          if (x.pdf) { const r = await scriviVerificato(radice, `${n.cartellaPdf}${n.nome}.pdf`, x.pdf.bytes); (r.esito === "Già presente uguale" ? esito.gia : esito.scritti).push(r.percorso); }
           // il file come è arrivato: un firmato resta .xml.p7m
-          if (x.xml) { const est = /\.p7m$/i.test(x.xml.nomeOriginaleXml || "") ? ".xml.p7m" : ".xml"; const r = await scriviVerificato(radice, `${n.cartella}${n.nome}${est}`, x.xml.byteXml); (r.esito === "Già presente uguale" ? esito.gia : esito.scritti).push(r.percorso); }
+          if (x.xml) { const est = /\.p7m$/i.test(x.xml.nomeOriginaleXml || "") ? ".xml.p7m" : ".xml"; const r = await scriviVerificato(radice, `${n.cartellaXml}${n.nome}${est}`, x.xml.byteXml); (r.esito === "Già presente uguale" ? esito.gia : esito.scritti).push(r.percorso); }
           // il PDF anche nel programma (pulsante «📄 PDF» di Fatture passive e Ricerca), solo se la fattura non ne ha già uno: mai sostituire
           const fattura = adesso.trovata && !adesso.trovata.acquisto ? adesso.trovata : null;
           if (x.pdf && fattura) {
@@ -404,19 +471,21 @@ function SchedaFatture({ accesso }) {
   const riquadro = { background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 14 };
   return (
     <div style={{ padding: 20, maxWidth: 1250, margin: "0 auto" }}>
-      <h1 style={{ color: C.primary, fontSize: 23, margin: "0 0 4px" }}>Documenti arrivati: controlla, carica e archivia — Fatture passive</h1>
+      <h1 style={{ color: C.primary, fontSize: 23, margin: "0 0 4px" }}>Carica le fatture da Aruba</h1>
       <p style={{ color: C.muted, marginTop: 0, fontSize: 13 }}>
         I tre file scaricati da Aruba (XML, PDF, Report Excel) si mettono in <b>FATTURE PASSIVE\PROGRAMMA\DA SMISTARE</b>. Il programma li legge, riconosce ciò che ha già,
         crea subito il debito delle fatture nuove, le fa classificare, archivia PDF e XML nel cloud e chiude solo se il confronto con il Report di Aruba torna.
-        <br /><b style={{ color: C.primary }}>📖 Come si fa, passo per passo (anche lo scarico da Aruba): voce «Istruzioni Documenti arrivati», subito sopra questa nel menu.</b>
+        <br /><b style={{ color: C.primary }}>📖 Come si fa, passo per passo (anche lo scarico da Aruba): voce «Istruzioni», subito sopra questa nel menu.</b>
       </p>
+      <div style={{ ...riquadro, background: "#EAF2FB", border: `2px solid ${C.primary}`, fontSize: 15 }}><b>👉 Adesso:</b> {adesso}</div>
       {!conFinestra && <div style={{ ...riquadro, background: COLORI.rosso }}>Questa pagina funziona solo con Chrome o Edge (serve la finestra per scegliere le cartelle).</div>}
       {errore && <div style={{ ...riquadro, background: COLORI.rosso }}>⚠️ {errore}</div>}
       {passo && <div style={{ ...riquadro, background: "#EAF2FB" }}>⏳ {passo}</div>}
 
       <div style={riquadro}>
         <div style={{ fontWeight: 800, marginBottom: 8 }}>1. La cartella</div>
-        <button style={bottone(conFinestra)} disabled={!conFinestra} onClick={scegliCartella}>Scegli la cartella FATTURE PASSIVE</button>
+        {ricordata && !ricon?.ok && <button style={bottone(conFinestra)} disabled={!conFinestra} onClick={usaCartellaRicordata}>Usa la cartella di sempre</button>}
+        <button style={bottone(conFinestra, ricordata && !ricon?.ok ? C.muted : C.primary)} disabled={!conFinestra} onClick={scegliCartella}>{ricordata ? "Scegli un'altra volta la cartella" : "Scegli la cartella FATTURE PASSIVE"}</button>
         <span style={{ fontSize: 12, color: C.muted }}>Disco del cloud → SOCIETA → SOCIETA' AGRICOLA PODERE VERDE A R.L → 00.DATI PROGRAMMA CONTABILITA' INDUSTRIALE → FATTURE PASSIVE</span>
         {ricon && <div style={{ marginTop: 10, padding: 10, borderRadius: 8, background: ricon.ok ? COLORI.verde : COLORI.rosso, fontSize: 13 }}>
           {ricon.ok ? `✅ Cartella delle fatture di Podere Verde, in uso (codice ${ricon.codice}).` : `⛔ ${ricon.problema}`}
@@ -428,23 +497,32 @@ function SchedaFatture({ accesso }) {
         <div style={{ fontWeight: 800, marginBottom: 8 }}>2. Leggi la cartella DA SMISTARE</div>
         <button style={bottone(!lavora)} disabled={lavora} onClick={leggiCartella}>Leggi la cartella</button>
         {lettura && <>
+          <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+            {[["REPORT", "Report di Aruba"], ["XML", "XML (le fatture)"], ["PDF", "PDF (le copie da leggere)"]].map(([t, nome]) => {
+              const f = lettura.file.filter(x => x.contenuto === t); const campo = { REPORT: "report", XML: "xml", PDF: "pdf" }[t]; const n = conti.reduce((a, c) => a + (c[campo] || 0), 0);
+              return <div key={t} style={{ padding: "8px 14px", borderRadius: 8, fontWeight: 700, fontSize: 14, background: f.length ? COLORI.verde : COLORI.rosso }}>{f.length ? "✅" : "❌"} {nome}: {f.length ? `${n} fatture` : "manca"}</div>;
+            })}
+          </div>
+          <details style={{ marginTop: 8, fontSize: 12 }}><summary style={{ cursor: "pointer", color: C.muted }}>Dettaglio dei file letti</summary>
           <table style={{ width: "100%", fontSize: 12, marginTop: 10, borderCollapse: "collapse" }}>
             <thead><tr style={{ textAlign: "left" }}><th>File</th><th>Contenuto</th><th>Voci</th><th>Impronta</th></tr></thead>
             <tbody>{lettura.file.map(f => <tr key={f.nome} style={{ background: f.contenuto === "ALTRO" ? COLORI.rosso : "transparent" }}><td>{f.nome}</td><td>{f.contenuto}</td><td>{f.voci}</td><td style={{ fontFamily: "monospace" }}>{f.md5.slice(0, 10)}…</td></tr>)}</tbody>
-          </table>
+          </table></details>
           {lettura.scarico.scartati.length > 0 && <div style={{ marginTop: 8, padding: 8, background: COLORI.rosso, fontSize: 12 }}>File o voci scartati: {lettura.scarico.scartati.join(" · ")}</div>}
-          {lettura.carta > 0 && <div style={{ marginTop: 8, padding: 8, background: COLORI.arancione, fontSize: 12 }}>In DA SMISTARE\CARTA ci sono {lettura.carta} file: le fatture di carta si caricano con il prompt del carico massivo (questa versione legge solo gli scarichi di Aruba).</div>}
+          {lettura.carta > 0 && <div style={{ marginTop: 8, padding: 8, background: COLORI.arancione, fontSize: 12 }}>In DA SMISTARE\CARTA ci sono {lettura.carta} file: le fatture di carta si caricano con le voci «Fatture di carta» del menu (questa pagina legge solo gli scarichi di Aruba).</div>}
           <div style={{ marginTop: 12, fontWeight: 800 }}>I conti, per anno</div>
           <table style={{ fontSize: 13, borderCollapse: "collapse", marginTop: 6 }}>
-            <thead><tr><th style={{ padding: "4px 10px" }}>Anno</th><th>Righe del Report</th><th>XML</th><th>PDF</th><th>Righe totali di Aruba (da scrivere)</th><th></th></tr></thead>
+            <thead><tr><th style={{ padding: "4px 10px" }}>Anno</th><th>Fatture nel Report</th><th>Fatture negli XML</th><th>Fatture nei PDF</th><th>Quante fatture dice Aruba? (il numero di «Seleziona tutti (N)»)</th><th></th></tr></thead>
             <tbody>{conti.map(c => <tr key={c.anno} style={{ background: c.torna && c.aruba !== null ? COLORI.verde : COLORI.rosso }}>
               <td style={{ padding: "4px 10px", fontWeight: 700 }}>{c.anno}</td><td style={{ textAlign: "center" }}>{c.report}</td><td style={{ textAlign: "center" }}>{c.xml}</td><td style={{ textAlign: "center" }}>{c.pdf}</td>
-              <td><input type="number" style={{ width: 90 }} value={totaliAruba[c.anno] ?? ""} onChange={e => setTotaliAruba(t => ({ ...t, [c.anno]: e.target.value === "" ? undefined : Number(e.target.value) }))} placeholder="es. 209" /></td>
-              <td style={{ fontSize: 12, padding: "0 8px" }}>{c.aruba === null || c.aruba === undefined ? "scrivi il numero «righe totali» di Aruba" : c.torna ? "✅ torna" : "⛔ non torna: scarico incompleto o «Seleziona tutti» non premuto"}</td></tr>)}</tbody>
+              <td><input type="number" style={{ width: 90, background: "#FFF6C2", fontWeight: 700 }} value={totaliAruba[c.anno] ?? ""} onChange={e => setTotaliAruba(t => ({ ...t, [c.anno]: e.target.value === "" ? undefined : Number(e.target.value) }))} placeholder="es. 209" /></td>
+              <td style={{ fontSize: 12, padding: "0 8px" }}>{c.aruba === null || c.aruba === undefined ? "← scrivi qui il numero di Aruba" : c.torna ? "✅ torna" : "⛔ non torna: scarico incompleto o «Seleziona tutti» non premuto"}</td></tr>)}</tbody>
           </table>
           {cosaManca.length > 0 && <div style={{ marginTop: 8, padding: 10, background: COLORI.rosso, fontSize: 13, lineHeight: 1.5 }}><b>Che cosa manca e come si rimedia:</b><ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>{cosaManca.map((m, i) => <li key={i}>{m}</li>)}</ul></div>}
           {lettura.collegato.copieDoppie > 0 && <div style={{ marginTop: 8, padding: 8, background: COLORI.arancione, fontSize: 12 }}>Ci sono {lettura.collegato.copieDoppie} copie doppie dello stesso documento (lo stesso scarico messo due volte): si usa una copia sola; vanno comunque in SCARICHI ARUBA.</div>}
-          {fileNonSpiegati.length > 0 && <div style={{ marginTop: 8, padding: 8, background: COLORI.rosso, fontSize: 12 }}>Finché ci sono questi, niente esce da DA SMISTARE: {fileNonSpiegati.join(" · ")}</div>}
+          {fileNonSpiegati.length > 0 && <div style={{ marginTop: 8, padding: 8, background: COLORI.rosso, fontSize: 12 }}>
+            <b>{fileNonSpiegati.length} file o voci che lo scarico non spiega</b>{lettura.collegato.xmlSenzaReport.length > 0 && !lettura.file.some(f => f.contenuto === "REPORT") ? " (il Report di Aruba non c'è o non è stato letto)" : ""}: finché ci sono, niente esce da DA SMISTARE.
+            <details><summary style={{ cursor: "pointer" }}>Vedi l'elenco</summary>{fileNonSpiegati.join(" · ")}</details></div>}
         </>}
       </div>}
 
@@ -486,9 +564,11 @@ function SchedaFatture({ accesso }) {
 
       {esitoDebiti && !esitoDebiti.errori.length && (inCarico || nuove.length === 0) && <div style={riquadro}>
         <div style={{ fontWeight: 800, marginBottom: 8 }}>5. Archivia (quando tutte le righe sono salvate)</div>
+        <div style={{ fontSize: 12.5, marginBottom: 8 }}>Ogni fattura va nella cartella del suo fornitore: <b>{"FATTURE PASSIVE\\anno\\NOME FORNITORE\\PDF"}</b> per il PDF e <b>{"…\\XML"}</b> per il file della fattura elettronica. Il nome del fornitore è quello scritto nel programma; le cartelle che mancano si creano da sole.</div>
         <button style={bottone(!lavora)} disabled={lavora} onClick={archivia}>Archivia PDF e XML e conserva gli scarichi</button>
-        {esitoArchivio && <div style={{ marginTop: 8, padding: 8, background: esitoArchivio.fermo.length ? COLORI.rosso : COLORI.verde, fontSize: 12 }}>
+        {esitoArchivio && <div style={{ marginTop: 8, padding: 8, background: esitoArchivio.fermo.length || esitoArchivio.errori.length ? COLORI.rosso : COLORI.verde, fontSize: 12 }}>
           File scritti nel cloud: {esitoArchivio.scritti.length} · già presenti uguali: {esitoArchivio.gia.length} · PDF messi nel programma: {esitoArchivio.pdfProgramma}{esitoArchivio.pdfGiaNelProgramma ? ` (già c'erano: ${esitoArchivio.pdfGiaNelProgramma})` : ""}
+          {esitoArchivio.scritti.length > 0 && <div>Scritti in FATTURE PASSIVE: {esitoArchivio.scritti.join(" · ")}</div>}
           {esitoArchivio.nonRegistrate.length > 0 && <div>Non ancora registrate (salva prima le loro righe): {esitoArchivio.nonRegistrate.join(" · ")}</div>}
           {esitoArchivio.fermo.length > 0 && <div><b>Gli scarichi restano in DA SMISTARE:</b> {esitoArchivio.fermo.join("; ")}.</div>}
           {esitoArchivio.scarichi.length > 0 && <div>{esitoArchivio.scarichi.join(" · ")}</div>}

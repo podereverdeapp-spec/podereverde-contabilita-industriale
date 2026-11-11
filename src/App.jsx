@@ -174,17 +174,16 @@ const MENU = [
     { tipo: "voce", id: "istr-carica-dati", label: "Istruzioni Generali", icon: "📖" },
     { tipo: "voce", id: "piano-dei-conti", label: "Piano dei Conti", icon: "📖" },
     { tipo: "sottocartella", id: "sub-dati-fatture-passive", label: "1. Carica Fatture Passive", icon: "📥", voci: [
-      { id: "istr-fatture", label: "Istruzioni Carica Fatture Passive", icon: "📖" },
-      // Versione 355 (procedura unica di carico, ordine del Dott. Bizzarri del 10/11/2026): gli scarichi di Aruba e gli F24 in una pagina
-      { id: "istr-documenti-arrivati", label: "Istruzioni Documenti arrivati (anche lo scarico da Aruba)", icon: "📖" }, // versione 356
-      { id: "documenti-arrivati", label: "Documenti arrivati: controlla, carica e archivia", icon: "📬" },
-      { id: "prompt-estrazione-pdf", label: "Prompt per carico Massivo", icon: "🤖" },
-      // Versione 293: il carico diretto da Aruba con Claude (decisione del Dott. Bizzarri del 24/10/2026)
-      { id: "prompt-carico-aruba", label: "Prompt per carico da Aruba", icon: "🌐" },
-      { id: "carica", label: "Carica Fatture Passive massivamente", icon: "📥" },
+      // Versione 358 (giudizio del Dott. Bizzarri del 10/11/2026 ore 20:18: «bisogna riorganizzare 1. carica fatture passive»):
+      // in cima le istruzioni e la pagina del carico da Aruba; poi l'inserimento manuale; in fondo, in ordine, le tre pagine delle fatture di carta.
+      // Esce dal menu «Prompt per carico da Aruba»: lo scarico da Aruba ora lo legge la pagina «Carica le fatture da Aruba».
+      { id: "istr-documenti-arrivati", label: "Istruzioni", icon: "📖" },
+      { id: "documenti-arrivati", label: "Carica le fatture da Aruba", icon: "📬" },
       { id: "inserimento-manuale", label: "Inserimento Manuale Fattura", icon: "✍️" },
-      // Versione 292: i PDF delle fatture nel programma (decisione del Dott. Bizzarri del 24/10/2026)
-      { id: "carica-pdf-fatture", label: "Carica PDF delle Fatture", icon: "📎" },
+      { id: "istr-fatture", label: "Fatture di carta: istruzioni", icon: "📖" },
+      { id: "prompt-estrazione-pdf", label: "Fatture di carta: 1. prompt di lettura", icon: "🤖" },
+      { id: "carica", label: "Fatture di carta: 2. carica l'Excel", icon: "📥" },
+      { id: "carica-pdf-fatture", label: "Fatture di carta: 3. carica i PDF", icon: "📎" },
     ]},
     { tipo: "sottocartella", id: "sub-dati-costi-diretti", label: "2. Carica Costi Diretti (non soggetti a fatturazione)", icon: "💼", voci: [
       { id: "istr-costi-diretti", label: "Istruzioni Carica Costi Diretti", icon: "📖" },
@@ -554,7 +553,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 357</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 359</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>

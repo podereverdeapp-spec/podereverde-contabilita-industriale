@@ -239,18 +239,50 @@ export function chiusura(riconosciute, fattureProgrammaConSdi) {
   return Object.values(perAnno).map(x => ({ ...x, torna: x.mancanti.length === 0 && x.soloNelProgramma.length === 0 }));
 }
 
-// ── Nome nell'archivio del cloud (FATTURE PASSIVE\anno, decisione del Dott. Bizzarri del 10/11/2026 ore 16:52) ──────────────────────────────────────────────────────────────────────
+// ── Nome nell'archivio del cloud ──────────────────────────────────────────────────────────────────────
+// Versione 359 (ordine del Dott. Bizzarri dell'11/11/2026, struttura «A»):
+//   FATTURE PASSIVE\<anno>\<NOME FORNITORE>\PDF\<nome>.pdf   e   FATTURE PASSIVE\<anno>\<NOME FORNITORE>\XML\<nome>.xml (o .xml.p7m)
+// Il nome della cartella del fornitore è il nome scritto nel programma per quella partita IVA (sempre lo stesso per lo stesso
+// fornitore); se il fornitore non è nel programma, il nome della fattura elettronica. Il nome del file resta come prima
+// (FORNITORE_data_numero), così un file copiato fuori dalla sua cartella si riconosce ancora.
 const VIETATI = /[\\/:*?"<>|~\u0000-\u001f]/g;
-export function pulisciNome(s) { return String(s || "").replace(VIETATI, "-").replace(/\s+/g, " ").trim().replace(/[ .]+$/, ""); }
+// riservati anche con un'estensione («CON.SRL»)
+const RISERVATI_WINDOWS = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\.|$)/i;
+// revisione 359: né all'inizio né alla fine uno spazio o un punto (Chrome li rifiuta: nomeNonAccettato in archivioF24.js)
+export function pulisciNome(s) { return String(s || "").replace(VIETATI, "-").replace(/\s+/g, " ").trim().replace(/^[ .]+/, "").replace(/[ .]+$/, ""); }
+// 45 caratteri (revisione 359, punto 1): con il percorso vero di FATTURE PASSIVE (106 caratteri) e un numero di fattura lungo
+// quanto il massimo della fattura elettronica (20), il percorso più lungo resta sotto 250 e al nome del file restano almeno 12 caratteri.
+// Il limite è fisso, così lo stesso fornitore ha sempre la stessa cartella, qualunque sia il numero della fattura.
+export const LUNGHEZZA_CARTELLA_FORNITORE = 45;
+// la cartella del fornitore: maiuscolo, senza caratteri vietati da Windows, al massimo 45 caratteri, mai vuota né un nome riservato
+export function cartellaFornitore(nome) {
+  const pieno = pulisciNome(nome).toUpperCase();
+  let c = pieno.slice(0, LUNGHEZZA_CARTELLA_FORNITORE);
+  // un nome troppo lungo si taglia alla fine di una parola, se non si perde troppo («…DI EUGENIO SB» → «…DI EUGENIO»)
+  if (pieno.length > LUNGHEZZA_CARTELLA_FORNITORE && pieno[LUNGHEZZA_CARTELLA_FORNITORE] !== " ") { const sp = c.lastIndexOf(" "); if (sp >= 25) c = c.slice(0, sp); }
+  c = c.trim().replace(/[ ,.\-]+$/, "");
+  if (!c) c = "FORNITORE SENZA NOME";
+  if (RISERVATI_WINDOWS.test(c)) c = `_${c}`;
+  return c;
+}
 // percorsoBase: il percorso vero della cartella FATTURE PASSIVE (per il limite di Windows, 250 caratteri)
-export function nomeArchivio(f, percorsoBase = "") {
+// nomeFornitoreProgramma: il nome del fornitore nel programma, trovato per partita IVA (vuoto se non c'è)
+export function nomeArchivio(f, percorsoBase = "", nomeFornitoreProgramma = "") {
   const r = f.report; const anno = String(r.data || "").slice(0, 4) || "SENZA ANNO";
-  const fornitore = pulisciNome(f.xml?.fornitore || r.fornitore || "FORNITORE").toUpperCase();
+  const nomeDoc = f.xml?.fornitore || r.fornitore || "FORNITORE";
+  // un nome del programma fatto di soli spazi o segni non vale: si usa il nome della fattura (revisione 359, punto 3)
+  const forn = cartellaFornitore(pulisciNome(nomeFornitoreProgramma) ? nomeFornitoreProgramma : nomeDoc);
+  const fornitoreFile = pulisciNome(nomeDoc).toUpperCase();
   const coda = `_${r.data || "SENZA DATA"}_${pulisciNome(r.numero) || "SENZA NUMERO"}`;
-  const cartella = `${anno}\\`;
-  const spazio = 250 - percorsoBase.length - 1 - cartella.length - coda.length - 4; // «.pdf»
-  const forn = spazio >= 10 ? fornitore.slice(0, spazio).trim() : fornitore.slice(0, 10);
-  return { cartella, nome: `${forn}${coda}`, accorciato: forn.length < fornitore.length };
+  const cartellaPdf = `${anno}\\${forn}\\PDF\\`;
+  const cartellaXml = `${anno}\\${forn}\\XML\\`;
+  // limite 250 sul percorso più lungo che si scrive davvero (revisione 359, punto 1): cartella XML, estensione «.xml.p7m» (8),
+  // il nome provvisorio «PROVVISORIO <13 cifre> » di scriviVerificato (26), un «_99» se il nome c'è già (3), il file di appoggio
+  // «.crswap» che Chrome crea durante la scrittura (7)
+  const RISERVA = 8 + 26 + 3 + 7;
+  const spazio = 250 - percorsoBase.length - 1 - cartellaXml.length - coda.length - RISERVA;
+  const fn = spazio >= 10 ? fornitoreFile.slice(0, spazio).trim() : fornitoreFile.slice(0, 10);
+  return { cartellaPdf, cartellaXml, cartellaFornitore: forn, nome: `${fn}${coda}`, accorciato: fn.length < fornitoreFile.length };
 }
 
 // ── Righe di un documento non ancora registrate nel programma (versione 355) ───────────────────────────
