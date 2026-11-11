@@ -59,6 +59,7 @@ import PrimaNota from "./PrimaNota";
 import GestioneIncassiPagamenti from "./GestioneIncassiPagamenti";
 import { ISTRUZIONI_BANCHE, ISTRUZIONI_INCASSI_PAGAMENTI, ISTRUZIONI_PRIMA_NOTA } from "./istruzioniBancheIncassiPrimaNota";
 // Versione 346 (03/11/2026): posta del programma — le mail ai clienti e ai fornitori partono da podereverdeapp@gmail.com attraverso il postino (funzione spedisci-mail), con intestazione, logo, firma modificabile e piè di pagina di legge; permesso «Può spedire mail dal programma» nella cartella Accessi; le mail della casella entrano da sole nel Registro delle Comunicazioni (cassetta comunicazioni-ricevi, ritiro ogni 5 minuti); «Togli dal registro» (recuperabile) e «Blocca mittente».
+// Versione 363 (11/11/2026): avvisi in alto «F24 da pagare» e «F24 da caricare» (cartella FISCALE controllata in sola lettura), con i tasti per «F24 arrivati» e «Consulta F24».
 // Versione 362 (11/11/2026): «Consulta F24» nel menu «4. Carica F24» — tutti gli F24 con stato, come e quando sono stati pagati, F24, quietanza e pagina dell'estratto conto.
 // Versione 345 (02/11/2026): pagina F24 arrivati — un'archiviazione sola alla volta; un file esce da DA SMISTARE solo se è identico a un file dell'ARCHIVIO (altrimenti prima si conserva intero in ORIGINALI RICEVUTI); scrittura riprovata sul disco di rete.
 // Versione 344 (02/11/2026): pagina F24 arrivati — «Archivia» archivia le righe a posto e lascia in sospeso le rosse con i loro file; la quietanza senza F24 ha il nome «F24 <data del pagamento>.pdf».
@@ -73,6 +74,7 @@ import { ISTRUZIONI_BANCHE, ISTRUZIONI_INCASSI_PAGAMENTI, ISTRUZIONI_PRIMA_NOTA 
 // di smistamento e di carico e della pagina «Carica F24» (i loro file restano, ma non sono più nel menu).
 import F24Arrivati from "./F24Arrivati";
 import ConsultaF24 from "./ConsultaF24"; // Versione 362
+import { useAvvisiF24, StrisciaAvvisiF24 } from "./AvvisiF24"; // Versione 363
 import DocumentiArrivati from "./DocumentiArrivati"; // versione 355
 import { ISTRUZIONI_DOCUMENTI_ARRIVATI } from "./istruzioniDocumentiArrivati"; // versione 356
 import { ISTRUZIONI_F24_ARRIVATI } from "./istruzioniF24Arrivati";
@@ -520,7 +522,10 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
   // Versione 349: modelli 4 non chiusi con la fattura (anomalie «M4» aperte, per colore)
   const [modelli4Aperti, setModelli4Aperti] = useState({ rosso: 0, arancione: 0, azzurro: 0, totale: 0 });
   useEffect(() => { contaModelli4Aperti().then(setModelli4Aperti); }, [tab]);
-  const AVVISI = { "cart-modelli4": modelli4Aperti.totale, "modelli4-chiusure": modelli4Aperti.totale, "cart-animali": verificheAnimali, "verifiche-ovini": verificheAnimali, "cart-alimentaria": senzaComposizione, "alimenti-senza-composizione": senzaComposizione, "cart-fatture": anomalieAperte || 0, "sub-dati-controllo": anomalieAperte || 0, "registro-controlli": anomalieAperte || 0, "cart-emissione-fatture": daFatturare + allarmiAttiva, "sub-fatturazione-animali": daFatturare, "fatt-animali-da-fatturare": daFatturare, "fatt-animali-prepara": daFatturare, "sub-controllo-attiva": allarmiAttiva, "controllo-attiva": allarmiAttiva, "cart-accessi-registro": richiesteAccesso, "sub-accessi": richiesteAccesso, "accessi": richiesteAccesso };
+  // Versione 363: F24 da pagare (scaduti o entro 7 giorni) e F24 da caricare dalla cartella FISCALE, per chi ha la parte «4. Carica F24»
+  const vedeF24 = puo("consulta-f24") || puo("f24-arrivati");
+  const { avvisi: avvisiF24, numero: numeroF24 } = useAvvisiF24(vedeF24, tab);
+  const AVVISI = { "sub-dati-f24": numeroF24, "consulta-f24": numeroF24, "cart-modelli4": modelli4Aperti.totale, "modelli4-chiusure": modelli4Aperti.totale, "cart-animali": verificheAnimali, "verifiche-ovini": verificheAnimali, "cart-alimentaria": senzaComposizione, "alimenti-senza-composizione": senzaComposizione, "cart-fatture": (anomalieAperte || 0) + numeroF24, "sub-dati-controllo": anomalieAperte || 0, "registro-controlli": anomalieAperte || 0, "cart-emissione-fatture": daFatturare + allarmiAttiva, "sub-fatturazione-animali": daFatturare, "fatt-animali-da-fatturare": daFatturare, "fatt-animali-prepara": daFatturare, "sub-controllo-attiva": allarmiAttiva, "controllo-attiva": allarmiAttiva, "cart-accessi-registro": richiesteAccesso, "sub-accessi": richiesteAccesso, "accessi": richiesteAccesso };
 
   function vaiA(pageId) {
     if (!puo(pageId)) return; // versione 337: pagina non data a questa persona
@@ -557,7 +562,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 362</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 363</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -648,6 +653,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
             ⚠️ La cartella «Accessi» non funziona ancora: il database non ha la tabella degli accessi (SQL della versione 337, blocchi 1–6). Per ora il programma resta aperto a tutti i registrati, come prima.
           </div>
         )}
+        {vedeF24 && <StrisciaAvvisiF24 avvisi={avvisiF24} vaiA={vaiA} utente={utente} puoCaricare={puo("f24-arrivati")} puoConsultare={puo("consulta-f24")} />}
         {richiesteAccesso > 0 && tab !== "accessi" && (
           <div onClick={() => vaiA("accessi")}
             style={{ background: "#C0392B", color: "#fff", padding: "10px 20px", fontSize: 13.5, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
@@ -786,7 +792,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
         {tab === "vendite-per-anno" && <VenditePerAnno />}
         {tab === "prompt-cedolini" && <PromptCedolini />}
         {tab === "f24-arrivati" && <F24Arrivati utente={utente} accesso={accesso} />}
-        {tab === "consulta-f24" && <ConsultaF24 utente={utente} />}
+        {tab === "consulta-f24" && <ConsultaF24 utente={utente} vaiA={vaiA} />}
         {tab === "istr-documenti-arrivati" && <DocumentoIstruzioni doc={ISTRUZIONI_DOCUMENTI_ARRIVATI} />}
         {tab === "documenti-arrivati" && <DocumentiArrivati utente={utente} accesso={accesso} vediF24={puo("f24-arrivati")} />}
         {tab === "istr-generali-f24" && <DocumentoIstruzioni doc={ISTRUZIONI_F24_ARRIVATI} />}

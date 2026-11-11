@@ -47,7 +47,8 @@ export function consulta(dati) {
   const perConto = {};
   righeVive.forEach(r => { if (!perConto[r.conto_id] || r.data_contabile > perConto[r.conto_id]) perConto[r.conto_id] = r.data_contabile; });
   const date = Object.values(perConto);
-  const coperturaFino = date.length ? date.reduce((m, x) => (x < m ? x : m)) : null;
+  // versione 363: chi passa solo una parte delle righe (gli avvisi in alto) dà la copertura già calcolata su tutte le righe
+  const coperturaFino = dati.coperturaFino !== undefined ? dati.coperturaFino : (date.length ? date.reduce((m, x) => (x < m ? x : m)) : null);
   const righeDaGuardare = {};
   for (const f of f24) if (f.riga_fonte_id != null) {
     const r = rigaPerId.get(String(f.riga_fonte_id));

@@ -6,6 +6,7 @@ import { C } from "./style";
 import { btn, input, scheda } from "./stileAruba";
 import { fetchAllPages } from "./parsingUtils";
 import PagamentiF24 from "./PagamentiF24";
+import { RiquadroFiscale } from "./AvvisiF24"; // versione 363
 import { dataIt, euro } from "./analisiDocumentoBanca";
 import { oggiRoma } from "./dateRoma";
 import { md5 } from "./md5";
@@ -26,7 +27,7 @@ const pausa = ms => new Promise(r => setTimeout(r, ms));
 // il file di riconoscimento può essere in UTF-16 (scritto da PowerShell): si legge come nella pagina «F24 arrivati»
 const leggiTesto = b => (b[0] === 0xff && b[1] === 0xfe ? new TextDecoder("utf-16le").decode(b.subarray(2)) : new TextDecoder("utf-8").decode(b).replace(/^\uFEFF/, ""));
 
-export default function ConsultaF24({ utente }) {
+export default function ConsultaF24({ utente, vaiA }) {
   const [d, setD] = useState(null);
   const [errore, setErrore] = useState("");
   const [anno, setAnno] = useState("tutti");
@@ -328,6 +329,9 @@ export default function ConsultaF24({ utente }) {
           {pronteDaAllegare.length > 0 && <li>{pronteDaAllegare.length} F24 con il pagamento confermato hanno la pagina dell'estratto da allegare. <button style={{ ...btn(false), height: 26 }} onClick={() => preparaAllega(pronteDaAllegare)}>Allega a tutti</button></li>}
         </ul>
       </div>}
+
+      {/* versione 363: i PDF della cartella FISCALE non ancora caricati */}
+      <div style={scheda}><RiquadroFiscale utente={utente} vaiA={vaiA || (() => {})} /></div>
 
       <div style={{ ...scheda, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <select style={input} value={anno} onChange={e => setAnno(e.target.value)}><option value="tutti">Tutti gli anni</option>{anni.map(a => <option key={a} value={a}>{a}</option>)}</select>
