@@ -55,6 +55,11 @@ export function nuovoCodice() {
 }
 // controlla la cartella scelta: { ok, codiceFile, manca, problema }
 export async function controllaCartella(radice, codiceProgramma) {
+  // versione 360: scelta una cartella che sta DENTRO BANCHE (errore facile: si sceglie quella dove si sono copiati i file).
+  // Nessun «manca», così la pagina non propone di «preparare» per sbaglio quella cartella come BANCHE.
+  const dentro = String(radice?.name || "").trim().toUpperCase();
+  if (dentro === "ESTRATTI CONTO DA SMISTARE" || /^(BPER BANCA|CARIGE|CARTA PREPAGATA|ESTRATTI CONTO |LISTE MOVIMENTI |DISTINTE DI PAGAMENTO |\d{4} )/.test(dentro))
+    return { ok: false, problema: `Hai scelto «${radice.name}», che sta dentro BANCHE. Premi di nuovo il pulsante e scegli la cartella sopra, BANCHE: un clic su BANCHE, senza entrarci, poi «Seleziona cartella».` };
   let testo = null;
   try { testo = new TextDecoder().decode(await leggiByte(radice, FILE_RICONOSCIMENTO)); } catch { testo = null; }
   if (testo === null) return { ok: false, manca: true, problema: `Nella cartella scelta («${radice.name}») non c'è il file «${FILE_RICONOSCIMENTO}». Questa non è la cartella BANCHE di Podere Verde, oppure non è ancora stata preparata.` };
@@ -121,7 +126,9 @@ export async function scriviVerificato(radice, percorso, byte) {
     passo = "scrittura del file provvisorio";
     let provvisorio, fh;
     for (let tentativo = 1; ; tentativo++) {
-      provvisorio = `PROVVISORIO ${Date.now()} ${nome}`;
+      // versione 360: nome provvisorio corto. Con «PROVVISORIO <ora> <nome>» il percorso nell'archivio superava i 260 caratteri
+      // che Windows accetta (282 con il file di lavoro di Chrome) e la scrittura si fermava con NotFoundError (11/11/2026 ore 10:08).
+      provvisorio = `PROVV ${String(Date.now() % 1000000).padStart(6, "0")}${Math.floor(Math.random() * 1000).toString().padStart(3, "0")}${tentativo}${(nome.match(/\.[^.]+$/) || [""])[0]}`;
       try { fh = await dir.getFileHandle(provvisorio, { create: true }); const w = await fh.createWritable(); await w.write(byte); await w.close(); break; }
       catch (e) {
         try { await dir.removeEntry(provvisorio); } catch { /* resta: si vede */ }
@@ -178,6 +185,6 @@ export function posizioneInArchivio(conto, { tipo, formato, dal, al, estensione 
   const banca = base.split(/ - | \(/)[0].trim();                   // «BPER BANCA», «CARIGE»
   const sigla = `${banca.split(" ")[0]} ${String(conto.iban || "").slice(-4)}`;   // «BPER 2923»
   const t = `ESTRATTI CONTO ${banca}`;
-  const cosa = formato === "lista CBI" ? "lista movimenti" : "estratto conto";
+  const cosa = formato === "lista CBI" ? "lista movimenti" : formato === "saldi e movimenti EC" ? "saldi e movimenti" : "estratto conto";
   return `${base}\\${t}\\${anno} ${t}\\${sigla} - ${cosa} dal ${dal} al ${al}${ext}`;
 }

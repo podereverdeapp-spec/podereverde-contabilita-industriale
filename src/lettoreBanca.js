@@ -310,6 +310,94 @@ export function leggiListaCbi(pagine) {
   return esito;
 }
 
+// ─── 4-bis. «Smart CBI – Saldi e movimenti EC» di BPER (versione 358, ordine del Dott. Bizzarri del 11/11/2026 ore 09:08) ───
+// Stessa tabella della lista CBI (D. cont., D. val., Descrizione movimento, Caus., Dare, Avere) ma con «Periodo: dal … al …»,
+// «Saldo iniziale al …» e «Saldo finale al …» come righe della tabella, senza totali dare e avere.
+// In fondo la banca scrive «Ultimo saldo ricevuto al AAAA-MM-GG»: dopo quel giorno i movimenti possono mancare,
+// quindi il periodo coperto finisce lì (mai oltre), e quel saldo deve essere uguale al saldo finale.
+export function leggiSaldiMovimentiEc(pagine) {
+  const esito = { tipo: "estratto conto", origine: "letto da PDF", banca: "BPER", formato: "saldi e movimenti EC", numeroConto: null, iban: null,
+    righe: [], controlli: [], errori: [], pagine_pdf: pagine.length, info: {} };
+  const errore = (t) => esito.errori.push(t);
+  let col = null, corrente = null, finito = false;
+  const bordiDare = [], bordiAvere = [];
+  for (const p of pagine) {
+    for (const r of righeDellaPagina(p.voci)) {
+      const t = r.testo; let m;
+      if ((m = t.match(/^Conto: (IT\w{25}) EUR (\d{6,})/))) {
+        if (esito.iban && esito.iban !== m[1]) errore(`Pagina ${p.numero}: conto diverso (${m[1]})`);
+        esito.iban = esito.iban || m[1]; esito.numeroConto = esito.numeroConto || m[2].replace(/^0+/, ""); continue;
+      }
+      if ((m = t.match(/^Periodo: dal (\d{2}\/\d{2}\/\d{2,4}) al (\d{2}\/\d{2}\/\d{2,4})$/))) { esito.info.dal = dataIso(m[1]); esito.info.alStampato = dataIso(m[2]); continue; }
+      if ((m = t.match(/^Saldo iniziale al (\d{2}\/\d{2}\/\d{2,4}) ([+-]?[\d.]+,\d{2}-?)$/))) { esito.info.iniziale = { data: dataIso(m[1]), c: centesimi(m[2]) }; corrente = null; continue; }
+      if ((m = t.match(/^Saldo finale al (\d{2}\/\d{2}\/\d{2,4}) ([+-]?[\d.]+,\d{2}-?)$/))) { esito.info.finale = { data: dataIso(m[1]), c: centesimi(m[2]) }; finito = true; corrente = null; continue; }
+      if ((m = t.match(/^Ultimo saldo ricevuto al (\d{4})-(\d{2})-(\d{2}) ([+-]?[\d,]+\.\d{2})/))) {
+        esito.info.ultimo = { data: dataIso(`${m[3]}/${m[2]}/${m[1]}`), c: Math.round(Number(m[4].replace(/,/g, "")) * 100) }; finito = true; continue;
+      }
+      const nomi = r.voci.map(v => v.s.trim());
+      if (nomi.includes("D. cont.") && nomi.includes("Dare") && nomi.includes("Avere")) {
+        const v = (n) => r.voci.find(x => x.s.trim() === n);
+        const nuova = { data: v("D. cont.").x, valuta: v("D. val.").x, descrizione: v("Descrizione movimento").x, causale: v("Caus.").x,
+          fineDare: v("Dare").x + v("Dare").w, fineAvere: v("Avere").x + v("Avere").w };
+        col = col || nuova; continue;
+      }
+      if (/^Smart CBI|Saldi e movimenti EC|^Società:|^Banca:|^\d{8} - |^Pag\. ?\d|^caso si siano verificati|Il saldo iniziale e il saldo finale/.test(t)) continue;
+      if (finito || !col) {
+        if (/^\d{2}\/\d{2}\/\d{2}/.test(t)) errore(`Pagina ${p.numero}: movimento ${finito ? "dopo il saldo finale" : "prima dell'intestazione della tabella"} «${t.slice(0, 50)}»`);
+        continue;
+      }
+      const primo = r.voci[0];
+      const dataContabile = primo.x < col.valuta - 10 ? dataIso(primo.s) : null;
+      if (dataContabile) {
+        const valuta = r.voci.find(v => v.x >= col.valuta - 10 && v.x < col.descrizione - 5);
+        const descr = r.voci.filter(v => v.x >= col.descrizione - 2 && v.x < col.causale - 5).map(v => v.s).join(" ").replace(/\s+/g, " ").trim();
+        const imp = r.voci.filter(v => v.x > col.causale + 20 && centesimi(v.s) !== null);
+        if (imp.length !== 1) { errore(`Pagina ${p.numero}: riga del ${it(dataContabile)} con ${imp.length} importi`); corrente = null; continue; }
+        const bordo = imp[0].x + imp[0].w, dare = bordo <= (col.fineDare + col.fineAvere) / 2;
+        (dare ? bordiDare : bordiAvere).push(bordo);
+        corrente = { pagina_pdf: p.numero, data_contabile: dataContabile, data_valuta: valuta ? dataIso(valuta.s) : null,
+          verso: dare ? "uscita" : "entrata", c: Math.abs(centesimi(imp[0].s)), descrizione: descr };
+        if (!corrente.data_valuta) errore(`Pagina ${p.numero}: riga del ${it(dataContabile)} senza data valuta`);
+        esito.righe.push(corrente); continue;
+      }
+      if (corrente && primo.x >= col.descrizione - 5 && primo.x < col.causale - 5) { corrente.descrizione = (corrente.descrizione + " " + t).replace(/\s+/g, " ").trim(); continue; }
+      errore(`Pagina ${p.numero}: riga non riconosciuta «${t.slice(0, 70)}»`);
+    }
+  }
+  const C = (nome, ok, dettaglio) => { esito.controlli.push({ nome, ok, dettaglio }); if (!ok) errore(nome + ": " + dettaglio); };
+  const I = esito.info;
+  C("Intestazione letta", !!(esito.iban && esito.numeroConto && I.dal && I.alStampato), `conto ${esito.numeroConto || "?"}, periodo dal ${it(I.dal)} al ${it(I.alStampato)}`);
+  C("Saldi letti", !!(I.iniziale && I.finale), "saldo iniziale e saldo finale");
+  C("Ultimo saldo ricevuto dalla banca letto", !!I.ultimo, I.ultimo ? `al ${it(I.ultimo.data)}: ${euro(I.ultimo.c)}` : "manca la riga «Ultimo saldo ricevuto al …»");
+  if (I.iniziale && I.finale && I.ultimo && I.dal && I.alStampato) {
+    const D = esito.righe.filter(r => r.verso === "uscita").reduce((s, r) => s + r.c, 0);
+    const A = esito.righe.filter(r => r.verso === "entrata").reduce((s, r) => s + r.c, 0);
+    C("Saldo iniziale − dare + avere = saldo finale", I.iniziale.c - D + A === I.finale.c, `${euro(I.iniziale.c)} − ${euro(D)} + ${euro(A)} = ${euro(I.iniziale.c - D + A)} (stampato ${euro(I.finale.c)})`);
+    // «Ultimo saldo ricevuto» prima della fine del periodo: dopo quel giorno i movimenti possono mancare, il saldo finale è quello;
+    // dopo la fine del periodo: la banca ha già mandato anche i giorni seguenti, quel saldo comprende movimenti fuori periodo
+    // (verificato sui mensili BPER di Podere Verde gennaio–settembre 2026, 11/11/2026)
+    if (I.ultimo.data <= I.alStampato) C("Ultimo saldo ricevuto uguale al saldo finale", I.ultimo.c === I.finale.c, `ultimo saldo al ${it(I.ultimo.data)} ${euro(I.ultimo.c)}, saldo finale ${euro(I.finale.c)}`);
+    C("Date dei saldi uguali al periodo", I.iniziale.data === I.dal && I.finale.data === I.alStampato, `saldo iniziale al ${it(I.iniziale.data)}, finale al ${it(I.finale.data)}, periodo ${it(I.dal)}–${it(I.alStampato)}`);
+    // il periodo coperto finisce all'ultimo saldo ricevuto (i giorni dopo possono essere incompleti), mai oltre la fine stampata
+    const al = I.ultimo.data < I.alStampato ? I.ultimo.data : I.alStampato;
+    C("Ultimo saldo ricevuto non prima del periodo", I.ultimo.data >= I.dal, `ultimo saldo al ${it(I.ultimo.data)}, periodo dal ${it(I.dal)}`);
+    const prima = new Date(I.dal + "T00:00:00Z"); prima.setUTCDate(prima.getUTCDate() - 1);
+    esito.saldoInizialeAlla = prima.toISOString().slice(0, 10);
+    esito.periodo_dal = I.dal; esito.periodo_al = al;
+    esito.saldo_iniziale = I.iniziale.c / 100; esito.saldo_finale = I.finale.c / 100;
+    esito.totali = { entrate: A, uscite: D };
+    const fuori = esito.righe.filter(r => r.data_contabile < I.dal || r.data_contabile > al);
+    C("Tutte le righe dentro il periodo coperto", fuori.length === 0, fuori.length ? `${fuori.length} fuori (dopo l'ultimo saldo ricevuto o fuori periodo)` : `dal ${it(I.dal)} al ${it(al)}`);
+  }
+  const allineate = (b) => b.length === 0 || Math.max(...b) - Math.min(...b) <= 3;
+  C("Importi incolonnati", allineate(bordiDare) && allineate(bordiAvere), `dare ${bordiDare.length}, avere ${bordiAvere.length}`);
+  C("Almeno un movimento", esito.righe.length > 0, `${esito.righe.length} movimenti`);
+  esito.righeCarico = esito.righe.map(r => ({ data_contabile: r.data_contabile, data_valuta: r.data_valuta, verso: r.verso,
+    importo: r.c / 100, descrizione: mascheraCarte(r.descrizione), pagina_pdf: r.pagina_pdf, ...dettagliDescrizione(r.descrizione) }));
+  esito.valido = esito.errori.length === 0;
+  return esito;
+}
+
 // ─── 5. Lista movimenti della carta prepagata in PDF («Lista movimenti – Relative alla carta …») ───
 // Le liste non hanno né periodo né saldi: il periodo coperto va dal primo giorno con movimenti al giorno prima
 // dell'ultimo (l'ultimo giorno può essere incompleto) e prima del primo movimento «da contabilizzare».

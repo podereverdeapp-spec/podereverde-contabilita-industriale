@@ -4,7 +4,7 @@ import * as XLSX from "xlsx";
 import { supabase } from "./supabase";
 import { formattaEuro, fetchAllPages } from "./parsingUtils";
 import { md5 } from "./md5";
-import { pagineDalPdf, leggiEstrattoBper, leggiListaCbi, leggiPdfCartaBper, leggiExcelCartaBper } from "./lettoreBanca";
+import { pagineDalPdf, leggiEstrattoBper, leggiListaCbi, leggiSaldiMovimentiEc, leggiPdfCartaBper, leggiExcelCartaBper } from "./lettoreBanca";
 
 export const dataIt = d => { const s = String(d || "").slice(0, 10); const [a, m, g] = s.split("-"); return g ? `${g}/${m}/${a}` : "—"; };
 export const euro = n => (n === null || n === undefined || Number.isNaN(Number(n)) ? "—" : formattaEuro(Number(n)));
@@ -30,10 +30,11 @@ export async function leggiDocumento(nomeFile, byte) {
       const testo = pagine.slice(0, 2).flatMap(p => p.voci.map(v => v.s)).join(" ");
       let r;
       if (/Lista movimenti CBI/.test(testo)) r = { formato: "lista CBI", nomeFormato: "Lista movimenti CBI della banca (PDF)", esito: leggiListaCbi(pagine) };
+      else if (/Saldi e movimenti EC/.test(testo)) r = { formato: "saldi e movimenti EC", nomeFormato: "Saldi e movimenti EC della banca (PDF, Smart CBI)", esito: leggiSaldiMovimentiEc(pagine) };
       else if (/Relative alla carta/.test(testo)) r = { formato: "lista carta PDF", nomeFormato: "Lista movimenti della carta (PDF)", esito: leggiPdfCartaBper(pagine) };
       else if (/ESTRATTO AL/.test(testo)) r = { formato: "estratto ufficiale", nomeFormato: "Estratto conto ufficiale BPER (PDF)", esito: leggiEstrattoBper(pagine) };
       else if (pagine.every(p => p.voci.length === 0)) return { impronta, errore: "è una scansione (un'immagine): non contiene testo da leggere. Serve il PDF scaricato dalla banca." };
-      else return { impronta, errore: "PDF non riconosciuto: non è un estratto conto ufficiale BPER, una lista movimenti CBI o una lista movimenti della carta." };
+      else return { impronta, errore: "PDF non riconosciuto: non è un estratto conto ufficiale BPER, una lista movimenti CBI, un «Saldi e movimenti EC» o una lista movimenti della carta." };
       return verificaPeriodo({ impronta, estensione: ".pdf", ...r });
     }
     if (nome.endsWith(".xls") || nome.endsWith(".xlsx")) {
