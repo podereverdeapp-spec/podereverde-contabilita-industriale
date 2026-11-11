@@ -59,6 +59,7 @@ import PrimaNota from "./PrimaNota";
 import GestioneIncassiPagamenti from "./GestioneIncassiPagamenti";
 import { ISTRUZIONI_BANCHE, ISTRUZIONI_INCASSI_PAGAMENTI, ISTRUZIONI_PRIMA_NOTA } from "./istruzioniBancheIncassiPrimaNota";
 // Versione 346 (03/11/2026): posta del programma — le mail ai clienti e ai fornitori partono da podereverdeapp@gmail.com attraverso il postino (funzione spedisci-mail), con intestazione, logo, firma modificabile e piè di pagina di legge; permesso «Può spedire mail dal programma» nella cartella Accessi; le mail della casella entrano da sole nel Registro delle Comunicazioni (cassetta comunicazioni-ricevi, ritiro ogni 5 minuti); «Togli dal registro» (recuperabile) e «Blocca mittente».
+// Versione 362 (11/11/2026): «Consulta F24» nel menu «4. Carica F24» — tutti gli F24 con stato, come e quando sono stati pagati, F24, quietanza e pagina dell'estratto conto.
 // Versione 345 (02/11/2026): pagina F24 arrivati — un'archiviazione sola alla volta; un file esce da DA SMISTARE solo se è identico a un file dell'ARCHIVIO (altrimenti prima si conserva intero in ORIGINALI RICEVUTI); scrittura riprovata sul disco di rete.
 // Versione 344 (02/11/2026): pagina F24 arrivati — «Archivia» archivia le righe a posto e lascia in sospeso le rosse con i loro file; la quietanza senza F24 ha il nome «F24 <data del pagamento>.pdf».
 // Versione 343 (02/11/2026): pagina F24 arrivati provata sullo stato vero — prompt di lettura versione 3 (file indicati con il percorso dentro DA SMISTARE);
@@ -71,6 +72,7 @@ import { ISTRUZIONI_BANCHE, ISTRUZIONI_INCASSI_PAGAMENTI, ISTRUZIONI_PRIMA_NOTA 
 // Versione 339 (ordine del Dott. Bizzarri del 31/10/2026): la pagina «F24 arrivati: controlla e archivia» prende il posto dei prompt
 // di smistamento e di carico e della pagina «Carica F24» (i loro file restano, ma non sono più nel menu).
 import F24Arrivati from "./F24Arrivati";
+import ConsultaF24 from "./ConsultaF24"; // Versione 362
 import DocumentiArrivati from "./DocumentiArrivati"; // versione 355
 import { ISTRUZIONI_DOCUMENTI_ARRIVATI } from "./istruzioniDocumentiArrivati"; // versione 356
 import { ISTRUZIONI_F24_ARRIVATI } from "./istruzioniF24Arrivati";
@@ -205,6 +207,8 @@ const MENU = [
       // «Carico nel programma», le istruzioni nuove e la pagina che legge, controlla e archivia (cloud e programma).
       { id: "istr-generali-f24", label: "Istruzioni Generali", icon: "📖" },
       { id: "f24-arrivati", label: "F24 arrivati: controlla e archivia", icon: "🧾" },
+      // Versione 362 (ordini del Dott. Bizzarri dell'11/11/2026 ore 12:52 e 13:07): consultazione degli F24, con come e quando sono stati pagati e le prove
+      { id: "consulta-f24", label: "Consulta F24", icon: "🔍" },
     ]},
     // Versione 289: le istruzioni, dal Word approvato dal Dott. Bizzarri il 23/10/2026.
     { tipo: "sottocartella", id: "sub-dati-sistema", label: "5. Sistema i dati caricati", icon: "🧹", voci: [
@@ -553,7 +557,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 361</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 362</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -782,6 +786,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
         {tab === "vendite-per-anno" && <VenditePerAnno />}
         {tab === "prompt-cedolini" && <PromptCedolini />}
         {tab === "f24-arrivati" && <F24Arrivati utente={utente} accesso={accesso} />}
+        {tab === "consulta-f24" && <ConsultaF24 utente={utente} />}
         {tab === "istr-documenti-arrivati" && <DocumentoIstruzioni doc={ISTRUZIONI_DOCUMENTI_ARRIVATI} />}
         {tab === "documenti-arrivati" && <DocumentiArrivati utente={utente} accesso={accesso} vediF24={puo("f24-arrivati")} />}
         {tab === "istr-generali-f24" && <DocumentoIstruzioni doc={ISTRUZIONI_F24_ARRIVATI} />}
