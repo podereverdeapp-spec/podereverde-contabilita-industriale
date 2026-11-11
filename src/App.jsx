@@ -131,6 +131,7 @@ import ColtClassifiche from "./ColtClassifiche";
 import ColtRegistroLavori from "./ColtRegistroLavori";
 import Ricerca from "./Ricerca";
 import RegistroComunicazioni from "./RegistroComunicazioni";
+import Posta, { contaPostaDaAprire } from "./Posta"; // versione 364
 import CompletaAnagraficheAruba from "./CompletaAnagraficheAruba";
 import Parametri from "./Parametri";
 import Glossario from "./Glossario";
@@ -147,6 +148,10 @@ import { supabase } from "./supabase"; // versione 337: conteggio delle richiest
 
 const MENU = [
   { tipo: "voce", id: "dashboard", label: "Dashboard", icon: "📊" },
+  // Versione 364 (ordine del Dott. Bizzarri dell'11/11/2026 ore 13:09–13:19): la Posta della casella podereverdeapp, con il numero delle mail da aprire
+  { tipo: "cartella", id: "cart-posta", label: "Posta", icon: "📬", contenuto: [
+    { tipo: "voce", id: "posta", label: "Posta in arrivo e inviata", icon: "✉️" },
+  ]},
   // Versione 239: Report di Analisi (cosa va, cosa non va, cause e interventi), richiesti il 09/10/2026
   { tipo: "cartella", id: "cart-report-analisi", label: "Report di Analisi", icon: "🧭", contenuto: [
     { tipo: "voce", id: "istr-report-analisi", label: "Istruzioni", icon: "📖" },
@@ -525,7 +530,17 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
   // Versione 363: F24 da pagare (scaduti o entro 7 giorni) e F24 da caricare dalla cartella FISCALE, per chi ha la parte «4. Carica F24»
   const vedeF24 = puo("consulta-f24") || puo("f24-arrivati");
   const { avvisi: avvisiF24, numero: numeroF24 } = useAvvisiF24(vedeF24, tab);
-  const AVVISI = { "sub-dati-f24": numeroF24, "consulta-f24": numeroF24, "cart-modelli4": modelli4Aperti.totale, "modelli4-chiusure": modelli4Aperti.totale, "cart-animali": verificheAnimali, "verifiche-ovini": verificheAnimali, "cart-alimentaria": senzaComposizione, "alimenti-senza-composizione": senzaComposizione, "cart-fatture": (anomalieAperte || 0) + numeroF24, "sub-dati-controllo": anomalieAperte || 0, "registro-controlli": anomalieAperte || 0, "cart-emissione-fatture": daFatturare + allarmiAttiva, "sub-fatturazione-animali": daFatturare, "fatt-animali-da-fatturare": daFatturare, "fatt-animali-prepara": daFatturare, "sub-controllo-attiva": allarmiAttiva, "controllo-attiva": allarmiAttiva, "cart-accessi-registro": richiesteAccesso, "sub-accessi": richiesteAccesso, "accessi": richiesteAccesso };
+  // Versione 364: mail ricevute che nessuno ha ancora aperto (all'apertura, a ogni cambio di pagina e ogni minuto)
+  const [postaDaAprire, setPostaDaAprire] = useState(0);
+  useEffect(() => {
+    let attivo = true;
+    const controlla = () => contaPostaDaAprire().then(n => { if (attivo) setPostaDaAprire(n); }).catch(() => {});
+    controlla();
+    const timer = setInterval(controlla, 60 * 1000);
+    window.addEventListener("posta-cambiata", controlla);
+    return () => { attivo = false; clearInterval(timer); window.removeEventListener("posta-cambiata", controlla); };
+  }, [tab]);
+  const AVVISI = { "cart-posta": postaDaAprire, "posta": postaDaAprire, "sub-dati-f24": numeroF24, "consulta-f24": numeroF24, "cart-modelli4": modelli4Aperti.totale, "modelli4-chiusure": modelli4Aperti.totale, "cart-animali": verificheAnimali, "verifiche-ovini": verificheAnimali, "cart-alimentaria": senzaComposizione, "alimenti-senza-composizione": senzaComposizione, "cart-fatture": (anomalieAperte || 0) + numeroF24, "sub-dati-controllo": anomalieAperte || 0, "registro-controlli": anomalieAperte || 0, "cart-emissione-fatture": daFatturare + allarmiAttiva, "sub-fatturazione-animali": daFatturare, "fatt-animali-da-fatturare": daFatturare, "fatt-animali-prepara": daFatturare, "sub-controllo-attiva": allarmiAttiva, "controllo-attiva": allarmiAttiva, "cart-accessi-registro": richiesteAccesso, "sub-accessi": richiesteAccesso, "accessi": richiesteAccesso };
 
   function vaiA(pageId) {
     if (!puo(pageId)) return; // versione 337: pagina non data a questa persona
@@ -562,7 +577,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 363</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 364</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -861,6 +876,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
         {tab === "istr-incassi-pagamenti" && <DocumentoIstruzioni doc={ISTRUZIONI_INCASSI_PAGAMENTI} />}
         {tab === "istr-prima-nota" && <DocumentoIstruzioni doc={ISTRUZIONI_PRIMA_NOTA} />}
         {tab === "registro-comunicazioni" && <RegistroComunicazioni />}
+        {tab === "posta" && <Posta />}
         {tab === "completa-anagrafiche" && <CompletaAnagraficheAruba />}
         {tab === "glossario" && <Glossario />}
         {tab === "parametri" && <Parametri />}

@@ -7,6 +7,7 @@ export const PARTE_ACCESSI = "sub-accessi";
 
 export const PARTI = [
   { id: "dashboard", label: "Dashboard" },
+  { id: "cart-posta", label: "Posta" }, // versione 364
   { id: "cart-report-analisi", label: "Report di Analisi" },
   { id: "cart-prezzi-acquisto", label: "Controllo Prezzi di Acquisto" },
   { id: "sub-dati-fatture-passive", label: "Carica Dati Contabilità → 1. Carica Fatture Passive" },
