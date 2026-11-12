@@ -32,11 +32,21 @@ export function fattureCandidate(a, scadenze, fornitori, scarti, agganciate = []
 
 // Lo stato da mostrare (colore e frase), dal più urgente
 export function statoAnticipo(a, candidate, oggi) {
+  if (a.stato === "chiuso" && a.tipo === "caparra") return { codice: "chiuso", nome: { imputata: "Imputata alla fattura", restituita: "Restituita", trattenuta: "Trattenuta (perdita)", restituita_doppio: "Restituita il doppio" }[a.esito] || "Chiusa", colore: a.esito === "trattenuta" ? "rosso" : "verde", testo: a.motivo_chiusura || (a.esito === "imputata" ? "Caparra entrata nella fattura della consegna" : "Chiusa") };
   if (a.stato === "chiuso") return { codice: "chiuso", nome: "Chiuso", colore: "verde", testo: a.motivo_chiusura ? `Chiuso: ${a.motivo_chiusura}` : "Chiuso: fattura controllata" };
   if (a.stato === "annullato") return { codice: "annullato", nome: "Annullato", colore: "grigio", testo: a.motivo_chiusura || "Annullato" };
   if (a.codice_attesa && !a.confermato_il) return { codice: "in banca", nome: "In attesa della banca", colore: "blu", testo: `Pagamento ${a.codice_attesa} disposto il ${dataIt(a.data_disposizione || a.data_pagamento)}: si controlla dopo l'addebito della banca` };
   const resto = Number(a.residuo);
   const parte = Number(a.abbinato) > 0.005;
+  // versione 374 — caparra confirmatoria (decisioni del Dott. Bizzarri del 12/11/2026 ore 17:57 e 18:05): niente «fattura in ritardo» né TD29;
+  // fino alla consegna prevista giallo, dopo arancione «consegna in ritardo»; arrivata la fattura, da controllare e chiudere come gli anticipi
+  if (a.tipo === "caparra") {
+    if (parte && Math.abs(resto) < 0.005) return { codice: "da chiudere", nome: "Coperta: da chiudere", colore: "azzurro", testo: "La fattura della consegna copre tutta la caparra: controllare (prezzo intero in fattura) e chiudere" };
+    if (candidate.length) return { codice: "da controllare", nome: "Fattura arrivata: da controllare", colore: "azzurro", testo: `${candidate.length === 1 ? "1 fattura" : candidate.length + " fatture"} del fornitore da mettere accanto alla caparra e controllare` };
+    if (!a.consegna_prevista) return { codice: "senza consegna", nome: "Caparra: manca la consegna prevista", colore: "arancione", testo: "Scrivere la data di consegna prevista (dal preventivo o chiedendo al fornitore)" };
+    if (oggi > a.consegna_prevista) return { codice: "consegna in ritardo", nome: "Consegna in ritardo", colore: "arancione", testo: `La consegna era prevista entro il ${dataIt(a.consegna_prevista)} (${giorniTra(a.consegna_prevista, oggi)} giorni fa): chiedere al fornitore` };
+    return { codice: "in attesa", nome: parte ? "Caparra coperta in parte" : "Caparra: consegna attesa", colore: "giallo", testo: `Caparra: consegna attesa entro il ${dataIt(a.consegna_prevista)}` };
+  }
   const nota = candidate.length ? ` C'è ${candidate.length === 1 ? "1 fattura" : candidate.length + " fatture"} del fornitore da controllare accanto.` : "";
   // coperto del tutto: si chiude (le altre fatture aperte del fornitore non c'entrano)
   if (parte && Math.abs(resto) < 0.005) return { codice: "da chiudere", nome: "Coperto: da chiudere", colore: "azzurro", testo: "Le fatture agganciate coprono tutto l'anticipo: controllare e chiudere" };
@@ -52,7 +62,8 @@ export function statoAnticipo(a, candidate, oggi) {
 export const dataIt = d => { const s = String(d || "").slice(0, 10); const [a, m, g] = s.split("-"); return g ? `${g}/${m}/${a}` : "—"; };
 
 // Gli anticipi che chiedono un'azione (per il numero rosso nel menu e la striscia in alto)
-export const DA_GUARDARE = new Set(["da controllare", "da chiudere", "in ritardo", "segnalazione"]);
+export const DA_GUARDARE = new Set(["da controllare", "da chiudere", "in ritardo", "segnalazione", "consegna in ritardo", "senza consegna"]);
+export const NOME_TIPO = { acconto: "Acconto su fattura da ricevere", caparra: "Caparra confirmatoria su preventivo" };   // versione 374
 
 // Righe della banca del 2026 in uscita che sembrano anticipi e non hanno ancora un movimento confermato (da registrare in «Conferma dei movimenti»)
 export function righeSospette(righe, confermate, documentiVivi) {
@@ -65,7 +76,7 @@ export function righeSospette(righe, confermate, documentiVivi) {
 // possono essere anticipi registrati come «Acconto su fattura» o «Saldo fattura» → «Segna come anticipo»
 export function movimentiDaSegnare(movimenti, conAbbinamenti) {
   return movimenti.filter(m => m.verso === "uscita" && m.confermato_il && !m.stornato_il && m.natura !== "STORNO" && m.causale_gruppo === "Fatture"
-    && m.causale_voce !== "Acconto su fattura da ricevere" && !conAbbinamenti.has(m.id) && PAROLE_ANTICIPO.test(String(m.causale || "")))
+    && m.causale_voce !== "Acconto su fattura da ricevere" && m.causale_voce !== "Caparra confirmatoria su preventivo" && !conAbbinamenti.has(m.id) && PAROLE_ANTICIPO.test(String(m.causale || "")))
     .sort((a, b) => String(a.data).localeCompare(String(b.data)) || a.id - b.id);
 }
 

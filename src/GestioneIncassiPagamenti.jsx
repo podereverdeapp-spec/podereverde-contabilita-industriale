@@ -5,6 +5,8 @@ import { btn, input, scheda } from "./stileAruba";
 import { fetchAllPages } from "./parsingUtils";
 import { euro } from "./analisiDocumentoBanca";
 import { causaleAnticipo } from "./calcoloAnticipi";
+import { caricaDatiPrezzi, analisiPrezzi, it as itPrezzo, data as dataPrezzo } from "./calcoloVariazionePrezzi";
+import { aumentiPerFattura, testoAumenti, NOME_GRAVITA } from "./calcoloAumentiFattura";
 import {
   SEZIONI, GRUPPI_SEZIONE, vociDellaSezione, MODALITA_USCITA, MODALITA_ENTRATA, modalitaAmmessa, MODALITA_DA_XML, NOME_MP,
   ibanPulito, ibanValido, ibanBello, abiDiIban, pulisciCausale, causaleValida, componiCausale, statoAttesa, oggiRoma, dataIt, giorniLavorativi,
@@ -21,8 +23,9 @@ import {
 
 // Versione 370: «Anticipo su fattura da ricevere» subito dopo «Pagamento fatture» (pagamento su proforma, preventivo o offerta)
 const TAB = [...SEZIONI.map(s => ({ id: s.id, nome: s.nome })), { id: "attesa", nome: "In attesa della banca" }, { id: "anomalie", nome: "Anomalie" }]
-  .flatMap(t => t.id === "pagamento_fatture" ? [t, { id: "anticipo", nome: "Anticipo su fattura da ricevere" }] : [t]);
+  .flatMap(t => t.id === "pagamento_fatture" ? [t, { id: "anticipo", nome: "Anticipo o caparra su fattura da ricevere" }] : [t]);
 const ANTICIPO = "Acconto su fattura da ricevere";
+const CAPARRA = "Caparra confirmatoria su preventivo";   // versione 374 (decisione del Dott. Bizzarri del 12/11/2026 ore 17:57)
 const copia = t => { try { navigator.clipboard.writeText(String(t)); } catch { /* il browser non permette: si copia a mano */ } };
 const importoIt = n => Number(n).toFixed(2).replace(".", ",");
 const leggiImporto = t => { const s = String(t || "").trim().replace(/\s|€/g, ""); if (!s) return null; const x = s.includes(",") ? s.replace(/\./g, "").replace(",", ".") : s;
@@ -239,6 +242,38 @@ function SezioneFatture({ sezione, base, fatto, oggi }) {
   const [lavoro, setLavoro] = useState(false); const [errore, setErrore] = useState(""); const [erroreStorico, setErroreStorico] = useState("");
   const cambia = (k, x) => setV(o => ({ ...o, [k]: x }));
   const aperte = base.scadenze.filter(s => s.lato === lato);
+  // versione 374: «Prezzo aumentato» (stessi numeri del «Controllo Prezzi di Acquisto»); sui rossi «Visto» obbligatorio prima di pagare
+  const [aumenti, setAumenti] = useState(null); const [erroreAumenti, setErroreAumenti] = useState("");
+  const [visti, setVisti] = useState(new Map()); const [giroVisti, setGiroVisti] = useState(0); const [apertoAumento, setApertoAumento] = useState(null);
+  const [notaVisto, setNotaVisto] = useState(""); const [dottore, setDottore] = useState(false);
+  useEffect(() => { if (!pag) return; (async () => {
+    try { setAumenti(aumentiPerFattura(analisiPrezzi(await caricaDatiPrezzi()))); }
+    catch (e) { setAumenti(null); setErroreAumenti("Controllo dei prezzi non letto: i prezzi aumentati non si vedono (" + e.message + ")"); }
+    const u = await supabase.auth.getUser(); const id = u.data?.user?.id;
+    if (id) { const p = await supabase.from("profili").select("ruolo").eq("id", id).maybeSingle(); setDottore(p.data?.ruolo === "admin"); }
+  })(); }, [pag]);
+  useEffect(() => { if (!pag) return; (async () => {
+    const r = await supabase.from("ci_prezzo_visti").select("*").order("visto_il", { ascending: false });
+    if (r.error) setErroreAumenti(e => e || "Visti sui prezzi aumentati non letti: va lanciato il file 2_contabilita_strutture_v374_prezzo_aumentato.sql (" + r.error.message + ")");
+    else {
+      const ids = [...new Set((r.data || []).map(x => x.visto_da).filter(Boolean))];
+      const pr = ids.length ? await supabase.from("profili").select("id, nome, cognome").in("id", ids) : { data: [] };
+      const nomi = Object.fromEntries((pr.data || []).map(x => [x.id, `${x.nome || ""} ${x.cognome || ""}`.trim()]));
+      setVisti(new Map((r.data || []).map(x => [x.fattura_id, { ...x, nome: nomi[x.visto_da] || "—" }])));
+    }
+  })(); }, [pag, giroVisti]);
+  async function segnaVisto(s, f) {
+    setLavoro(true); setErrore("");
+    const r = await supabase.rpc("ci_prezzo_visto", { p_fattura: s.fattura_id, p_gravita: f.gravita, p_dettaglio: `Fattura ${s.numero_documento} del ${dataIt(s.data_documento)}: ${testoAumenti(f)}`, p_nota: notaVisto });
+    setLavoro(false);
+    if (r.error) return setErrore("«Visto» non registrato: " + r.error.message);
+    setNotaVisto(""); setGiroVisti(g => g + 1);
+  }
+  async function segnaLetto(id) {
+    const r = await supabase.rpc("ci_prezzo_visto_letto", { p_id: id });
+    if (r.error) return setErrore("Non segnato letto: " + r.error.message);
+    setGiroVisti(g => g + 1);
+  }
   const soggetti = useMemo(() => {
     const per = new Map();
     for (const s of aperte) { const id = pag ? s.fornitore_id : s.cliente_id; if (!id) continue; const x = per.get(id) || { id, n: 0, resto: 0, scadute: 0, attesa: 0 };
@@ -290,6 +325,9 @@ function SezioneFatture({ sezione, base, fatto, oggi }) {
   }
   if (totale > 5000 && !v.soglia_vista) problemi.push("spuntare «Ho visto: sopra 5.000 €»");
   if (erroreStorico && pag) problemi.push("storico delle fatture non letto: riprovare");
+  if (pag && aumenti === null && scelte.length) problemi.push(erroreAumenti ? "controllo dei prezzi aumentati non letto: ricaricare la pagina (senza il controllo non si paga)" : "attendere il controllo dei prezzi aumentati");
+  if (pag && aumenti) for (const s of scelte) { const f = s.fattura_id && aumenti.get(s.fattura_id);
+    if (f && f.gravita === "alta" && !visti.has(s.fattura_id)) problemi.push(`prezzo aumentato con gravità alta nella fattura ${s.numero_documento}: premere «Visto»`); }
   async function invia() {
     if (problemi.length || lavoro) return;
     setLavoro(true); setErrore("");
@@ -306,7 +344,14 @@ function SezioneFatture({ sezione, base, fatto, oggi }) {
         : `Quando la banca lo accredita e l'estratto è caricato, confermarlo in «Conferma dei movimenti».`,
       copie: [["Beneficiario", pag ? nome : ""], ["IBAN", pag && bonifico ? ibanBello(ib) : ""], ["Importo", importoIt(totale)], ["Causale", causale], ["Data di esecuzione", dataIt(v.data_disposizione)]].filter(x => x[1]) });
   }
+  const daLeggere = pag && dottore ? [...visti.values()].filter(x => !x.letto_dal_dottore_il && x.gravita === "alta") : [];
   return <div>
+    {daLeggere.length > 0 && <div style={{ ...scheda, border: `2px solid ${C.red}`, background: `${C.red}0D` }}>
+      <div style={{ fontWeight: 800, color: C.red }}>⚠️ Prezzi aumentati (gravità alta) visti prima del pagamento: {daLeggere.length}</div>
+      {daLeggere.map(x => <div key={x.id} style={{ fontSize: 12.5, borderTop: `1px solid ${C.border}`, padding: "4px 0", display: "flex", gap: 8, alignItems: "flex-start" }}>
+        <div style={{ flex: 1 }}>{x.dettaglio}<div style={{ color: C.muted }}>Visto da {x.nome} il {dataIt(String(x.visto_il).slice(0, 10))}{x.nota ? ` — nota: ${x.nota}` : ""}</div></div>
+        <button style={{ ...btn(false), height: 26 }} onClick={() => segnaLetto(x.id)}>Letto</button></div>)}
+    </div>}
     {!sogg && <div style={scheda}>
       <div style={{ fontWeight: 800, color: C.primary, marginBottom: 6 }}>{pag ? "Quale fornitore si paga?" : "Quale cliente paga?"}</div>
       <input style={{ ...input, width: "100%", maxWidth: 520 }} placeholder="Cerca: nome anche parziale, partita IVA, numero della fattura o importo" value={cerca} onChange={e => setCerca(e.target.value)} />
@@ -328,12 +373,13 @@ function SezioneFatture({ sezione, base, fatto, oggi }) {
         <button style={btn(false)} onClick={() => { setSogg(null); setSpunte({}); }}>← Cambia {lato}</button>
       </div>
       {erroreStorico && <div style={{ color: C.red, fontWeight: 700, fontSize: 12.5 }}>⚠️ {erroreStorico}</div>}
+      {pag && erroreAumenti && <div style={{ color: C.red, fontWeight: 700, fontSize: 12.5 }}>⚠️ {erroreAumenti}</div>}
       {cambi.length > 0 && pag && <div style={{ color: C.red, fontSize: 12.5, fontWeight: 700, margin: "6px 0" }}>Attenzione: l'IBAN di questo fornitore è cambiato nelle fatture ({cambi.map(s => `dalla fattura ${s.numero_documento} del ${dataIt(s.data_documento)}: ${ibanBello(s.iban)}`).join("; ")}). Prima di pagare con il nuovo IBAN serve la conferma per telefono.</div>}
       <div style={{ fontSize: 12.5, color: C.muted, margin: "6px 0" }}>Fatture da {pag ? "pagare" : "incassare"} in ordine di scadenza (scadute in rosso). Spuntare quelle che si {pag ? "pagano" : "incassano"} con lo stesso movimento; l'importo si può ridurre per un acconto (una sola fattura in acconto).</div>
       <div style={{ overflowX: "auto" }}><table style={{ width: "100%", fontSize: 12.5, background: "#fff" }}><thead><tr style={{ background: C.primary, color: "#fff" }}>
         {["", "Numero", "Data", "Scadenza", "Totale", pag ? "Già pagato" : "Già incassato", "Resto", pag ? "Da pagare ora" : "Da incassare ora", "Modalità nella fattura", "IBAN nella fattura", "Stato"].map(h => <th key={h} style={{ padding: "6px 8px", textAlign: "left", whiteSpace: "nowrap" }}>{h}</th>)}</tr></thead>
         <tbody>{sue.map(s => { const inPag = Number(s.in_attesa_della_banca) > 0 && Number(s.residuo) <= 0.005; const scad = s.data_scadenza && s.data_scadenza < oggi && !inPag; const sp = spunte[s.scadenza_id] !== undefined;
-          return <tr key={s.scadenza_id} style={{ borderBottom: `1px solid ${C.border}`, background: inPag ? "#EEF3F8" : sp ? "#F2F7EE" : "#fff", color: inPag ? C.muted : C.text }}>
+          return [<tr key={s.scadenza_id} style={{ borderBottom: `1px solid ${C.border}`, background: inPag ? "#EEF3F8" : sp ? "#F2F7EE" : "#fff", color: inPag ? C.muted : C.text }}>
             <td style={{ padding: "5px 8px" }}>{inPag ? "—" : <input type="checkbox" checked={sp} onChange={e => setSpunte(o => { const n = { ...o }; if (e.target.checked) n[s.scadenza_id] = importoIt(s.residuo); else delete n[s.scadenza_id]; return n; })} />}</td>
             <td style={{ padding: "5px 8px", fontWeight: 700 }}>{s.numero_documento}</td><td style={{ padding: "5px 8px" }}>{dataIt(s.data_documento)}</td>
             <td style={{ padding: "5px 8px", color: scad ? C.red : C.text, fontWeight: scad ? 700 : 400 }}>{dataIt(s.data_scadenza)}{scad ? ` (${Math.round((Date.parse(oggi) - Date.parse(s.data_scadenza)) / 86400000)} giorni)` : ""}</td>
@@ -342,7 +388,13 @@ function SezioneFatture({ sezione, base, fatto, oggi }) {
             <td style={{ padding: "5px 8px" }}>{sp ? <input style={{ ...input, width: 110, borderColor: !leggiImporto(spunte[s.scadenza_id]) || leggiImporto(spunte[s.scadenza_id]) > Number(s.residuo) + 0.005 ? C.red : C.border }} value={spunte[s.scadenza_id]} onChange={e => setSpunte(o => ({ ...o, [s.scadenza_id]: e.target.value }))} /> : ""}</td>
             <td style={{ padding: "5px 8px" }}>{NOME_MP[s.modalita_pagamento] || s.modalita_pagamento || "—"}</td>
             <td style={{ padding: "5px 8px", fontSize: 11.5 }}>{s.iban ? ibanBello(s.iban) : "—"}</td>
-            <td style={{ padding: "5px 8px", color: inPag ? C.blue : scad ? C.red : C.text }}>{s.stato}</td></tr>; })}</tbody></table></div>
+            <td style={{ padding: "5px 8px", color: inPag ? C.blue : scad ? C.red : C.text }}>{s.stato}
+              {pag && aumenti && s.fattura_id && aumenti.get(s.fattura_id) && (() => { const f = aumenti.get(s.fattura_id); const col = f.gravita === "alta" ? C.red : f.gravita === "media" ? "#D9730D" : C.green; const vi = visti.get(s.fattura_id);
+                return <div><button onClick={() => setApertoAumento(apertoAumento === s.scadenza_id ? null : s.scadenza_id)} style={{ border: `1px solid ${col}`, background: `${col}18`, color: col, fontWeight: 800, borderRadius: 6, padding: "1px 6px", cursor: "pointer", fontSize: 11.5, whiteSpace: "nowrap" }}>
+                  ▲ Prezzo aumentato · {NOME_GRAVITA[f.gravita]}</button>{vi ? <div style={{ fontSize: 11, color: C.green }}>✔ Visto</div> : f.gravita === "alta" ? <div style={{ fontSize: 11, color: C.red, fontWeight: 700 }}>«Visto» obbligatorio</div> : null}</div>; })()}</td></tr>,
+            pag && aumenti && apertoAumento === s.scadenza_id && aumenti.get(s.fattura_id) && <tr key={"au" + s.scadenza_id}><td colSpan={11} style={{ padding: 8, background: "#FFF8F0", borderBottom: `1px solid ${C.border}` }}>
+              <DettaglioAumento f={aumenti.get(s.fattura_id)} vi={visti.get(s.fattura_id)} nomi={base.nomi} nota={notaVisto} setNota={setNotaVisto} lavoro={lavoro} visto={() => segnaVisto(s, aumenti.get(s.fattura_id))} />
+            </td></tr>]; })}</tbody></table></div>
       {!sue.length && <div style={{ color: C.muted }}>Nessuna fattura aperta.</div>}
     </div>}
     {sogg && scelte.length > 0 && <div style={{ ...scheda, border: `2px solid ${C.primary}` }}>
@@ -371,6 +423,27 @@ function SezioneFatture({ sezione, base, fatto, oggi }) {
   </div>;
 }
 
+// ---------------- Versione 374: dettaglio del prezzo aumentato di una fattura, con «Visto» ----------------
+function DettaglioAumento({ f, vi, nomi, nota, setNota, lavoro, visto }) {
+  return <div style={{ fontSize: 12.5 }}>
+    <b>Prezzi aumentati in questa fattura</b> <span style={{ color: C.muted }}>(stessi numeri del «Controllo Prezzi di Acquisto»: prezzo contro la fattura precedente dello stesso fornitore; «in un anno» = aumento × quantità comprate negli ultimi 12 mesi)</span>
+    <table style={{ borderCollapse: "collapse", marginTop: 4, background: "#fff" }}><thead><tr style={{ background: "#F4F4F0" }}>
+      {["Prodotto", "Prima", "Adesso", "Aumento", "In un anno", "Gravità"].map(h => <th key={h} style={{ padding: "3px 8px", textAlign: "left" }}>{h}</th>)}</tr></thead>
+      <tbody>{f.righe.map((r, i) => <tr key={i} style={{ borderTop: `1px solid ${C.border}` }}>
+        <td style={{ padding: "3px 8px", fontWeight: 700 }}>{r.famiglia}</td>
+        <td style={{ padding: "3px 8px" }}>{itPrezzo(r.prima, r.decimali)} {r.unita}<div style={{ color: C.muted, fontSize: 11 }}>fattura {r.numeroPrima} del {dataPrezzo(r.dataPrima)}{r.cambioFornitore ? ` (${r.fornitorePrima})` : ""}</div></td>
+        <td style={{ padding: "3px 8px" }}>{itPrezzo(r.ora, r.decimali)} {r.unita}</td>
+        <td style={{ padding: "3px 8px", color: C.red, fontWeight: 700 }}>+{itPrezzo(r.variazione, 1)}%</td>
+        <td style={{ padding: "3px 8px", fontWeight: 700 }}>{itPrezzo(r.impatto, 0)} €</td>
+        <td style={{ padding: "3px 8px", color: r.gravita === "alta" ? C.red : r.gravita === "media" ? "#D9730D" : C.green, fontWeight: 700 }}>{NOME_GRAVITA[r.gravita]}</td></tr>)}</tbody></table>
+    <div style={{ color: C.muted, marginTop: 4 }}>Il grafico di ogni prodotto è in «Controllo Prezzi di Acquisto» → «Attenzione Variazione Prezzi». Se l'aumento non era concordato, prima di pagare chiedere al fornitore.</div>
+    {vi ? <div style={{ color: C.green, fontWeight: 700, marginTop: 4 }}>✔ Visto da {vi.nome} il {dataIt(String(vi.visto_il).slice(0, 10))}{vi.nota ? ` — nota: ${vi.nota}` : ""}</div>
+      : <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+        <input style={{ ...input, flex: 1, minWidth: 220 }} placeholder="Nota (facoltativa): per esempio «aumento concordato al telefono»" value={nota} onChange={e => setNota(e.target.value)} />
+        <button style={btn(true, f.gravita === "alta" ? C.red : undefined)} disabled={lavoro} onClick={visto}>Visto{f.gravita === "alta" ? " (avvisa il Dott. Bizzarri)" : ""}</button></div>}
+  </div>;
+}
+
 // ---------------- Versione 370: Anticipo su fattura da ricevere ----------------
 // Pagamento prima della fattura (proforma, preventivo, offerta): nessuna fattura da spuntare, il documento è obbligatorio.
 // Nasce in attesa della banca come gli altri pagamenti; il database crea l'anticipo, che resta in «Anticipi in attesa di fattura»
@@ -378,7 +451,7 @@ function SezioneFatture({ sezione, base, fatto, oggi }) {
 const TIPI_DOC = [["proforma", "Proforma"], ["preventivo", "Preventivo"], ["offerta", "Offerta"], ["ordine", "Ordine"], ["contratto", "Contratto"], ["altro", "Altro"]];
 function SezioneAnticipo({ base, fatto, oggi }) {
   const [cerca, setCerca] = useState(""); const [sogg, setSogg] = useState(null); const [tutte, setTutte] = useState([]); const [erroreStorico, setErroreStorico] = useState("");
-  const [v, setV] = useState({ importo: "", tipo: "proforma", numero: "", data_documento: "", modalita: "", conto_id: "", data_disposizione: oggi, aggiunta: "",
+  const [v, setV] = useState({ voce: ANTICIPO, consegna_prevista: "", importo: "", tipo: "proforma", numero: "", data_documento: "", modalita: "", conto_id: "", data_disposizione: oggi, aggiunta: "",
     iban_scelta: "", iban_scritto: "", iban_confermato: false, iban_diverso_motivo: "", note: "", soglia_vista: false });
   const [lavoro, setLavoro] = useState(false); const [errore, setErrore] = useState("");
   const cambia = (k, x) => setV(o => ({ ...o, [k]: x }));
@@ -397,13 +470,16 @@ function SezioneAnticipo({ base, fatto, oggi }) {
   const bonifico = ["Bonifico", "Bonifico istantaneo"].includes(v.modalita);
   const nomeTipo = TIPI_DOC.find(t => t[0] === v.tipo)?.[1] || "Documento";
   const documento = v.numero.trim() && v.data_documento ? `${nomeTipo} n. ${v.numero.trim()} del ${dataIt(v.data_documento)}` : "";
-  const causale = pulisciCausale([causaleAnticipo(v.tipo, v.numero, v.data_documento), v.aggiunta].filter(Boolean).join(" "));
+  const caparra = v.voce === CAPARRA;
+  const causale = pulisciCausale([caparra ? causaleAnticipo(v.tipo, v.numero, v.data_documento).replace(/^ACCONTO SU/, "CAPARRA CONFIRMATORIA SU") : causaleAnticipo(v.tipo, v.numero, v.data_documento), v.aggiunta].filter(Boolean).join(" "));
   const conosciuti = [...new Set(tutte.map(s => s.iban).filter(Boolean))];
   const ib = ibanDelModulo(v);
   const problemi = [];
   if (!sogg) problemi.push("scegliere il fornitore");
   if (!imp) problemi.push("scrivere l'importo dell'anticipo");
   if (!v.numero.trim() || !v.data_documento) problemi.push("scrivere numero e data della proforma, del preventivo o dell'offerta");
+  if (caparra && !v.consegna_prevista) problemi.push("scrivere la data di consegna prevista (caparra)");
+  if (caparra && v.consegna_prevista && v.data_disposizione && v.consegna_prevista < v.data_disposizione) problemi.push("la consegna prevista è prima del pagamento");
   if (!v.modalita) problemi.push("scegliere come si paga");
   if (v.modalita === "Altro" && !String(v.modalita_altro || "").trim()) problemi.push("scrivere quale modalità");
   if (!v.conto_id) problemi.push("scegliere con che cosa");
@@ -417,19 +493,34 @@ function SezioneAnticipo({ base, fatto, oggi }) {
     if (problemi.length || lavoro) return;
     setLavoro(true); setErrore("");
     const p = { sezione: "pagamento_fatture", conto_id: Number(v.conto_id), modalita: v.modalita, modalita_altro: v.modalita_altro || "", carta_di_debito_id: v.carta_di_debito_id || "",
-      data_disposizione: v.data_disposizione, importo: imp, causale_gruppo: "Fatture", causale_voce: ANTICIPO, fornitore_id: sogg, cliente_id: "",
+      data_disposizione: v.data_disposizione, importo: imp, causale_gruppo: "Fatture", causale_voce: caparra ? CAPARRA : ANTICIPO, fornitore_id: sogg, cliente_id: "",
       causale: bonifico || causale ? causale : "", iban: bonifico ? ib : "", iban_confermato: !!v.iban_confermato, iban_diverso_motivo: "", note: v.note || "", documento_riferimento: documento };
     const { data, error } = await supabase.rpc("ci_disponi_movimento", { p });
     setLavoro(false);
     if (error) return setErrore("Il database non l'ha accettato, non è stato registrato niente: " + error.message);
     const nome = base.fornitori.find(a => a.id === sogg)?.nome;
+    // versione 374: la caparra ha la data di consegna prevista (dalla quale partono gli avvisi di consegna)
+    let notaConsegna = "";
+    if (caparra) {
+      const an = await supabase.from("ci_anticipi").select("id").eq("pagamento_id", data.movimento_id).maybeSingle();
+      const r = an.data ? await supabase.rpc("ci_caparra_consegna", { p_anticipo: an.data.id, p_data: v.consegna_prevista, p_motivo: "" }) : { error: an.error || { message: "caparra non trovata" } };
+      notaConsegna = r.error ? ` ATTENZIONE: la data di consegna prevista non è stata salvata (${r.error.message}): scriverla nella scheda della caparra.` : ` Consegna prevista: ${dataIt(v.consegna_prevista)}.`;
+    }
+    if (caparra) return fatto({ titolo: `${data.codice_attesa}: caparra confirmatoria a ${nome} mandata in pagamento — in attesa della banca`,
+      testo: `Adesso, oggi stesso, disporre ${v.modalita === "Bonifico istantaneo" ? "il bonifico istantaneo" : v.modalita.toLowerCase()} in banca con questi dati (pulsanti «Copia»). La caparra è in «Anticipi e caparre in attesa di fattura»: alla consegna la fattura del fornitore si aggancia lì; se l'affare salta si sceglie l'esito (restituita, trattenuta, restituita il doppio).${notaConsegna}`,
+      copie: [["Beneficiario", nome], ["IBAN", bonifico ? ibanBello(ib) : ""], ["Importo", importoIt(imp)], ["Causale", causale], ["Data di esecuzione", dataIt(v.data_disposizione)]].filter(x => x[1]) });
     fatto({ titolo: `${data.codice_attesa}: anticipo a ${nome} mandato in pagamento — in attesa della banca`,
       testo: `Adesso, oggi stesso, disporre ${v.modalita === "Bonifico istantaneo" ? "il bonifico istantaneo" : v.modalita.toLowerCase()} in banca con questi dati (pulsanti «Copia»). L'anticipo è già in «Anticipi in attesa di fattura»: quando arriva la fattura del fornitore si aggancia lì. Se il pagamento non parte, annullarlo in «In attesa della banca».`,
       copie: [["Beneficiario", nome], ["IBAN", bonifico ? ibanBello(ib) : ""], ["Importo", importoIt(imp)], ["Causale", causale], ["Data di esecuzione", dataIt(v.data_disposizione)]].filter(x => x[1]) });
   }
   return <div>
     <div style={scheda}>
-      <div style={{ fontWeight: 800, color: C.primary, marginBottom: 4 }}>Anticipo su fattura da ricevere</div>
+      <div style={{ fontWeight: 800, color: C.primary, marginBottom: 4 }}>Anticipo su fattura da ricevere o caparra confirmatoria</div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+        {[[ANTICIPO, "Acconto su fattura da ricevere", "Pagamento di una parte del prezzo: la fattura è dovuta subito (entro 12 giorni); se non arriva, avviso e segnalazione TD29."],
+          [CAPARRA, "Caparra confirmatoria su preventivo", "Garanzia dell'affare (art. 1385 c.c.), fuori campo IVA (da confermare con lo Studio): nessuna fattura al pagamento; alla consegna entra nella fattura."]].map(([k, n, d]) =>
+          <button key={k} title={d} onClick={() => cambia("voce", k)} style={{ ...btn(v.voce === k), height: "auto", padding: "6px 10px", textAlign: "left", maxWidth: 420 }}><b>{v.voce === k ? "● " : "○ "}{n}</b><br /><span style={{ fontSize: 11.5, fontWeight: 400 }}>{d}</span></button>)}
+      </div>
       <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 8, maxWidth: 1000 }}>Per pagare prima della fattura: su una proforma, un preventivo o un'offerta. Non si spuntano fatture. Il pagamento resta in «Anticipi in attesa di fattura» finché arriva la fattura del fornitore; dal pagamento il fornitore ha 12 giorni per emetterla.</div>
       {!sogg ? <>
         <input style={{ ...input, width: "100%", maxWidth: 520 }} placeholder="Cerca il fornitore: nome anche parziale o partita IVA" value={cerca} onChange={e => setCerca(e.target.value)} />
@@ -447,6 +538,7 @@ function SezioneAnticipo({ base, fatto, oggi }) {
         <label style={L}>Documento<select style={sel(false)} value={v.tipo} onChange={e => cambia("tipo", e.target.value)}>{TIPI_DOC.map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select></label>
         <label style={L}>Numero del documento<input style={sel(!v.numero.trim())} value={v.numero} onChange={e => cambia("numero", e.target.value)} /></label>
         <label style={L}>Data del documento<input type="date" style={sel(!v.data_documento)} value={v.data_documento} onChange={e => cambia("data_documento", e.target.value)} /></label>
+        {caparra && <label style={L}>Data di consegna prevista (caparra)<input type="date" style={sel(!v.consegna_prevista)} value={v.consegna_prevista} onChange={e => cambia("consegna_prevista", e.target.value)} /></label>}
         <ComeEConCheCosa base={base} verso="uscita" v={v} cambia={cambia} importo={imp} />
         <label style={L}>Data di disposizione<input type="date" style={sel(!v.data_disposizione)} value={v.data_disposizione} onChange={e => cambia("data_disposizione", e.target.value)} />
           {v.data_disposizione && v.data_disposizione !== oggi && <span style={{ color: C.yellow, fontWeight: 700 }}>Non è oggi: disporre in banca lo stesso giorno in cui si registra qui.</span>}</label>
@@ -461,7 +553,7 @@ function SezioneAnticipo({ base, fatto, oggi }) {
       {imp > 5000 && <label style={{ display: "block", marginTop: 8, color: C.red, fontWeight: 700, fontSize: 13 }}><input type="checkbox" checked={v.soglia_vista} onChange={e => cambia("soglia_vista", e.target.checked)} /> Ho visto: sopra 5.000 €. Il movimento sarà segnalato tra le anomalie al Dott. Bizzarri e a Teresa Demaria.</label>}
       {problemi.length > 0 && <div style={{ color: C.red, fontSize: 12.5, marginTop: 10 }}>Per confermare: {problemi.join("; ")}.</div>}
       {errore && <div style={{ color: C.red, fontWeight: 700, marginTop: 8 }}>⚠️ {errore}</div>}
-      <div style={{ marginTop: 10 }}><button style={btn(true)} disabled={!!problemi.length || lavoro} onClick={invia}>{lavoro ? "Registro…" : "Conferma e manda in pagamento l'anticipo"}</button></div>
+      <div style={{ marginTop: 10 }}><button style={btn(true)} disabled={!!problemi.length || lavoro} onClick={invia}>{lavoro ? "Registro…" : caparra ? "Conferma e manda in pagamento la caparra" : "Conferma e manda in pagamento l'anticipo"}</button></div>
     </div>}
   </div>;
 }

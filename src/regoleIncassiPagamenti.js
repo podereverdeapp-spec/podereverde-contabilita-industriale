@@ -17,7 +17,7 @@ export const GRUPPI_SEZIONE = {
 };
 const VOCI_ESCLUSE = {
   pagamento_fatture: ["Acconto su fattura da emettere", "Compensazione tra fatture"],
-  incasso_fatture: ["Acconto su fattura da ricevere", "Compensazione tra fatture"],
+  incasso_fatture: ["Acconto su fattura da ricevere", "Caparra confirmatoria su preventivo", "Compensazione tra fatture"],
   altri_pagamenti: ["Versamento F24", "Storno di registrazione"],
   altri_incassi: ["Storno di registrazione"],
   giroconti: [],

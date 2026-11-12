@@ -7,7 +7,7 @@ import { euro } from "./analisiDocumentoBanca";
 import { md5File } from "./md5";
 import { PdfDelDocumento } from "./pdfFatture";
 import { oggiRoma } from "./regoleIncassiPagamenti";
-import { fattureCandidate, statoAnticipo, righeSospette, movimentiDaSegnare, DA_GUARDARE, dataIt } from "./calcoloAnticipi";
+import { fattureCandidate, statoAnticipo, righeSospette, movimentiDaSegnare, DA_GUARDARE, dataIt, NOME_TIPO } from "./calcoloAnticipi";
 
 // Versione 370 — «Gestione incassi e pagamenti» → «Anticipi in attesa di fattura».
 // Decisioni del Dott. Bizzarri del 12/11/2026: un anticipo (pagamento su proforma, preventivo o offerta) resta aperto finché arriva la
@@ -18,7 +18,8 @@ import { fattureCandidate, statoAnticipo, righeSospette, movimentiDaSegnare, DA_
 // ci_sgancia_fattura_anticipo, ci_scarta_fattura_anticipo, ci_segna_anticipo), che ricontrollano tutto.
 
 export const ARCHIVIO_ANTICIPI = "anticipi";
-const COLORI = { verde: C.green, grigio: C.muted, blu: C.blue, azzurro: C.blue, giallo: C.yellow, rosso: C.red };
+const ARANCIONE = "#D9730D";
+const COLORI = { verde: C.green, grigio: C.muted, blu: C.blue, azzurro: C.blue, giallo: C.yellow, rosso: C.red, arancione: ARANCIONE };
 const TIPI_DOCUMENTO = [["proforma", "Proforma"], ["preventivo", "Preventivo"], ["offerta", "Offerta"], ["ordine", "Ordine"], ["contratto", "Contratto"], ["altro", "Altro"]];
 const importoIt = n => Number(n).toFixed(2).replace(".", ",");
 const leggiImporto = t => { const s = String(t || "").trim().replace(/\s|€/g, ""); if (!s) return null; const x = s.includes(",") ? s.replace(/\./g, "").replace(",", ".") : s;
@@ -107,18 +108,21 @@ export default function AnticipiFornitori({ vaiA }) {
   const totaleAperto = righe.filter(r => r.a.stato === "aperto").reduce((t, r) => t + Number(r.a.residuo), 0);
 
   return <div style={{ maxWidth: 1300 }}>
-    <div style={{ fontSize: 22, fontWeight: 800, color: C.primary }}>⏳ Anticipi in attesa di fattura</div>
+    <div style={{ fontSize: 22, fontWeight: 800, color: C.primary }}>⏳ Anticipi e caparre in attesa di fattura</div>
     <div style={{ fontSize: 13, color: C.muted, margin: "4px 0 12px", maxWidth: 1050 }}>
       Un anticipo è un pagamento fatto prima della fattura: su una proforma, un preventivo o un'offerta. Resta qui finché arriva la fattura del fornitore.
       Quando la fattura entra nel programma, compare <b>accanto</b> all'anticipo: chi gestisce i conti (Teresa Demaria; al suo posto il Dott. Bizzarri o Colabucci)
       la controlla e <b>chiude</b>. Dal pagamento il fornitore ha 12 giorni per la fattura (per un servizio può arrivare entro il 15 del mese dopo); se non arriva l'anticipo diventa rosso e, avvicinandosi ai 90 giorni
       successivi, va fatta la segnalazione all'Agenzia delle Entrate (termini da confermare con lo Studio).
       L'anticipo nasce da solo quando un pagamento ha la voce «Acconto su fattura da ricevere» (in «Conferma dei movimenti» o in «Incassi e pagamenti»).
+      <div style={{ marginTop: 6 }}><b>Caparra confirmatoria su preventivo</b> (versione 374): nasce allo stesso modo con la sua voce. È una garanzia dell'affare (art. 1385 c.c.), fuori campo IVA e senza fattura al pagamento (da confermare con lo Studio):
+      niente «fattura in ritardo» né segnalazione TD29. Si scrive la <b>data di consegna prevista</b>: fino a quella data è gialla, dopo arancione «Consegna in ritardo: chiedere al fornitore».
+      Alla consegna la fattura si aggancia qui e la caparra risulta <b>imputata alla fattura</b>; se l'affare salta si sceglie l'esito: <b>restituita</b>, <b>trattenuta</b> (perdita) o <b>restituita il doppio</b>.</div>
     </div>
     {!dati.gestore && <div style={{ ...scheda, borderLeft: `4px solid ${C.yellow}`, fontSize: 13 }}>Si può solo guardare: controllare e chiudere gli anticipi spetta a chi gestisce i conti.</div>}
     <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
       {[["Fattura arrivata: da controllare", conta("da controllare") + conta("da chiudere"), C.blue], ["In attesa della fattura", conta("in attesa"), C.yellow],
-        ["Fattura in ritardo", conta("in ritardo"), C.red], ["Segnalazione all'Agenzia", conta("segnalazione"), C.red], ["Chiusi", conta("chiuso"), C.green]].map(([t, n, col]) =>
+        ["Fattura in ritardo", conta("in ritardo"), C.red], ["Segnalazione all'Agenzia", conta("segnalazione"), C.red], ["Caparre: consegna in ritardo o da scrivere", conta("consegna in ritardo") + conta("senza consegna"), ARANCIONE], ["Chiusi", conta("chiuso"), C.green]].map(([t, n, col]) =>
         <div key={t} style={{ flex: "1 1 180px", border: `2px solid ${col}`, background: `${col}12`, borderRadius: 12, padding: "8px 12px" }}>
           <div style={{ fontSize: 12.5, fontWeight: 800, color: col }}>{t}</div><div style={{ fontSize: 24, fontWeight: 800, color: col }}>{n}</div></div>)}
       <div style={{ flex: "1 1 180px", border: `2px solid ${C.primary}`, borderRadius: 12, padding: "8px 12px" }}>
@@ -137,7 +141,7 @@ export default function AnticipiFornitori({ vaiA }) {
           <td style={{ padding: "5px 8px", color: col, fontWeight: 800 }}>{st.nome}<div style={{ fontWeight: 400, color: C.text, fontSize: 11.5, maxWidth: 260 }}>{st.testo}</div></td>
           <td style={{ padding: "5px 8px", whiteSpace: "nowrap" }}>{dataIt(a.data_pagamento)}{a.progressivo ? <div style={{ color: C.muted, fontSize: 11 }}>{a.esercizio}/{String(a.progressivo).padStart(6, "0")}</div> : a.codice_attesa ? <div style={{ color: C.blue, fontSize: 11 }}>{a.codice_attesa}</div> : null}</td>
           <td style={{ padding: "5px 8px", fontWeight: 700 }}>{a.fornitore || <span style={{ color: C.red }}>da scegliere ({a.controparte || "—"})</span>}{a.partita_iva ? <div style={{ fontWeight: 400, color: C.muted, fontSize: 11 }}>P. IVA {a.partita_iva}</div> : null}</td>
-          <td style={{ padding: "5px 8px", textAlign: "right", fontWeight: 700 }}>{euro(a.importo)}</td>
+          <td style={{ padding: "5px 8px", textAlign: "right", fontWeight: 700 }}>{euro(a.importo)}<div style={{ fontWeight: 700, fontSize: 11, color: a.tipo === "caparra" ? ARANCIONE : C.muted, whiteSpace: "nowrap" }}>{a.tipo === "caparra" ? "Caparra confirmatoria" : "Acconto"}</div></td>
           <td style={{ padding: "5px 8px" }}>{a.documento_tipo || a.documento_numero ? `${TIPI_DOCUMENTO.find(t => t[0] === a.documento_tipo)?.[1] || "Documento"} ${a.documento_numero || ""}${a.documento_data ? " del " + dataIt(a.documento_data) : ""}` : <span style={{ color: C.muted }}>—</span>}{a.documento_pdf ? " 📄" : ""}</td>
           <td style={{ padding: "5px 8px" }}>{agg.map(x => <div key={x.id}>✔ n. {x.s?.numero_documento || "?"} del {dataIt(x.s?.data_documento)} — {euro(x.importo)}</div>)}
             {cand.length > 0 && a.stato === "aperto" && <div style={{ color: C.blue, fontWeight: 700 }}>{cand.length === 1 ? `1 fattura arrivata (n. ${cand[0].numero_documento} del ${dataIt(cand[0].data_documento)}, ${euro(cand[0].residuo)})` : `${cand.length} fatture arrivate`}</div>}
@@ -234,10 +238,11 @@ function Dettaglio({ a, agg, cand, dati, fatto }) {
 
   return <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))", gap: 14, fontSize: 12.5 }}>
     <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 10 }}>
-      <div style={{ fontWeight: 800, color: C.primary, marginBottom: 6 }}>L'anticipo</div>
+      <div style={{ fontWeight: 800, color: C.primary, marginBottom: 6 }}>{NOME_TIPO[a.tipo] || "L'anticipo"}</div>
       <div>Pagato il <b>{dataIt(a.data_pagamento)}</b> {a.progressivo ? `(prima nota ${a.esercizio}/${String(a.progressivo).padStart(6, "0")})` : a.codice_attesa ? `(disposizione ${a.codice_attesa}, in attesa della banca)` : ""} — <b>{euro(a.importo)}</b> con {a.modalita || "—"}</div>
       <div style={{ color: C.muted, margin: "3px 0" }}>Causale: {a.causale || "—"}</div>
-      <div>Fattura attesa entro il <b>{dataIt(a.fattura_attesa_entro)}</b>; segnalazione all'Agenzia entro il <b>{dataIt(a.segnalazione_entro)}</b> (da confermare con lo Studio).</div>
+      {a.tipo === "caparra" ? <Consegna a={a} puo={puo} chiama={chiama} lavoro={lavoro} />
+        : <div>Fattura attesa entro il <b>{dataIt(a.fattura_attesa_entro)}</b>; segnalazione all'Agenzia entro il <b>{dataIt(a.segnalazione_entro)}</b> (da confermare con lo Studio).</div>}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 8 }}>
         <label style={{ gridColumn: "1 / -1" }}>Fornitore<br /><select style={{ ...input, width: "100%", borderColor: !v.fornitore_id ? C.red : C.border }} disabled={!puo || agg.length > 0} value={v.fornitore_id} onChange={e => cambia("fornitore_id", e.target.value ? Number(e.target.value) : "")}>
           <option value="">— scegliere (se non c'è ancora, scrivere la partita IVA: lo riconosce quando arriva la fattura) —</option>{fornitoriOrdinati.map(f => <option key={f.id} value={f.id}>{f.nome}{f.partita_iva ? ` — ${f.partita_iva}` : ""}</option>)}</select></label>
@@ -277,14 +282,69 @@ function Dettaglio({ a, agg, cand, dati, fatto }) {
             {(scelte.length > 0 || agg.length > 0) && <button style={btn(true, C.green)} disabled={lavoro || problemi.length > 0 || (Math.abs(dopo) > 0.005 && !motivo.trim())}
               onClick={() => chiama("ci_aggancia_anticipo", { p_anticipo: a.anticipo_id, p_fatture: scelte.map(q => ({ scadenza_id: q.s.scadenza_id, importo: q.imp })), p_chiudi: true, p_motivo: motivo },
                 `Anticipo di ${a.fornitore} controllato e chiuso.`)}>{scelte.length ? "Aggancia e chiudi" : "Chiudi con le fatture agganciate"}</button>}
-            <button style={btn(false, C.red)} disabled={lavoro || !motivo.trim()} onClick={() => chiama("ci_chiudi_anticipo", { p_anticipo: a.anticipo_id, p_motivo: motivo }, "Anticipo chiuso senza fattura, con il motivo.")}>Chiudi senza fattura</button>
+            {a.tipo !== "caparra" && <button style={btn(false, C.red)} disabled={lavoro || !motivo.trim()} onClick={() => chiama("ci_chiudi_anticipo", { p_anticipo: a.anticipo_id, p_motivo: motivo }, "Anticipo chiuso senza fattura, con il motivo.")}>Chiudi senza fattura</button>}
           </>}
           {a.stato === "chiuso" && <button style={btn(false)} disabled={lavoro || !motivo.trim()} onClick={() => chiama("ci_riapri_anticipo", { p_anticipo: a.anticipo_id, p_motivo: motivo }, "Anticipo riaperto.")}>Riapri</button>}
         </div>
         {a.stato === "aperto" && Math.abs(dopo) > 0.005 && (scelte.length > 0 || agg.length > 0) && <div style={{ color: C.muted, fontSize: 11.5, marginTop: 4 }}>Per chiudere con {euro(dopo)} ancora senza fattura serve il motivo (per esempio: il fornitore farà un'altra fattura; restituito).</div>}
       </div>}
+      {a.tipo === "caparra" && a.stato === "aperto" && !agg.length && <EsitoCaparra a={a} puo={puo} chiama={chiama} lavoro={lavoro} />}
       {errore && <div style={{ color: C.red, fontWeight: 700, marginTop: 6 }}>⚠️ {errore}</div>}
     </div>
+  </div>;
+}
+
+// Versione 374 — caparra: data di consegna prevista (cambiarla chiede il motivo)
+function Consegna({ a, puo, chiama, lavoro }) {
+  const [d, setD] = useState(a.consegna_prevista || "");
+  const [m, setM] = useState("");
+  const cambia = a.consegna_prevista && d && d !== a.consegna_prevista;
+  return <div style={{ border: `1px solid ${ARANCIONE}`, borderRadius: 8, padding: 6, margin: "4px 0" }}>
+    <div>Caparra confirmatoria: niente fattura al pagamento e niente segnalazione TD29 (da confermare con lo Studio). Consegna prevista: <b>{a.consegna_prevista ? dataIt(a.consegna_prevista) : "non scritta"}</b>.</div>
+    {puo && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4, alignItems: "center" }}>
+      <input type="date" style={{ ...input, borderColor: !d ? C.red : C.border }} value={d} onChange={e => setD(e.target.value)} />
+      {cambia && <input style={{ ...input, flex: 1, minWidth: 200 }} placeholder="Motivo del cambio della data (obbligatorio)" value={m} onChange={e => setM(e.target.value)} />}
+      <button style={btn(true)} disabled={lavoro || !d || d === a.consegna_prevista || (cambia && !m.trim())}
+        onClick={() => chiama("ci_caparra_consegna", { p_anticipo: a.anticipo_id, p_data: d, p_motivo: m }, `Consegna prevista della caparra di ${a.fornitore || a.controparte}: ${dataIt(d)}.`)}>Salva la consegna prevista</button>
+    </div>}
+  </div>;
+}
+
+// Versione 374 — caparra: se l'affare salta (art. 1385 c.c.), decisione del Dott. Bizzarri del 12/11/2026 ore 18:05
+function EsitoCaparra({ a, puo, chiama, lavoro }) {
+  const [esito, setEsito] = useState("");
+  const [mov, setMov] = useState("");
+  const [motivo, setMotivo] = useState("");
+  const [incassi, setIncassi] = useState(null);
+  const dovuto = esito === "restituita_doppio" ? Math.round(Number(a.importo) * 200) / 100 : Number(a.importo);
+  useEffect(() => { if (!puo || !["restituita", "restituita_doppio"].includes(esito)) return; setMov(""); (async () => {
+    const r = await supabase.from("ci_pagamenti_fatture").select("id, data, importo, controparte, causale, esercizio, progressivo, fornitore_id")
+      .eq("verso", "entrata").is("stornato_il", null).not("confermato_il", "is", null).is("cliente_id", null).gte("data", a.data_pagamento).eq("importo", dovuto).order("data");
+    // solo incassi confermati dalla banca, non di clienti, del fornitore della caparra (o senza soggetto) e non abbinati a fatture
+    const l = (r.data || []).filter(x => !x.fornitore_id || x.fornitore_id === a.fornitore_id);
+    const ab = l.length ? await supabase.from("ci_abbinamenti_pagamenti").select("pagamento_id").in("pagamento_id", l.map(x => x.id)) : { data: [] };
+    const giaAbbinati = new Set((ab.data || []).map(x => x.pagamento_id));
+    setIncassi(r.error ? [] : l.filter(x => !giaAbbinati.has(x.id)));
+  })(); }, [esito, puo, a.data_pagamento, a.fornitore_id, dovuto]);
+  if (!puo) return null;
+  return <div style={{ marginTop: 10, borderTop: `1px solid ${C.border}`, paddingTop: 8 }}>
+    <b>Se l'affare salta</b> <span style={{ color: C.muted }}>(la caparra non si chiude «senza fattura»: si sceglie l'esito)</span>
+    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "6px 0" }}>
+      {[["restituita", "Restituita dal fornitore", "affare sciolto d'accordo: serve l'incasso della banca"], ["trattenuta", "Trattenuta dal fornitore", "inadempiente Podere Verde: la caparra diventa perdita"],
+        ["restituita_doppio", "Restituita il doppio", `inadempiente il fornitore: deve ${euro(Math.round(Number(a.importo) * 200) / 100)}`]].map(([k, n, d]) =>
+        <button key={k} title={d} style={{ ...btn(esito === k), height: "auto", padding: "4px 8px", textAlign: "left" }} onClick={() => setEsito(esito === k ? "" : k)}>{n}<br /><span style={{ fontSize: 11, fontWeight: 400 }}>{d}</span></button>)}
+    </div>
+    {esito && <>
+      {esito !== "trattenuta" && <label>Incasso della banca di {euro(dovuto)} (dal {dataIt(a.data_pagamento)})<br />
+        <select style={{ ...input, width: "100%", borderColor: !mov ? C.red : C.border }} value={mov} onChange={e => setMov(e.target.value)}>
+          <option value="">{incassi === null ? "lettura…" : incassi.length ? "— scegliere l'incasso —" : `nessun incasso di ${euro(dovuto)}: prima confermare l'incasso in «Conferma dei movimenti»`}</option>
+          {(incassi || []).map(x => <option key={x.id} value={x.id}>{dataIt(x.data)} — {euro(x.importo)} — {x.controparte || ""} {x.causale ? "— " + x.causale : ""}</option>)}</select></label>}
+      {esito === "restituita_doppio" && !mov && <div style={{ color: ARANCIONE, fontWeight: 700 }}>Il fornitore deve {euro(dovuto)}: la caparra resta aperta finché l'incasso non c'è.</div>}
+      <input style={{ ...input, width: "100%", margin: "6px 0" }} placeholder="Motivo (obbligatorio)" value={motivo} onChange={e => setMotivo(e.target.value)} />
+      <button style={btn(true, esito === "trattenuta" ? C.red : C.green)} disabled={lavoro || !motivo.trim() || (esito !== "trattenuta" && !mov)}
+        onClick={() => chiama("ci_esito_caparra", { p_anticipo: a.anticipo_id, p_esito: esito, p_movimento: esito === "trattenuta" ? null : Number(mov), p_motivo: motivo }, `Caparra di ${a.fornitore || a.controparte} chiusa: ${esito === "restituita" ? "restituita" : esito === "trattenuta" ? "trattenuta (perdita)" : "restituita il doppio"}.`)}>Chiudi la caparra con questo esito</button>
+      <div style={{ color: C.muted, fontSize: 11.5, marginTop: 4 }}>Trattamento contabile e fiscale della perdita e del doppio incassato: da confermare con lo Studio Cacurri.</div>
+    </>}
   </div>;
 }
 

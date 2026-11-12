@@ -296,7 +296,7 @@ const MENU = [
   { tipo: "cartella", id: "cart-incassi-pagamenti", label: "Gestione incassi e pagamenti", icon: "💶", contenuto: [
     { tipo: "voce", id: "istr-incassi-pagamenti", label: "Istruzioni", icon: "📖" },
     { tipo: "voce", id: "incassi-pagamenti", label: "Incassi e pagamenti", icon: "💶" },
-    { tipo: "voce", id: "anticipi-fornitori", label: "Anticipi in attesa di fattura", icon: "⏳" }, // versione 370
+    { tipo: "voce", id: "anticipi-fornitori", label: "Anticipi e caparre in attesa di fattura", icon: "⏳" }, // versione 370; caparre versione 374
   ]},
   // Versione 354 (10/11/2026): la prima nota (progetto della prima nota, sezioni 3, 4.1, 8 e 9)
   { tipo: "cartella", id: "cart-prima-nota", label: "Prima nota", icon: "📒", contenuto: [
@@ -586,7 +586,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 373</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 374</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={() => (tab === "accessi" && accessiInSospeso.length) ? setUscitaDaAccessi("__esci__") : esci()} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
