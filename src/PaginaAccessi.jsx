@@ -4,10 +4,14 @@
 // Gestore degli accessi e porta di servizio li cambia solo l'amministratore (lo controlla anche il database).
 // Versione 346 (03/11/2026, ore 20:27): permesso «Può spedire mail dal programma», separato da «Tutto il programma»;
 // lo danno o lo tolgono solo l'amministratore e i gestori degli accessi (lo controlla anche il database).
+// Versione 372 (12/11/2026, ordini del Dott. Bizzarri delle 18:55–19:00): le AUTORIZZAZIONI SPECIALI (elenco unico in
+// autorizzazioni.js: «Può spedire mail», «Gestisce i conti», «Può forzare il pagamento senza mail» e quelle delle versioni future)
+// si vedono e si cambiano qui, con il riepilogo «chi può fare che cosa» in cima. Le legge ci_autorizzazioni_accessi().
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "./supabase";
 import { C, FONT } from "./style";
 import { PARTI, PARTE_LAVORO } from "./accessiParti";
+import { AUTORIZZAZIONI, elencoAutorizzazioni, riepilogoAutorizzazioni } from "./autorizzazioni";
 
 export const PAGINA_TEAM_SUPABASE = "https://supabase.com/dashboard/org/yyfvpmlpdmogucnnwpne/team";
 
@@ -28,13 +32,14 @@ function anomalieDi(r) {
   return a;
 }
 
-function SchedaPersona({ r, io, admin, onSalvato }) {
-  const iniziale = { stato: r.stato || "In attesa", tutto: !!r.tutto_il_programma, parti: r.parti || [], gestore: !!r.gestore_accessi, porta: r.porta_servizio || "No", mail: !!r.puo_spedire_mail, note: r.note || "" };
+function SchedaPersona({ r, aut, elenco, io, admin, onSalvato }) {
+  const iniziale = { stato: r.stato || "In attesa", tutto: !!r.tutto_il_programma, parti: r.parti || [], gestore: !!r.gestore_accessi, porta: r.porta_servizio || "No", aut: aut || {}, note: r.note || "" };
   const [b, setB] = useState(iniziale);
   const [salva, setSalva] = useState(false);
   const [esito, setEsito] = useState(null);
   const [aperta, setAperta] = useState(r.stato === "In attesa" || r.stato == null);
-  useEffect(() => { setB(iniziale); }, [r]); // eslint-disable-line react-hooks/exhaustive-deps
+  const autChiave = JSON.stringify(aut || {}); // la mappa si ricalcola a ogni disegno della pagina: conta il contenuto, non l'oggetto
+  useEffect(() => { setB(iniziale); }, [r, autChiave]); // eslint-disable-line react-hooks/exhaustive-deps
   const cambiato = JSON.stringify(b) !== JSON.stringify(iniziale);
   const eAdmin = r.ruolo === "admin";
   const eIo = r.profilo_id === io;
@@ -47,7 +52,10 @@ function SchedaPersona({ r, io, admin, onSalvato }) {
 
   async function salvaScelte() {
     setSalva(true); setEsito(null);
-    const dati = { stato: b.stato, tutto_il_programma: b.tutto, parti: b.parti, puo_spedire_mail: b.mail, note: b.note.trim() || null };
+    // Versione 372: delle autorizzazioni si mandano solo quelle cambiate in questa scheda, così non si annulla
+    // quella data nel frattempo da un altro gestore (ricontrollo indipendente del 12/11, difetto 1)
+    const autCambiate = Object.fromEntries(Object.entries(b.aut).filter(([k, v]) => v !== !!iniziale.aut[k]));
+    const dati = { stato: b.stato, tutto_il_programma: b.tutto, parti: b.parti, ...autCambiate, note: b.note.trim() || null };
     if (admin) { dati.gestore_accessi = b.gestore; dati.porta_servizio = b.porta; }
     const { error } = r.stato == null
       ? await supabase.from("ci_accessi_programma").insert([{ profilo_id: r.profilo_id, ...dati }])
@@ -60,13 +68,17 @@ function SchedaPersona({ r, io, admin, onSalvato }) {
 
   const statoMostrato = r.stato || "Non ha mai aperto il programma";
   return (
-    <div style={{ ...box, borderLeft: `5px solid ${COLORE_STATO[r.stato] || C.border}` }}>
+    <div data-persona={r.email} style={{ ...box, borderLeft: `5px solid ${COLORE_STATO[r.stato] || C.border}` }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", cursor: "pointer" }} onClick={() => setAperta(x => !x)}>
         <div style={{ fontWeight: 800, fontSize: 15 }}>{r.nome || "(senza nome)"}{eIo && <span style={{ color: C.muted, fontWeight: 600 }}> (è Lei)</span>}</div>
         <div style={{ color: C.muted, fontSize: 13 }}>{r.email}</div>
         <span style={{ background: COLORE_STATO[r.stato] || "#9A958A", color: "#fff", borderRadius: 10, padding: "2px 9px", fontSize: 11.5, fontWeight: 800 }}>{eAdmin ? "Amministratore" : statoMostrato}</span>
         {r.gestore_accessi && <span style={{ background: C.blue, color: "#fff", borderRadius: 10, padding: "2px 9px", fontSize: 11.5, fontWeight: 800 }}>Gestore degli accessi</span>}
-        {r.puo_spedire_mail && <span style={{ background: C.green, color: "#fff", borderRadius: 10, padding: "2px 9px", fontSize: 11.5, fontWeight: 800 }}>✉️ Può spedire mail</span>}
+        {eAdmin
+          ? <span style={{ background: C.green, color: "#fff", borderRadius: 10, padding: "2px 9px", fontSize: 11.5, fontWeight: 800 }}>🔑 Tutte le autorizzazioni (amministratore)</span>
+          : elenco.filter(x => (aut || {})[x.colonna]).map(x => (
+            <span key={x.colonna} title={x.spiega} style={{ background: C.green, color: "#fff", borderRadius: 10, padding: "2px 9px", fontSize: 11.5, fontWeight: 800 }}>{x.icona} {x.nome}</span>
+          ))}
         {r.porta_servizio !== "No" && <span style={{ background: C.accent, color: "#fff", borderRadius: 10, padding: "2px 9px", fontSize: 11.5, fontWeight: 800 }}>Porta di servizio: {r.porta_servizio}</span>}
         <span style={{ marginLeft: "auto", color: C.muted, fontSize: 12 }}>{aperta ? "▾ chiudi" : "▸ apri"}</span>
       </div>
@@ -109,11 +121,15 @@ function SchedaPersona({ r, io, admin, onSalvato }) {
               <span><b>Costi del Lavoro (buste paga)</b> — sono dati riservati: si spunta sempre a parte, anche con «Tutto il programma».</span>
             </label>
 
-            <div style={{ fontWeight: 800, marginBottom: 6 }}>3. Mail dal programma</div>
-            <label style={{ display: "flex", gap: 8, alignItems: "center", background: "#EEF5EF", border: "1px solid #A9C9B0", borderRadius: 8, padding: "8px 10px", marginBottom: 14, cursor: "pointer" }}>
-              <input type="checkbox" checked={b.mail} onChange={() => setB(x => ({ ...x, mail: !x.mail }))} />
-              <span><b>Può spedire mail dal programma</b> (dalla casella podereverdeapp@gmail.com) — si spunta sempre a parte: «Tutto il programma» non la comprende.</span>
-            </label>
+            <div style={{ fontWeight: 800, marginBottom: 6 }}>3. Autorizzazioni speciali</div>
+            <div style={{ color: C.muted, fontSize: 12.5, marginBottom: 6 }}>Si spuntano sempre a parte: «Tutto il programma» non le comprende. Valgono solo se la persona è «Attivo».</div>
+            {elenco.filter(x => x.colonna in b.aut).map(x => (
+              <label key={x.colonna} style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "#EEF5EF", border: "1px solid #A9C9B0", borderRadius: 8, padding: "8px 10px", marginBottom: 6, cursor: "pointer" }}>
+                <input type="checkbox" style={{ marginTop: 3 }} checked={!!b.aut[x.colonna]} onChange={() => setB(s => ({ ...s, aut: { ...s.aut, [x.colonna]: !s.aut[x.colonna] } }))} aria-label={x.nome} />
+                <span><b>{x.icona} {x.nome}</b> — {x.spiega}</span>
+              </label>
+            ))}
+            <div style={{ marginBottom: 14 }} />
 
             <div style={{ fontWeight: 800, marginBottom: 6 }}>4. Solo per il Dott. Bizzarri</div>
             {admin ? (
@@ -155,13 +171,17 @@ function SchedaPersona({ r, io, admin, onSalvato }) {
 
 export default function PaginaAccessi({ accesso, utente, onCambiato }) {
   const [righe, setRighe] = useState(null);
+  const [mappaAut, setMappaAut] = useState(null);   // versione 372: { profilo_id: { puo_…: true/false } } dal database
+  const [erroreAut, setErroreAut] = useState("");
   const [errore, setErrore] = useState("");
   const [filtro, setFiltro] = useState("");
   const admin = !!accesso?.admin;
 
   const carica = useCallback(async () => {
-    const { data, error } = await supabase.rpc("ci_elenco_accessi");
+    const [{ data, error }, au] = await Promise.all([supabase.rpc("ci_elenco_accessi"), supabase.rpc("ci_autorizzazioni_accessi")]);
     if (error) { setErrore(error.message); setRighe([]); return; }
+    if (au.error) { setErroreAut(au.error.message); setMappaAut(null); }
+    else { setErroreAut(""); setMappaAut(Object.fromEntries((au.data || []).map(x => [x.profilo_id, x.autorizzazioni || {}]))); }
     setErrore(""); setRighe(data || []);
   }, []);
   useEffect(() => { carica(); }, [carica]);
@@ -175,6 +195,15 @@ export default function PaginaAccessi({ accesso, utente, onCambiato }) {
   const inAttesa = righe.filter(r => r.stato === "In attesa").length;
   const conAnomalie = righe.filter(r => anomalieDi(r).length).length;
   const conPorta = righe.filter(r => r.porta_servizio && r.porta_servizio !== "No");
+  // Autorizzazioni: dal database (372); se la lettura non riesce, solo «Può spedire mail» come prima della 372.
+  // Chi non ha ancora una riga negli accessi le ha tutte spente.
+  const conosciute = mappaAut
+    ? [...new Set(Object.values(mappaAut).flatMap(a => Object.keys(a)))]
+    : ["puo_spedire_mail"];
+  const elenco = elencoAutorizzazioni(conosciute);
+  const mappa = Object.fromEntries(righe.map(r => [r.profilo_id, Object.fromEntries(conosciute.map(c => [c,
+    mappaAut ? !!mappaAut[r.profilo_id]?.[c] : !!r.puo_spedire_mail]))]));
+  const riepilogo = riepilogoAutorizzazioni(righe, mappa, elenco);
 
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: 20, fontFamily: FONT, color: C.text }}>
@@ -194,6 +223,29 @@ export default function PaginaAccessi({ accesso, utente, onCambiato }) {
           ⚠️ {conAnomalie === 1 ? "1 persona ha" : `${conAnomalie} persone hanno`} qualcosa che non coincide (scritto in rosso nella sua scheda).
         </div>
       )}
+
+      {erroreAut && <div style={{ ...box, background: "#FDECEA", color: C.red, fontWeight: 700 }}>⚠️ Le autorizzazioni speciali non si leggono ({erroreAut}): qui sotto si vede e si cambia solo «Può spedire mail». Se l'SQL della versione 372 non è ancora stato lanciato, va lanciato; altrimenti si riprova con «🔄 Aggiorna».</div>}
+      <div style={{ ...box, background: "#F4F8F4" }}>
+        <div style={{ fontWeight: 800, marginBottom: 8 }}>👥 Chi può fare che cosa — autorizzazioni speciali</div>
+        <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13.5 }}>
+          <thead><tr>
+            <th style={{ textAlign: "left", padding: "4px 8px", borderBottom: `1px solid ${C.border}` }}>Autorizzazione</th>
+            <th style={{ textAlign: "left", padding: "4px 8px", borderBottom: `1px solid ${C.border}` }}>Chi ce l'ha (oltre al Dott. Bizzarri)</th>
+          </tr></thead>
+          <tbody>
+            {riepilogo.map(x => (
+              <tr key={x.colonna}>
+                <td style={{ padding: "6px 8px", verticalAlign: "top", borderBottom: `1px solid ${C.border}` }}><b>{x.icona} {x.nome}</b><div style={{ color: C.muted, fontSize: 12 }}>{x.spiega}</div></td>
+                <td style={{ padding: "6px 8px", verticalAlign: "top", borderBottom: `1px solid ${C.border}` }}>
+                  {x.valgono.length ? x.valgono.join(", ") : <span style={{ color: C.muted }}>nessuno</span>}
+                  {x.nonValgono.length > 0 && <div style={{ color: C.red, fontSize: 12.5 }}>Spuntata ma non vale (non «Attivo»): {x.nonValgono.join(", ")}</div>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div style={{ color: C.muted, fontSize: 12.5, marginTop: 6 }}>Il Dott. Bizzarri, come amministratore, le ha tutte. Le danno o le tolgono il Dott. Bizzarri e i gestori degli accessi, nella scheda della persona (punto 3); nessuno le proprie.</div>
+      </div>
 
       {admin && (
         <div style={{ ...box, background: "#F6F1E8" }}>
@@ -217,7 +269,7 @@ export default function PaginaAccessi({ accesso, utente, onCambiato }) {
       <div style={{ color: C.muted, fontSize: 12.5, marginBottom: 10 }}>{righe.length} persone registrate · {righe.filter(r => r.stato === "Attivo").length} attive · {inAttesa} in attesa · {righe.filter(r => r.stato === "Bloccato").length} bloccate · {righe.filter(r => r.stato == null).length} mai entrate nel programma</div>
 
       {visibili.map(r => (
-        <SchedaPersona key={r.profilo_id} r={r} io={utente?.id} admin={admin} onSalvato={() => { carica(); onCambiato?.(); }} />
+        <SchedaPersona key={r.profilo_id} r={r} aut={mappa[r.profilo_id]} elenco={elenco} io={utente?.id} admin={admin} onSalvato={() => { carica(); onCambiato?.(); }} />
       ))}
     </div>
   );
@@ -248,13 +300,19 @@ export function IstruzioniAccessi() {
       <h3 style={h}>4. Come si toglie l'accesso</h3>
       <p style={p}>Nella scheda della persona si preme <b>«⛔ Blocca»</b> e poi «💾 Salva». Al prossimo ingresso vedrà «Accesso bloccato». Per togliere solo una parte, si toglie la spunta e si salva.</p>
 
-      <h3 style={h}>5. Le mail dal programma</h3>
-      <p style={p}>Spedire mail dal programma (dalla casella <b>podereverdeapp@gmail.com</b>) è un permesso a parte: <b>non è compreso in «Tutto il programma»</b>. Si dà spuntando, al punto 3 della scheda, <b>«Può spedire mail dal programma»</b> e premendo «💾 Salva». Lo danno o lo tolgono solo il Dott. Bizzarri e i gestori degli accessi.</p>
+      <h3 style={h}>5. Le autorizzazioni speciali (chi può fare che cosa)</h3>
+      <p style={p}>Alcune cose si possono fare solo con un'<b>autorizzazione speciale</b>, che <b>non è compresa in «Tutto il programma»</b>. In cima alla pagina «Chi entra nel programma» il riquadro <b>«Chi può fare che cosa»</b> mostra, per ogni autorizzazione, chi ce l'ha. Oggi sono:</p>
+      <ul style={{ ...p, paddingLeft: 22 }}>
+        {AUTORIZZAZIONI.map(x => <li key={x.colonna}><b>{x.icona} {x.nome}</b>: {x.spiega}</li>)}
+      </ul>
+      <p style={p}>Si danno o si tolgono nella scheda della persona, al punto 3 <b>«Autorizzazioni speciali»</b>, spuntando la casella e premendo «💾 Salva». Lo fanno solo il Dott. Bizzarri e i gestori degli accessi; nessuno le proprie. Valgono solo se la persona è «Attivo». Ogni cambio resta scritto (chi e quando) nel Registro delle modifiche. Le versioni nuove del programma aggiungono qui le loro autorizzazioni.</p>
+      <h3 style={h}>5-bis. Le mail dal programma</h3>
+      <p style={p}>Spedire mail dal programma (dalla casella <b>podereverdeapp@gmail.com</b>) è una di queste autorizzazioni: <b>«Può spedire mail dal programma»</b>.</p>
       <p style={p}>Chi non ha la spunta, nella scheda di un cliente o di un fornitore, vede l'avviso che non ha il permesso e non può spedire.</p>
       <p style={p}>Con la stessa spunta si possono anche <b>togliere comunicazioni dal registro</b> (con il motivo: restano conservate e si possono rimettere) e <b>bloccare un mittente</b>, perché le sue mail non entrino più.</p>
 
       <h3 style={h}>6. Che cosa non si può fare (lo blocca anche il database)</h3>
-      <p style={p}>Nessuno può cambiare il proprio accesso: lo fa un altro gestore o il Dott. Bizzarri. Nessuno può toccare l'accesso del Dott. Bizzarri. Solo il Dott. Bizzarri decide chi è <b>gestore degli accessi</b> e chi ha la <b>porta di servizio</b>. Il permesso di spedire mail lo cambiano solo il Dott. Bizzarri e i gestori.</p>
+      <p style={p}>Nessuno può cambiare il proprio accesso: lo fa un altro gestore o il Dott. Bizzarri. Nessuno può toccare l'accesso del Dott. Bizzarri. Solo il Dott. Bizzarri decide chi è <b>gestore degli accessi</b> e chi ha la <b>porta di servizio</b>. Le autorizzazioni speciali le cambiano solo il Dott. Bizzarri e i gestori.</p>
 
       <h3 style={h}>7. La porta di servizio (entrare con il proprio Claude)</h3>
       <p style={p}>La «porta principale» è il programma: si entra con email e password. La «porta di servizio» serve a far lavorare il <b>proprio Claude</b> direttamente nel database, senza passare dal programma. Il Dott. Bizzarri ce l'ha sempre. Gli altri solo se lui lo decide.</p>
