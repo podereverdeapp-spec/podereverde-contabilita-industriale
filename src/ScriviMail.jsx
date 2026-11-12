@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { btn, input, scheda } from "./stileAruba";
@@ -16,11 +16,20 @@ import { quando, nuovoCodiceRichiesta, LIMITE_ALLEGATI, CASELLA_COMUNICAZIONI, F
 // - Rispondere a un mittente sconosciuto (non cliente, non fornitore, non nell'elenco) chiede una conferma esplicita.
 // - Dopo il ricontrollo indipendente: mittente riconosciuto anche per PEC o collegamento della mail; la finestra non si chiude
 //   durante l'invio e chiede prima di perdere il testo; firma con il nome del Dottore solo sua; massimo 10 allegati.
+// Versione 371 (12/11/2026, ordine del Dott. Bizzarri delle 13:38–13:42): BOZZE. «💾 Salva come bozza» salva oggetto, testo, firma e
+// destinatario (o la mail a cui si risponde) nella tabella ci_bozze_mail, senza mandare: ognuno vede solo le proprie. Una bozza si
+// riapre dalla scheda «📝 Bozze», si corregge, si manda (e allora esce dalle Bozze) o si elimina. Gli allegati non si salvano.
+// La conferma dell'invio e quella della chiusura sono DENTRO la pagina, non più finestre del browser (window.confirm): nel riquadro
+// del browser di Claude quelle finestre si chiudevano da sole con «no» e la mail non partiva (fatti del 12/11 ore 13:00 e 13:30).
+// Dopo il ricontrollo indipendente: la bozza conserva il codice della richiesta, così una bozza già partita (risposta persa per strada)
+// non parte una seconda volta riaprendola; durante l'invio non si chiude; il destinatario non riconosciuto non si cancella salvando.
 
 const minuscola = x => String(x || "").trim().toLowerCase();
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/; // come la funzione del server: un solo indirizzo valido
 const NOME_DOTTORE = /filippo|\b(dott|dottor|dottore|dr|ing|avv|rag|f)\b\.?\s*bizzarri/i; // come la funzione del server
 const MAX_ALLEGATI = 10;
+const MAX_TESTO = 100000; // come la tabella ci_bozze_mail
+const ora = () => new Date().toLocaleTimeString("it-IT", { timeZone: "Europe/Rome", hour: "2-digit", minute: "2-digit" });
 export const oggettoRisposta = o => { const t = String(o || "").trim(); return (/^(r|re|ri)\s*:/i.test(t) ? t : `R: ${t || "(senza oggetto)"}`).slice(0, 200); };
 export const testoCitato = c => `\n\n----- Il ${quando(c.data_ora)} ${c.indirizzo} ha scritto: -----\n${String(c.testo || "").split("\n").map(r => `> ${r}`).join("\n")}`;
 
@@ -59,30 +68,39 @@ async function spedisci({ tipo, id, oggetto, testo, firma, files, codiceRichiest
   });
   if (error) {
     let messaggio = error.message;
-    let doppione = false;
-    try { const j = await error.context.json(); if (j?.errore || j?.error) messaggio = j.errore || j.error; doppione = j?.doppione === true; } catch { /* risposta senza testo */ }
-    const e = new Error(`Mail non mandata: ${messaggio}`); e.doppione = doppione; throw e;
+    let doppione = false, riga = null;
+    try { const j = await error.context.json(); if (j?.errore || j?.error) messaggio = j.errore || j.error; doppione = j?.doppione === true; riga = j?.riga || null; } catch { /* risposta senza testo */ }
+    const e = new Error(`Mail non mandata: ${messaggio}`); e.doppione = doppione; e.riga = riga; throw e;
   }
   if (!data?.ok) throw new Error(`Mail non mandata: ${data?.errore || data?.error || "risposta non valida"}`);
   return data;
 }
 
-export default function ScriviMail({ risposta, clienti, fornitori, bloccati, onChiudi, onSpedita, onStato }) {
+export default function ScriviMail({ risposta, bozza, clienti, fornitori, bloccati, onChiudi, onSpedita, onStato, onBozzaSalvata, chiusuraChiesta, onChiudiDavvero, onAnnullaChiusura }) {
   const [persone, setPersone] = useState([]);
   const [contatti, setContatti] = useState([]);
   const [nuovo, setNuovo] = useState(null); // null | { nome, email, motivo, avviso, lavoro }
-  const [scelto, setScelto] = useState("");
+  const [scelto, setScelto] = useState(bozza?.destinatario || "");
   const [filtro, setFiltro] = useState("");
-  const [oggetto, setOggetto] = useState(risposta ? oggettoRisposta(risposta.oggetto) : "");
-  const [testo, setTesto] = useState(risposta ? testoCitato(risposta) : "");
-  const [firma, setFirma] = useState(FIRMA_PREDEFINITA);
+  const [oggetto, setOggetto] = useState(bozza ? bozza.oggetto || "" : risposta ? oggettoRisposta(risposta.oggetto) : "");
+  const [testo, setTesto] = useState(bozza ? bozza.testo || "" : risposta ? testoCitato(risposta) : "");
+  const [firma, setFirma] = useState(bozza?.firma || FIRMA_PREDEFINITA);
+  // Bozza: quella aperta (o salvata in questa finestra) e la fotografia di ciò che è salvato, per sapere se ci sono modifiche
+  const [bozzaId, setBozzaId] = useState(bozza?.id || null);
+  const [salvato, setSalvato] = useState(bozza ? { oggetto: bozza.oggetto || "", testo: bozza.testo || "", firma: bozza.firma || FIRMA_PREDEFINITA, scelto: bozza.destinatario || "" } : null);
+  const [salvataggio, setSalvataggio] = useState(false);
+  const [notaBozza, setNotaBozza] = useState(bozza ? `Bozza aperta: salvata l'ultima volta ${quando(bozza.aggiornata_il)}. Gli allegati non si salvano nelle bozze.` : "");
+  const [confermaInvio, setConfermaInvio] = useState(false);
+  const [elenchiLetti, setElenchiLetti] = useState(false);
+  const [giaPartita, setGiaPartita] = useState(false); // la bozza risultava già spedita: non si salva e non si rimanda
   const [firmaSalvata, setFirmaSalvata] = useState(null);
   const [ricorda, setRicorda] = useState(true);
   const [files, setFiles] = useState([]);
   const [confermaSconosciuto, setConfermaSconosciuto] = useState(false);
   const [invio, setInvio] = useState(false);
   const [avviso, setAvviso] = useState("");
-  const [codiceRichiesta, setCodiceRichiesta] = useState(nuovoCodiceRichiesta);
+  // Il codice della richiesta impedisce il doppio invio: per una bozza è quello salvato con la bozza (versione 371)
+  const [codiceRichiesta, setCodiceRichiesta] = useState(() => bozza?.codice_richiesta || nuovoCodiceRichiesta());
   const [utente, setUtente] = useState(null);
 
   useEffect(() => {
@@ -95,6 +113,7 @@ export default function ScriviMail({ risposta, clienti, fornitori, bloccati, onC
       if (vivo) {
         if (eP) setAvviso(`Elenco delle persone non letto: ${eP.message}`); else setPersone(p || []);
         if (eK) setAvviso(a => a || `Rubrica della Posta non letta: ${eK.message}`); else setContatti(k || []);
+        setElenchiLetti(!eP && !eK);
       }
       const { data: u } = await supabase.auth.getUser();
       const uid = u?.user?.id || null;
@@ -104,7 +123,7 @@ export default function ScriviMail({ risposta, clienti, fornitori, bloccati, onC
         const { data: f, error: eF } = await supabase.from("ci_firme_mail").select("firma").eq("utente", uid).maybeSingle();
         if (!vivo) return;
         if (eF) setAvviso(a => a || `La firma salvata non si legge (${eF.message}): si usa «${FIRMA_PREDEFINITA}».`);
-        else if (f?.firma) { setFirma(f.firma); setFirmaSalvata(f.firma); }
+        else if (f?.firma) { if (!bozza) setFirma(f.firma); setFirmaSalvata(f.firma); }
       }
     })();
     return () => { vivo = false; };
@@ -140,7 +159,8 @@ export default function ScriviMail({ risposta, clienti, fornitori, bloccati, onC
     setContatti(v => [...v, data]); setScelto(`contatto:${data.id}`); setFiltro(""); setNuovo(null);
   }
 
-  async function manda() {
+  // Controlli prima dell'invio; se è tutto in ordine compare la conferma DENTRO la pagina (non una finestra del browser)
+  function manda() {
     if (invio) return;
     setAvviso("");
     if (!risposta && !dest) { setAvviso("Scegliere il destinatario dall'elenco."); return; }
@@ -150,7 +170,13 @@ export default function ScriviMail({ risposta, clienti, fornitori, bloccati, onC
     if (files.length > MAX_ALLEGATI) { setAvviso(`Al massimo ${MAX_ALLEGATI} allegati.`); return; }
     if (NOME_DOTTORE.test(firmaUsata) && utente && utente !== "a916b8a1-fdd5-440a-ae4b-7023b77058f1") { setAvviso("La firma con il nome del Dott. Bizzarri la può usare solo lui: scrivere la propria firma."); return; }
     if (sconosciuto && !confermaSconosciuto) { setAvviso("Il mittente è sconosciuto: per rispondere va spuntata la conferma."); return; }
-    if (!window.confirm(`Mandare la mail a ${a}?\n\nOggetto: ${oggetto.trim()}\nFirma: ${firmaUsata}\nAllegati: ${files.length ? files.map(f => f.name).join(", ") : "nessuno"}\n\nLa mail parte subito da ${CASELLA_COMUNICAZIONI}, con intestazione, logo e piè di pagina di Podere Verde, e resta nel Registro delle Comunicazioni con il Suo nome come mittente.`)) return;
+    setConfermaInvio(true);
+  }
+
+  async function eseguiInvio() {
+    if (invio) return;
+    setConfermaInvio(false);
+    onAnnullaChiusura?.(); // una domanda di chiusura rimasta aperta sparisce: durante l'invio la finestra non si chiude
     setInvio(true);
     try {
       const r = await spedisci({ tipo: risposta ? "risposta" : dest.tipo, id: risposta ? risposta.id : dest.id, oggetto: oggetto.trim(), testo, firma: firmaUsata, files, codiceRichiesta, confermaSconosciuto: sconosciuto && confermaSconosciuto });
@@ -158,25 +184,91 @@ export default function ScriviMail({ risposta, clienti, fornitori, bloccati, onC
       let nota = "";
       if (ricorda && utente && firmaUsata !== (firmaSalvata ?? FIRMA_PREDEFINITA)) { // si ricorda solo una firma diversa da quella che già comparirebbe
         const { error } = await supabase.from("ci_firme_mail").upsert({ utente, firma: firmaUsata, aggiornata_il: new Date().toISOString() }, { onConflict: "utente" });
-        nota = error ? `\n\nLa firma non è stata ricordata: ${error.message}` : "\n\nLa firma è ricordata per le prossime mail.";
+        nota = error ? ` La firma non è stata ricordata: ${error.message}.` : " La firma è ricordata per le prossime mail.";
+      }
+      if (bozzaId) { // mandata: la bozza esce dalle Bozze
+        const { error } = await supabase.from("ci_bozze_mail").delete().eq("id", bozzaId);
+        nota += error ? ` ⚠️ La bozza non è stata tolta dalle Bozze (${error.message}): eliminarla a mano per non mandarla due volte.` : " La bozza è uscita dalle Bozze.";
       }
       setInvio(false);
-      alert(`✓ Mail mandata a ${r.destinatario} da ${r.mittente || CASELLA_COMUNICAZIONI}.${nota}`);
-      onSpedita?.(r);
-    } catch (e) { setInvio(false); setAvviso(e.doppione ? "⚠️ Questa mail risulta già spedita o in spedizione: non è partita una seconda volta. Controllare in «📤 Inviate» prima di riprovare." : e.message); }
+      onSpedita?.(r, `✓ Mail mandata a ${r.destinatario} da ${r.mittente || CASELLA_COMUNICAZIONI}.${nota}`);
+    } catch (e) {
+      let nota = "";
+      if (e.doppione && bozzaId && e.riga?.esito === "inviata") { // la bozza era già partita (risposta persa per strada): esce dalle Bozze
+        const { error } = await supabase.from("ci_bozze_mail").delete().eq("id", bozzaId);
+        if (!error) { setBozzaId(null); setSalvato(null); setNotaBozza(""); setGiaPartita(true); onBozzaSalvata?.(); nota = " La bozza è uscita dalle Bozze: chiudere la finestra."; }
+        else nota = ` ⚠️ La bozza non è stata tolta dalle Bozze (${error.message}): eliminarla a mano.`;
+      }
+      setInvio(false);
+      setAvviso(e.doppione ? `⚠️ Questa mail risulta già spedita o in spedizione: non è partita una seconda volta. Controllare in «📤 Inviate» prima di riprovare.${nota}` : e.message);
+    }
   }
+
+  // «💾 Salva come bozza»: nuova oppure aggiorna quella aperta. Restituisce true se è salvata.
+  async function salvaBozza() {
+    if (salvataggio || invio) return false;
+    setAvviso("");
+    const corpo = risposta ? testo.split("\n----- Il ")[0].trim() : testo.trim();
+    if (!oggetto.trim() && !corpo) { setAvviso("Niente da salvare: scrivere l'oggetto o il testo."); return false; }
+    if (testo.length > MAX_TESTO) { setAvviso(`Il testo è troppo lungo per una bozza (${testo.length} caratteri, massimo ${MAX_TESTO}).`); return false; }
+    // destinatario scelto ma non (ancora) riconosciuto nell'elenco: si conserva quello della bozza, non si cancella
+    const tenuto = !risposta && !dest && /^(cliente|fornitore|persona|contatto):[0-9]+$/.test(scelto) ? scelto : null;
+    const riga = {
+      risposta_a: risposta ? risposta.id : null,
+      destinatario: risposta ? null : (dest ? dest.chiave : tenuto),
+      destinatario_descritto: (risposta ? String(risposta.indirizzo || "") : dest ? `${dest.nome} <${dest.email}>` : tenuto && tenuto === bozza?.destinatario ? String(bozza.destinatario_descritto || "") : "").slice(0, 300) || null,
+      oggetto: oggetto.slice(0, 200), testo, firma: firma.slice(0, 120), codice_richiesta: codiceRichiesta,
+    };
+    setSalvataggio(true);
+    let data = null, error = null, nota = "";
+    if (bozzaId) {
+      ({ data, error } = await supabase.from("ci_bozze_mail").update(riga).eq("id", bozzaId).select("id, aggiornata_il"));
+      if (!error && !(data || []).length) nota = " ⚠️ La bozza di prima non c'era più (eliminata, o già mandata da un'altra finestra: controllare «📤 Inviate»): è salvata come bozza nuova.";
+      if (!error && (data || []).length) data = data[0]; else if (!error) data = null;
+    }
+    if (!error && !data) ({ data, error } = await supabase.from("ci_bozze_mail").insert([riga]).select("id, aggiornata_il").single());
+    setSalvataggio(false);
+    if (error) { setAvviso(`Bozza non salvata: ${error.message}`); return false; }
+    setBozzaId(data.id);
+    setSalvato({ oggetto: riga.oggetto, testo: riga.testo, firma: riga.firma, scelto: risposta ? "" : scelto });
+    setNotaBozza(`💾 Bozza salvata alle ${ora()}: si ritrova in «📝 Bozze». Gli allegati non si salvano nelle bozze.${nota}`);
+    onBozzaSalvata?.();
+    return true;
+  }
+
   // La finestra sa se si sta spedendo o se c'è testo scritto: non si chiude a metà invio, e chiede prima di perdere il testo
-  const modificata = !!(testo.trim() && testo !== (risposta ? testoCitato(risposta) : "")) || files.length > 0 || (!risposta && !!oggetto.trim())
-    || !!(nuovo && [nuovo.nome, nuovo.email, nuovo.motivo].some(x => String(x || "").trim()));
+  const modificata = !giaPartita && ((salvato
+    ? oggetto !== salvato.oggetto || testo !== salvato.testo || firma !== salvato.firma || (!risposta && scelto !== salvato.scelto)
+    : !!(testo.trim() && testo !== (risposta ? testoCitato(risposta) : "")) || (!risposta && !!oggetto.trim()))
+    || files.length > 0 || !!(nuovo && [nuovo.nome, nuovo.email, nuovo.motivo].some(x => String(x || "").trim())));
+  const destPerso = !!(bozza?.destinatario && !risposta && !dest && elenchiLetti && scelto === bozza.destinatario);
+  // Se dopo la richiesta di conferma si cambia qualcosa, la conferma sparisce: si conferma solo ciò che si vede
+  useEffect(() => { setConfermaInvio(false); }, [oggetto, testo, firma, scelto, files, confermaSconosciuto]);
+  const rifChiusura = useRef(null);
+  useEffect(() => { if (chiusuraChiesta) rifChiusura.current?.scrollIntoView?.({ block: "nearest" }); }, [chiusuraChiesta]);
   useEffect(() => { onStato?.({ invio, modificata }); }, [invio, modificata, onStato]);
 
   const anteprima = { fontSize: 12, color: C.muted, whiteSpace: "pre-wrap" };
   return (
     <div>
       <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 8 }}>
-        <div style={{ flex: 1, fontWeight: 800, color: C.primary, fontSize: 16 }}>{risposta ? "↩️ Rispondi" : "✏️ Scrivi una mail"}</div>
+        <div style={{ flex: 1, fontWeight: 800, color: C.primary, fontSize: 16 }}>{risposta ? "↩️ Rispondi" : "✏️ Scrivi una mail"}{bozzaId ? " · 📝 bozza" : ""}</div>
         <button onClick={onChiudi} disabled={invio} title={invio ? "La mail sta partendo: aspettare" : undefined} style={btn(false)}>Chiudi</button>
       </div>
+      {chiusuraChiesta && !invio && (
+        <div ref={rifChiusura} role="alertdialog" aria-label="Chiudere la mail?" style={{ background: "#FFF8E6", border: `2px solid ${C.red}`, borderRadius: 8, padding: "10px 12px", marginBottom: 10, fontSize: 13 }}>
+          <b>La mail non è mandata e le ultime modifiche non sono salvate.</b> Che cosa faccio?
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+            <button onClick={async () => { if (await salvaBozza()) onChiudiDavvero?.(); }} disabled={salvataggio} style={btn(true, C.green)}>{salvataggio ? "Salvo…" : "💾 Salva come bozza e chiudi"}</button>
+            <button onClick={() => onChiudiDavvero?.()} style={btn(true, C.red)}>Chiudi senza salvare</button>
+            <button onClick={() => onAnnullaChiusura?.()} style={btn(false)}>Torna alla mail</button>
+          </div>
+          {files.length > 0 && <div style={{ color: C.muted, marginTop: 6 }}>Gli allegati non si salvano nella bozza: andranno aggiunti di nuovo.</div>}
+          {avviso && <div style={{ color: C.red, fontWeight: 700, marginTop: 6 }}>{avviso}</div>}
+        </div>
+      )}
+      {notaBozza && <div style={{ fontSize: 12.5, color: C.green, fontWeight: 700, marginBottom: 6 }}>{notaBozza}</div>}
+      {destPerso && <div style={{ fontSize: 12.5, color: C.red, fontWeight: 700, marginBottom: 6 }}>Il destinatario della bozza ({bozza.destinatario_descritto || bozza.destinatario}) non è più nell'elenco: sceglierlo di nuovo.</div>}
       <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 8 }}>Da: <b style={{ color: C.text }}>{CASELLA_COMUNICAZIONI}</b> · le risposte tornano lì ed entrano da sole nella Posta.</div>
 
       {!risposta && (
@@ -191,6 +283,7 @@ export default function ScriviMail({ risposta, clienti, fornitori, bloccati, onC
           <div style={{ fontSize: 13, marginBottom: 4 }}>A: {dest ? <b>{dest.nome} &lt;{dest.email}&gt;</b> : <span style={{ color: C.red }}>scegliere dall'elenco</span>}</div>
           <input placeholder="Cerca nell'elenco: nome o indirizzo…" value={filtro} onChange={e => setFiltro(e.target.value)} style={{ ...input, width: "100%", marginBottom: 4 }} />
           <select size={6} value={scelto} onChange={e => setScelto(e.target.value)} style={{ ...input, width: "100%", height: "auto" }} aria-label="Destinatario">
+            {scelto && !dest && <option value={scelto} disabled>— destinatario della bozza non trovato nell'elenco: sceglierne uno —</option>}
             {visibili.map(d => <option key={d.chiave} value={d.chiave}>{nomeTipo[d.tipo]} · {d.nome} — {d.email}{d.ruolo ? ` (${String(d.ruolo).toLowerCase()})` : ""}{d.spenta ? " (non riceve i report)" : ""}</option>)}
           </select>
           {!visibili.length && <div style={{ fontSize: 12, color: C.red, marginTop: 2 }}>Nessuno nell'elenco con «{filtro}»: se è un destinatario nuovo, premere «➕ Nuovo destinatario».</div>}
@@ -240,8 +333,22 @@ export default function ScriviMail({ risposta, clienti, fornitori, bloccati, onC
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <input type="file" multiple onChange={e => setFiles([...e.target.files])} />
         <span style={{ fontSize: 12, color: peso > LIMITE_ALLEGATI ? C.red : C.muted }}>{files.length ? `${files.length} allegati, ${(peso / 1048576).toFixed(2)} MB (massimo 8 MB)` : "nessun allegato"}</span>
-        <button onClick={manda} disabled={invio} style={{ ...btn(true, C.green), marginLeft: "auto" }}>{invio ? "Invio…" : "✉️ Manda la mail"}</button>
+        <button onClick={salvaBozza} disabled={invio || salvataggio || confermaInvio || giaPartita} style={{ ...btn(false), marginLeft: "auto" }}>{salvataggio ? "Salvo…" : "💾 Salva come bozza"}</button>
+        <button onClick={manda} disabled={invio || confermaInvio || giaPartita} style={btn(true, C.green)}>{invio ? "Invio…" : "✉️ Manda la mail"}</button>
       </div>
+      {confermaInvio && (
+        <div role="alertdialog" aria-label="Conferma dell'invio" style={{ background: "#EEF7EE", border: `2px solid ${C.green}`, borderRadius: 8, padding: "10px 12px", marginTop: 8, fontSize: 13, lineHeight: 1.5 }}>
+          <b>Mandare la mail a {a}?</b>
+          <div>Oggetto: {oggetto.trim()}</div>
+          <div>Firma: {firmaUsata}</div>
+          <div>Allegati: {files.length ? files.map(f => f.name).join(", ") : "nessuno"}</div>
+          <div style={{ color: C.muted, marginTop: 4 }}>La mail parte subito da {CASELLA_COMUNICAZIONI}, con intestazione, logo e piè di pagina di Podere Verde, e resta nel Registro delle Comunicazioni con il Suo nome come mittente.{bozzaId ? " Mandata, esce dalle Bozze." : ""}</div>
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <button onClick={eseguiInvio} disabled={invio} style={btn(true, C.green)}>✉️ Sì, manda</button>
+            <button onClick={() => setConfermaInvio(false)} disabled={invio} style={btn(false)}>Annulla</button>
+          </div>
+        </div>
+      )}
       {avviso && <div style={{ ...scheda, borderLeft: `4px solid ${C.red}`, color: C.red, fontWeight: 700, marginTop: 8 }}>{avviso}</div>}
     </div>
   );

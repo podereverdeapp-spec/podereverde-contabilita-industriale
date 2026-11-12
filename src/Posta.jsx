@@ -15,8 +15,11 @@ import ScriviMail from "./ScriviMail";
 // La vedono le persone con il permesso «Può spedire mail dal programma».
 // Versione 369 (12/11/2026, Coglione, ordine del Dott. Bizzarri delle 09:36): «✏️ Scrivi» e «↩️ Rispondi» (ScriviMail.jsx);
 // in «Inviate» e nel dettaglio compare chi ha spedito la mail (registrata_da → profili).
+// Versione 371 (12/11/2026, Coglione, ordine del Dott. Bizzarri delle 13:38–13:42): scheda «📝 Bozze» (tabella ci_bozze_mail, ognuno
+// vede solo le proprie): si riapre una bozza, si corregge, si manda o si elimina. Le conferme sono dentro la pagina, non finestre
+// del browser (nel riquadro del browser di Claude si chiudevano da sole con «no»).
 
-const SCHEDE = [["arrivo", "📥 In arrivo"], ["inviate", "📤 Inviate"], ["bloccati", "⛔ Spam: mittenti bloccati"]];
+const SCHEDE = [["arrivo", "📥 In arrivo"], ["inviate", "📤 Inviate"], ["bozze", "📝 Bozze"], ["bloccati", "⛔ Spam: mittenti bloccati"]];
 const dominioDi = m => String(m || "").split("@")[1] || "";
 // Domini di posta usati da tutti: bloccarli intero bloccherebbe anche clienti, fornitori e utenti del programma (ricontrollo del 11/11/2026)
 const DOMINI_PUBBLICI = /^(gmail\.com|googlemail\.com|libero\.it|virgilio\.it|alice\.it|tim\.it|tin\.it|tiscali\.it|fastwebnet\.it|email\.it|inwind\.it|iol\.it|yahoo\.[a-z.]+|ymail\.com|hotmail\.[a-z.]+|outlook\.[a-z.]+|live\.[a-z.]+|msn\.com|icloud\.com|me\.com|mac\.com|aol\.com|proton\.me|protonmail\.com|gmx\.[a-z.]+|pec\.it|legalmail\.it|pec\.aruba\.it|arubapec\.it|aruba\.it|postecert\.it|poste\.it)$/i;
@@ -45,18 +48,31 @@ export default function Posta() {
   const [vista, setVista] = useState("arrivo");
   const [cerca, setCerca] = useState("");
   const [aperta, setAperta] = useState(null);
-  const [scrivi, setScrivi] = useState(null); // null | { risposta: riga ricevuta o null }
+  const [scrivi, setScrivi] = useState(null); // null | { risposta: riga ricevuta o null, bozza: riga di ci_bozze_mail o null }
+  const [bozze, setBozze] = useState([]);
+  const [chiusura, setChiusura] = useState(false); // la finestra «Scrivi» chiede che cosa fare del testo non salvato
+  const [notizia, setNotizia] = useState("");
   const [nomi, setNomi] = useState(new Map());
   const statoScrivi = useRef({ invio: false, modificata: false });
   const segnaStatoScrivi = useCallback(s => { statoScrivi.current = s; }, []);
-  // La finestra «Scrivi» non si chiude mentre la mail parte; con testo scritto chiede prima di perderlo
+  // La finestra «Scrivi» non si chiude mentre la mail parte; con modifiche non salvate chiede, DENTRO la pagina, se salvarle come bozza
+  const chiudiDavvero = useCallback(() => { if (statoScrivi.current.invio) return; statoScrivi.current = { invio: false, modificata: false }; setChiusura(false); setScrivi(null); }, []);
+  const chiudiDopoInvio = useCallback(() => { statoScrivi.current = { invio: false, modificata: false }; setChiusura(false); setScrivi(null); }, []);
   const chiudiScrivi = useCallback(() => {
     if (statoScrivi.current.invio) return;
-    if (statoScrivi.current.modificata && !window.confirm("Chiudere senza mandare la mail? Il testo scritto si perde.")) return;
-    statoScrivi.current = { invio: false, modificata: false }; setScrivi(null);
-  }, []);
+    if (statoScrivi.current.modificata) { setChiusura(true); return; }
+    chiudiDavvero();
+  }, [chiudiDavvero]);
   const [errore, setErrore] = useState("");
+  const [erroreBozze, setErroreBozze] = useState("");
   const [caricamento, setCaricamento] = useState(true);
+
+  // Le bozze di chi è collegato (la tabella mostra solo le proprie). Se non si leggono, il resto della Posta funziona e lo dice.
+  const caricaBozze = useCallback(async () => {
+    const { data, error } = await supabase.from("ci_bozze_mail").select("id, risposta_a, destinatario, destinatario_descritto, oggetto, testo, firma, codice_richiesta, creata_il, aggiornata_il").order("aggiornata_il", { ascending: false });
+    if (error) { setErroreBozze(`Bozze non lette: ${error.message}`); return; }
+    setErroreBozze(""); setBozze(data || []);
+  }, []);
 
   const carica = useCallback(async () => {
     try {
@@ -75,7 +91,7 @@ export default function Posta() {
     } catch (e) { setErrore(e.message); }
     setCaricamento(false);
   }, []);
-  useEffect(() => { puoSpedireMail().then(setPuo); carica(); const t = setInterval(carica, 60 * 1000); return () => clearInterval(t); }, [carica]);
+  useEffect(() => { puoSpedireMail().then(setPuo); carica(); caricaBozze(); const t = setInterval(() => { carica(); caricaBozze(); }, 60 * 1000); return () => clearInterval(t); }, [carica, caricaBozze]);
 
   const intest = c => intestatarioDi(c, anagrafiche.clienti, anagrafiche.fornitori);
   const elenco = useMemo(() => {
@@ -84,6 +100,14 @@ export default function Posta() {
       .filter(c => !q || [c.oggetto, c.testo, c.indirizzo, c.mittente, ...intest(c).map(x => x.nome)].some(v => String(v || "").toLowerCase().includes(q)));
   }, [righe, vista, cerca, anagrafiche]); // eslint-disable-line react-hooks/exhaustive-deps
   const daAprire = righe.filter(c => c.direzione === "ricevuta" && !c.tolta_il && c.sezione === "Casella podereverdeapp" && !aperture.has(c.id)).length;
+
+  // Riapre una bozza: se è la risposta a una mail, la mail ricevuta torna sotto il testo come prima
+  function apriBozza(b) {
+    setNotizia("");
+    const risposta = b.risposta_a ? righe.find(x => x.id === b.risposta_a) || null : null;
+    if (b.risposta_a && !risposta) { setErroreBozze("La mail a cui risponde questa bozza non si trova nell'elenco: aggiornare la pagina e riprovare."); return; }
+    setChiusura(false); setScrivi({ risposta, bozza: b });
+  }
 
   async function apri(c) {
     setAperta(c);
@@ -99,14 +123,16 @@ export default function Posta() {
       <h2 style={{ color: C.primary, margin: "0 0 4px" }}>Posta</h2>
       <div style={{ color: C.muted, fontSize: 13, marginBottom: 12 }}>Le mail della casella podereverdeapp@gmail.com e quelle partite dal programma. Arrivano da sole ogni 5 minuti; la pagina si aggiorna ogni minuto.</div>
       {errore && <div style={{ ...scheda, borderLeft: `4px solid ${C.red}`, color: C.red, fontWeight: 700 }}>{errore}</div>}
+      {notizia && <div style={{ ...scheda, borderLeft: `4px solid ${C.green}`, color: C.green, fontWeight: 700, display: "flex", gap: 8, alignItems: "center" }}><span style={{ flex: 1 }}>{notizia}</span><button onClick={() => setNotizia("")} style={btn(false)}>OK</button></div>}
 
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
-        {puo && <button onClick={() => setScrivi({ risposta: null })} style={btn(true, C.green)}>✏️ Scrivi</button>}
-        {SCHEDE.map(([k, t]) => <button key={k} onClick={() => setVista(k)} style={btn(vista === k)}>{t}{k === "arrivo" && daAprire > 0 ? ` (${daAprire} da aprire)` : ""}{k === "bloccati" ? ` (${bloccati.length})` : ""}</button>)}
-        {vista !== "bloccati" && <input style={{ ...input, flex: 1, minWidth: 220 }} placeholder="Cerca: mittente, oggetto, testo, cliente o fornitore…" value={cerca} onChange={e => setCerca(e.target.value)} />}
+        {puo && <button onClick={() => { setNotizia(""); setChiusura(false); setScrivi({ risposta: null, bozza: null }); }} style={btn(true, C.green)}>✏️ Scrivi</button>}
+        {SCHEDE.map(([k, t]) => <button key={k} onClick={() => setVista(k)} style={btn(vista === k)}>{t}{k === "arrivo" && daAprire > 0 ? ` (${daAprire} da aprire)` : ""}{k === "bozze" ? ` (${bozze.length})` : ""}{k === "bloccati" ? ` (${bloccati.length})` : ""}</button>)}
+        {vista !== "bloccati" && vista !== "bozze" && <input style={{ ...input, flex: 1, minWidth: 220 }} placeholder="Cerca: mittente, oggetto, testo, cliente o fornitore…" value={cerca} onChange={e => setCerca(e.target.value)} />}
       </div>
 
-      {caricamento ? <div>Lettura in corso…</div> : vista === "bloccati" ? <Bloccati bloccati={bloccati} onCambiato={carica} /> : (
+      {caricamento ? <div>Lettura in corso…</div> : vista === "bloccati" ? <Bloccati bloccati={bloccati} onCambiato={carica} />
+        : vista === "bozze" ? <Bozze bozze={bozze} errore={erroreBozze} onApri={apriBozza} onCambiato={caricaBozze} /> : (
         <div style={{ ...scheda, padding: 0, overflowX: "auto" }}>
           <table style={{ borderCollapse: "collapse", width: "100%" }}>
             <thead><tr style={{ background: C.primary, color: "#fff" }}>{["Data e ora", vista === "arrivo" ? "Da" : "A", "Cliente o fornitore", "Oggetto", "Allegati", ...(vista === "inviate" ? ["Spedita da"] : []), "Aperta da"].map(h => <th key={h} style={{ padding: "6px 8px", textAlign: "left", fontSize: 12.5 }}>{h}</th>)}</tr></thead>
@@ -129,11 +155,16 @@ export default function Posta() {
 
       {aperta && !scrivi && <Mail c={righe.find(x => x.id === aperta.id) || aperta} aperture={aperture.get(aperta.id) || []} intest={intest(aperta)}
         spedita={speditaDa(aperta, nomi)} puoRispondere={!!puo}
-        onRispondi={() => setScrivi({ risposta: righe.find(x => x.id === aperta.id) || aperta })}
+        onRispondi={() => { // se c'è già una propria bozza di risposta a questa mail, si riapre quella (niente seconda bozza indipendente)
+          setNotizia(""); setChiusura(false);
+          const gia = bozze.find(b => b.risposta_a === aperta.id);
+          setScrivi({ risposta: righe.find(x => x.id === aperta.id) || aperta, bozza: gia || null }); }}
         onChiudi={() => setAperta(null)} onCambiato={() => { setAperta(null); carica(); }} />}
       {scrivi && <Finestra onChiudi={chiudiScrivi}>
-        <ScriviMail risposta={scrivi.risposta} clienti={anagrafiche.clienti} fornitori={anagrafiche.fornitori} bloccati={bloccati} onStato={segnaStatoScrivi}
-          onChiudi={chiudiScrivi} onSpedita={() => { statoScrivi.current = { invio: false, modificata: false }; setScrivi(null); setAperta(null); setVista("inviate"); carica(); }} />
+        <ScriviMail key={scrivi.bozza ? `bozza-${scrivi.bozza.id}` : scrivi.risposta ? `risposta-${scrivi.risposta.id}` : "nuova"}
+          risposta={scrivi.risposta} bozza={scrivi.bozza} clienti={anagrafiche.clienti} fornitori={anagrafiche.fornitori} bloccati={bloccati} onStato={segnaStatoScrivi}
+          onChiudi={chiudiScrivi} chiusuraChiesta={chiusura} onChiudiDavvero={chiudiDavvero} onAnnullaChiusura={() => setChiusura(false)} onBozzaSalvata={caricaBozze}
+          onSpedita={(r, messaggio) => { chiudiDopoInvio(); setAperta(null); setVista("inviate"); setNotizia(messaggio || "✓ Mail mandata."); carica(); caricaBozze(); }} />
       </Finestra>}
     </div>
   );
@@ -141,7 +172,8 @@ export default function Posta() {
 
 function Mail({ c, aperture, intest, spedita, puoRispondere, onRispondi, onChiudi, onCambiato }) {
   const [modo, setModo] = useState(null); // "spam" | "togli"
-  const scarica = async a => { try { await apriAllegato(a); } catch (e) { alert(`⚠️ ${e.message}`); } };
+  const [avvisoAllegato, setAvvisoAllegato] = useState("");
+  const scarica = async a => { setAvvisoAllegato(""); try { await apriAllegato(a); } catch (e) { setAvvisoAllegato(`⚠️ ${e.message}`); } }; // nella pagina, non una finestra del browser (371)
   return (
     <Finestra onChiudi={onChiudi}>
       <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
@@ -155,6 +187,7 @@ function Mail({ c, aperture, intest, spedita, puoRispondere, onRispondi, onChiud
       </div>
       <div style={{ whiteSpace: "pre-wrap", fontSize: 13.5, lineHeight: 1.5, border: `1px solid ${C.border}`, borderRadius: 8, padding: 10, margin: "10px 0", maxHeight: "50vh", overflow: "auto", background: "#FAFAF7" }}>{c.testo || "(nessun testo)"}</div>
       {(c.allegati || []).length > 0 && <div style={{ fontSize: 13, marginBottom: 8 }}>Allegati: {(c.allegati || []).map((a, i) => <button key={i} onClick={() => scarica(a)} style={{ ...btn(false), marginRight: 6 }}>📎 {a.nome}</button>)}</div>}
+      {avvisoAllegato && <div style={{ color: C.red, fontWeight: 700, fontSize: 13, marginBottom: 8 }}>{avvisoAllegato}</div>}
       <div style={{ fontSize: 12.5, marginBottom: 10 }}><b>Aperta da:</b> {aperture.length ? aperture.map(a => `${a.chi} (prima volta ${quando(a.prima_apertura)}${a.aperture > 1 ? `, ultima ${quando(a.ultima_apertura)}, ${a.aperture} volte` : ""})`).join("; ") : "nessuno"}</div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {c.direzione === "ricevuta" && puoRispondere && String(c.indirizzo || "").includes("@") && <button onClick={onRispondi} style={btn(true, C.green)}>↩️ Rispondi</button>}
@@ -245,6 +278,45 @@ function Bloccati({ bloccati, onCambiato }) {
             : <button onClick={() => setChi(b.id)} style={btn(false)}>Sblocca</button>}</td>
         </tr>)}</tbody>
       </table>
+    </div>
+  );
+}
+
+// Scheda «📝 Bozze»: le mail salvate e non mandate di chi è collegato. Si aprono con un clic; si eliminano con conferma nella pagina.
+function Bozze({ bozze, errore, onApri, onCambiato }) {
+  const [chi, setChi] = useState(null);
+  const [avviso, setAvviso] = useState("");
+  const [lavoro, setLavoro] = useState(false);
+  async function elimina(b) {
+    setLavoro(true);
+    const { error } = await supabase.from("ci_bozze_mail").delete().eq("id", b.id);
+    setLavoro(false);
+    if (error) { setAvviso(`Bozza non eliminata: ${error.message}`); return; }
+    setChi(null); setAvviso(""); onCambiato();
+  }
+  return (
+    <div>
+      {errore && <div style={{ ...scheda, borderLeft: `4px solid ${C.red}`, color: C.red, fontWeight: 700 }}>{errore}</div>}
+      {avviso && <div style={{ ...scheda, borderLeft: `4px solid ${C.red}`, color: C.red, fontWeight: 700 }}>{avviso}</div>}
+      <div style={{ color: C.muted, fontSize: 12.5, marginBottom: 6 }}>Le mail salvate con «💾 Salva come bozza» e non ancora mandate. Ognuno vede solo le proprie. Cliccare una bozza per riaprirla: si corregge e si manda, e allora esce da qui. Gli allegati non si salvano nelle bozze.</div>
+      <div style={{ ...scheda, padding: 0, overflowX: "auto" }}>
+        <table style={{ borderCollapse: "collapse", width: "100%" }}>
+          <thead><tr style={{ background: C.primary, color: "#fff" }}>{["Ultima modifica", "Tipo", "A", "Oggetto", "Inizio del testo", ""].map(h => <th key={h} style={{ padding: "6px 8px", textAlign: "left", fontSize: 12.5 }}>{h}</th>)}</tr></thead>
+          <tbody>
+            {bozze.map(b => <tr key={b.id} onClick={() => chi !== b.id && onApri(b)} style={{ cursor: "pointer" }}>
+              <td style={{ ...td, whiteSpace: "nowrap" }}>{quando(b.aggiornata_il)}</td>
+              <td style={td}>{b.risposta_a ? "↩️ risposta" : "✏️ nuova"}</td>
+              <td style={td}>{b.risposta_a || b.destinatario ? (b.destinatario_descritto || b.destinatario) : <span style={{ color: C.red }}>da scegliere{b.destinatario_descritto ? ` (era ${b.destinatario_descritto})` : ""}</span>}</td>
+              <td style={td}>{b.oggetto || "(senza oggetto)"}</td>
+              <td style={{ ...td, color: C.muted }}>{String(b.testo || "").split("\n----- Il ")[0].trim().slice(0, 90) || "(vuoto)"}</td>
+              <td style={{ ...td, whiteSpace: "nowrap" }} onClick={e => e.stopPropagation()}>{chi === b.id
+                ? <span>Eliminare la bozza? <button disabled={lavoro} onClick={() => elimina(b)} style={btn(true, C.red)}>{lavoro ? "…" : "Sì, elimina"}</button> <button onClick={() => setChi(null)} style={btn(false)}>No</button></span>
+                : <><button onClick={() => onApri(b)} style={btn(true, C.green)}>Apri</button> <button onClick={() => setChi(b.id)} style={btn(false)}>🗑 Elimina</button></>}</td>
+            </tr>)}
+            {!bozze.length && <tr><td colSpan={6} style={{ ...td, color: C.muted }}>Nessuna bozza. Si salva una bozza dalla finestra «✏️ Scrivi» o «↩️ Rispondi» con «💾 Salva come bozza».</td></tr>}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
