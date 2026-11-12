@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { btn, input, scheda } from "./stileAruba";
 import { caricaComunicazioni, caricaAnagrafiche, intestatarioDi, quando, apriAllegato, puoSpedireMail, caricaBloccati, sbloccaMittente,
   bloccaMittente, togliDalRegistro, contaRicevuteDa, anagraficheDi } from "./anagrafiche";
+import ScriviMail from "./ScriviMail";
 
 // Versione 364 — sezione «Posta» (ordine del Dott. Bizzarri dell'11/11/2026, ore 13:09–13:19).
 // Le mail della casella podereverdeapp@gmail.com, ricevute e inviate, comprese quelle di indirizzi sconosciuti
@@ -12,12 +13,22 @@ import { caricaComunicazioni, caricaAnagrafiche, intestatarioDi, quando, apriAll
 // - Chi ha aperto ogni mail e quando (tabella ci_comunicazioni_aperture, funzione ci_segna_aperta).
 // - Il numero rosso nel menu conta le mail ricevute che nessuno ha ancora aperto (funzione ci_posta_da_aprire).
 // La vedono le persone con il permesso «Può spedire mail dal programma».
+// Versione 369 (12/11/2026, Coglione, ordine del Dott. Bizzarri delle 09:36): «✏️ Scrivi» e «↩️ Rispondi» (ScriviMail.jsx);
+// in «Inviate» e nel dettaglio compare chi ha spedito la mail (registrata_da → profili).
 
 const SCHEDE = [["arrivo", "📥 In arrivo"], ["inviate", "📤 Inviate"], ["bloccati", "⛔ Spam: mittenti bloccati"]];
 const dominioDi = m => String(m || "").split("@")[1] || "";
 // Domini di posta usati da tutti: bloccarli intero bloccherebbe anche clienti, fornitori e utenti del programma (ricontrollo del 11/11/2026)
 const DOMINI_PUBBLICI = /^(gmail\.com|googlemail\.com|libero\.it|virgilio\.it|alice\.it|tim\.it|tin\.it|tiscali\.it|fastwebnet\.it|email\.it|inwind\.it|iol\.it|yahoo\.[a-z.]+|ymail\.com|hotmail\.[a-z.]+|outlook\.[a-z.]+|live\.[a-z.]+|msn\.com|icloud\.com|me\.com|mac\.com|aol\.com|proton\.me|protonmail\.com|gmx\.[a-z.]+|pec\.it|legalmail\.it|pec\.aruba\.it|arubapec\.it|aruba\.it|postecert\.it|poste\.it)$/i;
 const td = { padding: "5px 8px", fontSize: 12.5, verticalAlign: "top", borderTop: `1px solid ${C.border}` };
+// Chi ha spedito una mail inviata: la persona collegata che l'ha mandata dal programma, oppure da dove è partita
+export function speditaDa(c, nomi) {
+  if (c.direzione !== "inviata") return "";
+  if (c.registrata_da) return nomi.get(c.registrata_da) || "utente sconosciuto";
+  if (/automatic/i.test(c.sezione || "")) return "programma (mail automatica)";
+  if (c.sezione === "Casella podereverdeapp") return "casella Gmail (fuori dal programma)";
+  return "non registrato";
+}
 
 // Usata dal menu: mail ricevute che nessuno ha ancora aperto
 export async function contaPostaDaAprire() {
@@ -34,19 +45,32 @@ export default function Posta() {
   const [vista, setVista] = useState("arrivo");
   const [cerca, setCerca] = useState("");
   const [aperta, setAperta] = useState(null);
+  const [scrivi, setScrivi] = useState(null); // null | { risposta: riga ricevuta o null }
+  const [nomi, setNomi] = useState(new Map());
+  const statoScrivi = useRef({ invio: false, modificata: false });
+  const segnaStatoScrivi = useCallback(s => { statoScrivi.current = s; }, []);
+  // La finestra «Scrivi» non si chiude mentre la mail parte; con testo scritto chiede prima di perderlo
+  const chiudiScrivi = useCallback(() => {
+    if (statoScrivi.current.invio) return;
+    if (statoScrivi.current.modificata && !window.confirm("Chiudere senza mandare la mail? Il testo scritto si perde.")) return;
+    statoScrivi.current = { invio: false, modificata: false }; setScrivi(null);
+  }, []);
   const [errore, setErrore] = useState("");
   const [caricamento, setCaricamento] = useState(true);
 
   const carica = useCallback(async () => {
     try {
-      const [r, cl, fo, bl] = await Promise.all([caricaComunicazioni(), caricaAnagrafiche("cliente"), caricaAnagrafiche("fornitore"), caricaBloccati()]);
+      const [r, cl, fo, bl, pr] = await Promise.all([caricaComunicazioni(), caricaAnagrafiche("cliente"), caricaAnagrafiche("fornitore"), caricaBloccati(),
+        supabase.from("profili").select("id, nome, cognome")]);
+      // i nomi servono solo per «Spedita da»: se non si leggono la pagina funziona lo stesso e lo dice
+      if (!pr.error) setNomi(new Map((pr.data || []).map(p => [p.id, `${p.nome || ""} ${p.cognome || ""}`.trim() || "utente senza nome"])));
       const mail = r.filter(c => c.origine === "registro" && c.tipo !== "Telefonata");
       setRighe(mail); setAnagrafiche({ clienti: cl, fornitori: fo }); setBloccati(bl);
       const ids = mail.map(c => c.id);
       const { data, error } = ids.length ? await supabase.rpc("ci_aperture_mail", { p_comunicazioni: ids }) : { data: [] };
       if (error) throw new Error(`Aperture: ${error.message}`);
       const m = new Map(); for (const a of data || []) { if (!m.has(a.comunicazione_id)) m.set(a.comunicazione_id, []); m.get(a.comunicazione_id).push(a); }
-      setAperture(m); setErrore("");
+      setAperture(m); setErrore(pr.error ? `Nomi di chi ha spedito non letti (${pr.error.message}): in «Spedita da» compare «utente sconosciuto».` : "");
       window.dispatchEvent(new Event("posta-cambiata")); // il numero rosso del menu si aggiorna subito
     } catch (e) { setErrore(e.message); }
     setCaricamento(false);
@@ -77,6 +101,7 @@ export default function Posta() {
       {errore && <div style={{ ...scheda, borderLeft: `4px solid ${C.red}`, color: C.red, fontWeight: 700 }}>{errore}</div>}
 
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+        {puo && <button onClick={() => setScrivi({ risposta: null })} style={btn(true, C.green)}>✏️ Scrivi</button>}
         {SCHEDE.map(([k, t]) => <button key={k} onClick={() => setVista(k)} style={btn(vista === k)}>{t}{k === "arrivo" && daAprire > 0 ? ` (${daAprire} da aprire)` : ""}{k === "bloccati" ? ` (${bloccati.length})` : ""}</button>)}
         {vista !== "bloccati" && <input style={{ ...input, flex: 1, minWidth: 220 }} placeholder="Cerca: mittente, oggetto, testo, cliente o fornitore…" value={cerca} onChange={e => setCerca(e.target.value)} />}
       </div>
@@ -84,7 +109,7 @@ export default function Posta() {
       {caricamento ? <div>Lettura in corso…</div> : vista === "bloccati" ? <Bloccati bloccati={bloccati} onCambiato={carica} /> : (
         <div style={{ ...scheda, padding: 0, overflowX: "auto" }}>
           <table style={{ borderCollapse: "collapse", width: "100%" }}>
-            <thead><tr style={{ background: C.primary, color: "#fff" }}>{["Data e ora", vista === "arrivo" ? "Da" : "A", "Cliente o fornitore", "Oggetto", "Allegati", "Aperta da"].map(h => <th key={h} style={{ padding: "6px 8px", textAlign: "left", fontSize: 12.5 }}>{h}</th>)}</tr></thead>
+            <thead><tr style={{ background: C.primary, color: "#fff" }}>{["Data e ora", vista === "arrivo" ? "Da" : "A", "Cliente o fornitore", "Oggetto", "Allegati", ...(vista === "inviate" ? ["Spedita da"] : []), "Aperta da"].map(h => <th key={h} style={{ padding: "6px 8px", textAlign: "left", fontSize: 12.5 }}>{h}</th>)}</tr></thead>
             <tbody>
               {elenco.map(c => { const ap = aperture.get(c.id) || []; const l = intest(c); const nuova = vista === "arrivo" && !ap.length && c.sezione === "Casella podereverdeapp";
                 return <tr key={c.id} onClick={() => apri(c)} style={{ cursor: "pointer", background: nuova ? "#FFF8E6" : undefined }}>
@@ -93,21 +118,28 @@ export default function Posta() {
                   <td style={td}>{l.length ? l.map(x => `${x.tipo === "cliente" ? "🤝" : "🏢"} ${x.nome}`).join(" · ") : <span style={{ color: C.muted }}>indirizzo sconosciuto</span>}</td>
                   <td style={{ ...td, fontWeight: nuova ? 800 : 400 }}>{nuova ? "● " : ""}{c.oggetto || "(senza oggetto)"}</td>
                   <td style={td}>{(c.allegati || []).length ? `📎 ${(c.allegati || []).length}` : ""}</td>
+                  {vista === "inviate" && <td style={td}>{speditaDa(c, nomi)}</td>}
                   <td style={{ ...td, color: nuova ? C.red : C.text }}>{ap.length ? ap.map(a => a.chi).join(", ") : "nessuno"}</td>
                 </tr>; })}
-              {!elenco.length && <tr><td colSpan={6} style={{ ...td, color: C.muted }}>{cerca ? "Nessuna mail trovata." : vista === "arrivo" ? "Nessuna mail ricevuta." : "Nessuna mail inviata."}</td></tr>}
+              {!elenco.length && <tr><td colSpan={vista === "inviate" ? 7 : 6} style={{ ...td, color: C.muted }}>{cerca ? "Nessuna mail trovata." : vista === "arrivo" ? "Nessuna mail ricevuta." : "Nessuna mail inviata."}</td></tr>}
             </tbody>
           </table>
         </div>
       )}
 
-      {aperta && <Mail c={righe.find(x => x.id === aperta.id) || aperta} aperture={aperture.get(aperta.id) || []} intest={intest(aperta)}
+      {aperta && !scrivi && <Mail c={righe.find(x => x.id === aperta.id) || aperta} aperture={aperture.get(aperta.id) || []} intest={intest(aperta)}
+        spedita={speditaDa(aperta, nomi)} puoRispondere={!!puo}
+        onRispondi={() => setScrivi({ risposta: righe.find(x => x.id === aperta.id) || aperta })}
         onChiudi={() => setAperta(null)} onCambiato={() => { setAperta(null); carica(); }} />}
+      {scrivi && <Finestra onChiudi={chiudiScrivi}>
+        <ScriviMail risposta={scrivi.risposta} clienti={anagrafiche.clienti} fornitori={anagrafiche.fornitori} bloccati={bloccati} onStato={segnaStatoScrivi}
+          onChiudi={chiudiScrivi} onSpedita={() => { statoScrivi.current = { invio: false, modificata: false }; setScrivi(null); setAperta(null); setVista("inviate"); carica(); }} />
+      </Finestra>}
     </div>
   );
 }
 
-function Mail({ c, aperture, intest, onChiudi, onCambiato }) {
+function Mail({ c, aperture, intest, spedita, puoRispondere, onRispondi, onChiudi, onCambiato }) {
   const [modo, setModo] = useState(null); // "spam" | "togli"
   const scarica = async a => { try { await apriAllegato(a); } catch (e) { alert(`⚠️ ${e.message}`); } };
   return (
@@ -117,6 +149,7 @@ function Mail({ c, aperture, intest, onChiudi, onCambiato }) {
           <div style={{ fontWeight: 800, color: C.primary, fontSize: 16 }}>{c.oggetto || "(senza oggetto)"}</div>
           <div style={{ fontSize: 13, marginTop: 4 }}>{c.direzione === "ricevuta" ? "Da" : "A"}: <b>{c.indirizzo}</b>{intest.length ? ` — ${intest.map(x => x.nome).join(", ")}` : " — indirizzo sconosciuto"}</div>
           <div style={{ fontSize: 12, color: C.muted }}>{quando(c.data_ora)} · {c.sezione}{c.firma ? ` · firma «${c.firma}»` : ""}</div>
+          {c.direzione === "inviata" && <div style={{ fontSize: 12.5, marginTop: 2 }}>Spedita da: <b>{spedita}</b></div>}
         </div>
         <button onClick={onChiudi} style={btn(false)}>Chiudi</button>
       </div>
@@ -124,6 +157,7 @@ function Mail({ c, aperture, intest, onChiudi, onCambiato }) {
       {(c.allegati || []).length > 0 && <div style={{ fontSize: 13, marginBottom: 8 }}>Allegati: {(c.allegati || []).map((a, i) => <button key={i} onClick={() => scarica(a)} style={{ ...btn(false), marginRight: 6 }}>📎 {a.nome}</button>)}</div>}
       <div style={{ fontSize: 12.5, marginBottom: 10 }}><b>Aperta da:</b> {aperture.length ? aperture.map(a => `${a.chi} (prima volta ${quando(a.prima_apertura)}${a.aperture > 1 ? `, ultima ${quando(a.ultima_apertura)}, ${a.aperture} volte` : ""})`).join("; ") : "nessuno"}</div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {c.direzione === "ricevuta" && puoRispondere && String(c.indirizzo || "").includes("@") && <button onClick={onRispondi} style={btn(true, C.green)}>↩️ Rispondi</button>}
         {c.direzione === "ricevuta" && String(c.indirizzo || "").includes("@") && <button onClick={() => setModo(modo === "spam" ? null : "spam")} style={btn(modo === "spam", C.red)}>⛔ È spam</button>}
         <button onClick={() => setModo(modo === "togli" ? null : "togli")} style={btn(modo === "togli", C.red)}>🗑 Togli dall'elenco</button>
       </div>
