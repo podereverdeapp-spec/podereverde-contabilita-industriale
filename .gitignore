@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Pacchetti delle versioni (12/11/2026, Tenente Fatture): non si mettono mai nel repository
+*.zip
