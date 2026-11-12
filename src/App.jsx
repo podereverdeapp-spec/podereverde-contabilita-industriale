@@ -57,6 +57,7 @@ import ConsultaEstratti from "./ConsultaEstratti";
 import ConfermaMovimenti from "./ConfermaMovimenti";
 import PrimaNota from "./PrimaNota";
 import GestioneIncassiPagamenti from "./GestioneIncassiPagamenti";
+import AnticipiFornitori, { contaAnticipiDaGuardare } from "./AnticipiFornitori"; // versione 370
 import { ISTRUZIONI_BANCHE, ISTRUZIONI_INCASSI_PAGAMENTI, ISTRUZIONI_PRIMA_NOTA } from "./istruzioniBancheIncassiPrimaNota";
 // Versione 346 (03/11/2026): posta del programma — le mail ai clienti e ai fornitori partono da podereverdeapp@gmail.com attraverso il postino (funzione spedisci-mail), con intestazione, logo, firma modificabile e piè di pagina di legge; permesso «Può spedire mail dal programma» nella cartella Accessi; le mail della casella entrano da sole nel Registro delle Comunicazioni (cassetta comunicazioni-ricevi, ritiro ogni 5 minuti); «Togli dal registro» (recuperabile) e «Blocca mittente».
 // Versione 363 (11/11/2026): avvisi in alto «F24 da pagare» e «F24 da caricare» (cartella FISCALE controllata in sola lettura), con i tasti per «F24 arrivati» e «Consulta F24».
@@ -295,6 +296,7 @@ const MENU = [
   { tipo: "cartella", id: "cart-incassi-pagamenti", label: "Gestione incassi e pagamenti", icon: "💶", contenuto: [
     { tipo: "voce", id: "istr-incassi-pagamenti", label: "Istruzioni", icon: "📖" },
     { tipo: "voce", id: "incassi-pagamenti", label: "Incassi e pagamenti", icon: "💶" },
+    { tipo: "voce", id: "anticipi-fornitori", label: "Anticipi in attesa di fattura", icon: "⏳" }, // versione 370
   ]},
   // Versione 354 (10/11/2026): la prima nota (progetto della prima nota, sezioni 3, 4.1, 8 e 9)
   { tipo: "cartella", id: "cart-prima-nota", label: "Prima nota", icon: "📒", contenuto: [
@@ -540,7 +542,10 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
     window.addEventListener("posta-cambiata", controlla);
     return () => { attivo = false; clearInterval(timer); window.removeEventListener("posta-cambiata", controlla); };
   }, [tab]);
-  const AVVISI = { "cart-posta": postaDaAprire, "posta": postaDaAprire, "sub-dati-f24": numeroF24, "consulta-f24": numeroF24, "cart-modelli4": modelli4Aperti.totale, "modelli4-chiusure": modelli4Aperti.totale, "cart-animali": verificheAnimali, "verifiche-ovini": verificheAnimali, "cart-alimentaria": senzaComposizione, "alimenti-senza-composizione": senzaComposizione, "cart-fatture": (anomalieAperte || 0) + numeroF24, "sub-dati-controllo": anomalieAperte || 0, "registro-controlli": anomalieAperte || 0, "cart-emissione-fatture": daFatturare + allarmiAttiva, "sub-fatturazione-animali": daFatturare, "fatt-animali-da-fatturare": daFatturare, "fatt-animali-prepara": daFatturare, "sub-controllo-attiva": allarmiAttiva, "controllo-attiva": allarmiAttiva, "cart-accessi-registro": richiesteAccesso, "sub-accessi": richiesteAccesso, "accessi": richiesteAccesso };
+  // Versione 370: anticipi su fattura da ricevere che chiedono un'azione (fattura arrivata da controllare, in ritardo, segnalazione)
+  const [anticipiDaGuardare, setAnticipiDaGuardare] = useState(0);
+  useEffect(() => { if (puo("anticipi-fornitori")) contaAnticipiDaGuardare().then(setAnticipiDaGuardare).catch(() => setAnticipiDaGuardare(0)); }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
+  const AVVISI = { "cart-incassi-pagamenti": anticipiDaGuardare, "anticipi-fornitori": anticipiDaGuardare, "cart-posta": postaDaAprire, "posta": postaDaAprire, "sub-dati-f24": numeroF24, "consulta-f24": numeroF24, "cart-modelli4": modelli4Aperti.totale, "modelli4-chiusure": modelli4Aperti.totale, "cart-animali": verificheAnimali, "verifiche-ovini": verificheAnimali, "cart-alimentaria": senzaComposizione, "alimenti-senza-composizione": senzaComposizione, "cart-fatture": (anomalieAperte || 0) + numeroF24, "sub-dati-controllo": anomalieAperte || 0, "registro-controlli": anomalieAperte || 0, "cart-emissione-fatture": daFatturare + allarmiAttiva, "sub-fatturazione-animali": daFatturare, "fatt-animali-da-fatturare": daFatturare, "fatt-animali-prepara": daFatturare, "sub-controllo-attiva": allarmiAttiva, "controllo-attiva": allarmiAttiva, "cart-accessi-registro": richiesteAccesso, "sub-accessi": richiesteAccesso, "accessi": richiesteAccesso };
 
   function vaiA(pageId) {
     if (!puo(pageId)) return; // versione 337: pagina non data a questa persona
@@ -577,7 +582,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 369</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 370</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -669,6 +674,13 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
           </div>
         )}
         {vedeF24 && <StrisciaAvvisiF24 avvisi={avvisiF24} vaiA={vaiA} utente={utente} puoCaricare={puo("f24-arrivati")} puoConsultare={puo("consulta-f24")} />}
+        {anticipiDaGuardare > 0 && tab !== "anticipi-fornitori" && puo("anticipi-fornitori") && (
+          <div onClick={() => vaiA("anticipi-fornitori")}
+            style={{ background: "#2C6E9B", color: "#fff", padding: "10px 20px", fontSize: 13.5, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+            ⏳ {anticipiDaGuardare === 1 ? "C'è 1 anticipo su fattura da ricevere" : `Ci sono ${anticipiDaGuardare} anticipi su fattura da ricevere`} da guardare (fattura arrivata da controllare, oppure in ritardo).
+            <span style={{ textDecoration: "underline", fontWeight: 800 }}>Vai agli anticipi →</span>
+          </div>
+        )}
         {richiesteAccesso > 0 && tab !== "accessi" && (
           <div onClick={() => vaiA("accessi")}
             style={{ background: "#C0392B", color: "#fff", padding: "10px 20px", fontSize: 13.5, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
@@ -872,6 +884,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
         {tab === "banche-conferma" && <ConfermaMovimenti />}
         {tab === "prima-nota" && <PrimaNota />}
         {tab === "incassi-pagamenti" && <GestioneIncassiPagamenti />}
+        {tab === "anticipi-fornitori" && <AnticipiFornitori vaiA={vaiA} />}
         {tab === "istr-banche" && <DocumentoIstruzioni doc={ISTRUZIONI_BANCHE} />}
         {tab === "istr-incassi-pagamenti" && <DocumentoIstruzioni doc={ISTRUZIONI_INCASSI_PAGAMENTI} />}
         {tab === "istr-prima-nota" && <DocumentoIstruzioni doc={ISTRUZIONI_PRIMA_NOTA} />}

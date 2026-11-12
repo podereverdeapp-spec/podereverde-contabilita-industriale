@@ -13,6 +13,9 @@ import { MODALITA, propostaPerMovimento, propostaPerRiga, abbina, nomeDellaRiga,
 // Versione 357: i movimenti disposti da «Gestione incassi e pagamenti» (codice P-0001) si trovano anche se la banca li addebita
 // qualche giorno dopo; per le righe senza movimento il programma riconosce il soggetto dall'anagrafica e propone le fatture aperte
 // da chiudere: l'abbinamento nasce solo quando l'operatore conferma.
+// Versione 370: «Acconto su fattura da ricevere» → nasce l'anticipo (pagina «Anticipi in attesa di fattura»); un anticipo non chiude fatture.
+// Versione 370: la voce dell'anticipo su fattura da ricevere (nasce l'anticipo nella pagina «Anticipi in attesa di fattura»)
+const ANTICIPO = "Acconto su fattura da ricevere";
 const MESI = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"];
 const STATI = {
   confermata: { nome: "Confermata", colore: C.green },
@@ -93,8 +96,14 @@ export default function ConfermaMovimenti() {
         if (sog) {
           sc[lato === "fornitore" ? "fornitore_id" : "cliente_id"] = sog.id; sc.controparte = sog.nome;
           const f = fatturePerRiga(x, base.aperte, sog.id);
-          if (f.scelte.length) { sc.scadenze = f.scelte; if (!sc.causale_gruppo) sc.causale_gruppo = "Fatture"; if (sc.causale_gruppo === "Fatture" && !sc.causale_voce) sc.causale_voce = "Saldo fattura"; }
-          sc.perche = `${p.perche ? p.perche + ". " : ""}Soggetto riconosciuto: ${sog.nome}; ${f.perche}.`;
+          if (f.scelte.length) { sc.scadenze = f.scelte; if (!sc.causale_gruppo) sc.causale_gruppo = "Fatture"; if (sc.causale_gruppo === "Fatture" && !sc.causale_voce) sc.causale_voce = "Saldo fattura";
+            // versione 370: la fattura c'è già → non è un anticipo su fattura da ricevere
+            // (la voce torna quella di prima della 370: «Acconto su fattura» se la causale dice «acconto», altrimenti «Saldo fattura»)
+            if (sc.causale_voce === ANTICIPO) sc.causale_voce = /ACCONTO/i.test(x.descrizione || "") ? "Acconto su fattura" : "Saldo fattura"; }
+          // versione 370: anticipo proposto ma il fornitore ha fatture aperte (non trovate da sole) → la voce la sceglie l'operatore
+          if (sc.causale_voce === ANTICIPO && !f.scelte.length && base.aperte.some(a => a.lato === lato && a.fornitore_id === sog.id && a.data_documento <= x.data_contabile)) {
+            sc.causale_voce = ""; sc.perche_anticipo = "il fornitore ha fatture aperte: scegliere se è un anticipo («Acconto su fattura da ricevere») o il pagamento di una di queste fatture"; }
+          sc.perche = `${p.perche ? p.perche + ". " : ""}Soggetto riconosciuto: ${sog.nome}; ${f.perche}${sc.perche_anticipo ? "; " + sc.perche_anticipo : ""}.`;
         }
       }
       nuoveScelte[x.id] = sc;
@@ -117,6 +126,7 @@ export default function ConfermaMovimenti() {
     if (s.causale_voce === "Altro" && !String(s.causale_altro || "").trim()) return false;
     if (s.modalita === "Altro" && !String(s.modalita_altro || "").trim()) return false;
     if (s.movimento_id === undefined && !String(s.controparte || "").trim()) return false;
+    if (s.causale_voce === ANTICIPO && ((s.scadenze || []).length || e.riga.verso !== "uscita")) return false;   // versione 370: un anticipo non chiude fatture
     if (s.movimento_id === undefined && (s.scadenze || []).length) {
       const somma = sommaFatture(s.scadenze); if (somma > Number(e.riga.importo) + 0.005) return false;
     }
@@ -214,7 +224,7 @@ export default function ConfermaMovimenti() {
             <Modulo e={e} s={s} gruppi={gruppi} causali={base.causali} anno={e.riga.data_contabile.slice(0, 4)} base={base} sommaFatture={sommaFatture}
               cambia={(campo, val) => setScelte(x => {
                 if (campo === "movimento_id") { const mv = (e.candidati || []).find(c => String(c.id) === String(val)); return { ...x, [e.riga.id]: mv ? { movimento_id: val, ...propostaPerMovimento(mv) } : { ...x[e.riga.id], movimento_id: "" } }; }
-                return { ...x, [e.riga.id]: { ...x[e.riga.id], [campo]: val, ...(campo === "causale_gruppo" ? { causale_voce: "" } : {}) } };
+                return { ...x, [e.riga.id]: { ...x[e.riga.id], [campo]: val, ...(campo === "causale_gruppo" ? { causale_voce: "" } : {}), ...(campo === "causale_voce" && val === ANTICIPO ? { scadenze: [] } : {}) } };
               })} />
             <div style={{ marginTop: 8 }}><button style={btn(true)} disabled={!ok || !!lavoro} onClick={() => conferma([e])}>Conferma questa riga</button>
               {!ok && <span style={{ marginLeft: 8, color: C.red, fontSize: 12.5 }}>Completare i campi in rosso.</span>}</div>
@@ -253,7 +263,12 @@ function Modulo({ e, s, gruppi, causali, anno, cambia, base, sommaFatture }) {
     {daNumerare && s.modalita === "Altro" && <label>Quale modalità (obbligatorio)<br /><input style={rosso(!String(s.modalita_altro || "").trim())} value={s.modalita_altro || ""} onChange={x => cambia("modalita_altro", x.target.value)} /></label>}
     {s.movimento_id === undefined && daNumerare && <Soggetto e={e} s={s} base={base} cambia={cambia} rosso={rosso} />}
     {s.movimento_id === undefined && <label>Soggetto (come sarà scritto in prima nota)<br /><input style={rosso(!String(s.controparte || "").trim())} value={s.controparte || ""} onChange={x => cambia("controparte", x.target.value)} /></label>}
-    {s.movimento_id === undefined && daNumerare && (s.fornitore_id || s.cliente_id) ? <FattureDaChiudere e={e} s={s} base={base} cambia={cambia} sommaFatture={sommaFatture} /> : null}
+    {s.movimento_id === undefined && daNumerare && (s.fornitore_id || s.cliente_id) && s.causale_voce !== ANTICIPO ? <FattureDaChiudere e={e} s={s} base={base} cambia={cambia} sommaFatture={sommaFatture} /> : null}
+    {daNumerare && s.causale_voce === ANTICIPO && <div style={{ gridColumn: "1 / -1", border: `1px solid ${C.blue}`, background: `${C.blue}10`, borderRadius: 8, padding: 8 }}>
+      <b>Anticipo su fattura da ricevere.</b> Alla conferma nasce un anticipo in «Gestione incassi e pagamenti» → «Anticipi in attesa di fattura»: resta aperto finché arriva la fattura del fornitore, che si aggancia lì.
+      {e.riga.verso !== "uscita" && <div style={{ color: C.red, fontWeight: 700 }}>Questa voce è solo per i pagamenti in uscita.</div>}
+      {(s.scadenze || []).length > 0 && <div style={{ color: C.red, fontWeight: 700 }}>Un anticipo non chiude fatture: togliere le fatture spuntate oppure scegliere «Acconto su fattura».</div>}
+      {!s.fornitore_id && <div style={{ color: C.muted }}>Se il fornitore non è ancora in anagrafica si conferma lo stesso: lo si sceglie poi nella scheda dell'anticipo.</div>}</div>}
     {e.riga.pagina_pdf ? <div style={{ color: C.muted }}>Pagina del PDF dell'estratto: {e.riga.pagina_pdf} (si apre da «Estratti e movimenti: consulta»)</div> : null}
   </div>;
 }

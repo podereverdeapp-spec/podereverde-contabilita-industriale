@@ -4,6 +4,7 @@ import { C } from "./style";
 import { btn, input, scheda } from "./stileAruba";
 import { fetchAllPages } from "./parsingUtils";
 import { euro } from "./analisiDocumentoBanca";
+import { causaleAnticipo } from "./calcoloAnticipi";
 import {
   SEZIONI, GRUPPI_SEZIONE, vociDellaSezione, MODALITA_USCITA, MODALITA_ENTRATA, modalitaAmmessa, MODALITA_DA_XML, NOME_MP,
   ibanPulito, ibanValido, ibanBello, abiDiIban, pulisciCausale, causaleValida, componiCausale, statoAttesa, oggiRoma, dataIt, giorniLavorativi,
@@ -16,8 +17,12 @@ import {
 // («Banche, carte e cassa» → «Conferma dei movimenti»), con la data dell'addebito o dell'accredito. Un pagamento mai partito si annulla
 // con il motivo. Decisioni del Dott. Bizzarri: progetto della prima nota, sezioni 2, 3, 4.1, 5, 5.2, 5.3, 6, 10, 10.2; studio, sezioni 11–16.
 // Tutte le regole sono controllate di nuovo dal database (ci_disponi_movimento, ci_disponi_giroconto, ci_annulla_disposizione).
+// Versione 370: scheda «Anticipo su fattura da ricevere» (pagamento su proforma, preventivo o offerta, senza fatture da spuntare).
 
-const TAB = [...SEZIONI.map(s => ({ id: s.id, nome: s.nome })), { id: "attesa", nome: "In attesa della banca" }, { id: "anomalie", nome: "Anomalie" }];
+// Versione 370: «Anticipo su fattura da ricevere» subito dopo «Pagamento fatture» (pagamento su proforma, preventivo o offerta)
+const TAB = [...SEZIONI.map(s => ({ id: s.id, nome: s.nome })), { id: "attesa", nome: "In attesa della banca" }, { id: "anomalie", nome: "Anomalie" }]
+  .flatMap(t => t.id === "pagamento_fatture" ? [t, { id: "anticipo", nome: "Anticipo su fattura da ricevere" }] : [t]);
+const ANTICIPO = "Acconto su fattura da ricevere";
 const copia = t => { try { navigator.clipboard.writeText(String(t)); } catch { /* il browser non permette: si copia a mano */ } };
 const importoIt = n => Number(n).toFixed(2).replace(".", ",");
 const leggiImporto = t => { const s = String(t || "").trim().replace(/\s|€/g, ""); if (!s) return null; const x = s.includes(",") ? s.replace(/\./g, "").replace(",", ".") : s;
@@ -134,6 +139,7 @@ export default function GestioneIncassiPagamenti() {
       {esito && <Esito esito={esito} chiudi={() => setEsito(null)} />}
       {errore && <div style={{ ...scheda, color: C.red, fontWeight: 700 }}>⚠️ {errore}</div>}
       {(tab === "pagamento_fatture" || tab === "incasso_fatture") && <SezioneFatture key={tab + giro} sezione={tab} base={base} fatto={fatto} oggi={oggi} />}
+      {tab === "anticipo" && <SezioneAnticipo key={giro} base={base} fatto={fatto} oggi={oggi} />}
       {(tab === "altri_pagamenti" || tab === "altri_incassi") && <SezioneAltri key={tab + giro} sezione={tab} base={base} fatto={fatto} oggi={oggi} />}
       {tab === "giroconti" && <SezioneGiroconti key={giro} base={base} fatto={fatto} oggi={oggi} />}
       {tab === "attesa" && <InAttesa base={base} oggi={oggi} fatto={fatto} />}
@@ -314,7 +320,7 @@ function SezioneFatture({ sezione, base, fatto, oggi }) {
           <td style={{ padding: "5px 8px", color: C.blue }}>{x.attesa ? `${x.attesa} fatture` : ""}</td>
           <td style={{ padding: "5px 8px" }}><button style={btn(true)} onClick={() => { setSogg(x.id); setSpunte({}); }}>Scegli</button></td></tr>)}</tbody></table>
       {soggetti.length > 60 && <div style={{ fontSize: 12, color: C.muted }}>Mostrati i primi 60: restringere la ricerca.</div>}
-      {!soggetti.length && <div style={{ color: C.muted, marginTop: 6 }}>Nessuna fattura aperta trovata. Per un pagamento senza fattura nel programma usare «{pag ? "Altri pagamenti" : "Altri incassi"}» (per un anticipo: voce «Acconto su fattura da {pag ? "ricevere" : "emettere"}» nella sezione Fatture, quando sarà costruita).</div>}
+      {!soggetti.length && <div style={{ color: C.muted, marginTop: 6 }}>Nessuna fattura aperta trovata. Per un pagamento senza fattura nel programma usare «{pag ? "Altri pagamenti" : "Altri incassi"}» {pag ? "(per un pagamento su proforma, preventivo o offerta: «Anticipo su fattura da ricevere»)" : ""}.</div>}
     </div>}
     {sogg && <div style={scheda}>
       <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
@@ -361,6 +367,101 @@ function SezioneFatture({ sezione, base, fatto, oggi }) {
       {problemi.length > 0 && <div style={{ color: C.red, fontSize: 12.5, marginTop: 10 }}>Per confermare: {problemi.join("; ")}.</div>}
       {errore && <div style={{ color: C.red, fontWeight: 700, marginTop: 8 }}>⚠️ {errore}</div>}
       <div style={{ marginTop: 10 }}><button style={btn(true)} disabled={!!problemi.length || lavoro} onClick={invia}>{lavoro ? "Registro…" : pag ? "Conferma e manda in pagamento" : "Conferma e registra l'incasso atteso"}</button></div>
+    </div>}
+  </div>;
+}
+
+// ---------------- Versione 370: Anticipo su fattura da ricevere ----------------
+// Pagamento prima della fattura (proforma, preventivo, offerta): nessuna fattura da spuntare, il documento è obbligatorio.
+// Nasce in attesa della banca come gli altri pagamenti; il database crea l'anticipo, che resta in «Anticipi in attesa di fattura»
+// finché la fattura del fornitore arriva e chi gestisce i conti la aggancia e chiude.
+const TIPI_DOC = [["proforma", "Proforma"], ["preventivo", "Preventivo"], ["offerta", "Offerta"], ["ordine", "Ordine"], ["contratto", "Contratto"], ["altro", "Altro"]];
+function SezioneAnticipo({ base, fatto, oggi }) {
+  const [cerca, setCerca] = useState(""); const [sogg, setSogg] = useState(null); const [tutte, setTutte] = useState([]); const [erroreStorico, setErroreStorico] = useState("");
+  const [v, setV] = useState({ importo: "", tipo: "proforma", numero: "", data_documento: "", modalita: "", conto_id: "", data_disposizione: oggi, aggiunta: "",
+    iban_scelta: "", iban_scritto: "", iban_confermato: false, iban_diverso_motivo: "", note: "", soglia_vista: false });
+  const [lavoro, setLavoro] = useState(false); const [errore, setErrore] = useState("");
+  const cambia = (k, x) => setV(o => ({ ...o, [k]: x }));
+  const trovati = useMemo(() => {
+    const q = cerca.trim().toLowerCase().replace(/[.\s]/g, "");
+    if (q.length < 2) return [];
+    return base.fornitori.filter(a => String(a.nome || "").toLowerCase().replace(/[.\s]/g, "").includes(q) || String(a.partita_iva || "").includes(q))
+      .sort((a, b) => String(a.nome || "").localeCompare(String(b.nome || ""))).slice(0, 30);
+  }, [cerca, base]);
+  useEffect(() => { if (!sogg) return; (async () => {
+    const r = await fetchAllPages((a, b) => supabase.from("ci_v_scadenzario").select("scadenza_id, iban, data_documento, numero_documento").eq("fornitore_id", sogg).order("data_documento").range(a, b));
+    if (r.error) { setErroreStorico("Storico delle fatture non letto: gli IBAN già usati non si vedono. (" + r.error.message + ")"); setTutte([]); return; }
+    setErroreStorico(""); setTutte(r.data || []);
+  })(); }, [sogg]);
+  const imp = leggiImporto(v.importo);
+  const bonifico = ["Bonifico", "Bonifico istantaneo"].includes(v.modalita);
+  const nomeTipo = TIPI_DOC.find(t => t[0] === v.tipo)?.[1] || "Documento";
+  const documento = v.numero.trim() && v.data_documento ? `${nomeTipo} n. ${v.numero.trim()} del ${dataIt(v.data_documento)}` : "";
+  const causale = pulisciCausale([causaleAnticipo(v.tipo, v.numero, v.data_documento), v.aggiunta].filter(Boolean).join(" "));
+  const conosciuti = [...new Set(tutte.map(s => s.iban).filter(Boolean))];
+  const ib = ibanDelModulo(v);
+  const problemi = [];
+  if (!sogg) problemi.push("scegliere il fornitore");
+  if (!imp) problemi.push("scrivere l'importo dell'anticipo");
+  if (!v.numero.trim() || !v.data_documento) problemi.push("scrivere numero e data della proforma, del preventivo o dell'offerta");
+  if (!v.modalita) problemi.push("scegliere come si paga");
+  if (v.modalita === "Altro" && !String(v.modalita_altro || "").trim()) problemi.push("scrivere quale modalità");
+  if (!v.conto_id) problemi.push("scegliere con che cosa");
+  if (v.modalita === "Carta di debito" && !v.carta_di_debito_id) problemi.push("scegliere la carta di debito");
+  if (v.modalita === "Contanti" && imp >= 5000) problemi.push("contanti da 5.000 € in su: vietato (art. 49 D.Lgs. 231/2007)");
+  if (!v.data_disposizione) problemi.push("scrivere la data di disposizione");
+  if (bonifico && !causaleValida(causale)) problemi.push("causale del bonifico non valida (al massimo 140 caratteri, senza lettere accentate)");
+  if (bonifico) { if (!ib) problemi.push("scegliere o scrivere l'IBAN"); else if (!ibanValido(ib)) problemi.push("IBAN non valido"); else if (!v.iban_confermato) problemi.push("premere «Confermi IBAN»"); }
+  if (imp > 5000 && !v.soglia_vista) problemi.push("spuntare «Ho visto: sopra 5.000 €»");
+  async function invia() {
+    if (problemi.length || lavoro) return;
+    setLavoro(true); setErrore("");
+    const p = { sezione: "pagamento_fatture", conto_id: Number(v.conto_id), modalita: v.modalita, modalita_altro: v.modalita_altro || "", carta_di_debito_id: v.carta_di_debito_id || "",
+      data_disposizione: v.data_disposizione, importo: imp, causale_gruppo: "Fatture", causale_voce: ANTICIPO, fornitore_id: sogg, cliente_id: "",
+      causale: bonifico || causale ? causale : "", iban: bonifico ? ib : "", iban_confermato: !!v.iban_confermato, iban_diverso_motivo: "", note: v.note || "", documento_riferimento: documento };
+    const { data, error } = await supabase.rpc("ci_disponi_movimento", { p });
+    setLavoro(false);
+    if (error) return setErrore("Il database non l'ha accettato, non è stato registrato niente: " + error.message);
+    const nome = base.fornitori.find(a => a.id === sogg)?.nome;
+    fatto({ titolo: `${data.codice_attesa}: anticipo a ${nome} mandato in pagamento — in attesa della banca`,
+      testo: `Adesso, oggi stesso, disporre ${v.modalita === "Bonifico istantaneo" ? "il bonifico istantaneo" : v.modalita.toLowerCase()} in banca con questi dati (pulsanti «Copia»). L'anticipo è già in «Anticipi in attesa di fattura»: quando arriva la fattura del fornitore si aggancia lì. Se il pagamento non parte, annullarlo in «In attesa della banca».`,
+      copie: [["Beneficiario", nome], ["IBAN", bonifico ? ibanBello(ib) : ""], ["Importo", importoIt(imp)], ["Causale", causale], ["Data di esecuzione", dataIt(v.data_disposizione)]].filter(x => x[1]) });
+  }
+  return <div>
+    <div style={scheda}>
+      <div style={{ fontWeight: 800, color: C.primary, marginBottom: 4 }}>Anticipo su fattura da ricevere</div>
+      <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 8, maxWidth: 1000 }}>Per pagare prima della fattura: su una proforma, un preventivo o un'offerta. Non si spuntano fatture. Il pagamento resta in «Anticipi in attesa di fattura» finché arriva la fattura del fornitore; dal pagamento il fornitore ha 12 giorni per emetterla.</div>
+      {!sogg ? <>
+        <input style={{ ...input, width: "100%", maxWidth: 520 }} placeholder="Cerca il fornitore: nome anche parziale o partita IVA" value={cerca} onChange={e => setCerca(e.target.value)} />
+        <div style={{ marginTop: 6 }}>{trovati.map(a => <div key={a.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "3px 0", borderBottom: `1px solid ${C.border}`, fontSize: 12.5 }}>
+          <b style={{ flex: 1 }}>{a.nome}</b><span style={{ color: C.muted }}>{a.partita_iva || "—"}</span><button style={{ ...btn(true), height: 28 }} onClick={() => setSogg(a.id)}>Scegli</button></div>)}</div>
+        {cerca.trim().length >= 2 && !trovati.length && <div style={{ color: C.muted, fontSize: 12.5, marginTop: 6 }}>Nessun fornitore con questo nome. Un fornitore nuovo si aggiunge prima in anagrafica; oppure si paga in banca e si registra poi in «Conferma dei movimenti» con la voce «Acconto su fattura da ricevere».</div>}
+      </> : <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+        <div style={{ fontWeight: 800, color: C.primary, fontSize: 16 }}>{base.fornitori.find(a => a.id === sogg)?.nome} <span style={{ fontSize: 12.5, color: C.muted }}>{base.fornitori.find(a => a.id === sogg)?.partita_iva}</span></div>
+        <button style={btn(false)} onClick={() => setSogg(null)}>← Cambia fornitore</button></div>}
+      {erroreStorico && <div style={{ color: C.red, fontWeight: 700, fontSize: 12.5 }}>⚠️ {erroreStorico}</div>}
+    </div>
+    {sogg && <div style={{ ...scheda, border: `2px solid ${C.primary}` }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 10 }}>
+        <label style={L}>Importo dell'anticipo<input style={sel(!imp)} value={v.importo} onChange={e => cambia("importo", e.target.value)} placeholder="es. 3.660,00" /></label>
+        <label style={L}>Documento<select style={sel(false)} value={v.tipo} onChange={e => cambia("tipo", e.target.value)}>{TIPI_DOC.map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select></label>
+        <label style={L}>Numero del documento<input style={sel(!v.numero.trim())} value={v.numero} onChange={e => cambia("numero", e.target.value)} /></label>
+        <label style={L}>Data del documento<input type="date" style={sel(!v.data_documento)} value={v.data_documento} onChange={e => cambia("data_documento", e.target.value)} /></label>
+        <ComeEConCheCosa base={base} verso="uscita" v={v} cambia={cambia} importo={imp} />
+        <label style={L}>Data di disposizione<input type="date" style={sel(!v.data_disposizione)} value={v.data_disposizione} onChange={e => cambia("data_disposizione", e.target.value)} />
+          {v.data_disposizione && v.data_disposizione !== oggi && <span style={{ color: C.yellow, fontWeight: 700 }}>Non è oggi: disporre in banca lo stesso giorno in cui si registra qui.</span>}</label>
+        {bonifico && <SceltaIban ibanFattura={[]} conosciuti={conosciuti} v={v} cambia={cambia} />}
+        <div style={{ gridColumn: "1 / -1" }}>
+          <div style={{ fontSize: 12, fontWeight: 700 }}>{bonifico ? "Causale del bonifico (composta dal programma; si può solo aggiungere)" : "Descrizione"} <Contatore testo={causale} /></div>
+          <div style={{ fontFamily: "monospace", fontSize: 13, background: "#F4F4F0", border: `1px solid ${C.border}`, borderRadius: 6, padding: "6px 8px", margin: "4px 0", wordBreak: "break-all" }}>{causale || "—"}</div>
+          <input style={{ ...input, width: "100%" }} placeholder="Aggiunta facoltativa (per esempio il numero d'ordine)" value={v.aggiunta} onChange={e => cambia("aggiunta", e.target.value)} />
+        </div>
+        <label style={{ ...L, gridColumn: "1 / -1" }}>Nota interna (facoltativa, non va in banca)<input style={sel(false)} value={v.note} onChange={e => cambia("note", e.target.value)} /></label>
+      </div>
+      {imp > 5000 && <label style={{ display: "block", marginTop: 8, color: C.red, fontWeight: 700, fontSize: 13 }}><input type="checkbox" checked={v.soglia_vista} onChange={e => cambia("soglia_vista", e.target.checked)} /> Ho visto: sopra 5.000 €. Il movimento sarà segnalato tra le anomalie al Dott. Bizzarri e a Teresa Demaria.</label>}
+      {problemi.length > 0 && <div style={{ color: C.red, fontSize: 12.5, marginTop: 10 }}>Per confermare: {problemi.join("; ")}.</div>}
+      {errore && <div style={{ color: C.red, fontWeight: 700, marginTop: 8 }}>⚠️ {errore}</div>}
+      <div style={{ marginTop: 10 }}><button style={btn(true)} disabled={!!problemi.length || lavoro} onClick={invia}>{lavoro ? "Registro…" : "Conferma e manda in pagamento l'anticipo"}</button></div>
     </div>}
   </div>;
 }

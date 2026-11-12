@@ -1,5 +1,6 @@
 // Versioni 354 e 356 — proposte del programma per la conferma dei movimenti della banca (il programma propone, l'operatore conferma:
 // regola del Dott. Bizzarri del 09/11/2026 ore 17:00). Nessuna scrittura qui: solo calcolo.
+import { PAROLE_ANTICIPO_SICURE } from "./calcoloAnticipi";
 export const MODALITA = ["Bonifico", "Bonifico istantaneo", "Assegno bancario", "Assegno circolare", "Contanti", "Carta di debito", "Carta di credito",
   "Carta prepagata", "Modello F24", "Bollettino", "Addebito diretto SEPA", "Addebito della banca", "Altro"];
 export const NATURA = { "ADD.": "Addebito in banca", "ACCR.": "Accredito in banca", "PAG. CONT.": "Uscita di cassa", "INC. CONT.": "Entrata di cassa", "GIRO": "Giroconto", "STORNO": "Storno", "ALTRO": "Altro" };
@@ -40,7 +41,10 @@ export function propostaPerRiga(r, conto, movimenti) {
     if (/\bSTIPENDIO\b/.test(D)) set("Personale", "Stipendio", mo, null, "bonifico fatto in banca e non registrato nel programma: la causale dice «stipendio»");
     else if (/\bCOMPENSO\b/.test(D)) set("Personale", "Compenso", mo, null, "bonifico fatto in banca e non registrato nel programma: la causale dice «compenso»");
     else if (/FINANZIAMENTO SOCI/.test(D)) set("Soci", "", mo, null, "bonifico con causale «finanziamento soci»: scegliere la voce");
-    else set("Fatture", /ACCONTO/.test(D) ? "Acconto su fattura" : "", mo, null,
+    // Versione 370: acconto, anticipo, proforma, preventivo, offerta → anticipo su fattura da ricevere (se la fattura c'è già, la conferma propone «Acconto su fattura»)
+    else if (PAROLE_ANTICIPO_SICURE.test(D)) set("Fatture", "Acconto su fattura da ricevere", mo, null,
+      "la causale parla di acconto, anticipo o proforma: se la fattura non è ancora arrivata è un anticipo e resterà in «Anticipi in attesa di fattura» finché arriva; se paga una fattura già nel programma, scegliere «Acconto su fattura» o «Saldo fattura»");
+    else set("Fatture", "", mo, null,
       "bonifico fatto in banca e non registrato nel programma: scegliere la voce; se paga una fattura, dopo la conferma abbinarlo alla fattura (pagina degli abbinamenti) perché lo scadenzario si aggiorni");
   }
   else if (/^BONIFICO/.test(D) && r.verso === "entrata") {
