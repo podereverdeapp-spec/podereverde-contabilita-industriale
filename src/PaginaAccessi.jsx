@@ -7,6 +7,11 @@
 // Versione 372 (12/11/2026, ordini del Dott. Bizzarri delle 18:55–19:00): le AUTORIZZAZIONI SPECIALI (elenco unico in
 // autorizzazioni.js: «Può spedire mail», «Gestisce i conti», «Può forzare il pagamento senza mail» e quelle delle versioni future)
 // si vedono e si cambiano qui, con il riepilogo «chi può fare che cosa» in cima. Le legge ci_autorizzazioni_accessi().
+// Versione 373 (12/11/2026, ordine del Dott. Bizzarri delle 20:52 «spiega e risolviamo», ok delle 21:02): le modifiche
+// non salvate di una scheda NON si perdono più quando si salva un'altra scheda, si preme «Aggiorna» o si cerca un nome.
+// Prima ogni rilettura dal database rimetteva tutte le schede ai valori salvati. Ora una scheda prende i valori nuovi
+// del database solo se non ha modifiche in sospeso; se le ha, tiene le modifiche, prende i valori nuovi solo nei punti
+// non toccati e lo dice («tieni le mie» / «riprendi quelle del database»). Si salvano solo i punti cambiati.
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "./supabase";
 import { C, FONT } from "./style";
@@ -32,15 +37,60 @@ function anomalieDi(r) {
   return a;
 }
 
-function SchedaPersona({ r, aut, elenco, io, admin, onSalvato }) {
-  const iniziale = { stato: r.stato || "In attesa", tutto: !!r.tutto_il_programma, parti: r.parti || [], gestore: !!r.gestore_accessi, porta: r.porta_servizio || "No", aut: aut || {}, note: r.note || "" };
-  const [b, setB] = useState(iniziale);
+// Versione 373: i valori di una scheda, il loro confronto e l'unione con i valori nuovi del database
+const CAMPI = [["stato", "1. Può entrare?"], ["tutto", "2. Tutto il programma o solo alcune parti"], ["parti", "2. Parti spuntate"], ["gestore", "Gestore degli accessi"], ["porta", "Porta di servizio"], ["note", "5. Note"]];
+function valoriDatabase(r, aut) {
+  return { stato: r.stato || "In attesa", tutto: !!r.tutto_il_programma, parti: r.parti || [], gestore: !!r.gestore_accessi, porta: r.porta_servizio || "No", aut: aut || {}, note: r.note || "" };
+}
+// forma confrontabile di un punto: l'ordine delle parti spuntate e gli spazi in fondo alle note non contano
+const forma = (k, v) => k === "parti" ? JSON.stringify([...(v || [])].sort()) : k === "note" ? (v || "").trim() : JSON.stringify(v);
+function chiave(v) {
+  const aut = Object.keys(v.aut || {}).sort().map(k => `${k}=${!!v.aut[k]}`).join(",");
+  return CAMPI.map(([k]) => forma(k, v[k])).join("|") + "|" + aut;
+}
+// le mie modifiche (mie) fatte partendo da «vecchia»; il database ora dice «nuova»: tengo i punti che ho cambiato io,
+// per gli altri prendo il valore nuovo. «conflitti» = punti cambiati da me e, diversamente, anche nel database.
+function unisci(mie, vecchia, nuova) {
+  const unita = { ...nuova, aut: { ...nuova.aut } }; const conflitti = [];
+  // le parti spuntate si uniscono una per una: valgono le mie aggiunte e le mie tolte, sopra quelle nuove del database
+  const aggiunte = (mie.parti || []).filter(x => !(vecchia.parti || []).includes(x));
+  const tolte = (vecchia.parti || []).filter(x => !(mie.parti || []).includes(x));
+  unita.parti = [...new Set([...(nuova.parti || []), ...aggiunte])].filter(x => !tolte.includes(x));
+  for (const [k, nome] of CAMPI) {
+    if (k === "parti") continue;
+    if (forma(k, mie[k]) === forma(k, vecchia[k])) continue;
+    unita[k] = mie[k];
+    if (forma(k, nuova[k]) !== forma(k, vecchia[k]) && forma(k, nuova[k]) !== forma(k, mie[k])) conflitti.push(nome);
+  }
+  for (const k of Object.keys(mie.aut || {})) {
+    if (!!mie.aut[k] === !!(vecchia.aut || {})[k]) continue;
+    unita.aut[k] = mie.aut[k];
+    const n = !!(nuova.aut || {})[k];
+    if (n !== !!(vecchia.aut || {})[k] && n !== !!mie.aut[k]) conflitti.push(k);
+  }
+  return { unita, conflitti };
+}
+
+function SchedaPersona({ r, aut, elenco, io, admin, onSalvato, onModificheInSospeso }) {
+  const database = valoriDatabase(r, aut);
+  const chiaveDatabase = chiave(database);
+  const [base, setBase] = useState(database);      // i valori del database da cui partono le modifiche di questa scheda
+  const [b, setB] = useState(database);            // i valori mostrati nella scheda (con le modifiche non salvate)
+  const [avviso, setAvviso] = useState(null);      // il database è cambiato mentre questa scheda aveva modifiche in sospeso
   const [salva, setSalva] = useState(false);
   const [esito, setEsito] = useState(null);
   const [aperta, setAperta] = useState(r.stato === "In attesa" || r.stato == null);
-  const autChiave = JSON.stringify(aut || {}); // la mappa si ricalcola a ogni disegno della pagina: conta il contenuto, non l'oggetto
-  useEffect(() => { setB(iniziale); }, [r, autChiave]); // eslint-disable-line react-hooks/exhaustive-deps
-  const cambiato = JSON.stringify(b) !== JSON.stringify(iniziale);
+  useEffect(() => {
+    if (chiave(base) === chiaveDatabase) return;                       // per questa persona nel database non è cambiato niente
+    if (chiave(b) === chiave(base)) { setB(database); setBase(database); setAvviso(null); return; } // nessuna modifica in sospeso
+    if (chiave(b) === chiaveDatabase) { setBase(database); setAvviso(null); return; }               // il database dice già quello che c'è qui
+    const { unita, conflitti } = unisci(b, base, database);
+    setB(unita); setBase(database); setAvviso({ conflitti });
+  }, [chiaveDatabase]); // eslint-disable-line react-hooks/exhaustive-deps
+  const cambiato = chiave(b) !== chiave(base);
+  useEffect(() => { onModificheInSospeso?.(r.profilo_id, cambiato ? (r.nome || r.email) : null); }, [cambiato]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => onModificheInSospeso?.(r.profilo_id, null), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const iniziale = base;
   const eAdmin = r.ruolo === "admin";
   const eIo = r.profilo_id === io;
   const modificabile = !eAdmin && (!eIo || admin);
@@ -55,13 +105,42 @@ function SchedaPersona({ r, aut, elenco, io, admin, onSalvato }) {
     // Versione 372: delle autorizzazioni si mandano solo quelle cambiate in questa scheda, così non si annulla
     // quella data nel frattempo da un altro gestore (ricontrollo indipendente del 12/11, difetto 1)
     const autCambiate = Object.fromEntries(Object.entries(b.aut).filter(([k, v]) => v !== !!iniziale.aut[k]));
-    const dati = { stato: b.stato, tutto_il_programma: b.tutto, parti: b.parti, ...autCambiate, note: b.note.trim() || null };
-    if (admin) { dati.gestore_accessi = b.gestore; dati.porta_servizio = b.porta; }
-    const { error } = r.stato == null
+    // Versione 373: anche per gli altri punti si mandano solo quelli cambiati in questa scheda (per una riga nuova, tutti)
+    const tutti = { stato: b.stato, tutto_il_programma: b.tutto, parti: b.parti, ...autCambiate, note: b.note.trim() || null };
+    if (admin) { tutti.gestore_accessi = b.gestore; tutti.porta_servizio = b.porta; }
+    const dati = r.stato == null ? tutti : { ...autCambiate };
+    if (r.stato != null) {
+      if (b.stato !== iniziale.stato) dati.stato = b.stato;
+      if (b.tutto !== iniziale.tutto) dati.tutto_il_programma = b.tutto;
+      if (forma("parti", b.parti) !== forma("parti", iniziale.parti)) dati.parti = b.parti;
+      if (forma("note", b.note) !== forma("note", iniziale.note)) dati.note = b.note.trim() || null;
+      if (admin && b.gestore !== iniziale.gestore) dati.gestore_accessi = b.gestore;
+      if (admin && b.porta !== iniziale.porta) dati.porta_servizio = b.porta;
+    }
+    if (!Object.keys(dati).length) { setSalva(false); setB(iniziale); return; }
+    // Versione 373: subito prima di salvare si rilegge questa persona. Se nel frattempo qualcuno l'ha cambiata
+    // (anche solo una parte spuntata o la nota), non si salva: la scheda unisce e avvisa, e si ripreme «Salva».
+    if (r.stato != null) {
+      const { data: ora, error: eL } = await supabase.from("ci_accessi_programma").select("*").eq("profilo_id", r.profilo_id).maybeSingle();
+      if (eL) { setSalva(false); setEsito({ ok: false, testo: `Non salvato: non riesco a rileggere questa persona (${eL.message}). Riprovi.` }); return; }
+      if (!ora) { setSalva(false); setEsito({ ok: false, testo: "Non salvato: questa persona non c'è più negli accessi. Prema «🔄 Aggiorna»." }); return; }
+      const adesso = valoriDatabase(ora, Object.fromEntries(Object.keys(iniziale.aut).map(k => [k, !!ora[k]])));
+      if (chiave(adesso) !== chiave(iniziale)) {
+        // l'unione si fa sulla scheda com'è adesso (se intanto si è cambiato qualcosa, non si perde: secondo ricontrollo, difetto 1)
+        setB(x => unisci(x, iniziale, adesso).unita); setBase(adesso); setAvviso({ conflitti: unisci(b, iniziale, adesso).conflitti }); setSalva(false);
+        setEsito({ ok: false, testo: "Non salvato: nel frattempo qualcuno ha cambiato questa persona. Controlli la scheda (avviso qui sopra) e prema di nuovo «💾 Salva»." });
+        return;
+      }
+    }
+    const { data: cambiate, error } = r.stato == null
       ? await supabase.from("ci_accessi_programma").insert([{ profilo_id: r.profilo_id, ...dati }])
-      : await supabase.from("ci_accessi_programma").update(dati).eq("profilo_id", r.profilo_id);
+      : await supabase.from("ci_accessi_programma").update(dati).eq("profilo_id", r.profilo_id).select("profilo_id");
     setSalva(false);
     if (error) { setEsito({ ok: false, testo: `Non salvato: ${error.message}` }); return; }
+    if (r.stato != null && !(cambiate || []).length) { setEsito({ ok: false, testo: "Non salvato: il database non ha cambiato nessuna riga (la persona non c'è più o non si può modificare). Prema «🔄 Aggiorna»." }); return; }
+    // quello che si è mandato ora è salvato. Non si tocca quello che si vede: se intanto si è cambiato
+    // qualcos'altro nella scheda, resta come modifica non salvata (ricontrollo indipendente, difetto 2)
+    setBase({ ...b, note: b.note.trim() }); setAvviso(null);
     setEsito({ ok: true, testo: "Salvato. La persona vedrà il cambiamento quando preme «Controlla di nuovo» o riapre il programma." });
     onSalvato();
   }
@@ -80,8 +159,19 @@ function SchedaPersona({ r, aut, elenco, io, admin, onSalvato }) {
             <span key={x.colonna} title={x.spiega} style={{ background: C.green, color: "#fff", borderRadius: 10, padding: "2px 9px", fontSize: 11.5, fontWeight: 800 }}>{x.icona} {x.nome}</span>
           ))}
         {r.porta_servizio !== "No" && <span style={{ background: C.accent, color: "#fff", borderRadius: 10, padding: "2px 9px", fontSize: 11.5, fontWeight: 800 }}>Porta di servizio: {r.porta_servizio}</span>}
+        {cambiato && <span data-sospese="1" style={{ background: "#D4880F", color: "#fff", borderRadius: 10, padding: "2px 9px", fontSize: 11.5, fontWeight: 800 }}>✏️ Modifiche non salvate</span>}
         <span style={{ marginLeft: "auto", color: C.muted, fontSize: 12 }}>{aperta ? "▾ chiudi" : "▸ apri"}</span>
       </div>
+      {avviso && (
+        <div data-avviso="1" style={{ background: "#FFF6E5", border: "2px solid #D4880F", color: "#7A4B00", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginTop: 10 }}>
+          <b>⚠️ Nel frattempo qualcuno ha cambiato l'accesso di questa persona.</b> Le Sue modifiche non salvate sono rimaste; i punti che Lei non aveva toccato mostrano già i valori nuovi del database.
+          {avviso.conflitti.length > 0 && <div style={{ marginTop: 4, fontWeight: 700 }}>Lei e l'altra persona avete cambiato in modo diverso: {avviso.conflitti.map(k => elenco.find(x => x.colonna === k)?.nome || k).join(", ")}. Se salva, vale la Sua scelta.</div>}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+            <button onClick={() => setAvviso(null)} style={bot(false, C.primary)}>Tieni le mie modifiche</button>
+            <button onClick={() => { setB(base); setAvviso(null); }} style={bot(false, "#7A4B00")}>Riprendi quelle del database</button>
+          </div>
+        </div>
+      )}
       {anomalie.map((t, i) => (
         <div key={i} style={{ background: "#FDECEA", color: C.red, borderRadius: 8, padding: "8px 12px", fontSize: 13, fontWeight: 700, marginTop: 10 }}>⚠️ {t}</div>
       ))}
@@ -169,18 +259,35 @@ function SchedaPersona({ r, aut, elenco, io, admin, onSalvato }) {
   );
 }
 
-export default function PaginaAccessi({ accesso, utente, onCambiato }) {
+export default function PaginaAccessi({ accesso, utente, onCambiato, onInSospeso }) {
   const [righe, setRighe] = useState(null);
   const [mappaAut, setMappaAut] = useState(null);   // versione 372: { profilo_id: { puo_…: true/false } } dal database
   const [erroreAut, setErroreAut] = useState("");
   const [errore, setErrore] = useState("");
   const [filtro, setFiltro] = useState("");
+  const [inSospeso, setInSospeso] = useState({});   // versione 373: { profilo_id: nome } delle schede con modifiche non salvate
   const admin = !!accesso?.admin;
+  const segnaInSospeso = useCallback((id, nome) => setInSospeso(x => {
+    if ((x[id] || null) === nome) return x;
+    const y = { ...x }; if (nome) y[id] = nome; else delete y[id]; return y;
+  }), []);
+  // Versione 373: il menu del programma sa quali schede sono in sospeso (avviso prima di uscire dalla pagina);
+  // chiudendo o ricaricando la finestra del browser, il browser stesso chiede conferma
+  const chiaveSospese = JSON.stringify(Object.values(inSospeso));
+  useEffect(() => {
+    const nomi = JSON.parse(chiaveSospese); onInSospeso?.(nomi);
+    if (!nomi.length) return;
+    const ferma = (e) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", ferma);
+    return () => window.removeEventListener("beforeunload", ferma);
+  }, [chiaveSospese]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => onInSospeso?.([]), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const carica = useCallback(async () => {
     const [{ data, error }, au] = await Promise.all([supabase.rpc("ci_elenco_accessi"), supabase.rpc("ci_autorizzazioni_accessi")]);
-    if (error) { setErrore(error.message); setRighe([]); return; }
-    if (au.error) { setErroreAut(au.error.message); setMappaAut(null); }
+    // Versione 373: se la rilettura non riesce si tengono le schede e le autorizzazioni già lette (con le modifiche non salvate)
+    if (error) { setErrore(error.message); setRighe(x => x ?? []); return; }
+    if (au.error) { setErroreAut(au.error.message); }
     else { setErroreAut(""); setMappaAut(Object.fromEntries((au.data || []).map(x => [x.profilo_id, x.autorizzazioni || {}]))); }
     setErrore(""); setRighe(data || []);
   }, []);
@@ -189,9 +296,10 @@ export default function PaginaAccessi({ accesso, utente, onCambiato }) {
   if (righe === null) return <div style={{ padding: 30, color: C.muted, fontFamily: FONT }}>Caricamento degli accessi…</div>;
 
   const ordine = (r) => r.ruolo === "admin" ? 5 : r.stato === "In attesa" ? 0 : r.stato == null ? 1 : anomalieDi(r).length ? 2 : r.stato === "Attivo" ? 3 : 4;
-  const visibili = righe
-    .filter(r => !filtro || `${r.nome} ${r.email}`.toLowerCase().includes(filtro.toLowerCase()))
-    .sort((a, b) => ordine(a) - ordine(b) || (a.nome || "").localeCompare(b.nome || ""));
+  // Versione 373: le schede che la ricerca non mostra restano nella pagina, nascoste, così non perdono le modifiche non salvate
+  const mostra = (r) => !filtro || `${r.nome} ${r.email}`.toLowerCase().includes(filtro.toLowerCase());
+  const ordinate = [...righe].sort((a, b) => ordine(a) - ordine(b) || (a.nome || "").localeCompare(b.nome || ""));
+  const nomiInSospeso = Object.values(inSospeso);
   const inAttesa = righe.filter(r => r.stato === "In attesa").length;
   const conAnomalie = righe.filter(r => anomalieDi(r).length).length;
   const conPorta = righe.filter(r => r.porta_servizio && r.porta_servizio !== "No");
@@ -212,7 +320,7 @@ export default function PaginaAccessi({ accesso, utente, onCambiato }) {
         Qui arrivano le richieste di chi si registra. Si decide se può entrare e in quali parti del programma. Le istruzioni sono nella pagina «Istruzioni» di questa cartella.
       </div>
 
-      {errore && <div style={{ ...box, background: "#FDECEA", color: C.red, fontWeight: 700 }}>⚠️ Non riesco a leggere gli accessi: {errore}</div>}
+      {errore && <div style={{ ...box, background: "#FDECEA", color: C.red, fontWeight: 700 }}>⚠️ Non riesco a leggere gli accessi: {errore}{righe.length > 0 && " — qui sotto restano le schede lette prima, con le modifiche non salvate; si riprova con «🔄 Aggiorna»."}</div>}
       {inAttesa > 0 && (
         <div style={{ ...box, background: "#FBE1DE", border: "2px solid #C0392B", color: "#8B1E14", fontWeight: 800 }}>
           🔔 {inAttesa === 1 ? "C'è 1 richiesta di accesso" : `Ci sono ${inAttesa} richieste di accesso`} da decidere: sono le prime dell'elenco qui sotto.
@@ -224,7 +332,7 @@ export default function PaginaAccessi({ accesso, utente, onCambiato }) {
         </div>
       )}
 
-      {erroreAut && <div style={{ ...box, background: "#FDECEA", color: C.red, fontWeight: 700 }}>⚠️ Le autorizzazioni speciali non si leggono ({erroreAut}): qui sotto si vede e si cambia solo «Può spedire mail». Se l'SQL della versione 372 non è ancora stato lanciato, va lanciato; altrimenti si riprova con «🔄 Aggiorna».</div>}
+      {erroreAut && <div style={{ ...box, background: "#FDECEA", color: C.red, fontWeight: 700 }}>⚠️ Le autorizzazioni speciali non si leggono ({erroreAut}): {mappaAut ? "qui sotto si vedono quelle lette l'ultima volta; si riprova con «🔄 Aggiorna»." : "qui sotto si vede e si cambia solo «Può spedire mail». Se l'SQL della versione 372 non è ancora stato lanciato, va lanciato; altrimenti si riprova con «🔄 Aggiorna»."}</div>}
       <div style={{ ...box, background: "#F4F8F4" }}>
         <div style={{ fontWeight: 800, marginBottom: 8 }}>👥 Chi può fare che cosa — autorizzazioni speciali</div>
         <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13.5 }}>
@@ -268,8 +376,15 @@ export default function PaginaAccessi({ accesso, utente, onCambiato }) {
       </div>
       <div style={{ color: C.muted, fontSize: 12.5, marginBottom: 10 }}>{righe.length} persone registrate · {righe.filter(r => r.stato === "Attivo").length} attive · {inAttesa} in attesa · {righe.filter(r => r.stato === "Bloccato").length} bloccate · {righe.filter(r => r.stato == null).length} mai entrate nel programma</div>
 
-      {visibili.map(r => (
-        <SchedaPersona key={r.profilo_id} r={r} aut={mappa[r.profilo_id]} elenco={elenco} io={utente?.id} admin={admin} onSalvato={() => { carica(); onCambiato?.(); }} />
+      {nomiInSospeso.length > 0 && (
+        <div data-sospese-pagina="1" style={{ ...box, background: "#FFF6E5", border: "2px solid #D4880F", color: "#7A4B00", fontWeight: 700 }}>
+          ✏️ {nomiInSospeso.length === 1 ? "1 scheda ha" : `${nomiInSospeso.length} schede hanno`} modifiche non salvate: {nomiInSospeso.join(", ")}. Si salvano una per una con «💾 Salva» nella scheda; se si cambia pagina, il programma chiede prima conferma.
+        </div>
+      )}
+      {ordinate.map(r => (
+        <div key={r.profilo_id} style={mostra(r) ? undefined : { display: "none" }}>
+          <SchedaPersona r={r} aut={mappa[r.profilo_id]} elenco={elenco} io={utente?.id} admin={admin} onSalvato={() => { carica(); onCambiato?.(); }} onModificheInSospeso={segnaInSospeso} />
+        </div>
       ))}
     </div>
   );
@@ -293,6 +408,7 @@ export function IstruzioniAccessi() {
       <p style={p}>1) Quando arriva una richiesta, accanto a «Accessi» nel menu compare un <b>numero rosso</b>. 2) Si apre «Chi entra nel programma». 3) Le richieste da decidere sono <b>le prime dell'elenco</b>, con il bordo arancione.</p>
       <p style={p}>4) Nella scheda della persona: al punto 1 si preme <b>«✅ Sì, dai l'accesso»</b>. 5) Al punto 2 si sceglie <b>«Tutto il programma»</b> oppure <b>«Solo le parti spuntate»</b> e si spuntano le parti. 6) Si preme <b>«💾 Salva»</b>.</p>
       <p style={p}>7) Si dice alla persona di premere <b>«Controlla di nuovo»</b> nella sua pagina d'attesa: il programma si apre con le sole parti scelte.</p>
+      <p style={p}><b>Ogni scheda si salva da sola</b>, con il suo «💾 Salva». Una scheda cambiata e non ancora salvata ha la scritta arancione <b>«✏️ Modifiche non salvate»</b>, e in cima all'elenco una riga dice quali schede sono in sospeso: le modifiche restano anche se intanto si salva un'altra scheda, si preme «🔄 Aggiorna» o si cerca un nome, e se si prova a cambiare pagina dal menu il programma chiede prima <b>«Resto e salvo»</b> oppure <b>«Esco senza salvare»</b> (chiudendo o ricaricando la finestra, lo chiede il browser). Se nel frattempo un altro gestore ha cambiato la stessa persona, la scheda lo dice: «Tieni le mie modifiche» oppure «Riprendi quelle del database». Si salvano solo i punti cambiati nella scheda. Se, proprio mentre si preme «💾 Salva», qualcuno ha appena cambiato la stessa persona, il programma non salva, mostra l'avviso e chiede di premere «💾 Salva» una seconda volta.</p>
 
       <h3 style={h}>3. Le buste paga</h3>
       <p style={p}>I <b>Costi del Lavoro (buste paga)</b> sono dati riservati. Non sono compresi in «Tutto il programma»: si danno solo spuntando la loro casella gialla.</p>

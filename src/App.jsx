@@ -547,8 +547,12 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
   useEffect(() => { if (puo("anticipi-fornitori")) contaAnticipiDaGuardare().then(setAnticipiDaGuardare).catch(() => setAnticipiDaGuardare(0)); }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
   const AVVISI = { "cart-incassi-pagamenti": anticipiDaGuardare, "anticipi-fornitori": anticipiDaGuardare, "cart-posta": postaDaAprire, "posta": postaDaAprire, "sub-dati-f24": numeroF24, "consulta-f24": numeroF24, "cart-modelli4": modelli4Aperti.totale, "modelli4-chiusure": modelli4Aperti.totale, "cart-animali": verificheAnimali, "verifiche-ovini": verificheAnimali, "cart-alimentaria": senzaComposizione, "alimenti-senza-composizione": senzaComposizione, "cart-fatture": (anomalieAperte || 0) + numeroF24, "sub-dati-controllo": anomalieAperte || 0, "registro-controlli": anomalieAperte || 0, "cart-emissione-fatture": daFatturare + allarmiAttiva, "sub-fatturazione-animali": daFatturare, "fatt-animali-da-fatturare": daFatturare, "fatt-animali-prepara": daFatturare, "sub-controllo-attiva": allarmiAttiva, "controllo-attiva": allarmiAttiva, "cart-accessi-registro": richiesteAccesso, "sub-accessi": richiesteAccesso, "accessi": richiesteAccesso };
 
-  function vaiA(pageId) {
+  // Versione 373: chi esce dalla pagina «Accessi» con schede non salvate viene avvisato prima (ordine del Dott. Bizzarri delle 21:28)
+  const [accessiInSospeso, setAccessiInSospeso] = useState([]);
+  const [uscitaDaAccessi, setUscitaDaAccessi] = useState(null);
+  function vaiA(pageId, forza = false) {
     if (!puo(pageId)) return; // versione 337: pagina non data a questa persona
+    if (!forza && tab === "accessi" && pageId !== "accessi" && accessiInSospeso.length) { setUscitaDaAccessi(pageId); return; }
     setTab(pageId);
     const posizione = cartellaDiPagina(pageId);
     if (posizione) {
@@ -582,10 +586,10 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 372</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 373</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
-            <button onClick={esci} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
+            <button onClick={() => (tab === "accessi" && accessiInSospeso.length) ? setUscitaDaAccessi("__esci__") : esci()} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
           </div>
         </div>
         <nav style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -899,7 +903,19 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
         {tab === "istr-registro-modifiche" && <DocumentoIstruzioni doc={ISTRUZIONI_REGISTRO_MODIFICHE} />}
         {tab === "registro-modifiche" && <RegistroModifiche />}
         {tab === "istr-accessi" && <IstruzioniAccessi />}
-        {tab === "accessi" && <PaginaAccessi accesso={accesso} utente={utente} onCambiato={() => { ricaricaAccesso(); setTab("accessi"); }} />}
+        {tab === "accessi" && uscitaDaAccessi && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+            <div data-uscita-accessi="1" style={{ background: "#fff", borderRadius: 14, padding: 22, maxWidth: 520, fontFamily: FONT, border: "3px solid #D4880F" }}>
+              <div style={{ fontWeight: 800, fontSize: 16, color: "#7A4B00", marginBottom: 8 }}>✏️ Ci sono modifiche non salvate</div>
+              <div style={{ fontSize: 14, lineHeight: 1.5, marginBottom: 14 }}>Nella pagina «Accessi» {accessiInSospeso.length === 1 ? "la scheda" : "le schede"} di <b>{accessiInSospeso.join(", ")}</b> {accessiInSospeso.length === 1 ? "ha" : "hanno"} modifiche non salvate. Se esce adesso, <b>si perdono</b>.</div>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <button onClick={() => setUscitaDaAccessi(null)} style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "9px 14px", fontWeight: 800, cursor: "pointer", fontFamily: FONT }}>Resto e salvo</button>
+                <button onClick={() => { const p = uscitaDaAccessi; setUscitaDaAccessi(null); setAccessiInSospeso([]); if (p === "__esci__") esci(); else vaiA(p, true); }} style={{ background: "transparent", color: "#C0392B", border: "1.5px solid #C0392B", borderRadius: 8, padding: "9px 14px", fontWeight: 800, cursor: "pointer", fontFamily: FONT }}>Esco senza salvare</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {tab === "accessi" && <PaginaAccessi accesso={accesso} utente={utente} onCambiato={() => { ricaricaAccesso(); setTab("accessi"); }} onInSospeso={setAccessiInSospeso} />}
         </>}
       </main>
     </div>
