@@ -1,9 +1,10 @@
+// Versione 378 (13/11/2026, ordine del Dott. Bizzarri delle 14:00–14:10): la cartella è FATTURE ATTIVE\FATTURE ATTIVE DA SMISTARE.
 // Versione 377 (13/11/2026, ordine del Dott. Bizzarri: «un caricamento veloce come quello esistente per le fatture passive e l'F24»):
 // scheda «Fatture di vendita» di «Documenti arrivati». I tre file scaricati da Aruba in «Fatture inviate» (Scarica XML, Scarica PDF,
-// Scarica Report Excel) si mettono in FATTURE ATTIVE\PROGRAMMA\DA SMISTARE; il programma li legge, controlla che i conti tornino
+// Scarica Report Excel) si mettono in FATTURE ATTIVE\FATTURE ATTIVE DA SMISTARE; il programma li legge, controlla che i conti tornino
 // (Report = XML = PDF = numero di «Seleziona tutti (N)»), le confronta e le registra con la pagina di sempre «Leggi le Fatture di Aruba»
 // (incorporata), poi archivia XML e PDF in FATTURE ATTIVE\anno\CLIENTE\XML e \PDF e conserva gli scarichi in FATTURE ATTIVE\SCARICHI ARUBA\anno.
-// Un originale esce da DA SMISTARE solo se la sua copia, riletta dal disco, è identica.
+// Un originale esce da FATTURE ATTIVE DA SMISTARE solo se la sua copia, riletta dal disco, è identica.
 import { useState, useMemo, useRef, useEffect } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
@@ -83,13 +84,13 @@ export function doppioniVendite(l) {
 export function cosaMancaVendite(l, conti) {
   const out = [];
   const IN_ARUBA = "in Aruba: «Fatture inviate», l'anno giusto, casella in alto, poi «Seleziona tutti (N)», poi la tendina «Azioni»";
-  if (!l.reportLetti.length) out.push(`Manca il Report. Si scarica ${IN_ARUBA} → «Scarica Report Excel». Il file va messo in DA SMISTARE.`);
-  if (!l.numeroXml) out.push(`Manca lo scarico degli XML. Si scarica ${IN_ARUBA} → «Scarica XML». Il file .zip va messo in DA SMISTARE.`);
-  if (!l.pdf.length) out.push(`Manca lo scarico dei PDF. Si scarica ${IN_ARUBA} → «Scarica PDF». Il file .zip va messo in DA SMISTARE.`);
+  if (!l.reportLetti.length) out.push(`Manca il Report. Si scarica ${IN_ARUBA} → «Scarica Report Excel». Il file va messo in FATTURE ATTIVE DA SMISTARE.`);
+  if (!l.numeroXml) out.push(`Manca lo scarico degli XML. Si scarica ${IN_ARUBA} → «Scarica XML». Il file .zip va messo in FATTURE ATTIVE DA SMISTARE.`);
+  if (!l.pdf.length) out.push(`Manca lo scarico dei PDF. Si scarica ${IN_ARUBA} → «Scarica PDF». Il file .zip va messo in FATTURE ATTIVE DA SMISTARE.`);
   if (out.length) return out;
   for (const c of conti.anni) {
-    if (c.xml !== c.report) out.push(`${c.anno}: il Report ha ${c.report} fatture, gli XML ${c.xml}. Si riscaricano tutti e tre insieme con «Seleziona tutti», si tolgono i vecchi da DA SMISTARE e si rilegge.`);
-    if (c.pdf !== c.xml) out.push(`${c.anno}: gli XML sono ${c.xml}, i PDF collegati ${c.pdf}. Si riscaricano tutti e tre insieme, si tolgono i vecchi da DA SMISTARE e si rilegge.`);
+    if (c.xml !== c.report) out.push(`${c.anno}: il Report ha ${c.report} fatture, gli XML ${c.xml}. Si riscaricano tutti e tre insieme con «Seleziona tutti», si tolgono i vecchi da FATTURE ATTIVE DA SMISTARE e si rilegge.`);
+    if (c.pdf !== c.xml) out.push(`${c.anno}: gli XML sono ${c.xml}, i PDF collegati ${c.pdf}. Si riscaricano tutti e tre insieme, si tolgono i vecchi da FATTURE ATTIVE DA SMISTARE e si rilegge.`);
   }
   if (conti.aruba !== null && conti.aruba !== conti.report) out.push(`Aruba dice ${conti.aruba} fatture, il Report ne ha ${conti.report}. Controllare il numero scritto; se è giusto, lo scarico è stato fatto senza «Seleziona tutti»: si rifà.`);
   return out;
@@ -157,7 +158,7 @@ export default function VenditeArrivate({ accesso, onNavigate }) {
   function azzera() { setLettura(null); setRegistrata(null); setEsitoArchivio(null); setEsitoChiusura(null); setTotaleAruba(null); }
   async function verificaCartella(h) {
     setErrore(""); azzera();
-    if (h.name === "DA SMISTARE" || h.name === "PROGRAMMA") { setRicon({ ok: false, problema: `È stata scelta la cartella «${h.name}», che sta DENTRO quella giusta: si sale a «00.DATI PROGRAMMA CONTABILITA' INDUSTRIALE», si clicca UNA volta «FATTURE ATTIVE» e si preme «Selezione cartella».` }); return; }
+    if (h.name === "FATTURE ATTIVE DA SMISTARE" || h.name === "DA SMISTARE" || h.name === "PROGRAMMA") { setRicon({ ok: false, problema: `È stata scelta la cartella «${h.name}», che sta DENTRO quella giusta: si sale a «00.DATI PROGRAMMA CONTABILITA' INDUSTRIALE», si clicca UNA volta «FATTURE ATTIVE» e si preme «Selezione cartella».` }); return; }
     if (h.name !== NOME_CARTELLA) { setRicon({ ok: false, problema: `È stata scelta la cartella «${h.name}»: si sceglie solo la cartella «FATTURE ATTIVE» dentro «00.DATI PROGRAMMA CONTABILITA' INDUSTRIALE». Mi fermo.` }); return; }
     const { data: par, error } = await supabase.from("ci_parametri").select("valore").eq("chiave", PARAMETRO_CODICE).maybeSingle();
     if (error) { setErrore(`Lettura del codice della cartella: ${error.message}`); return; }
@@ -180,14 +181,14 @@ export default function VenditeArrivate({ accesso, onNavigate }) {
   }
   async function preparaCartella() {
     if (!admin || !radice) return;
-    if (!window.confirm("Preparare la cartella FATTURE ATTIVE di Podere Verde? Si crea PROGRAMMA\\DA SMISTARE e si scrivono il file di riconoscimento e il suo codice nel programma.")) return;
+    if (!window.confirm("Preparare la cartella FATTURE ATTIVE di Podere Verde? Si crea FATTURE ATTIVE DA SMISTARE e si scrivono il file di riconoscimento e il suo codice nel programma.")) return;
     setErrore("");
     try {
       const { data: par, error: eP } = await supabase.from("ci_parametri").select("valore").eq("chiave", PARAMETRO_CODICE).maybeSingle();
       if (eP) throw new Error(eP.message);
       if (par?.valore) throw new Error("il programma ha già il codice di una cartella delle fatture di vendita: non si prepara una seconda cartella");
       const codice = ricon?.codiceFile || nuovoCodice();
-      await cartella(radice, "PROGRAMMA\\DA SMISTARE", true);
+      await cartella(radice, "FATTURE ATTIVE DA SMISTARE", true);
       if (!ricon?.codiceFile) await scriviVerificato(radice, `PROGRAMMA\\${FILE_RICONOSCIMENTO_ATTIVE}`, new TextEncoder().encode(testoRiconoscimentoAttive(codice, oraRoma())));
       const { error } = await supabase.from("ci_parametri").insert({ chiave: PARAMETRO_CODICE, valore: codice, descrizione: "Codice del file di riconoscimento della cartella FATTURE ATTIVE (versione 377)" });
       if (error) throw new Error(`codice nel programma: ${error.message}`);
@@ -196,24 +197,27 @@ export default function VenditeArrivate({ accesso, onNavigate }) {
     } catch (e) { setErrore(`Preparazione non riuscita: ${e.message}`); }
   }
 
-  // ── 2. Lettura di DA SMISTARE ──
+  // ── 2. Lettura di FATTURE ATTIVE DA SMISTARE ──
   const leggiCartella = () => unoAllaVolta(async () => {
     if (registrando) return;
     setErrore(""); azzera();
     try {
-      setPasso("Leggo i file di DA SMISTARE…");
-      const dir = await cartella(radice, "PROGRAMMA\\DA SMISTARE");
+      setPasso("Leggo i file di FATTURE ATTIVE DA SMISTARE…");
+      const dir = await cartella(radice, "FATTURE ATTIVE DA SMISTARE", true); // versione 378: la cartella sta subito dentro la cartella principale; se manca si crea
       const voci = (await elenco(dir)).filter(x => x.tipo === "file" && !x.nome.startsWith("~$") && !/^(PROVVISORIO|PROVV) /.test(x.nome));
+      // versione 378 (revisione): file rimasti nella cartella di prima (PROGRAMMA\\DA SMISTARE, versione 377): si dicono, perché da lì non si leggono più
+      const vecchi = await (async () => { try { return (await elenco(await cartella(radice, "PROGRAMMA\\DA SMISTARE"))).filter(x => x.tipo === "file").map(x => x.nome); } catch { return []; } })();
+      const dettoVecchi = vecchi.length ? ` Attenzione: nella cartella di prima, PROGRAMMA\\DA SMISTARE, ci sono ${vecchi.length} file (${vecchi.join(", ")}): da lì il programma non legge più; vanno spostati in FATTURE ATTIVE\\FATTURE ATTIVE DA SMISTARE.` : "";
       const file = []; const nonLetti = [];
       for (const v of voci) {
         try { const b = new Uint8Array(await (await v.handle.getFile()).arrayBuffer()); if (!b.length) throw new Error("il file è vuoto"); file.push({ nome: v.nome, bytes: b, md5: md5(b) }); }
         catch (e) { nonLetti.push(`${v.nome}: ${e.message}`); }
       }
-      if (nonLetti.length) { setErrore(`Questi file di DA SMISTARE non si riescono a leggere: ${nonLetti.join(" · ")}. Aprire la cartella in Esplora file, aspettare che il cloud li scarichi e premere di nuovo «Leggi la cartella».`); return; }
-      if (!file.length) { setErrore("In DA SMISTARE non ci sono file."); return; }
+      if (nonLetti.length) { setErrore(`Questi file di FATTURE ATTIVE DA SMISTARE non si riescono a leggere: ${nonLetti.join(" · ")}. Aprire la cartella in Esplora file, aspettare che il cloud li scarichi e premere di nuovo «Leggi la cartella».`); return; }
+      if (!file.length) { setErrore("In FATTURE ATTIVE DA SMISTARE non ci sono file." + dettoVecchi); return; }
       setPasso("Riconosco il contenuto dei file…");
       const l = await leggiFileAruba(file.map(f => new File([f.bytes], f.nome)));
-      setLettura({ l, file, quando: Date.now() });
+      setLettura({ l, file, vecchi, quando: Date.now() });
     } catch (e) { setErrore(`Lettura non riuscita: ${e.message}`); }
   });
 
@@ -222,7 +226,7 @@ export default function VenditeArrivate({ accesso, onNavigate }) {
   const reg = registrata && lettura && registrata.quando === lettura.quando ? registrata : null;
   const stati = lettura ? Object.entries((lettura.l.elenco || []).reduce((a, r) => { const k = r.stato || "(vuoto)"; a[k] = (a[k] || 0) + 1; return a; }, {})) : [];
   const cosaManca = lettura ? cosaMancaVendite(lettura.l, conti) : [];
-  // file o voci che lo scarico non spiega: finché ci sono non si registra e niente esce da DA SMISTARE
+  // file o voci che lo scarico non spiega: finché ci sono non si registra e niente esce da FATTURE ATTIVE DA SMISTARE
   const nonSpiegati = lettura ? [
     ...lettura.l.scartati.map(s => `${s.file}: ${s.motivo}`),
     ...lettura.l.pdfSenzaFattura.map(p => `PDF senza fattura: ${p.nome}`),
@@ -270,7 +274,7 @@ export default function VenditeArrivate({ accesso, onNavigate }) {
       }
       if (esito.errori.length) esito.fermo.push("ci sono stati errori nell'archivio");
       // revisione 377, punti 7 e 8: gli scarichi interi si COPIANO tutti (copia riletta e identica); gli originali escono
-      // da DA SMISTARE solo dopo la chiusura che torna, e solo se tutte le copie sono a posto
+      // da FATTURE ATTIVE DA SMISTARE solo dopo la chiusura che torna, e solo se tutte le copie sono a posto
       if (!esito.fermo.length) {
         const anni = [...new Set(conti.anni.map(c => c.anno))];
         const anno = anni.length === 1 ? anni[0] : "PIU ANNI";
@@ -310,15 +314,15 @@ export default function VenditeArrivate({ accesso, onNavigate }) {
         viste.add(k);
       }
       const esitoC = { righe: Object.values(perAnno).map(c => ({ ...c, torna: !c.mancanti.length })), quando: oraRoma(), tolti: [], errori: [] };
-      // la chiusura torna e le copie degli scarichi sono a posto: gli originali escono da DA SMISTARE (solo se ancora identici)
+      // la chiusura torna e le copie degli scarichi sono a posto: gli originali escono da FATTURE ATTIVE DA SMISTARE (solo se ancora identici)
       const archivioOk = esitoArchivio && esitoArchivio.quando === lettura.quando && !esitoArchivio.errori.length && !esitoArchivio.fermo.length && esitoArchivio.scarichi.length === lettura.file.length;
       if (esitoC.righe.every(c => c.torna) && archivioOk) {
         for (const f of esitoArchivio.scarichi) {
           try {
-            setPasso(`Tolgo «${f.nome}» da DA SMISTARE…`);
+            setPasso(`Tolgo «${f.nome}» da FATTURE ATTIVE DA SMISTARE…`);
             if (md5(await leggiFile(radice, f.percorso)) !== f.md5) throw new Error(`la copia di «${f.nome}» in SCARICHI ARUBA non è più identica: l'originale resta`);
-            const c = await cancellaOriginale(radice, `PROGRAMMA\\DA SMISTARE\\${f.nome}`, f.md5);
-            esitoC.tolti.push(`${f.nome}: ${c === "Cancellato" ? "tolto da DA SMISTARE (la copia è in " + f.percorso + ")" : c}`);
+            const c = await cancellaOriginale(radice, `FATTURE ATTIVE DA SMISTARE\\${f.nome}`, f.md5);
+            esitoC.tolti.push(`${f.nome}: ${c === "Cancellato" ? "tolto da FATTURE ATTIVE DA SMISTARE (la copia è in " + f.percorso + ")" : c}`);
           } catch (e) { esitoC.errori.push(e.message); }
         }
       }
@@ -332,7 +336,7 @@ export default function VenditeArrivate({ accesso, onNavigate }) {
       if (ricon && !ricon.ok) return "Il motivo è nel riquadro rosso: scegli la cartella FATTURE ATTIVE.";
       return ricordata ? "Premi «Usa la cartella di sempre»." : "Premi «Scegli la cartella FATTURE ATTIVE»: nella finestra sali a «00.DATI PROGRAMMA CONTABILITA' INDUSTRIALE», clicca UNA volta «FATTURE ATTIVE» e premi «Selezione cartella».";
     }
-    if (!lettura) return "Metti in DA SMISTARE i tre file scaricati da Aruba in «Fatture inviate» (Report, XML, PDF), poi premi «Leggi la cartella».";
+    if (!lettura) return "Metti in FATTURE ATTIVE DA SMISTARE i tre file scaricati da Aruba in «Fatture inviate» (Report, XML, PDF), poi premi «Leggi la cartella».";
     if (cosaManca.some(m => /^Manca/.test(m))) return cosaManca.find(m => /^Manca/.test(m));
     if (conti.aruba === null) return "Nella casella gialla scrivi quante fatture dice Aruba: è il numero di «Seleziona tutti (N)» dello scarico.";
     if (!contiOk) return cosaManca[0] || "I conti non tornano: si rifà lo scarico da Aruba con «Seleziona tutti» e si rilegge.";
@@ -342,9 +346,9 @@ export default function VenditeArrivate({ accesso, onNavigate }) {
     if (!esitoArchivio) return "Premi «Archivia XML e PDF e copia gli scarichi».";
     if (esitoArchivio.errori.length || esitoArchivio.fermo.length) return "L'archiviazione ha avuto errori (riquadro «4. Archivia»): sistemali e premi di nuovo «Leggi la cartella».";
     if (!esitoChiusura) return "Premi «Confronta con il Report di Aruba».";
-    if (!esitoChiusura.righe.every(c => c.torna)) return "La chiusura NON torna: le fatture mancanti sono nel riquadro «5. Chiusura». Gli scarichi restano in DA SMISTARE.";
-    if (esitoChiusura.errori.length) return "La chiusura torna, ma alcuni scarichi non sono usciti da DA SMISTARE (motivo nel riquadro «5. Chiusura»).";
-    return "Fatto: la chiusura torna e gli scarichi sono usciti da DA SMISTARE (le copie sono in SCARICHI ARUBA).";
+    if (!esitoChiusura.righe.every(c => c.torna)) return "La chiusura NON torna: le fatture mancanti sono nel riquadro «5. Chiusura». Gli scarichi restano in FATTURE ATTIVE DA SMISTARE.";
+    if (esitoChiusura.errori.length) return "La chiusura torna, ma alcuni scarichi non sono usciti da FATTURE ATTIVE DA SMISTARE (motivo nel riquadro «5. Chiusura»).";
+    return "Fatto: la chiusura torna e gli scarichi sono usciti da FATTURE ATTIVE DA SMISTARE (le copie sono in SCARICHI ARUBA).";
   })();
 
   const lavora = !!passo;
@@ -355,7 +359,7 @@ export default function VenditeArrivate({ accesso, onNavigate }) {
       <h1 style={{ color: C.primary, fontSize: 23, margin: "0 0 4px" }}>Carica le fatture di vendita da Aruba</h1>
       <p style={{ color: C.muted, marginTop: 0, fontSize: 13 }}>
         In Aruba, <b>Fatture inviate</b>: anno, «Seleziona tutti (N)», poi dalla tendina «Azioni» <b>Scarica XML</b>, <b>Scarica PDF</b> e <b>Scarica Report Excel</b>.
-        I tre file si mettono in <b>FATTURE ATTIVE\PROGRAMMA\DA SMISTARE</b>. Il programma li legge, controlla i conti, confronta le fatture con quelle del programma,
+        I tre file si mettono in <b>FATTURE ATTIVE\FATTURE ATTIVE DA SMISTARE</b>. Il programma li legge, controlla i conti, confronta le fatture con quelle del programma,
         le registra quando si preme «Registra la lettura», archivia XML e PDF nella cartella di ogni cliente e conserva gli scarichi.
       </p>
       <div style={{ ...riquadro, background: "#EAF2FB", border: `2px solid ${C.primary}`, fontSize: 15 }}><b>👉 Adesso:</b> {adesso}</div>
@@ -375,7 +379,7 @@ export default function VenditeArrivate({ accesso, onNavigate }) {
       </div>
 
       {ricon?.ok && <div style={riquadro}>
-        <div style={{ fontWeight: 800, marginBottom: 8 }}>2. Leggi la cartella DA SMISTARE</div>
+        <div style={{ fontWeight: 800, marginBottom: 8 }}>2. Leggi la cartella FATTURE ATTIVE DA SMISTARE</div>
         <button style={bottone(!lavora && !registrando)} disabled={lavora || registrando} onClick={leggiCartella}>Leggi la cartella</button>
         {lettura && <>
           <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
@@ -398,9 +402,10 @@ export default function VenditeArrivate({ accesso, onNavigate }) {
             {" "}{conti.aruba === null ? "← scrivi qui il numero di Aruba" : conti.aruba === conti.report ? `✅ uguale alle ${conti.report} righe del Report` : `⛔ il Report ha ${conti.report} righe`}
           </div>
           {stati.length > 0 && <div style={{ marginTop: 6, fontSize: 12, color: C.muted }}>Stati scritti nel Report: {stati.map(([k, n]) => `«${k}» ${n}`).join(" · ")}. Quelli che contengono «scart» valgono come scartate dal Sistema di Interscambio.</div>}
+          {lettura.vecchi?.length > 0 && <div style={{ marginTop: 8, padding: 8, background: COLORI.arancione, fontSize: 12 }}>Nella cartella di prima, PROGRAMMA\DA SMISTARE, ci sono {lettura.vecchi.length} file ({lettura.vecchi.join(", ")}): da lì il programma non legge più. Vanno spostati in FATTURE ATTIVE\FATTURE ATTIVE DA SMISTARE e si rilegge.</div>}
           {cosaManca.length > 0 && <div style={{ marginTop: 8, padding: 10, background: COLORI.rosso, fontSize: 13, lineHeight: 1.5 }}><b>Che cosa manca e come si rimedia:</b><ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>{cosaManca.map((m, i) => <li key={i}>{m}</li>)}</ul></div>}
           {nonSpiegati.length > 0 && <div style={{ marginTop: 8, padding: 8, background: COLORI.rosso, fontSize: 12 }}>
-            <b>{nonSpiegati.length} file o voci che lo scarico non spiega</b>: finché ci sono non si registra e niente esce da DA SMISTARE.
+            <b>{nonSpiegati.length} file o voci che lo scarico non spiega</b>: finché ci sono non si registra e niente esce da FATTURE ATTIVE DA SMISTARE.
             <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>{nonSpiegati.map((m, i) => <li key={i}>{m}</li>)}</ul></div>}
         </>}
       </div>}
@@ -420,7 +425,7 @@ export default function VenditeArrivate({ accesso, onNavigate }) {
 
       {reg && !reg.esito.errori.length && <div style={riquadro}>
         <div style={{ fontWeight: 800, marginBottom: 8 }}>4. Archivia</div>
-        <div style={{ fontSize: 12.5, marginBottom: 8 }}>Ogni fattura va nella cartella del suo cliente: <b>{"FATTURE ATTIVE\\anno\\NOME CLIENTE\\XML"}</b> e <b>{"…\\PDF"}</b>; le autofatture in <b>{"FATTURE ATTIVE\\anno\\AUTOFATTURE"}</b>. Gli scarichi interi si copiano in <b>{"FATTURE ATTIVE\\SCARICHI ARUBA\\anno"}</b>; escono da DA SMISTARE solo dopo la chiusura che torna (passo 5), e solo se la copia è identica.</div>
+        <div style={{ fontSize: 12.5, marginBottom: 8 }}>Ogni fattura va nella cartella del suo cliente: <b>{"FATTURE ATTIVE\\anno\\NOME CLIENTE\\XML"}</b> e <b>{"…\\PDF"}</b>; le autofatture in <b>{"FATTURE ATTIVE\\anno\\AUTOFATTURE"}</b>. Gli scarichi interi si copiano in <b>{"FATTURE ATTIVE\\SCARICHI ARUBA\\anno"}</b>; escono da FATTURE ATTIVE DA SMISTARE solo dopo la chiusura che torna (passo 5), e solo se la copia è identica.</div>
         <button style={bottone(!lavora)} disabled={lavora} onClick={archivia}>Archivia XML e PDF e copia gli scarichi</button>
         {esitoArchivio && <div style={{ marginTop: 8, padding: 8, background: esitoArchivio.fermo.length || esitoArchivio.errori.length ? COLORI.rosso : COLORI.verde, fontSize: 12 }}>
           File scritti nel cloud: {esitoArchivio.scritti.length} · già presenti uguali: {esitoArchivio.gia.length} · PDF messi nel programma: {esitoArchivio.pdfProgramma}{esitoArchivio.pdfGiaNelProgramma ? ` (già c'erano: ${esitoArchivio.pdfGiaNelProgramma})` : ""}
@@ -437,8 +442,8 @@ export default function VenditeArrivate({ accesso, onNavigate }) {
           <b>{c.anno}</b>: fatture valide nel Report {c.report} = nel programma {c.presenti} + mancanti {c.mancanti.length}. {c.torna ? "✅ Torna." : `⛔ Non torna. Mancanti: ${c.mancanti.join(" · ")}.`}
         </div>)}
         {esitoChiusura && esitoChiusura.tolti.length > 0 && <div style={{ marginTop: 8, padding: 8, background: COLORI.verde, fontSize: 12 }}>{esitoChiusura.tolti.join(" · ")}</div>}
-        {esitoChiusura && esitoChiusura.errori.length > 0 && <div style={{ marginTop: 8, padding: 8, background: COLORI.rosso, fontSize: 12 }}>Restano in DA SMISTARE: {esitoChiusura.errori.join(" · ")}</div>}
-        {esitoChiusura && esitoChiusura.righe.every(c => c.torna) && !esitoChiusura.tolti.length && !esitoChiusura.errori.length && <div style={{ marginTop: 8, fontSize: 12 }}>Gli scarichi restano in DA SMISTARE finché non sono copiati con «Archivia» (passo 4).</div>}
+        {esitoChiusura && esitoChiusura.errori.length > 0 && <div style={{ marginTop: 8, padding: 8, background: COLORI.rosso, fontSize: 12 }}>Restano in FATTURE ATTIVE DA SMISTARE: {esitoChiusura.errori.join(" · ")}</div>}
+        {esitoChiusura && esitoChiusura.righe.every(c => c.torna) && !esitoChiusura.tolti.length && !esitoChiusura.errori.length && <div style={{ marginTop: 8, fontSize: 12 }}>Gli scarichi restano in FATTURE ATTIVE DA SMISTARE finché non sono copiati con «Archivia» (passo 4).</div>}
         {esitoChiusura && <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>Confronto fatto il {esitoChiusura.quando}. Le scartate dal Sistema di Interscambio e le autofatture non si contano.</div>}
       </div>}
     </div>

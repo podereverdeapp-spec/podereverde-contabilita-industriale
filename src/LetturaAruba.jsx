@@ -23,7 +23,7 @@ const ESITI = {
 };
 
 // Versione 377: la pagina si usa anche dentro «Documenti arrivati» → «Fatture di vendita»: lì riceve la lettura già fatta
-// della cartella DA SMISTARE (letturaIniziale), non mostra la scelta del file (incorporata) e dice quando ha registrato (onRegistrata).
+// della cartella FATTURE ATTIVE DA SMISTARE (letturaIniziale), non mostra la scelta del file (incorporata) e dice quando ha registrato (onRegistrata).
 export default function LetturaAruba({ onNavigate, letturaIniziale = null, incorporata = false, onRegistrata = null, onLavoro = null }) {
   const [ultima, setUltima] = useState(null);
   const [lettura, setLettura] = useState(null);

@@ -64,7 +64,7 @@ export default function ControlloFatturazioneAttiva({ onNavigate, vediCarico = f
         <div style={titolo}>2. Fatture emesse dal programma non trovate in Aruba <span style={chip(dati.nonInAruba.length ? C.red : C.green)}>{dati.nonInAruba.length}</span></div>
         {/* versione 377: il caricamento veloce delle fatture di vendita da Aruba, come per le fatture passive */}
         {dati.nonInAruba.length > 0 && onNavigate && vediCarico && <div style={{ fontSize: 13, margin: "0 0 10px", padding: 10, background: "#EAF2FB", borderRadius: 8 }}>
-          Se in Aruba ci sono già: si scaricano da «Fatture inviate» (Scarica XML, Scarica PDF, Scarica Report Excel), si mettono in FATTURE ATTIVE\PROGRAMMA\DA SMISTARE e si caricano da qui
+          Se in Aruba ci sono già: si scaricano da «Fatture inviate» (Scarica XML, Scarica PDF, Scarica Report Excel), si mettono in FATTURE ATTIVE\FATTURE ATTIVE DA SMISTARE e si caricano da qui
           <button onClick={() => { chiediScheda("vendite"); onNavigate("documenti-arrivati"); }} style={{ ...btn(true), marginLeft: 10 }}>Carica le fatture di vendita da Aruba →</button>
         </div>}
         {dati.nonInAruba.length ? (

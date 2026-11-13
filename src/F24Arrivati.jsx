@@ -19,6 +19,28 @@ import { cartella, leggiFile, elenco, leggiRiconoscimento, testoRiconoscimento, 
   preparaPdf, scriviVerificato, mettiInSuperati, cancellaOriginale, percorsoInDaSmistare, cercaFile, esiste } from "./archivioF24";
 import { pianoGiaPresenti } from "./giaPresentiF24";
 import { PROMPT_LETTURA_F24 } from "./promptLetturaF24";
+// Versione 378 (13/11/2026, ordine del Dott. Bizzarri delle 14:00–14:10): i documenti arrivati stanno in «F24\F24 DA SMISTARE», subito dentro F24,
+// non più in «F24\PROGRAMMA\DA SMISTARE». Le letture fatte prima restano valide: un file che non è nella cartella nuova si cerca in quella vecchia.
+const DA_SMISTARE_F24 = "F24 DA SMISTARE";
+const VECCHIA_DA_SMISTARE_F24 = "PROGRAMMA\\DA SMISTARE";
+// Se lo stesso percorso c'è in tutte e due le cartelle, vale quella dove il file ha l'impronta letta da Claude (revisione 378).
+async function fileDentro(dir, base) {
+  const out = [];
+  for await (const [n, h] of dir.entries()) { if (/^(desktop\.ini|Thumbs\.db|LEGGIMI\.txt)$/i.test(n) || n.startsWith("~$")) continue; if (h.kind === "file") out.push(base ? `${base}\\${n}` : n); else out.push(...await fileDentro(h, base ? `${base}\\${n}` : n)); }
+  return out;
+}
+export async function dovEInDaSmistare(radice, doc) {
+  const rel = percorsoInDaSmistare(doc);
+  const trovati = [];
+  for (const base of [DA_SMISTARE_F24, VECCHIA_DA_SMISTARE_F24]) {
+    const p = `${base}\\${rel}`.split("\\"); const n = p.pop();
+    try { const dir = await cartella(radice, p.join("\\")); const c = await esiste(dir, n); if (c) trovati.push({ percorso: `${base}\\${rel}`, dir, nome: c }); } catch { /* cartella che non c'è */ }
+  }
+  if (trovati.length > 1 && doc?.md5) {
+    for (const t of trovati) { try { if (md5(new Uint8Array(await (await (await t.dir.getFileHandle(t.nome)).getFile()).arrayBuffer())) === doc.md5) return t.percorso; } catch { /* si prova l'altra */ } }
+  }
+  return trovati[0]?.percorso || `${DA_SMISTARE_F24}\\${rel}`;
+}
 
 const COL = {
   verde: { sfondo: "#E8F3EA", bordo: "#4A7C59", testo: "#2F5D3A", nome: "Pronto" },
@@ -114,7 +136,8 @@ export default function F24Arrivati({ utente, accesso }) {
   const [errore, setErrore] = useState("");
   const [radice, setRadice] = useState(null);          // la cartella F24 scelta
   const [riconoscimento, setRiconoscimento] = useState(null); // { ok, codice, problema }
-  const [letture, setLetture] = useState([]);          // file di LETTURE
+  const [letture, setLetture] = useState([]);
+  const [vecchiF24, setVecchiF24] = useState([]);       // versione 378: file rimasti in PROGRAMMA\DA SMISTARE          // file di LETTURE
   const [sceltaLettura, setSceltaLettura] = useState("");
   const [letta, setLetta] = useState(null);            // { nome, md5, ...leggiLettura }
   const [lavoro, setLavoro] = useState(null);
@@ -167,6 +190,10 @@ export default function F24Arrivati({ utente, accesso }) {
     if (!base.codiceCartella) { setRadice(h); setRiconoscimento({ ok: false, manca: true, codiceFile: r.codice, problema: "Nel programma non c'è ancora il codice della cartella F24: lo scrive il Dott. Bizzarri con «Prepara la cartella F24»." }); return; }
     if (r.codice !== base.codiceCartella) { setRiconoscimento({ ok: false, problema: `Il codice del file di riconoscimento (${r.codice}) è diverso da quello del programma (${base.codiceCartella}): questa non è la cartella giusta. Mi fermo.` }); return; }
     setRadice(h); setRiconoscimento({ ok: true, codice: r.codice });
+    // versione 378: la cartella dei documenti arrivati «F24 DA SMISTARE» sta subito dentro F24; se manca si crea (vuota)
+    try { await cartella(h, DA_SMISTARE_F24, true); } catch (e) { setErrore(`La cartella «F24\\${DA_SMISTARE_F24}» non si crea: ${e.message}`); }
+    // versione 378 (revisione): un F24 lasciato nella cartella di prima non deve restare senza lettura: si dice per nome
+    try { setVecchiF24(await fileDentro(await cartella(h, VECCHIA_DA_SMISTARE_F24), "")); } catch { setVecchiF24([]); }
     try {
       const dir = await cartella(h, "PROGRAMMA\\LETTURE");
       const fl = (await elenco(dir)).filter(x => x.tipo === "file" && /\.xlsx$/i.test(x.nome) && !x.nome.startsWith("~$")).sort((a, b) => b.nome.localeCompare(a.nome));
@@ -404,7 +431,11 @@ export default function F24Arrivati({ utente, accesso }) {
   async function archivia(riprendi = false) {
     if (inArchiviazione.current) return;
     inArchiviazione.current = true;
-    try { await archiviaUnaVolta(riprendi); } finally { inArchiviazione.current = false; }
+    try { await archiviaUnaVolta(riprendi); } finally {
+      inArchiviazione.current = false;
+      // versione 378: dopo l'archiviazione si ricontano i file rimasti nella cartella di prima
+      if (radice) { try { setVecchiF24(await fileDentro(await cartella(radice, VECCHIA_DA_SMISTARE_F24), "")); } catch { setVecchiF24([]); } }
+    }
   }
   async function archiviaUnaVolta(riprendi) {
     if (!cl || (!riprendi && !archiviabili.length)) return;
@@ -412,7 +443,7 @@ export default function F24Arrivati({ utente, accesso }) {
     const lunghi = piano.filter(p => p.lunghezza > LIMITE_PERCORSO);
     if (lunghi.length) { setErrore(`Archiviazione non partita: ${lunghi.length} percorsi superano ${LIMITE_PERCORSO} caratteri (${lunghi.map(p => `ARCHIVIO\\${p.destinazione}: ${p.lunghezza}`).join("; ")}). Accorcia il nome della cartella del pagamento; se è una lettera, avvisa il Dott. Bizzarri. Niente è stato scritto.`); return; }
     const attesa = daSistemare.length + inSospeso.length;
-    if (!riprendi && !window.confirm(`Archiviare? Si scrivono ${piano.length} file nell'ARCHIVIO, si salvano i dati e i PDF nel programma e poi si cancellano da DA SMISTARE gli originali archiviati.${attesa ? ` ${attesa} righe restano in sospeso con i loro file in DA SMISTARE: si archiviano dopo, quando sono a posto.` : ""}`)) return;
+    if (!riprendi && !window.confirm(`Archiviare? Si scrivono ${piano.length} file nell'ARCHIVIO, si salvano i dati e i PDF nel programma e poi si cancellano da F24 DA SMISTARE gli originali archiviati.${attesa ? ` ${attesa} righe restano in sospeso con i loro file in F24 DA SMISTARE: si archiviano dopo, quando sono a posto.` : ""}`)) return;
     // versione 344: i passi si riprendono dal programma (il database accetta solo passi aggiunti in fondo)
     const { data: lv, error: eLv } = await supabase.from("ci_f24_lavori").select("passi").eq("id", lavoro.id).single();
     if (eLv) { setErrore(`Lavoro non letto: ${eLv.message}`); return; }
@@ -458,10 +489,10 @@ export default function F24Arrivati({ utente, accesso }) {
       async function pdf(sorgente, pagine) {
         const k = `${sorgente}|${pagine || ""}`; if (pronti.has(k)) return pronti.get(k);
         const doc = docDi(sorgente);
-        const dove = `DA SMISTARE\\${percorsoInDaSmistare(doc)}`;
+        const dove = await dovEInDaSmistare(radice, doc);
         let byte;
-        try { byte = await leggiFile(programma, dove); }
-        catch (e) { throw new Error(`il file «PROGRAMMA\\${dove}» non si trova (${e?.name || e?.message}): è stato spostato, rinominato o cancellato dopo la lettura? Rimetterlo dov'era, oppure rifare la lettura`); }
+        try { byte = await leggiFile(radice, dove); }
+        catch (e) { throw new Error(`il file «F24\\${dove}» non si trova (${e?.name || e?.message}): è stato spostato, rinominato o cancellato dopo la lettura? Rimetterlo dov'era, oppure rifare la lettura`); }
         if (doc?.md5 && md5(byte) !== doc.md5) throw new Error(`«${sorgente}» è cambiato dopo la lettura di Claude: va riletto`);
         const out = await preparaPdf(byte, sorgente, pagine);
         const v = { byte: out, md5: md5(out), md5Ricevuto: md5(byte) }; pronti.set(k, v); return v;
@@ -550,11 +581,13 @@ export default function F24Arrivati({ utente, accesso }) {
         await segna(`«${c.nome}» nel programma`);
       }
       for (const p of piano.filter(x => x.cosa === "Originale ricevuto")) {
-        const dove = `DA SMISTARE\\${percorsoInDaSmistare(docDi(p.sorgente))}`;
+        const dove = await dovEInDaSmistare(radice, docDi(p.sorgente));
         let byte;
-        try { byte = await leggiFile(programma, dove); }
-        catch (e) { throw new Error(`il file «PROGRAMMA\\${dove}» non si trova (${e?.name || e?.message}): è stato spostato, rinominato o cancellato dopo la lettura? Rimetterlo dov'era, oppure rifare la lettura`); }
+        try { byte = await leggiFile(radice, dove); }
+        catch (e) { throw new Error(`il file «F24\\${dove}» non si trova (${e?.name || e?.message}): è stato spostato, rinominato o cancellato dopo la lettura? Rimetterlo dov'era, oppure rifare la lettura`); }
         const imp = md5(byte);
+        // versione 378 (revisione): un originale si conserva solo se è proprio il file letto da Claude
+        if (docDi(p.sorgente)?.md5 && imp !== docDi(p.sorgente).md5) throw new Error(`«${p.sorgente}» è cambiato dopo la lettura di Claude: va riletto`);
         let id = base.documenti.find(x => x.md5 === imp)?.id;
         if (!id) {
           const { data, error } = await supabase.from("ci_f24_documenti").insert({ tipo: "Originale ricevuto", nome_file_ricevuto: p.sorgente, md5: imp, md5_file_ricevuto: imp, dimensione: byte.length, lavoro_id: lavoro.id }).select("id").single();
@@ -612,11 +645,11 @@ export default function F24Arrivati({ utente, accesso }) {
       let interi = 0;
       const daCancellare = new Map();
       for (const [nome, doc] of candidati) {
-        const dove = `DA SMISTARE\\${percorsoInDaSmistare(doc)}`;
+        const dove = await dovEInDaSmistare(radice, doc);
         let byte;
-        try { byte = await leggiFile(programma, dove); } catch { continue; } // già tolto in un passaggio precedente
+        try { byte = await leggiFile(radice, dove); } catch { continue; } // già tolto in un passaggio precedente
         const imp = md5(byte);
-        if (doc?.md5 && imp !== doc.md5) throw new Error(`«${nome}» è cambiato dopo la lettura di Claude: non si toglie da DA SMISTARE, va riletto`);
+        if (doc?.md5 && imp !== doc.md5) throw new Error(`«${nome}» è cambiato dopo la lettura di Claude: non si toglie da F24 DA SMISTARE, va riletto`);
         if (!base.fileArchivio.some(x => x.md5 === imp && !x.superato)) {
           let id = base.documenti.find(x => x.md5 === imp)?.id;
           if (!id) {
@@ -640,17 +673,18 @@ export default function F24Arrivati({ utente, accesso }) {
       }
       // 6) solo alla fine: via da DA SMISTARE i file che sono nell'ARCHIVIO identici
       for (const [nome, doc] of daCancellare) {
-        const esito = await cancellaOriginale(programma, `DA SMISTARE\\${percorsoInDaSmistare(doc)}`, doc?.md5);
-        await segna(`${esito} da DA SMISTARE: ${nome}`);
+        const dove = await dovEInDaSmistare(radice, doc);
+        const esito = await cancellaOriginale(radice, dove, doc?.md5);
+        await segna(`${esito}: F24\\${dove}`);
       }
       // versione 344: «restano» sono i file davvero ancora in DA SMISTARE (con l'archiviazione a più riprese alcuni sono già stati tolti prima)
       const restano = [];
       for (const x of letta.documenti) {
-        const p = `DA SMISTARE\\${percorsoInDaSmistare(x)}`.split("\\"); const n = p.pop();
-        let c = null; try { c = await esiste(await cartella(programma, p.join("\\")), n); } catch { c = null; }
+        const p = (await dovEInDaSmistare(radice, x)).split("\\"); const n = p.pop();
+        let c = null; try { c = await esiste(await cartella(radice, p.join("\\")), n); } catch { c = null; }
         if (c) restano.push(x.nome);
       }
-      const esito = `${piano.length + interi} file nell'ARCHIVIO; ${idDi.size} F24 e ${docId.size} documenti nel programma; ${daCancellare.size} originali tolti da DA SMISTARE${restano.length ? `; restano in DA SMISTARE: ${restano.join(", ")}` : ""}.`;
+      const esito = `${piano.length + interi} file nell'ARCHIVIO; ${idDi.size} F24 e ${docId.size} documenti nel programma; ${daCancellare.size} originali tolti da F24 DA SMISTARE${restano.length ? `; restano in F24 DA SMISTARE: ${restano.join(", ")}` : ""}.`;
       // versione 344: se restano righe in sospeso il lavoro resta aperto, per archiviarle quando sono a posto
       const sospese = daSistemare.length + inSospeso.length;
       const statoFinale = sospese ? "Aperto" : "Chiuso";
@@ -670,7 +704,7 @@ export default function F24Arrivati({ utente, accesso }) {
   return (
     <div style={{ maxWidth: 1180, margin: "0 auto", padding: 20, fontFamily: FONT, color: C.text }}>
       <h2 style={{ margin: "0 0 4px", color: C.primary }}>🧾 F24 arrivati: controlla e archivia</h2>
-      <div style={{ color: C.muted, fontSize: 13.5, marginBottom: 16 }}>Tre passi: 1) Claude legge i documenti di DA SMISTARE; 2) qui si carica la sua lettura e si controlla; 3) «Archivia» copia tutto nell'ARCHIVIO e nel programma.</div>
+      <div style={{ color: C.muted, fontSize: 13.5, marginBottom: 16 }}>Tre passi: 1) Claude legge i documenti di F24 DA SMISTARE; 2) qui si carica la sua lettura e si controlla; 3) «Archivia» copia tutto nell'ARCHIVIO e nel programma.</div>
       {errore && <div style={{ ...scatola, padding: 12, background: COL.rosso.sfondo, color: COL.rosso.testo, fontWeight: 700 }}>⚠️ {errore}</div>}
 
       {allarmi && (allarmi.scaduti.length > 0 || allarmi.inScadenza.length > 0) && (
@@ -683,7 +717,8 @@ export default function F24Arrivati({ utente, accesso }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 18 }}>
         <div style={{ ...scatola, marginBottom: 0, padding: 16 }}>
           <div style={{ fontWeight: 800, marginBottom: 6 }}>1. Fai leggere i documenti a Claude</div>
-          <div style={{ fontSize: 13.5, marginBottom: 10 }}>Metti i PDF in <b>F24\PROGRAMMA\DA SMISTARE</b>. Nel tuo Claude sul computer collega la cartella <b>F24</b>, incolla il prompt e aspetta che scriva la lettura in <b>LETTURE</b>.</div>
+          <div style={{ fontSize: 13.5, marginBottom: 10 }}>Metti i PDF in <b>F24\F24 DA SMISTARE</b>. Nel tuo Claude sul computer collega la cartella <b>F24</b>, incolla il prompt e aspetta che scriva la lettura in <b>LETTURE</b>.</div>
+          {vecchiF24.length > 0 && <div style={{ fontSize: 13.5, marginBottom: 10, padding: 10, borderRadius: 8, background: "#FBE1DE", fontWeight: 700 }}>⛔ Nella cartella di prima, F24\PROGRAMMA\DA SMISTARE, ci sono ancora {vecchiF24.length} file ({vecchiF24.join(", ")}). Se non sono di una lettura già caricata qui, vanno spostati in F24\F24 DA SMISTARE e letti: un F24 lasciato lì resterebbe senza lettura.</div>}
           <button style={bottone()} onClick={() => navigator.clipboard?.writeText(PROMPT_LETTURA_F24).then(() => alert("Prompt di lettura copiato: incollalo nel tuo Claude."))}>📋 Copia il prompt di lettura (versione 3)</button>
         </div>
         <div style={{ ...scatola, marginBottom: 0, padding: 16 }}>
@@ -760,7 +795,7 @@ export default function F24Arrivati({ utente, accesso }) {
             <div style={{ fontWeight: 800, color: COL.rosso.testo, marginBottom: 4 }}>⚠️ Prima di tutto</div>
             {cl.comunicazioni.filter(c => c.chiede_pagamento).map(c => <div key={c.k} style={{ color: COL.rosso.testo, fontWeight: 700 }}>💶 {c.chi} chiede {euro(c.importo)}{c.scadenza ? ` entro il ${dataIt(c.scadenza)}` : ""} ({c.nome}).</div>)}
             {daSistemare.map(x => <div key={x.codice_delega || x.k} style={{ color: COL.rosso.testo }}>🔴 {x.k ? x.nome : x.nome_file_ricevuto || x.nome_file_quietanza || x.nome_file_contabile} ({x.k ? `${x.cosa} ${x.chi}` : x.oggetto}): {x.problemi.join("; ")}.</div>)}
-            {cl.scartati.map(s => <div key={s.nome} style={{ color: COL.grigio.testo }}>⚪ {s.nome}: {s.esito || s.tipo}{s.note ? ` (${s.note})` : ""}. Resta in DA SMISTARE: lo toglie il Dott. Bizzarri.</div>)}
+            {cl.scartati.map(s => <div key={s.nome} style={{ color: COL.grigio.testo }}>⚪ {s.nome}: {s.esito || s.tipo}{s.note ? ` (${s.note})` : ""}. Resta in F24 DA SMISTARE: lo toglie il Dott. Bizzarri.</div>)}
           </div>
         )}
 
@@ -827,7 +862,7 @@ export default function F24Arrivati({ utente, accesso }) {
                   <input type="checkbox" disabled={bloccato} checked={!!d.s.confermato} onChange={() => setDelega(d.codice_delega, { confermato: !d.s.confermato })} /> Ho controllato: è di Podere Verde e l'F24 manca davvero.
                 </label>
               </>)}
-              {d.doppioneDi && <div style={{ color: COL.grigio.testo, marginTop: 8, fontWeight: 700 }}>È lo stesso F24 di {d.doppioneDi}: stessa scadenza, stesso saldo, stessi codici (una copia o una scansione). Entra nel programma una volta sola e non si paga due volte. Il file non si archivia e resta in DA SMISTARE: lo vede il Dott. Bizzarri.</div>}
+              {d.doppioneDi && <div style={{ color: COL.grigio.testo, marginTop: 8, fontWeight: 700 }}>È lo stesso F24 di {d.doppioneDi}: stessa scadenza, stesso saldo, stessi codici (una copia o una scansione). Entra nel programma una volta sola e non si paga due volte. Il file non si archivia e resta in F24 DA SMISTARE: lo vede il Dott. Bizzarri.</div>}
               {!d.nienteDiNuovo && !d.doppioneDi && !(d.esistente && !d.suo && d.esistente.cartella_pagamento) && !d.sostituisce && <>
                 <div style={{ marginTop: 12, fontWeight: 800 }}>Nome della cartella del pagamento <span style={{ fontWeight: 600, color: C.muted, fontSize: 12.5 }}>(uguale in tutte le copie, massimo 60 caratteri)</span></div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4, flexWrap: "wrap" }}>
@@ -842,7 +877,7 @@ export default function F24Arrivati({ utente, accesso }) {
                 {piano.filter(p => p.delega === d.codice_delega).map(p => <div key={p.destinazione} style={mono}>📁 ARCHIVIO\{p.destinazione} <span style={{ color: p.lunghezza > LIMITE_PERCORSO ? C.red : C.muted, fontFamily: FONT }}>({p.lunghezza}/{LIMITE_PERCORSO})</span></div>)}
                 {d.colore === "rosso" && <div style={{ color: C.muted }}>(si vede quando la riga non è più rossa)</div>}
               </>}
-              {d.nienteDiNuovo && <div style={{ color: COL.grigio.testo, marginTop: 8 }}>È già nel programma ({d.esistente.codice_delega}) e già nell'archivio: non si archivia di nuovo. Se il file è identico a quello archiviato, alla fine si toglie da DA SMISTARE; altrimenti resta e lo vede il Dott. Bizzarri.</div>}
+              {d.nienteDiNuovo && <div style={{ color: COL.grigio.testo, marginTop: 8 }}>È già nel programma ({d.esistente.codice_delega}) e già nell'archivio: non si archivia di nuovo. Se il file è identico a quello archiviato, alla fine si toglie da F24 DA SMISTARE; altrimenti resta e lo vede il Dott. Bizzarri.</div>}
               {d.problemi.length > 0 && <div style={{ color: COL.rosso.testo, fontWeight: 700, marginTop: 8 }}>Da sistemare: {d.problemi.join("; ")}.</div>}
             </Riga>
           ))}
@@ -873,7 +908,7 @@ export default function F24Arrivati({ utente, accesso }) {
           ))}
           {cl.scartati.map(s => (
             <Riga key={s.nome} colore="grigio" aperta={aperte.has(s.nome)} onApri={() => apri(s.nome)} testata={<><Etichetta colore="grigio" /><b>{s.nome}</b><span style={{ fontSize: 12.5 }}>{s.esito || s.tipo}</span></>}>
-              Non si archivia e non si cancella: resta in DA SMISTARE e lo toglie il Dott. Bizzarri. {s.note}
+              Non si archivia e non si cancella: resta in F24 DA SMISTARE e lo toglie il Dott. Bizzarri. {s.note}
             </Riga>
           ))}
         </div>
@@ -884,10 +919,10 @@ export default function F24Arrivati({ utente, accesso }) {
           <div style={{ fontWeight: 800, fontSize: 15.5, marginBottom: 8 }}>3. Archivia</div>
           {lavoro.stato !== "Chiuso" && <div style={{ fontSize: 13.5, lineHeight: 1.7 }}>
             Il programma scriverà <b>{piano.length} file</b> nell'ARCHIVIO ({PREFISSO_ARCHIVIO}…), ognuno con un nome provvisorio: lo rilegge, controlla l'impronta e solo allora gli dà il nome vero.
-            Poi salva tutto nel programma e, alla fine, toglie da DA SMISTARE gli originali archiviati e verificati.
+            Poi salva tutto nel programma e, alla fine, toglie da F24 DA SMISTARE gli originali archiviati e verificati.
           </div>}
           {(daSistemare.length + inSospeso.length) > 0 && lavoro.stato !== "Chiuso" && <div style={{ color: COL.rosso.testo, fontWeight: 700, marginTop: 10 }}>
-            {daSistemare.length} righe rosse da sistemare{inSospeso.length ? ` e ${inSospeso.length} righe che usano un loro file` : ""}: restano in sospeso, con i loro file in DA SMISTARE. «Archivia» archivia il resto; le righe in sospeso si archiviano dopo, premendo di nuovo «Archivia».</div>}
+            {daSistemare.length} righe rosse da sistemare{inSospeso.length ? ` e ${inSospeso.length} righe che usano un loro file` : ""}: restano in sospeso, con i loro file in F24 DA SMISTARE. «Archivia» archivia il resto; le righe in sospeso si archiviano dopo, premendo di nuovo «Archivia».</div>}
           {lavoro.stato === "Aperto" && !archiviazione?.inCorso && <button style={{ ...bottone(archiviabili.length > 0), marginTop: 12, padding: "11px 22px", fontSize: 14.5 }} disabled={!archiviabili.length} onClick={() => archivia(false)}>📦 Archivia</button>}
           {lavoro.stato === "Archiviazione in corso" && !archiviazione?.inCorso && <button style={{ ...bottone(true, C.accent), marginTop: 12 }} onClick={() => archivia(true)}>▶️ Riprendi l'archiviazione interrotta</button>}
           {archiviazione && (
@@ -897,7 +932,7 @@ export default function F24Arrivati({ utente, accesso }) {
                 {archiviazione.inCorso && <div style={{ color: C.muted }}>⏳ in corso…</div>}
               </div>
               {archiviazione.errore && <div style={{ marginTop: 10, background: COL.rosso.sfondo, border: `1.5px solid ${COL.rosso.bordo}`, borderRadius: 10, padding: 12, fontWeight: 700, color: COL.rosso.testo }}>
-                ⛔ Archiviazione ferma: {archiviazione.errore}. Niente è andato perso: quello che è stato fatto è annotato; risolto il problema, premi «Riprendi l'archiviazione interrotta». Gli originali in DA SMISTARE non sono stati toccati.
+                ⛔ Archiviazione ferma: {archiviazione.errore}. Niente è andato perso: quello che è stato fatto è annotato; risolto il problema, premi «Riprendi l'archiviazione interrotta». Gli originali in F24 DA SMISTARE non sono stati toccati.
               </div>}
               {archiviazione.fine && <div style={{ marginTop: 10, background: COL.verde.sfondo, border: `1.5px solid ${COL.verde.bordo}`, borderRadius: 10, padding: 12, fontWeight: 700, color: COL.verde.testo }}>{archiviazione.parziale ? `✅ Archiviate le righe a posto: ${archiviazione.fine} Restano in sospeso ${archiviazione.parziale} righe: sistemale e premi di nuovo «Archivia».` : `✅ Lavoro chiuso: ${archiviazione.fine}`}</div>}
             </div>
