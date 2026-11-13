@@ -1,4 +1,5 @@
 import JSZip from "jszip";
+import * as XLSX from "xlsx-js-style";
 import { supabase } from "./supabase";
 import { fetchAllPages, round2 } from "./parsingUtils";
 
@@ -43,45 +44,129 @@ function xmlDaP7m(bytes) {
   return decodifica(bytes.slice(i, fine));
 }
 
+// Versione 377: si leggono anche gli scarichi di Aruba «Fatture inviate» fatti con i pulsanti di Aruba (Scarica XML, Scarica PDF,
+// Scarica Report Excel), come per le fatture passive: il Report Excel prende il posto dell'elenco .csv (stato, identificativo SdI),
+// i PDF si tengono per l'archivio. Ogni fattura conserva i byte del suo file XML, per l'archivio.
 export async function leggiFileAruba(files) {
-  const xml = []; let elenco = null; const scartati = []; const nomi = [];
-  const aggiungi = async (nome, bytes) => {
+  const xml = []; let elenco = null; const scartati = []; const nomi = []; const pdf = []; const reportLetti = [];
+  const aggiungiElenco = righe => { elenco = [...(elenco || []), ...righe]; };
+  const aggiungi = async (nome, bytes, contenitore = "") => {
     const basso = nome.toLowerCase().split("/").pop();
+    const corto = nome.split("/").pop();
     if (!basso || basso.startsWith(".") || nome.includes("__MACOSX")) return;
-    if (basso.endsWith(".csv")) { elenco = leggiElenco(decodifica(bytes)); return; }
-    if (basso.endsWith(".xml")) { xml.push({ nome: nome.split("/").pop(), testo: decodifica(bytes) }); return; }
-    if (basso.endsWith(".p7m")) {
-      const t = xmlDaP7m(bytes);
-      if (t) xml.push({ nome: nome.split("/").pop(), testo: t }); else scartati.push({ file: nome, motivo: "file firmato non leggibile: chiedere a Claude il file XML senza firma" });
+    if (basso.endsWith(".csv")) { aggiungiElenco(leggiElenco(decodifica(bytes))); return; }
+    if (basso.endsWith(".xls") || basso.endsWith(".xlsx")) {
+      const r = leggiReportInviate(bytes);
+      if (r.errore) scartati.push({ file: nome, motivo: r.errore }); else { aggiungiElenco(r.righe); reportLetti.push(corto); }
       return;
     }
-    scartati.push({ file: nome, motivo: "non è un file XML né l'elenco .csv" });
+    if (basso.endsWith(".pdf")) { pdf.push({ nome: corto, bytes, contenitore }); return; }
+    if (basso.endsWith(".xml")) { xml.push({ nome: corto, testo: decodifica(bytes), bytes, contenitore }); return; }
+    if (basso.endsWith(".p7m")) {
+      const t = xmlDaP7m(bytes);
+      if (t) xml.push({ nome: corto, testo: t, bytes, contenitore }); else scartati.push({ file: nome, motivo: "file firmato non leggibile: chiedere a Claude il file XML senza firma" });
+      return;
+    }
+    scartati.push({ file: nome, motivo: "non è un file XML, PDF, né il Report o l'elenco .csv di Aruba" });
   };
   for (const f of files) {
     nomi.push(f.name);
     if (f.name.toLowerCase().endsWith(".zip")) {
       const zip = await JSZip.loadAsync(await f.arrayBuffer());
-      for (const voce of Object.values(zip.files)) if (!voce.dir) await aggiungi(voce.name, await voce.async("uint8array"));
-    } else await aggiungi(f.name, new Uint8Array(await f.arrayBuffer()));
+      for (const voce of Object.values(zip.files)) if (!voce.dir) await aggiungi(voce.name, await voce.async("uint8array"), f.name);
+    } else await aggiungi(f.name, new Uint8Array(await f.arrayBuffer()), f.name);
   }
   const fatture = [], autofatture = [];
   for (const x of xml) {
-    try { fatture.push(...analizzaXml(x.testo, x.nome)); }
-    catch (e) { if (e.autofattura) autofatture.push({ file: x.nome, numero: (x.testo.match(/<Numero>([^<]*)<\/Numero>/) || [])[1] || "", data: (x.testo.match(/<Data>([^<]*)<\/Data>/) || [])[1] || "" }); else scartati.push({ file: x.nome, motivo: e.message }); }
+    try { fatture.push(...analizzaXml(x.testo, x.nome).map(d => ({ ...d, byteXml: x.bytes, contenitore: x.contenitore }))); }
+    catch (e) { if (e.autofattura) autofatture.push({ file: x.nome, byteXml: x.bytes, contenitore: x.contenitore, numero: (x.testo.match(/<Numero>([^<]*)<\/Numero>/) || [])[1] || "", data: (x.testo.match(/<Data>([^<]*)<\/Data>/) || [])[1] || "" }); else scartati.push({ file: x.nome, motivo: e.message }); }
   }
   // stato di Aruba dall'elenco: per nome del file, altrimenti per numero e anno
+  // Versione 377 (revisione): ogni riga dell'elenco o del Report si usa una volta sola: prima la riga con lo stesso nome del file
+  // e lo stesso numero, poi quella con lo stesso nome del file, poi quella con lo stesso numero che non appartiene a un altro file letto.
+  // Così una fattura scartata e rimandata con lo stesso numero non prende lo stato dell'altra.
+  const usate = new Set();
   if (elenco) {
-    const perFile = new Map(elenco.map(r => [String(r.nomeFile).toLowerCase().replace(/\.p7m$/, ""), r]));
-    const perNumero = new Map(elenco.map(r => [chiaveNumero(r.numero, String(r.data).slice(0, 4)), r]));
+    const nf = r => String(r.nomeFile || "").toLowerCase().replace(/\.p7m$/, "");
+    const chiaveRiga = r => chiaveNumero(r.numero, String(r.data).slice(0, 4));
+    const fileLetti = new Set(xml.map(x => x.nome.toLowerCase().replace(/\.p7m$/, "")));
+    const corpiPerFile = {}; fatture.forEach(f => { corpiPerFile[f.nomeFile] = (corpiPerFile[f.nomeFile] || 0) + 1; });
+    const prendi = cond => elenco.find(r => !usate.has(r) && cond(r));
     for (const f of fatture) {
-      const r = perFile.get(f.nomeFile.toLowerCase().replace(/\.p7m$/, "")) || perNumero.get(chiaveNumero(f.numero, f.anno));
-      if (r) { f.stato = r.stato; f.identificativoSdi = r.identificativoSdi; f.dataInvio = r.dataInvio; f.inElenco = true; }
+      const base = f.nomeFile.toLowerCase().replace(/\.p7m$/, ""); const k = chiaveNumero(f.numero, f.anno);
+      let perFile = true;
+      let r = prendi(x => nf(x) === base && chiaveRiga(x) === k) || (corpiPerFile[f.nomeFile] === 1 ? prendi(x => nf(x) === base) : null);
+      // per numero solo se la riga libera con quel numero è una sola (revisione 377, secondo giro, punto 1)
+      if (!r) { perFile = false; const libere = elenco.filter(x => !usate.has(x) && chiaveRiga(x) === k && (!nf(x) || !fileLetti.has(nf(x)))); r = libere.length === 1 ? libere[0] : null; }
+      if (r) { usate.add(r); f.stato = r.stato; f.identificativoSdi = r.identificativoSdi; f.dataInvio = r.dataInvio; f.inElenco = true; f.collegataPerFile = perFile; }
     }
   }
-  const nelleFatture = new Set(fatture.map(f => chiaveNumero(f.numero, f.anno)));
-  const mancantiNeiFile = (elenco || []).filter(r => !nelleFatture.has(chiaveNumero(r.numero, String(r.data).slice(0, 4))));
+  const mancantiNeiFile = (elenco || []).filter(r => !usate.has(r));
   const autoNumeri = new Set(autofatture.map(a => chiaveNumero(a.numero, String(a.data).slice(0, 4))));
-  return { fatture, elenco, scartati, autofatture, mancantiNeiFile: mancantiNeiFile.filter(r => !autoNumeri.has(chiaveNumero(r.numero, String(r.data).slice(0, 4)))), nomeFile: nomi.join(", ") };
+  // Versione 377: il PDF di Aruba di ogni fattura, dal nome («IT15117871002_00004.xml - FPR 12_26.pdf», non verificato per le inviate),
+  // altrimenti dal numero scritto nel nome; un PDF che non si collega resta tra i «PDF senza fattura»
+  // primo passaggio per nome del file (e numero scritto nel nome, quando c'è), su tutte le fatture; secondo per numero, solo se
+  // quel numero è di un solo XML e il PDF libero con quel numero è uno solo (revisione 377, punto 6 e secondo giro, punto 2)
+  const pdfUsati = new Set();
+  const stessoNumero = (x, f) => chiaveNumero(numeroDaNomePdf(x.nome), f.anno) === chiaveNumero(f.numero, f.anno);
+  for (const f of fatture) {
+    const base = f.nomeFile.toLowerCase().replace(/\.p7m$/, "");
+    const p = pdf.find(x => !pdfUsati.has(x) && x.nome.toLowerCase().startsWith(base) && (!numeroDaNomePdf(x.nome) || stessoNumero(x, f)));
+    if (p) { pdfUsati.add(p); f.pdf = p; }
+  }
+  // le autofatture prendono il loro PDF per nome PRIMA del passaggio per numero delle vendite (revisione, terzo giro)
+  for (const a of autofatture) {
+    const base = String(a.file).toLowerCase().replace(/\.p7m$/, "");
+    const p = pdf.find(x => !pdfUsati.has(x) && x.nome.toLowerCase().startsWith(base));
+    if (p) { pdfUsati.add(p); a.pdf = p; }
+  }
+  const xmlPerNumero = {}; fatture.forEach(f => { const k = chiaveNumero(f.numero, f.anno); xmlPerNumero[k] = (xmlPerNumero[k] || 0) + 1; });
+  for (const f of fatture.filter(x => !x.pdf && xmlPerNumero[chiaveNumero(x.numero, x.anno)] === 1)) {
+    const perNumero = pdf.filter(x => !pdfUsati.has(x) && stessoNumero(x, f));
+    if (perNumero.length === 1) { pdfUsati.add(perNumero[0]); f.pdf = perNumero[0]; }
+  }
+  const pdfSenzaFattura = pdf.filter(p => !pdfUsati.has(p));
+  return { fatture, elenco, scartati, autofatture, mancantiNeiFile: mancantiNeiFile.filter(r => !autoNumeri.has(chiaveNumero(r.numero, String(r.data).slice(0, 4)))), nomeFile: nomi.join(", "), pdf, pdfSenzaFattura, numeroXml: xml.length, reportLetti };
+}
+// «IT15117871002_00004.xml - FPR 12_26.pdf» → «FPR 12/26» (Aruba scrive «_» al posto di «/» nei nomi dei file)
+function numeroDaNomePdf(nome) {
+  const m = String(nome).match(/\s-\s(.+)\.pdf$/i);
+  return m ? m[1].replace(/_/g, "/") : "";
+}
+
+// Versione 377: Report Excel di Aruba delle fatture inviate. Le colonne si cercano per nome, perché il Report delle inviate
+// non è stato ancora visto (quello delle ricevute ha «Numero», «Nome file», «ID SdI», «Data documento»…): servono almeno
+// «Numero» e «Data documento» (o «Data»); stato, identificativo SdI e nome del file si prendono se ci sono.
+export function leggiReportInviate(bytes) {
+  let wb;
+  try { wb = XLSX.read(bytes, { type: "array", cellDates: false }); } catch (e) { return { righe: [], errore: `Report non leggibile (${e.message})` }; }
+  const foglio = wb.SheetNames.find(n => /inviat|emess/i.test(n)) || wb.SheetNames[0];
+  const righe = XLSX.utils.sheet_to_json(wb.Sheets[foglio], { defval: "", raw: true });
+  if (!righe.length) return { righe: [], errore: "Report vuoto" };
+  const titoli = Object.keys(righe[0]);
+  const trova = (...nomi) => { for (const n of nomi) { const t = titoli.find(x => x.trim().toLowerCase() === n); if (t) return t; } return null; };
+  if (/ricevut/i.test(foglio) || (trova("fornitore") && !trova("cliente", "destinatario", "cessionario"))) return { righe: [], errore: "è il Report delle fatture RICEVUTE: qui va quello delle fatture inviate" };
+  const c = { numero: trova("numero", "numero documento"), data: trova("data documento", "data"), nomeFile: trova("nome file", "nome del file", "nome file sdi", "nome file fattura", "file"), sdi: trova("id sdi", "identificativo sdi"),
+    stato: trova("stato", "stato documento", "stato sdi", "stato invio", "stato fattura", "esito", "esito sdi"), cliente: trova("cliente", "destinatario", "cessionario"),
+    piva: trova("p.iva", "partita iva"), imponibile: trova("totale imponibile", "imponibile"), iva: trova("totale iva", "imposta"), totale: trova("totale documento", "totale"),
+    invio: trova("data invio", "data trasmissione", "data di invio") };
+  // revisione 377, punto 4: senza «Stato» e «Nome file» non si riconoscono le scartate rimandate con lo stesso numero: ci si ferma
+  const mancano = [["Numero", c.numero], ["Data documento", c.data], ["Nome file", c.nomeFile], ["Stato", c.stato]].filter(x => !x[1]).map(x => `«${x[0]}»`);
+  if (mancano.length) return { righe: [], errore: `nel Report mancano le colonne ${mancano.join(", ")} (colonne trovate: ${titoli.join(", ")}): dirlo a Claude, che adatta la lettura` };
+  const data = v => {
+    if (typeof v === "number") { const d = XLSX.SSF.parse_date_code(v); return d ? `${d.y}-${String(d.m).padStart(2, "0")}-${String(d.d).padStart(2, "0")}` : ""; }
+    return dataIso(v);
+  };
+  const cifra = v => (typeof v === "number" ? v : num(String(v ?? "").replace(/\./g, "").replace(",", ".")));
+  return {
+    errore: null,
+    righe: righe.filter(r => String(r[c.numero]).trim()).map(r => ({
+      anno: data(r[c.data]).slice(0, 4), numero: String(r[c.numero]).trim(), data: data(r[c.data]), tipo: "", cliente: c.cliente ? String(r[c.cliente]).trim() : "",
+      partitaIva: c.piva ? String(r[c.piva]).trim() : "", imponibile: c.imponibile ? cifra(r[c.imponibile]) : 0, imposta: c.iva ? cifra(r[c.iva]) : 0, totale: c.totale ? cifra(r[c.totale]) : 0,
+      stato: c.stato ? String(r[c.stato]).trim() : "", identificativoSdi: c.sdi ? String(r[c.sdi]).trim() : "", dataInvio: c.invio ? String(r[c.invio]).trim() : "",
+      nomeFile: c.nomeFile ? String(r[c.nomeFile]).trim().split(/[\\/]/).pop().replace(/#\d+$/, "") : "",
+    })),
+  };
 }
 
 function leggiElenco(testo) {

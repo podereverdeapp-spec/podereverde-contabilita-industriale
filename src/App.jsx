@@ -591,7 +591,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 376</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 377</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={() => (tab === "accessi" && accessiInSospeso.length) ? setUscitaDaAccessi("__esci__") : esci()} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -822,7 +822,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
         {tab === "prompt-carico-aruba" && <PromptCaricoAruba />}
         {tab === "prompt-aruba-emesse" && <PromptFattureEmesseAruba />}
         {tab === "lettura-aruba" && <LetturaAruba onNavigate={vaiA} />}
-        {tab === "controllo-attiva" && <ControlloFatturazioneAttiva onNavigate={vaiA} />}
+        {tab === "controllo-attiva" && <ControlloFatturazioneAttiva onNavigate={vaiA} vediCarico={puo("documenti-arrivati") && puo("lettura-aruba")} />}
         {tab === "elenco-attive" && <ElencoFattureAttive />}
         {tab === "numero-progressivo" && <NumeroProgressivo />}
         {tab === "vendite-per-anno" && <VenditePerAnno />}
@@ -830,7 +830,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
         {tab === "f24-arrivati" && <F24Arrivati utente={utente} accesso={accesso} />}
         {tab === "consulta-f24" && <ConsultaF24 utente={utente} vaiA={vaiA} />}
         {tab === "istr-documenti-arrivati" && <DocumentoIstruzioni doc={ISTRUZIONI_DOCUMENTI_ARRIVATI} />}
-        {tab === "documenti-arrivati" && <DocumentiArrivati utente={utente} accesso={accesso} vediF24={puo("f24-arrivati")} />}
+        {tab === "documenti-arrivati" && <DocumentiArrivati utente={utente} accesso={accesso} vediF24={puo("f24-arrivati")} vediVendite={puo("lettura-aruba")} onNavigate={vaiA} />}
         {tab === "istr-generali-f24" && <DocumentoIstruzioni doc={ISTRUZIONI_F24_ARRIVATI} />}
         {tab === "carica-costi-lavoro" && <CaricaCostiLavoro />}
         {tab === "consulta-costi-lavoro" && <ConsultaCostiLavoro />}

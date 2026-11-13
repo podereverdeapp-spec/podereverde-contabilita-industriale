@@ -18,6 +18,8 @@ import { leggiScaricoAruba, collega, contiPerAnno, riconosci, chiusura, nomeArch
 import CaricaFatture from "./CaricaFatture";
 import F24Arrivati from "./F24Arrivati";
 import PagamentiF24 from "./PagamentiF24"; // Versione 355
+import VenditeArrivate from "./VenditeArrivate"; // Versione 377
+import { prendiSchedaRichiesta } from "./schedaRichiesta"; // Versione 377
 import { caricaPdf } from "./pdfFatture";
 
 export const FILE_RICONOSCIMENTO_FATTURE = "RICONOSCIMENTO CARTELLA FATTURE PASSIVE - NON TOCCARE.txt";
@@ -155,18 +157,21 @@ export function statoFatture(collegato, prog, scelte = {}) {
   });
 }
 
-export default function DocumentiArrivati({ utente, accesso, vediF24 = true }) {
-  const [scheda, setScheda] = useState("fatture");
+export default function DocumentiArrivati({ utente, accesso, vediF24 = true, vediVendite = true, onNavigate }) {
+  const [scheda, setScheda] = useState(() => { const r = prendiSchedaRichiesta(); return r === "vendite" && vediVendite ? r : "fatture"; });
   const stileScheda = attiva => ({ padding: "8px 18px", borderRadius: "10px 10px 0 0", border: `1.5px solid ${C.border}`, borderBottom: attiva ? "none" : `1.5px solid ${C.border}`,
     background: attiva ? C.card : "#F4F4F4", fontWeight: 800, fontSize: 14, cursor: "pointer", color: attiva ? C.primary : C.muted });
   return (
     <div>
       <div style={{ display: "flex", gap: 6, padding: "16px 20px 0" }}>
         <button style={stileScheda(scheda === "fatture")} onClick={() => setScheda("fatture")}>🧾 Fatture passive</button>
+        {vediVendite && <button style={stileScheda(scheda === "vendite")} onClick={() => setScheda("vendite")}>🧾 Fatture di vendita</button>}
         {vediF24 && <button style={stileScheda(scheda === "f24")} onClick={() => setScheda("f24")}>🏛️ F24</button>}
       </div>
       {/* le due schede restano montate: cambiare scheda non fa perdere il lavoro in corso */}
       <div style={{ display: scheda === "fatture" ? "block" : "none" }}><SchedaFatture utente={utente} accesso={accesso} /></div>
+      {/* versione 377: anche la scheda delle vendite resta montata */}
+      {vediVendite && <div style={{ display: scheda === "vendite" ? "block" : "none" }}><VenditeArrivate accesso={accesso} onNavigate={onNavigate} /></div>}
       {vediF24 && scheda === "f24" && <><F24Arrivati utente={utente} accesso={accesso} /><PagamentiF24 utente={utente} /></>}
     </div>
   );

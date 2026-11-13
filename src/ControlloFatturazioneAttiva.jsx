@@ -1,3 +1,4 @@
+import { chiediScheda } from "./schedaRichiesta"; // versione 377
 import { useEffect, useState } from "react";
 import { C } from "./style";
 import { formattaEuro } from "./parsingUtils";
@@ -11,7 +12,7 @@ import { caricaControlli } from "./calcoloAruba";
 // 2. fatture emesse dal programma che nell'ultima lettura di Aruba non c'erano;
 // 3. fatture con stato di Aruba «scartata» o «non consegnata», e differenze tra programma e Aruba.
 
-export default function ControlloFatturazioneAttiva({ onNavigate }) {
+export default function ControlloFatturazioneAttiva({ onNavigate, vediCarico = false }) {
   const [dati, setDati] = useState(null);
   const [capi, setCapi] = useState(null);
   const [errore, setErrore] = useState(null);
@@ -61,6 +62,11 @@ export default function ControlloFatturazioneAttiva({ onNavigate }) {
 
       <div style={scheda}>
         <div style={titolo}>2. Fatture emesse dal programma non trovate in Aruba <span style={chip(dati.nonInAruba.length ? C.red : C.green)}>{dati.nonInAruba.length}</span></div>
+        {/* versione 377: il caricamento veloce delle fatture di vendita da Aruba, come per le fatture passive */}
+        {dati.nonInAruba.length > 0 && onNavigate && vediCarico && <div style={{ fontSize: 13, margin: "0 0 10px", padding: 10, background: "#EAF2FB", borderRadius: 8 }}>
+          Se in Aruba ci sono già: si scaricano da «Fatture inviate» (Scarica XML, Scarica PDF, Scarica Report Excel), si mettono in FATTURE ATTIVE\PROGRAMMA\DA SMISTARE e si caricano da qui
+          <button onClick={() => { chiediScheda("vendite"); onNavigate("documenti-arrivati"); }} style={{ ...btn(true), marginLeft: 10 }}>Carica le fatture di vendita da Aruba →</button>
+        </div>}
         {dati.nonInAruba.length ? (
           <table>
             <thead><tr style={testata}><th style={th}>Numero</th><th style={th}>Data</th><th style={th}>Cliente</th><th style={{ ...th, textAlign: "right" }}>Totale</th><th style={th}>Mandata all'amministrazione</th><th style={th}>Che cosa fare</th></tr></thead>

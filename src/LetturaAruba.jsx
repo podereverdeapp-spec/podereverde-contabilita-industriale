@@ -22,7 +22,9 @@ const ESITI = {
   scartata: { testo: "Scartate dal Sistema di Interscambio: non valide, non si registrano", colore: C.muted },
 };
 
-export default function LetturaAruba({ onNavigate }) {
+// Versione 377: la pagina si usa anche dentro «Documenti arrivati» → «Fatture di vendita»: lì riceve la lettura già fatta
+// della cartella DA SMISTARE (letturaIniziale), non mostra la scelta del file (incorporata) e dice quando ha registrato (onRegistrata).
+export default function LetturaAruba({ onNavigate, letturaIniziale = null, incorporata = false, onRegistrata = null, onLavoro = null }) {
   const [ultima, setUltima] = useState(null);
   const [lettura, setLettura] = useState(null);
   const [risultati, setRisultati] = useState(null);
@@ -33,14 +35,18 @@ export default function LetturaAruba({ onNavigate }) {
   const [aperte, setAperte] = useState(() => new Set());
 
   useEffect(() => { caricaUltimaLettura().then(setUltima); }, []);
+  useEffect(() => { if (letturaIniziale) analizza(() => Promise.resolve(letturaIniziale)); }, [letturaIniziale]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function scegli(e) {
     const files = [...(e.target.files || [])];
     e.target.value = "";
     if (!files.length) return;
+    await analizza(() => leggiFileAruba(files));
+  }
+  async function analizza(leggi) {
     setLavoro(true); setErrore(null); setEsito(null); setRisultati(null);
     try {
-      const [l, arch, specie] = await Promise.all([leggiFileAruba(files), caricaArchivio(), caricaSpecieMatricole()]);
+      const [l, arch, specie] = await Promise.all([leggi(), caricaArchivio(), caricaSpecieMatricole()]);
       // Versione 302: se nel file non ci sono fatture (per esempio è stato scelto solo l'elenco .csv) non si va avanti
       if (!l.fatture.length) {
         setErrore(`Nel file scelto (${l.nomeFile}) non c'è nessuna fattura${l.autofatture.length ? " da registrare" : ""}: va scelto il file .zip «Fatture_Emesse_Aruba_…» della cartella «FATTURE EMESSE ARUBA», non l'elenco .csv.`);
@@ -64,14 +70,15 @@ export default function LetturaAruba({ onNavigate }) {
     const q = (n, uno, molti) => `${n} ${n === 1 ? uno : molti}`;
     const msg = `Registrare la lettura di Aruba?\n\n• ${q(nuove.length, "fattura nuova da registrare", "fatture nuove da registrare")} in contabilità\n• ${q(risultati.filter(f => f.esito === "programma" || f.esito === "annullata").length, "fattura del programma da collegare", "fatture del programma da collegare")}\n• ${q(risultati.filter(f => f.esito === "presente").length, "fattura già in contabilità da aggiornare", "fatture già in contabilità da aggiornare")}\n\nI dati mancanti dei clienti si completano con quelli delle fatture.`;
     if (!window.confirm(msg)) return;
-    setLavoro(true); setErrore(null);
+    setLavoro(true); setErrore(null); if (onLavoro) onLavoro(true);
     try {
       const daRegistrare = risultati.filter(f => f.esito !== "doppia" && f.esito !== "scartata");
       const e = await registraLettura({ risultati: daRegistrare, archivio, nomeFile: lettura.nomeFile, ultimi: ultimoNumeroPerAnno(daRegistrare) });
       setEsito(e); setRisultati(null); setLettura(null);
       setUltima(await caricaUltimaLettura());
+      if (onRegistrata) onRegistrata(e, daRegistrare);
     } catch (err) { setErrore(err.message); }
-    setLavoro(false);
+    setLavoro(false); if (onLavoro) onLavoro(false);
   }
 
   const gruppi = risultati ? Object.keys(ESITI).map(k => ({ k, ...ESITI[k], fatture: risultati.filter(f => f.esito === k) })).filter(g => g.fatture.length) : [];
@@ -83,7 +90,8 @@ export default function LetturaAruba({ onNavigate }) {
   const apri = k => setAperte(prev => { const n = new Set(prev); if (n.has(k)) n.delete(k); else n.add(k); return n; });
 
   return (
-    <div style={{ padding: 20, maxWidth: 1300, margin: "0 auto" }}>
+    <div style={{ padding: incorporata ? 0 : 20, maxWidth: 1300, margin: "0 auto" }}>
+      {!incorporata && <>
       <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>Leggi le Fatture di Aruba</h1>
       <p style={{ color: C.muted, marginTop: 0, marginBottom: 14, fontSize: 13, lineHeight: 1.5 }}>
         Si sceglie il file .zip preparato da Claude con il prompt «Prompt per Claude: Fatture Emesse in Aruba» (file XML delle fatture emesse
@@ -94,13 +102,15 @@ export default function LetturaAruba({ onNavigate }) {
       <div style={{ ...scheda, display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
         <label style={{ ...btn(true), display: "inline-flex", alignItems: "center", opacity: lavoro ? 0.6 : 1 }}>
           📥 Scegli il file .zip di Aruba
-          <input type="file" accept=".zip,.xml,.csv,.p7m" multiple onChange={scegli} disabled={lavoro} style={{ display: "none" }} />
+          <input type="file" accept=".zip,.xml,.csv,.p7m,.pdf,.xls,.xlsx" multiple onChange={scegli} disabled={lavoro} style={{ display: "none" }} />
         </label>
         <span style={{ fontSize: 12.5, color: C.muted }}>
           {ultima ? <>Ultima lettura: <b>{quandoItaliano(ultima.letta_il)}</b> — {ultima.fatture_lette} fatture ({ultima.anni}), {ultima.registrate} registrate, {ultima.del_programma} del programma collegate.</> : "Nessuna lettura di Aruba registrata finora."}
         </span>
         {lavoro && <span style={{ fontWeight: 700, color: C.primary }}>Lettura in corso…</span>}
       </div>
+      </>}
+      {incorporata && lavoro && <div style={{ fontWeight: 700, color: C.primary, marginBottom: 10 }}>Confronto con il programma in corso…</div>}
       {errore && <div style={{ color: C.red, fontWeight: 700, marginBottom: 12 }}>⚠️ {errore}</div>}
 
       {esito && (
@@ -138,10 +148,12 @@ export default function LetturaAruba({ onNavigate }) {
               {gruppi.map(g => <span key={g.k} style={chip(g.colore, false)}>{g.fatture.length} — {g.testo}</span>)}
             </div>
             <div style={{ fontSize: 12.5, color: C.muted }}>
-              File letto: {lettura.nomeFile}. {lettura.elenco ? `Elenco degli stati: ${lettura.elenco.length} righe.` : "Nel file manca l'elenco degli stati (Elenco_Fatture_Emesse_Aruba.csv): lo stato di Aruba non si aggiorna."}
+              File letto: {lettura.nomeFile}. {lettura.elenco ? `Elenco degli stati: ${lettura.elenco.length} righe.` : "Nel file manca l'elenco degli stati (Elenco_Fatture_Emesse_Aruba.csv o Report Excel di Aruba): lo stato di Aruba non si aggiorna."}
+              {lettura.pdf && lettura.pdf.length > 0 ? ` PDF: ${lettura.pdf.length}.` : ""}
             </div>
             {lettura.autofatture.length > 0 && <div style={{ fontSize: 12.5, color: C.muted }}>{lettura.autofatture.length === 1 ? "1 autofattura" : `${lettura.autofatture.length} autofatture`} ({lettura.autofatture.map(a => a.numero).join(", ")}): Podere Verde è il cliente, non sono vendite e non si registrano.</div>}
             {lettura.scartati.map((s, i) => <div key={i} style={{ color: C.red, fontSize: 12.5, fontWeight: 700 }}>⚠️ File {s.file} non letto: {s.motivo}.</div>)}
+            {(lettura.pdfSenzaFattura || []).map((p, i) => <div key={"p" + i} style={{ color: C.red, fontSize: 12.5, fontWeight: 700 }}>⚠️ Il PDF {p.nome} non si collega a nessuna fattura letta.</div>)}
             {lettura.mancantiNeiFile.map((r, i) => <div key={i} style={{ color: C.red, fontSize: 12.5, fontWeight: 700 }}>⚠️ {r.numero} del {dataIt(r.data)} è nell'elenco ma il suo file XML manca.</div>)}
           </div>
 
