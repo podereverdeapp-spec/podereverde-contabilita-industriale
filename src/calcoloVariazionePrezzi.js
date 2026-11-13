@@ -23,6 +23,19 @@ export const SOGLIE = { anomaliaSopra: 2.5, anomaliaSotto: 0.4, gravitaAltaEuro:
 export const CENTRI_PRODOTTO = ["Mangimi", "Foraggio", "Integratori alimentari", "Gasolio e lubrificanti", "Coltivazione Sementi", "Coltivazione Concimi e Fitosanitari", "Coltivazione Reti e Film", "Medicinali Veterinari", "Assicurazioni R.C.T.O. - E rischi", "Assicurazioni R.C.A."];
 
 export const normalizza = d => String(d || "").replace(/\s+/g, " ").trim().toLowerCase();
+
+// Versione 376 (ordine del Dott. Bizzarri del 13/11/2026 ore 09:11): regole «stesso fornitore e la descrizione comincia con».
+// Servono per le descrizioni che cambiano da una fattura all'altra (accisa del gasolio, codici, date): una regola scritta
+// una volta riconosce anche le descrizioni future. Vale solo se la descrizione non è già assegnata (o esclusa) una per una;
+// se più regole valgono, vince quella con il testo più lungo.
+export function famigliaDaRegola(regole, n, fornitoreId) {
+  let migliore = null;
+  for (const r of regole || []) {
+    if (r.fornitore_id !== fornitoreId || !r.inizia_con || !n.startsWith(r.inizia_con)) continue;
+    if (!migliore || r.inizia_con.length > migliore.inizia_con.length) migliore = r;
+  }
+  return migliore;
+}
 const num = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
 const somma = l => l.reduce((s, x) => s + x, 0);
 const GIORNO = 86400000;
@@ -52,15 +65,16 @@ export async function caricaDatiPrezzi() {
   } catch (e) {
     throw new Error(`Le tabelle delle famiglie di prodotto non si leggono (${e.message}). Va lanciato una volta il file contabilita_strutture_v240.sql nell'SQL Editor di Supabase.`);
   }
-  const [articoli, fatture, fornitori, regole, mercato, parametri] = await Promise.all([
+  const [articoli, fatture, fornitori, regole, mercato, parametri, regolePrefisso] = await Promise.all([
     tutte("ci_articoli_fattura", "id, fattura_id, descrizione, quantita, unita_misura, totale_riga, area, centro_costo"),
     tutte("ci_fatture", "id, data, tipo, numero, fornitore_id"),
     tutte("ci_fornitori", "id, nome"),
     tutte("ci_regole_armonizzazione_unita", "id, fornitore_id, centro_costo, descrizione_prodotto, fattore_kg"),
     tutte("coltivazione_prezzi_mercato", "campagna, prodotto, prezzo_q, fonte", "campagna").catch(() => []),
     tutte("ci_parametri", "chiave, valore", "chiave").catch(() => []),
+    tutte("ci_famiglie_prodotto_regole", "id, fornitore_id, inizia_con, famiglia_id").catch(() => []),   // versione 376
   ]);
-  return { famiglie, descrizioni, articoli, fatture, fornitori, regole, mercato, parametri: Object.fromEntries(parametri.map(p => [p.chiave, p.valore])) };
+  return { famiglie, descrizioni, articoli, fatture, fornitori, regole, mercato, regolePrefisso, parametri: Object.fromEntries(parametri.map(p => [p.chiave, p.valore])) };
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
@@ -77,15 +91,18 @@ export function analisiPrezzi(d, oggi = oggiRoma()) {
   let spesaTotale12 = 0;
   const nuove = new Map(), senzaConversione = [];
   const perFamiglia = new Map(); // famiglia → Map(fattura → riga aggregata)
+  // versione 376: fornitori di cui si seguono già dei prodotti: le loro descrizioni nuove si segnalano anche fuori dai CENTRI_PRODOTTO
+  const seguiti = fornitoriSeguiti(d.articoli, d.descrizioni, d.famiglie, d.regolePrefisso, fat);
   for (const a of d.articoli) {
     const f = fat.get(a.fattura_id); if (!f || f.tipo !== "PASSIVA") continue;
     const tot = num(a.totale_riga); if (!(tot > 0)) continue;
     const dt = String(f.data).slice(0, 10);
     if (dt >= da12 && (a.area || "").trim() !== "Ammortamenti") spesaTotale12 += tot;
     const n = normalizza(a.descrizione); if (!n) continue;
-    const m = mappa.get(n);
+    let m = mappa.get(n);
+    if (!m) { const r = famigliaDaRegola(d.regolePrefisso, n, f.fornitore_id); if (r) m = { descrizione_norm: n, famiglia_id: r.famiglia_id, regola: r.id }; }
     if (!m) {
-      if (CENTRI_PRODOTTO.includes((a.centro_costo || "").trim()) && dt >= da24) {
+      if ((CENTRI_PRODOTTO.includes((a.centro_costo || "").trim()) || seguiti.has(f.fornitore_id)) && dt >= da24 && (a.area || "").trim() !== "Ammortamenti") {
         const x = nuove.get(n) || { descrizione: n, centro: (a.centro_costo || "").trim(), spesa: 0, righe: 0, ultima: dt, fornitori: new Set() };
         x.spesa += tot; x.righe++; if (dt > x.ultima) x.ultima = dt; x.fornitori.add(forn.get(f.fornitore_id) || ""); nuove.set(n, x);
       }
@@ -191,6 +208,7 @@ export function analisiPrezzi(d, oggi = oggiRoma()) {
     oggi, da12, spesaTotale12, schede, rincari, opportunita, ribassi, altre, anomale: anomale.sort((a, b) => (a.data < b.data ? 1 : -1)),
     senzaConversione: senzaConversione.sort((a, b) => (a.data < b.data ? 1 : -1)),
     nuove: nuoveL.filter(x => x.spesa >= SOGLIE.segnalaNuoveEuro), nuoveSottoSoglia: nuoveL.filter(x => x.spesa < SOGLIE.segnalaNuoveEuro).length,
+    nuoveTutte: nuoveL.length,   // versione 376: numero rosso nel menu «Controllo Prezzi di Acquisto»
     totaleRincari: somma(rincari.map(s => s.impatto)), totaleRibassi: somma(ribassi.map(s => s.impatto)),
     totaleOpportunita: somma(opportunita.map(s => Math.max(s.risparmioFornitore, s.risparmioMercato))),
     famiglieSenzaFatture: d.famiglie.filter(f => !perFamiglia.has(f.id)).map(f => f.nome),
@@ -297,4 +315,36 @@ REGOLE
 - Segnala i prezzi vecchi di oltre 6 mesi.
 - Alla fine scrivi in tre righe la tua raccomandazione: conviene cambiare, trattare con
   l'attuale fornitore o restare?`;
+}
+
+// Versione 376: fornitori di cui si seguono i prezzi: quelli con una regola, o con almeno una riga di fattura d'acquisto
+// assegnata a un prodotto vero (non a famiglie «a importo» come le spese di trasporto o le polizze, che non rendono
+// «seguito» un fornitore). Usata dal calcolo e dalla pagina «Famiglie di Prodotto» (stesso conto del numero rosso).
+export function fornitoriSeguiti(articoli, descrizioni, famiglie, regolePrefisso, fat) {
+  const unita = new Map((famiglie || []).map(f => [f.id, f.unita]));
+  const mappa = new Map((descrizioni || []).map(x => [x.descrizione_norm, x]));
+  const s = new Set();
+  for (const r of regolePrefisso || []) s.add(r.fornitore_id);
+  for (const a of articoli || []) {
+    const m = mappa.get(normalizza(a.descrizione)); if (!m || !m.famiglia_id || unita.get(m.famiglia_id) === "importo") continue;
+    const f = fat.get(a.fattura_id); if (f && f.tipo === "PASSIVA" && f.fornitore_id != null) s.add(f.fornitore_id);
+  }
+  return s;
+}
+
+// Versione 376: regola che vale per una descrizione arrivata da più fornitori: tutti devono avere una regola
+// (altrimenti le righe del fornitore senza regola restano «nuove» nel calcolo); vince la più lunga
+export function regolaPerTutti(regole, n, fornitoriId) {
+  let migliore = null;
+  for (const id of fornitoriId || []) {
+    const r = famigliaDaRegola(regole, n, id); if (!r) return null;
+    if (!migliore || r.inizia_con.length > migliore.inizia_con.length) migliore = r;
+  }
+  return migliore;
+}
+
+// Versione 376: quante descrizioni nuove (ultimi 24 mesi) aspettano di essere assegnate a un prodotto o escluse
+export async function contaDescrizioniDaAssegnare() {
+  const r = analisiPrezzi(await caricaDatiPrezzi());
+  return r.nuoveTutte || 0;
 }
