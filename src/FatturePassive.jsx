@@ -4,6 +4,7 @@ import { C } from "./style";
 import { numerizzaCampi, formattaEuro } from "./parsingUtils";
 import { esportaExcel, numeroExcel } from "./esportaExcel";
 import { PulsantePdf, leggiPdfDi, chiaveDoc } from "./pdfFatture"; // versione 292: il PDF di ogni fattura
+import { useStatiFatture, EtichettaStatoFattura, RiquadroStatoFattura } from "./statoFatture"; // versione 375: contestate e in attesa di nota di credito
 
 // Versione 280 (decisione del Dott. Bizzarri del 23/10/2026): la consultazione delle fatture si fa «a
 // pagine». Il database consegna al massimo 1.000 righe per richiesta: la pagina NON legge più tutte le
@@ -178,6 +179,7 @@ export function ElencoFattureAPagine({ tipo, titolo, etichettaControparte, nomeF
   const [inizio, setInizio] = useState(0);
   const [esportando, setEsportando] = useState("");
   const [pdfMappa, setPdfMappa] = useState({}); // versione 292: chiave del documento → PDF caricato
+  const [versioneStati, setVersioneStati] = useState(0); // versione 375
   const ultimaRichiesta = useRef(0); // conta solo la risposta dell'ultima ricerca partita
 
   // la ricerca parte mezzo secondo dopo l'ultima lettera scritta
@@ -244,6 +246,8 @@ export function ElencoFattureAPagine({ tipo, titolo, etichettaControparte, nomeF
 
   const numero = Number(risposta?.numero || 0);
   const fatture = risposta?.fatture || [];
+  // Versione 375: stato «contestata» / «in attesa di nota di credito» delle fatture d'acquisto mostrate
+  const [statiFatture] = useStatiFatture(fatture.filter(f => !f.acquisto_animali && f.fornitore_id && f.id).map(f => f.id), versioneStati);
   const anni = risposta?.anni || [];
   const numeroAnimali = Number(risposta?.numero_acquisti_animali || 0);
   const navigazione = <NavigazionePagine numero={numero} inizio={inizio} gruppo={gruppo} setInizio={setInizio} setGruppo={setGruppo} loading={loading} />;
@@ -298,6 +302,7 @@ export function ElencoFattureAPagine({ tipo, titolo, etichettaControparte, nomeF
                     {f.acquisto_animali && <EtichettaAcquistoAnimali />}
                     {DOCUMENTO_DI_COMPETENZA(f.tipo) && <EtichettaCompetenza tipo={f.tipo} />}
                     {eNotaDiCredito(f) && <EtichettaNotaDiCredito />}
+                    {!f.acquisto_animali && <EtichettaStatoFattura stato={statiFatture[f.id]} />}
                     <strong>{f.controparte || "—"}</strong>
                     <div style={{ fontSize: 12, color: C.muted }}>
                       {eNotaDiCredito(f) ? "Nota di credito" : "Fatt."} {numeroFattura(f)} del {dataIt(f.data)} {f.partita_iva && `· P.IVA ${f.partita_iva}`}
@@ -314,6 +319,8 @@ export function ElencoFattureAPagine({ tipo, titolo, etichettaControparte, nomeF
                 </div>
                 {espansa === f.chiave && (
                   <div style={{ borderTop: `1px solid ${C.border}`, padding: 14 }}>
+                    {f.fornitore_id && f.id && !f.acquisto_animali && !DOCUMENTO_DI_COMPETENZA(f.tipo) && !eNotaDiCredito(f) &&
+                      <RiquadroStatoFattura fattura={f} stato={statiFatture[f.id]} onCambiato={() => setVersioneStati(v => v + 1)} />}
                     {!righe ? <p style={{ color: C.muted, fontSize: 13 }}>Caricamento righe...</p>
                       : righe.length === 0 ? <p style={{ color: C.muted, fontSize: 13 }}>Nessuna riga trovata.</p>
                       : f.acquisto_animali ? <CapiAcquisto capi={righe} />

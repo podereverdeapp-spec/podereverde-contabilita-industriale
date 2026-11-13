@@ -8,6 +8,7 @@ import { dataIt } from "./FatturePassive";
 import { PulsantePdf, leggiPdfDi, chiaveDoc } from "./pdfFatture";
 import { PulsanteDistinta, leggiDistinte } from "./distintePagamento";
 import { leggiCompensazioni, trovaControparte, CompensazioniDelDocumento, CompensaNota, CompensaTraSoggetti } from "./compensazioni";
+import { useStatiFatture, EtichettaStatoFattura, CONTESTATA } from "./statoFatture"; // versione 375 (CONTESTATA: solo per il titolo)
 
 // Versione 347 — Scadenzari Clienti e Fornitori (decisioni del Dott. Bizzarri del 04/11/2026, ore 10:23–15:33).
 // Due schede separate, Clienti e Fornitori. Per ogni cliente e fornitore: posizione (fatture, pagato, residuo, scaduto),
@@ -213,6 +214,7 @@ export function Scadenzario({ lato, posizione, parola, periodo, onChiudi, onCamb
   const [compensando, setCompensando] = useState(null);
   const [controparte, setControparte] = useState(null);
   const [traSoggetti, setTraSoggetti] = useState(false);
+  const [letture, setLetture] = useState(0); // versione 375: a ogni rilettura si rileggono anche gli stati delle fatture
 
   async function carica() {
     setLoading(true); setErrore("");
@@ -243,7 +245,7 @@ export function Scadenzario({ lato, posizione, parola, periodo, onChiudi, onCamb
         altri = data || [];
       }
       const tutti = [...(mv || []), ...altri];
-      setRighe(sc || []); setMovimenti(tutti); setAbbinamenti(ab);
+      setRighe(sc || []); setMovimenti(tutti); setAbbinamenti(ab); setLetture(x => x + 1);
       if (po) setPos(p => ({ ...p, ...po }));
       leggiPdfDi((sc || []).map(docPdf).filter(Boolean)).then(setPdf).catch(() => setPdf({}));
       leggiDistinte(tutti.map(m => m.distinta_id), tutti.map(m => m.data)).then(setDistinte).catch(() => setDistinte({}));
@@ -272,6 +274,8 @@ export function Scadenzario({ lato, posizione, parola, periodo, onChiudi, onCamb
   const stati = useMemo(() => [...new Set(righe.map(r => r.stato))].sort(), [righe]);
   const filtrate = righe.filter(r => (!filtroStato || r.stato === filtroStato) && (!anno || String(r.data_documento).startsWith(anno)));
   const aperte = righe.filter(r => r.scadenza_id && Number(r.residuo) > 0.005);
+  // Versione 375: fatture d'acquisto contestate o in attesa di nota di credito
+  const [statiFatture] = useStatiFatture(lato === "fornitore" ? righe.map(r => r.fattura_id) : [], letture);
 
   async function togli(a) {
     const m = movPerId.get(a.pagamento_id);
@@ -348,7 +352,7 @@ export function Scadenzario({ lato, posizione, parola, periodo, onChiudi, onCamb
       {traSoggetti && controparte && <CompensaTraSoggetti lato={lato} schedaCorrente={pos.scheda} controparte={controparte} onChiudi={() => setTraSoggetti(false)} onFatto={dopoCompensazione} />}
       {compensando && <CompensaNota nota={compensando} aperte={aperte} onChiudi={() => setCompensando(null)} onFatto={dopoCompensazione} />}
 
-      {abbinando && <Abbina movimento={abbinando} resto={Number(abbinando.importo) - (abbinatoPerMovimento.get(abbinando.id) || 0)} aperte={aperte}
+      {abbinando && <Abbina statiFatture={statiFatture} movimento={abbinando} resto={Number(abbinando.importo) - (abbinatoPerMovimento.get(abbinando.id) || 0)} aperte={aperte}
         parola={parola} onChiudi={() => setAbbinando(null)} onFatto={async () => { setAbbinando(null); await carica(); onCambiato && onCambiato(); }} />}
 
       <div style={{ ...scheda, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
@@ -370,7 +374,8 @@ export function Scadenzario({ lato, posizione, parola, periodo, onChiudi, onCamb
               const doc = docPdf(r);
               return [
                 <tr key={k} onClick={() => setAperta(aperta === k ? null : k)} style={{ borderTop: `1px solid ${C.border}`, cursor: "pointer", background: aperta === k ? "#F1EEE6" : undefined }}>
-                  <td style={{ ...td, fontWeight: 700 }}>{r.numero_documento}
+                  <td style={{ ...td, fontWeight: 700 }}>{r.fattura_id && statiFatture[r.fattura_id] && <div><EtichettaStatoFattura stato={statiFatture[r.fattura_id]} piccola /></div>}{r.numero_documento}
+                    {r.fattura_id && statiFatture[r.fattura_id] && <div style={{ fontSize: 10.5, color: C.red, fontWeight: 700 }}>{statiFatture[r.fattura_id].motivo}</div>}
                     {r.importo < 0 && <div style={{ fontSize: 10.5, color: C.accent, fontWeight: 700 }}>nota di credito</div>}
                     {r.importo < 0 && r.scadenza_id && Number(r.residuo) < -0.005 && <button style={{ ...btn(false, C.accent), height: 24, fontSize: 10.5, marginTop: 3 }} onClick={e => { e.stopPropagation(); setCompensando(r); }}>Compensa</button>}
                     {r.fuori_contabilita_industriale && <div style={{ fontSize: 10.5, color: C.accent, fontWeight: 700 }}>fuori dalla contabilità industriale</div>}
@@ -423,7 +428,7 @@ export function Scadenzario({ lato, posizione, parola, periodo, onChiudi, onCamb
 }
 
 // Abbinare a mano un movimento a una o più fatture aperte dello stesso cliente o fornitore
-function Abbina({ movimento, resto, aperte, parola, onChiudi, onFatto }) {
+function Abbina({ movimento, resto, aperte, parola, onChiudi, onFatto, statiFatture = {} }) {
   const [importi, setImporti] = useState({});
   const [lavoro, setLavoro] = useState(false);
   const somma = Object.values(importi).reduce((t, v) => t + (parseFloat(String(v).replace(",", ".")) || 0), 0);
@@ -446,8 +451,8 @@ function Abbina({ movimento, resto, aperte, parola, onChiudi, onFatto }) {
         <table><thead><tr style={testata}><th style={th}>Numero</th><th style={th}>Data</th><th style={{ ...th, textAlign: "right" }}>Residuo</th><th style={th}>Importo da abbinare</th></tr></thead>
           <tbody>{aperte.map(r => (
             <tr key={r.scadenza_id} style={{ borderTop: `1px solid ${C.border}` }}>
-              <td style={td}>{r.numero_documento}</td><td style={td}>{dataIt(r.data_documento)}</td><td style={{ ...td, textAlign: "right" }}>{euro(r.residuo)}</td>
-              <td style={td}><input value={importi[r.scadenza_id] ?? ""} onChange={e => setImporti(p => ({ ...p, [r.scadenza_id]: e.target.value }))} style={{ ...input, width: 120 }} placeholder="0,00" />
+              <td style={td}><EtichettaStatoFattura stato={statiFatture[r.fattura_id]} piccola />{r.numero_documento}</td><td style={td}>{dataIt(r.data_documento)}</td><td style={{ ...td, textAlign: "right" }}>{euro(r.residuo)}</td>
+              <td style={td}><input title={statiFatture[r.fattura_id]?.stato === CONTESTATA ? "Fattura contestata: se il movimento è già uscito dalla banca si registra, con l'avviso al Dott. Bizzarri" : undefined} value={importi[r.scadenza_id] ?? ""} onChange={e => setImporti(p => ({ ...p, [r.scadenza_id]: e.target.value }))} style={{ ...input, width: 120 }} placeholder="0,00" />
                 <button style={{ ...btn(false), height: 28, marginLeft: 6, fontSize: 11 }} onClick={() => setImporti(p => ({ ...p, [r.scadenza_id]: String(Math.min(Number(r.residuo), Math.max(0, resto - somma + (parseFloat(String(p[r.scadenza_id] || 0).replace(",", ".")) || 0)))).replace(".", ",") }))}>tutto</button></td>
             </tr>))}</tbody></table>
       )}

@@ -5,6 +5,7 @@ import { btn, input, scheda } from "./stileAruba";
 import { fetchAllPages } from "./parsingUtils";
 import { dataIt, euro } from "./analisiDocumentoBanca";
 import { MODALITA, propostaPerMovimento, propostaPerRiga, abbina, nomeDellaRiga, soggettoPerNome, fatturePerRiga } from "./propostePrimaNota";
+import { leggiStatiFatture, EtichettaStatoFattura, CONTESTATA, ATTESA_NC } from "./statoFatture"; // versione 375
 
 // Versione 354 — «Banche, carte e cassa» → «Conferma dei movimenti».
 // Ogni riga della banca deve avere il suo movimento di prima nota. Il programma propone (movimento già nel programma con stesso conto,
@@ -53,12 +54,15 @@ export default function ConfermaMovimenti() {
       supabase.from("ci_v_stato_conti").select("*"),
       fetchAllPages((a, b) => supabase.from("ci_fornitori").select("id, nome").order("id").range(a, b)),
       fetchAllPages((a, b) => supabase.from("ci_clienti").select("id, nome").order("id").range(a, b)),
-      fetchAllPages((a, b) => supabase.from("ci_v_scadenzario").select("scadenza_id, lato, fornitore_id, cliente_id, numero_documento, data_documento, importo, residuo, in_attesa_della_banca")
+      fetchAllPages((a, b) => supabase.from("ci_v_scadenzario").select("scadenza_id, lato, fattura_id, fornitore_id, cliente_id, numero_documento, data_documento, importo, residuo, in_attesa_della_banca")
         .gt("residuo", 0.005).gt("importo", 0).order("scadenza_id").range(a, b)),
     ]);
     const e = c.error || k.error || s.error || fo.error || cl.error || sc.error; if (e) { setErrore("Lettura non riuscita: " + e.message); return; }
     setBase({ conti: (c.data || []).filter(x => x.tipo !== "cassa" && (s.data || []).some(y => y.conto_id === x.id && y.partenza_alla_data)), causali: k.data || [], stati: s.data || [],
-      fornitori: fo.data || [], clienti: cl.data || [], aperte: (sc.data || []).filter(x => x.scadenza_id) });
+      fornitori: fo.data || [], clienti: cl.data || [], aperte: (sc.data || []).filter(x => x.scadenza_id), statiFatture: null });
+    // versione 375: fatture d'acquisto contestate o in attesa di nota di credito (etichetta e avviso dopo la conferma)
+    leggiStatiFatture((sc.data || []).filter(x => x.lato === "fornitore").map(x => x.fattura_id))
+      .then(m => setBase(b => b && ({ ...b, statiFatture: m }))).catch(err => { setBase(b => b && ({ ...b, statiFatture: {}, erroreStati: err.message })); setErrore("Stato delle fatture contestate non letto: " + err.message); });
   })(); }, []);
 
   async function leggi(tieniEsito = false) {
@@ -149,6 +153,16 @@ export default function ConfermaMovimenti() {
         : { ...comuni, controparte: s.controparte, movimento_collegato_id: s.movimento_collegato_id || "", fornitore_id: s.fornitore_id || "", cliente_id: s.cliente_id || "",
             scadenze: (s.scadenze || []).map(id => ({ scadenza_id: id, importo: Number(base.aperte.find(a => a.scadenza_id === id)?.residuo || 0) })) };
     });
+    // Versione 375 (decisione del Dott. Bizzarri del 13/11 ore 09:14): un movimento già uscito dalla banca si registra
+    // sempre, anche se paga una fattura CONTESTATA o IN ATTESA DI NOTA DI CREDITO senza mail: il database scrive l'avviso
+    // per il Dottore. Qui si dice prima quali righe lo faranno.
+    const fuori = [];
+    const stati = base.statiFatture || {};
+    for (const x of daMandare) for (const q of x.scadenze || []) {
+      const a = base.aperte.find(y => y.scadenza_id === q.scadenza_id); const st = a && stati[a.fattura_id];
+      if (st?.stato === CONTESTATA) fuori.push(`fattura ${a.numero_documento} CONTESTATA (${st.motivo})`);
+      if (st?.stato === ATTESA_NC && q.importo > Number(st.ancora_pagabile || 0) + 0.005) fuori.push(`fattura ${a.numero_documento} IN ATTESA DI NOTA DI CREDITO pagata senza la mail`);
+    }
     if (!daMandare.length) { setErrore("Nessuna riga pronta: completare gruppo, voce, modalità e soggetto."); return; }
     const scelti = daMandare.filter(x => x.movimento_id).map(x => x.movimento_id);
     if (new Set(scelti).size !== scelti.length) { setErrore("Lo stesso movimento è stato scelto per due righe della banca: correggere."); return; }
@@ -157,7 +171,7 @@ export default function ConfermaMovimenti() {
     setLavoro("");
     if (error) { setErrore("Il database ha rifiutato la conferma, nessuna riga è stata confermata: " + error.message); return; }
     const numeri = (data || []).map(x => x.numero).filter(Boolean);
-    setEsito(`Confermate ${daMandare.length} righe${numeri.length ? `; numeri di prima nota dal ${numeri[0]} al ${numeri[numeri.length - 1]}` : ""}.`);
+    setEsito(`Confermate ${daMandare.length} righe${numeri.length ? `; numeri di prima nota dal ${numeri[0]} al ${numeri[numeri.length - 1]}` : ""}.${fuori.length ? ` ⚠️ ATTENZIONE: registrati pagamenti di ${fuori.join("; ")} — avviso rosso al Dott. Bizzarri nel dettaglio della fattura.` : ""}`);
     await leggi(true);
   }
 
@@ -299,7 +313,7 @@ function FattureDaChiudere({ e, s, base, cambia, sommaFatture }) {
     {!sue.length && <div style={{ color: C.muted }}>Nessuna fattura aperta di questo soggetto.</div>}
     {sue.map(a => { const dopo = a.data_documento > e.riga.data_contabile; return <label key={a.scadenza_id} style={{ display: "block", color: dopo ? C.muted : C.text }}>
       <input type="checkbox" checked={scelte.includes(a.scadenza_id)} onChange={x => cambia("scadenze", x.target.checked ? [...scelte, a.scadenza_id] : scelte.filter(y => y !== a.scadenza_id))} />
-      {" "}n. {a.numero_documento} del {dataIt(a.data_documento)} — resto {euro(a.residuo)}{dopo ? " — emessa dopo il movimento della banca" : ""}</label>; })}
+      {" "}<EtichettaStatoFattura stato={(base.statiFatture || {})[a.fattura_id]} piccola />n. {a.numero_documento} del {dataIt(a.data_documento)} — resto {euro(a.residuo)}{dopo ? " — emessa dopo il movimento della banca" : ""}</label>; })}
     {scelte.length > 0 && <div style={{ marginTop: 4, fontWeight: 700, color: somma > imp + 0.005 ? C.red : Math.abs(somma - imp) < 0.005 ? C.green : C.yellow }}>
       Fatture spuntate {euro(somma)} su un movimento di {euro(imp)}{somma > imp + 0.005 ? " — troppo: togliere una fattura" : Math.abs(somma - imp) < 0.005 ? " — torna" : ` — restano ${euro(imp - somma)} non abbinati`}</div>}
   </div>;

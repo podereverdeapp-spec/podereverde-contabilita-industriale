@@ -7,6 +7,7 @@ import { numerizzaCampi, formattaEuro, round2, fetchAllPages } from "./parsingUt
 import { esportaExcel, numeroExcel } from "./esportaExcel";
 import { PulsantePdf, leggiPdfDi, chiaveDoc } from "./pdfFatture"; // versione 292: il PDF di ogni fattura
 import { FUNZIONE_RICERCA, messaggioErroreRicerca, NavigazionePagine, leggiTutteLeTrovate, leggiCapiAcquisto, CapiAcquisto, EtichettaAcquistoAnimali, numeroFattura, leggiRigheFattura, NotaTrasportoAiCapi, NotaCompetenza, PAGINA_COMPETENZA, RicomposizioneFattura, dataIt, eNotaDiCredito, EtichettaNotaDiCredito } from "./FatturePassive";
+import { useStatiFatture, EtichettaStatoFattura, RiquadroStatoFattura } from "./statoFatture"; // versione 375: contestate e in attesa di nota di credito
 
 // Versione 281 (decisione del Dott. Bizzarri del 23/10/2026): la ricerca la fa il database (funzione
 // ci_ricerca_documenti) su TUTTE le fatture e le loro righe, compresi gli acquisti di animali registrati solo
@@ -201,6 +202,9 @@ export default function Ricerca() {
 
 
   const risultati = risposta?.fatture || [];
+  // Versione 375: stato «contestata» / «in attesa di nota di credito» delle fatture d'acquisto mostrate
+  const [versioneStati, setVersioneStati] = useState(0);
+  const [statiFatture] = useStatiFatture(risultati.filter(f => !f.acquisto_animali && f.fornitore_id && f.id).map(f => f.id), versioneStati);
   const numeroTrovate = Number(risposta?.numero || 0);
   const numeroAnimali = Number(risposta?.numero_acquisti_animali || 0);
 
@@ -364,6 +368,7 @@ export default function Ricerca() {
                   ) : (
                     <>
                       {eNotaDiCredito(f) && <EtichettaNotaDiCredito />}
+                      {!f.acquisto_animali && <EtichettaStatoFattura stato={statiFatture[f.id]} />}
                       <strong>{f.controparte || "—"}</strong>
                       <div style={{ fontSize: 12, color: C.muted }}>
                         {eNotaDiCredito(f) ? "Nota di credito" : "Fatt."} {numeroFattura(f)} del {dataIt(f.data)}{f.note && ` · ${f.note}`}
@@ -393,6 +398,9 @@ export default function Ricerca() {
               )}
               {espansa === f.chiave && !f.acquisto_animali && righePerFattura[f.chiave] && (
                 <div style={{ borderTop: `1px solid ${C.border}`, padding: 14 }}>
+                  {/* Versione 375: stato della fattura, motivi in rosso e tasti «Contesta» / «In attesa di nota di credito» */}
+                  {f.fornitore_id && f.tipo !== "DA_RICEVERE" && f.tipo !== "DA_EMETTERE" && !eNotaDiCredito(f) &&
+                    <RiquadroStatoFattura fattura={f} stato={statiFatture[f.id]} onCambiato={() => setVersioneStati(v => v + 1)} />}
                   {/* Versione 285: la fattura ricomposta, uguale a Fatture Passive e Attive, con la classificazione e la matita */}
                   <RicomposizioneFattura fattura={{ ...f, ci_fornitori: { nome: f.controparte, partita_iva: f.partita_iva } }} righe={righePerFattura[f.chiave]}
                     azioneRiga={r => (

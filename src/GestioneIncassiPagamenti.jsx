@@ -11,6 +11,7 @@ import {
   SEZIONI, GRUPPI_SEZIONE, vociDellaSezione, MODALITA_USCITA, MODALITA_ENTRATA, modalitaAmmessa, MODALITA_DA_XML, NOME_MP,
   ibanPulito, ibanValido, ibanBello, abiDiIban, pulisciCausale, causaleValida, componiCausale, statoAttesa, oggiRoma, dataIt, giorniLavorativi,
 } from "./regoleIncassiPagamenti";
+import { useStatiFatture, EtichettaStatoFattura, CONTESTATA, ATTESA_NC } from "./statoFatture"; // versione 375
 
 // Versione 357 — «Gestione incassi e pagamenti»: il motore che scrive la prima nota.
 // L'operatore sceglie che cosa pagare o incassare, come (modalità) e con che cosa (conto o carta), controlla IBAN e causale e preme
@@ -290,6 +291,8 @@ function SezioneFatture({ sezione, base, fatto, oggi }) {
     setErroreStorico(""); setTutte(r.data || []);
   })(); }, [sogg]);
   const sue = aperte.filter(s => (pag ? s.fornitore_id : s.cliente_id) === sogg).sort((a, b) => (a.data_scadenza || "9").localeCompare(b.data_scadenza || "9") || String(a.data_documento || "").localeCompare(String(b.data_documento || "")));
+  // Versione 375: fatture contestate (pagamento bloccato) e in attesa di nota di credito (mail al fornitore prima di pagare)
+  const [statiFatture] = useStatiFatture(pag ? sue.map(s => s.fattura_id) : []);
   const scelte = sue.filter(s => spunte[s.scadenza_id] !== undefined);
   const quote = scelte.map(s => ({ s, imp: leggiImporto(spunte[s.scadenza_id]) }));
   const totale = Math.round(quote.reduce((t, q) => t + (q.imp || 0), 0) * 100) / 100;
@@ -311,6 +314,13 @@ function SezioneFatture({ sezione, base, fatto, oggi }) {
   if (quote.some(q => !q.imp)) problemi.push("scrivere l'importo di ogni fattura spuntata");
   if (quote.some(q => q.imp && q.imp > Number(q.s.residuo) + 0.005)) problemi.push("un importo supera il resto della fattura");
   if (acconti.length > 1) problemi.push("al massimo una fattura in acconto per movimento");
+  for (const s of scelte) { const st = statiFatture[s.fattura_id];
+    if (st?.stato === CONTESTATA) problemi.push(`la fattura ${s.numero_documento} è CONTESTATA (${st.motivo}): il pagamento è bloccato finché non viene liberata`);
+    const imp = quote.find(q => q.s === s)?.imp || 0;
+    const mail = Number(st?.ancora_pagabile || 0);
+    if (st?.stato === ATTESA_NC && !(mail > 0.005)) problemi.push(`la fattura ${s.numero_documento} è IN ATTESA DI NOTA DI CREDITO: prima di pagare va mandata la mail al fornitore con l'importo («💶 Prepara un pagamento» nel dettaglio della fattura, in Fatture passive o Ricerca Fatture)`);
+    // versione 375 (Dottore 22:12 «metti»): l'importo pagato deve essere quello scritto nella mail, né più né meno
+    else if (st?.stato === ATTESA_NC && imp && Math.abs(imp - mail) > 0.005) problemi.push(`la fattura ${s.numero_documento} è IN ATTESA DI NOTA DI CREDITO e la mail al fornitore dice ${euro(mail)}, qui si pagano ${euro(imp)}: scrivere ${euro(mail)}, oppure mandare prima la mail di rettifica con ${euro(imp)} («💶 Prepara un pagamento» nel dettaglio della fattura: la mail nuova sostituisce la precedente)`); }
   if (!v.modalita) problemi.push("scegliere come si " + (pag ? "paga" : "incassa"));
   if (v.modalita === "Altro" && !String(v.modalita_altro || "").trim()) problemi.push("scrivere quale modalità");
   if (!v.conto_id) problemi.push("scegliere con che cosa");
@@ -381,7 +391,7 @@ function SezioneFatture({ sezione, base, fatto, oggi }) {
         <tbody>{sue.map(s => { const inPag = Number(s.in_attesa_della_banca) > 0 && Number(s.residuo) <= 0.005; const scad = s.data_scadenza && s.data_scadenza < oggi && !inPag; const sp = spunte[s.scadenza_id] !== undefined;
           return [<tr key={s.scadenza_id} style={{ borderBottom: `1px solid ${C.border}`, background: inPag ? "#EEF3F8" : sp ? "#F2F7EE" : "#fff", color: inPag ? C.muted : C.text }}>
             <td style={{ padding: "5px 8px" }}>{inPag ? "—" : <input type="checkbox" checked={sp} onChange={e => setSpunte(o => { const n = { ...o }; if (e.target.checked) n[s.scadenza_id] = importoIt(s.residuo); else delete n[s.scadenza_id]; return n; })} />}</td>
-            <td style={{ padding: "5px 8px", fontWeight: 700 }}>{s.numero_documento}</td><td style={{ padding: "5px 8px" }}>{dataIt(s.data_documento)}</td>
+            <td style={{ padding: "5px 8px", fontWeight: 700 }}>{pag && statiFatture[s.fattura_id] && <div><EtichettaStatoFattura stato={statiFatture[s.fattura_id]} piccola /></div>}{s.numero_documento}{pag && statiFatture[s.fattura_id] && <div style={{ fontSize: 10.5, color: C.red }}>{statiFatture[s.fattura_id].motivo}</div>}</td><td style={{ padding: "5px 8px" }}>{dataIt(s.data_documento)}</td>
             <td style={{ padding: "5px 8px", color: scad ? C.red : C.text, fontWeight: scad ? 700 : 400 }}>{dataIt(s.data_scadenza)}{scad ? ` (${Math.round((Date.parse(oggi) - Date.parse(s.data_scadenza)) / 86400000)} giorni)` : ""}</td>
             <td style={{ padding: "5px 8px", textAlign: "right" }}>{euro(s.importo)}</td><td style={{ padding: "5px 8px", textAlign: "right" }}>{euro(s.pagato)}</td>
             <td style={{ padding: "5px 8px", textAlign: "right", fontWeight: 700 }}>{euro(s.residuo)}</td>

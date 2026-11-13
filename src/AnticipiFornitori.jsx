@@ -8,6 +8,7 @@ import { md5File } from "./md5";
 import { PdfDelDocumento } from "./pdfFatture";
 import { oggiRoma } from "./regoleIncassiPagamenti";
 import { fattureCandidate, statoAnticipo, righeSospette, movimentiDaSegnare, DA_GUARDARE, dataIt, NOME_TIPO } from "./calcoloAnticipi";
+import { useStatiFatture, EtichettaStatoFattura } from "./statoFatture"; // versione 375
 
 // Versione 370 — «Gestione incassi e pagamenti» → «Anticipi in attesa di fattura».
 // Decisioni del Dott. Bizzarri del 12/11/2026: un anticipo (pagamento su proforma, preventivo o offerta) resta aperto finché arriva la
@@ -349,6 +350,7 @@ function EsitoCaparra({ a, puo, chiama, lavoro }) {
 }
 
 function Candidata({ s, a, puo, quota, setQuota, resto, chiama }) {
+  const [statiFattura] = useStatiFatture([s.fattura_id]); // versione 375: contestata / in attesa di nota di credito
   const [scarta, setScarta] = useState(false); const [perche, setPerche] = useState("");
   const sp = quota !== undefined;
   const suggerita = Math.min(Number(s.residuo), Math.max(resto, 0));
@@ -356,7 +358,7 @@ function Candidata({ s, a, puo, quota, setQuota, resto, chiama }) {
     <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
       <label style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
         {puo && <input type="checkbox" checked={sp} onChange={e => setQuota(e.target.checked ? importoIt(suggerita) : undefined)} />}
-        <span><b>n. {s.numero_documento}</b> del {dataIt(s.data_documento)} — {s.tipo_documento || ""} — totale {euro(s.importo)}, da pagare {euro(s.residuo)}</span></label>
+        <span><EtichettaStatoFattura stato={statiFattura[s.fattura_id]} piccola /><b>n. {s.numero_documento}</b> del {dataIt(s.data_documento)} — {s.tipo_documento || ""} — totale {euro(s.importo)}, da pagare {euro(s.residuo)}</span></label>
       {s.data_documento < a.data_pagamento && <span style={{ color: C.yellow, fontWeight: 700 }}>datata prima del pagamento</span>}
       {s.fattura_id ? <PdfDelDocumento doc={{ id: s.fattura_id, data: s.data_documento }} /> : null}
       {sp && <input aria-label={`Importo da agganciare della fattura ${s.numero_documento}`} style={{ ...input, width: 110, height: 28 }} value={quota} onChange={e => setQuota(e.target.value)} />}
