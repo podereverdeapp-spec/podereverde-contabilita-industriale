@@ -55,6 +55,9 @@ import BancheConti from "./BancheConti";
 import CaricaDocumentiBanca from "./CaricaDocumentiBanca";
 import ConsultaEstratti from "./ConsultaEstratti";
 import ConfermaMovimenti from "./ConfermaMovimenti";
+import MovimentiConsulta from "./MovimentiConsulta"; // versione 382
+import SpesePagateControllo from "./SpesePagateControllo"; // versione 382
+import ContantiPersone from "./ContantiPersone"; // versione 382
 import PrimaNota from "./PrimaNota";
 import GestioneIncassiPagamenti from "./GestioneIncassiPagamenti";
 import AnticipiFornitori, { contaAnticipiDaGuardare } from "./AnticipiFornitori"; // versione 370
@@ -292,6 +295,9 @@ const MENU = [
     { tipo: "voce", id: "banche-carica", label: "Carica documenti della banca", icon: "📥" },
     { tipo: "voce", id: "banche-consulta", label: "Estratti e movimenti: consulta", icon: "🔎" },
     { tipo: "voce", id: "banche-conferma", label: "Conferma dei movimenti", icon: "✅" }, // versione 354
+    { tipo: "voce", id: "banche-movimenti", label: "Movimenti per conto e carta: consulta", icon: "📒" }, // versione 382
+    { tipo: "voce", id: "spese-controllo", label: "Spese pagate: controllo", icon: "🧾" }, // versione 382
+    { tipo: "voce", id: "spese-contanti", label: "Contanti per persona", icon: "💶" }, // versione 382
   ]},
   // Versione 357 (10/11/2026): Gestione incassi e pagamenti, il motore che scrive la prima nota (progetto della prima nota, sezioni 2, 3, 5, 6, 10)
   { tipo: "cartella", id: "cart-incassi-pagamenti", label: "Gestione incassi e pagamenti", icon: "💶", contenuto: [
@@ -545,12 +551,16 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
   }, [tab]);
   // Versione 370: anticipi su fattura da ricevere che chiedono un'azione (fattura arrivata da controllare, in ritardo, segnalazione)
   const [anticipiDaGuardare, setAnticipiDaGuardare] = useState(0);
+  // Versione 382: spese dall'app da controllare o da chiarire (le legge tutte solo chi gestisce i conti; agli altri le proprie)
+  const [speseDaControllare, setSpeseDaControllare] = useState(0);
+  const contaSpese = () => { if (puo("spese-controllo")) supabase.rpc("ci_puo_gestire_conti").then(g => g.data !== true ? setSpeseDaControllare(0) : supabase.from("ci_spese").select("id", { count: "exact", head: true }).in("stato", ["Da controllare", "Da chiarire"]).then(r => setSpeseDaControllare(r.error ? 0 : r.count || 0))); else setSpeseDaControllare(0); }; // solo chi gestisce i conti vede il numero rosso
+  useEffect(() => { contaSpese(); }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
   // Versione 376: descrizioni nuove delle fatture d'acquisto non ancora assegnate a un prodotto (prezzo non controllato);
   // si ricontano all'apertura del programma e quando si entra o si esce da «Famiglie di Prodotto»
   const [descrizioniDaAssegnare, setDescrizioniDaAssegnare] = useState(0);
   useEffect(() => { let attivo = true; if (puo("famiglie-prodotto")) contaDescrizioniDaAssegnare().then(n => { if (attivo) setDescrizioniDaAssegnare(n); }).catch(() => { if (attivo) setDescrizioniDaAssegnare(0); }); return () => { attivo = false; }; }, [tab === "famiglie-prodotto"]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (puo("anticipi-fornitori")) contaAnticipiDaGuardare().then(setAnticipiDaGuardare).catch(() => setAnticipiDaGuardare(0)); }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
-  const AVVISI = { "cart-prezzi-acquisto": descrizioniDaAssegnare, "famiglie-prodotto": descrizioniDaAssegnare, "cart-incassi-pagamenti": anticipiDaGuardare, "anticipi-fornitori": anticipiDaGuardare, "cart-posta": postaDaAprire, "posta": postaDaAprire, "sub-dati-f24": numeroF24, "consulta-f24": numeroF24, "cart-modelli4": modelli4Aperti.totale, "modelli4-chiusure": modelli4Aperti.totale, "cart-animali": verificheAnimali, "verifiche-ovini": verificheAnimali, "cart-alimentaria": senzaComposizione, "alimenti-senza-composizione": senzaComposizione, "cart-fatture": (anomalieAperte || 0) + numeroF24, "sub-dati-controllo": anomalieAperte || 0, "registro-controlli": anomalieAperte || 0, "cart-emissione-fatture": daFatturare + allarmiAttiva, "sub-fatturazione-animali": daFatturare, "fatt-animali-da-fatturare": daFatturare, "fatt-animali-prepara": daFatturare, "sub-controllo-attiva": allarmiAttiva, "controllo-attiva": allarmiAttiva, "cart-accessi-registro": richiesteAccesso, "sub-accessi": richiesteAccesso, "accessi": richiesteAccesso };
+  const AVVISI = { "cart-banche": speseDaControllare, "spese-controllo": speseDaControllare, "cart-prezzi-acquisto": descrizioniDaAssegnare, "famiglie-prodotto": descrizioniDaAssegnare, "cart-incassi-pagamenti": anticipiDaGuardare, "anticipi-fornitori": anticipiDaGuardare, "cart-posta": postaDaAprire, "posta": postaDaAprire, "sub-dati-f24": numeroF24, "consulta-f24": numeroF24, "cart-modelli4": modelli4Aperti.totale, "modelli4-chiusure": modelli4Aperti.totale, "cart-animali": verificheAnimali, "verifiche-ovini": verificheAnimali, "cart-alimentaria": senzaComposizione, "alimenti-senza-composizione": senzaComposizione, "cart-fatture": (anomalieAperte || 0) + numeroF24, "sub-dati-controllo": anomalieAperte || 0, "registro-controlli": anomalieAperte || 0, "cart-emissione-fatture": daFatturare + allarmiAttiva, "sub-fatturazione-animali": daFatturare, "fatt-animali-da-fatturare": daFatturare, "fatt-animali-prepara": daFatturare, "sub-controllo-attiva": allarmiAttiva, "controllo-attiva": allarmiAttiva, "cart-accessi-registro": richiesteAccesso, "sub-accessi": richiesteAccesso, "accessi": richiesteAccesso };
 
   // Versione 373: chi esce dalla pagina «Accessi» con schede non salvate viene avvisato prima (ordine del Dott. Bizzarri delle 21:28)
   const [accessiInSospeso, setAccessiInSospeso] = useState([]);
@@ -591,7 +601,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 381</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 382</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={() => (tab === "accessi" && accessiInSospeso.length) ? setUscitaDaAccessi("__esci__") : esci()} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -891,6 +901,9 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
         {tab === "banche-carica" && <CaricaDocumentiBanca />}
         {tab === "banche-consulta" && <ConsultaEstratti />}
         {tab === "banche-conferma" && <ConfermaMovimenti />}
+        {tab === "banche-movimenti" && <MovimentiConsulta />}
+        {tab === "spese-controllo" && <SpesePagateControllo onCambio={contaSpese} />}
+        {tab === "spese-contanti" && <ContantiPersone />}
         {tab === "prima-nota" && <PrimaNota />}
         {tab === "incassi-pagamenti" && <GestioneIncassiPagamenti />}
         {tab === "anticipi-fornitori" && <AnticipiFornitori vaiA={vaiA} />}
