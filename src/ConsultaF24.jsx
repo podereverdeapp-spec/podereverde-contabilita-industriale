@@ -83,8 +83,11 @@ export default function ConsultaF24({ utente, vaiA }) {
   }
   async function controllaF24(h) {
     let testo = null;
-    try { testo = leggiTesto(await leggiFile(h, `PROGRAMMA\\${FILE_RICONOSCIMENTO}`)); } catch { testo = null; }
-    if (testo === null) return `Nella cartella scelta («${h.name}») non c'è «PROGRAMMA\\${FILE_RICONOSCIMENTO}»: questa non è la cartella F24 di Podere Verde. Bisogna scegliere proprio F24.`;
+    // versione 381: il file di riconoscimento sta in «F24 DA SMISTARE» (prima in «PROGRAMMA»)
+    try { testo = leggiTesto(await leggiFile(h, `F24 DA SMISTARE\\${FILE_RICONOSCIMENTO}`)); } catch { testo = null; }
+    if (testo === null) { let vecchio = false; try { await leggiFile(h, `PROGRAMMA\\${FILE_RICONOSCIMENTO}`); vecchio = true; } catch { vecchio = false; }
+      if (vecchio) return `Il file di riconoscimento è ancora in «F24\\PROGRAMMA»: dal 13/11/2026 va spostato in «F24\\F24 DA SMISTARE» (la pagina «F24 arrivati» dice che cosa spostare). Poi si sceglie di nuovo F24.`; }
+    if (testo === null) return `Nella cartella scelta («${h.name}») non c'è «F24 DA SMISTARE\\${FILE_RICONOSCIMENTO}»: questa non è la cartella F24 di Podere Verde. Bisogna scegliere proprio F24.`;
     const r = leggiRiconoscimento(testo);
     if (!r.ok) return "Il file di riconoscimento non dice «Podere Verde, 15117871002, F24»: questa non è la cartella F24 di Podere Verde.";
     if (!d.codiceF24 || r.codice !== d.codiceF24) return `Il codice del file di riconoscimento (${r.codice}) non è quello del programma (${d.codiceF24 || "manca"}): questa non è la cartella F24 giusta.`;

@@ -77,6 +77,11 @@ export function percorsoUnico(p) {
 }
 const conta = s => (s.match(/\\/g) || []).length;
 // ── Lettura dell'Excel della lettura ────────────────────────────────────────────────────────────────
+// Versione 381: dentro «F24 DA SMISTARE» ci sono anche il file di riconoscimento, LETTURE e ARCHIVIO VECCHIO DA SMISTARE: non sono documenti arrivati
+export function nonEDocumentoArrivato(nome) {
+  const n = String(nome || "").replace(/\//g, "\\").replace(/^\\+/, "");
+  return /(^|\\)(LETTURE|ARCHIVIO VECCHIO DA SMISTARE)\\/i.test(n) || /(^|\\)RICONOSCIMENTO CARTELLA F24 - NON TOCCARE\.txt$/i.test(n);
+}
 export function leggiLettura(XLSX, buffer) {
   const wb = XLSX.read(buffer, { type: "array", cellDates: false });
   const anomalie = [];
@@ -147,10 +152,13 @@ export function leggiLettura(XLSX, buffer) {
   }
   const comunicazioni = fogli["Comunicazioni"].map(c => ({ ...c, chiede_pagamento: String(c.chiede_pagamento || "").toUpperCase() === "SI" }));
   // Versione 343: il nome di ogni documento è il suo percorso dentro DA SMISTARE (si prende la scrittura più completa tra «Nome» e «Percorso»)
+  // versione 381 (revisione): il controllo si fa sui nomi interi, prima di accorciarli (percorsoUnico taglia fino all'ultimo «DA SMISTARE\\»)
+  for (const x of documenti) if (nonEDocumentoArrivato(x.nome) || nonEDocumentoArrivato(x.percorso)) x.nonDocumento = true;
   for (const x of documenti) {
     const a = percorsoUnico(x.nome), b = percorsoUnico(x.percorso);
     x.nome = conta(b) > conta(a) ? b : a || b;
   }
+  for (const x of documenti) if (x.nonDocumento || nonEDocumentoArrivato(x.nome)) anomalie.push(`«${x.nome}» non è un documento arrivato (file di riconoscimento, LETTURE o ARCHIVIO VECCHIO DA SMISTARE): la lettura va rifatta senza.`);
   const perChiave = new Map(), perNomeFinale = new Map();
   for (const x of documenti) {
     const k = x.nome.toUpperCase();

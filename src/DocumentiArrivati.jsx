@@ -29,6 +29,14 @@ const PARAMETRO_CODICE = "codice_cartella_fatture_passive";
 const leggiTesto = b => (b[0] === 0xff && b[1] === 0xfe ? new TextDecoder("utf-16le").decode(b.subarray(2)) : new TextDecoder("utf-8").decode(b).replace(/^\uFEFF/, ""));
 const oraRoma = () => new Intl.DateTimeFormat("it-IT", { timeZone: "Europe/Rome", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date()).replace(", ", " ore ");
 const dataIt = d => { const s = String(d || "").slice(0, 10); const [a, m, g] = s.split("-"); return g ? `${g}/${m}/${a}` : (s || "—"); };
+// Versione 381 (13/11/2026 ore 18:45–18:47, ordine del Dott. Bizzarri): niente più «PROGRAMMA». Il file di riconoscimento sta in
+// «FATTURE PASSIVE DA SMISTARE»; finché in «PROGRAMMA» resta un file la cartella non si accetta; si prepara solo una cartella con le cartelle degli anni.
+async function fileDentroCartella(dir, base = "") {
+  const out = [];
+  for await (const [n, h] of dir.entries()) { if (/^(desktop\.ini|Thumbs\.db)$/i.test(n) || n.startsWith("~$")) continue; if (h.kind === "file") out.push(base ? `${base}\\${n}` : n); else out.push(...await fileDentroCartella(h, base ? `${base}\\${n}` : n)); }
+  return out;
+}
+async function haGliAnni(h) { const nomi = new Set(); for await (const [n, x] of h.entries()) if (x.kind === "directory") nomi.add(n); return nomi.has("2019") && nomi.has("2026"); }
 function testoRiconoscimentoFatture(codice, quando) {
   return `SOCIETA' AGRICOLA PODERE VERDE A R.L.\r\nCODICE FISCALE: ${PIVA_PODERE}\r\nCARTELLA: FATTURE PASSIVE\r\nCODICE DELLA CARTELLA: ${codice}\r\nCREATO IL: ${quando} DAL PROGRAMMA CONTABILITA' INDUSTRIALE\r\n`;
 }
@@ -224,20 +232,24 @@ function SchedaFatture({ accesso }) {
   async function verificaCartella(h) {
     setErrore(""); setLettura(null); setProgramma(null); setEsitoDebiti(null); setCongelate(null); setInCarico(null); setEsitoArchivio(null); setEsitoChiusura(null);
     if (h.name === "FATTURE PASSIVE DA SMISTARE" || h.name === "DA SMISTARE" || h.name === "PROGRAMMA" || h.name === "CARTA") {
-      setRicon({ ok: false, problema: `È stata scelta la cartella «${h.name}», che sta DENTRO quella giusta. Nella finestra si sale con la freccia ↑ finché si vedono le cartelle 2019…2026 e PROGRAMMA: lì si è dentro «FATTURE PASSIVE» e si preme «Selezione cartella». Oppure: si sale a «00.DATI PROGRAMMA CONTABILITA' INDUSTRIALE», si clicca UNA volta «FATTURE PASSIVE» e si preme «Selezione cartella».` });
+      setRicon({ ok: false, problema: `È stata scelta la cartella «${h.name}», che sta DENTRO quella giusta. Nella finestra si sale con la freccia ↑ finché si vedono le cartelle 2019…2026 e FATTURE PASSIVE DA SMISTARE: lì si è dentro «FATTURE PASSIVE» e si preme «Selezione cartella». Oppure: si sale a «00.DATI PROGRAMMA CONTABILITA' INDUSTRIALE», si clicca UNA volta «FATTURE PASSIVE» e si preme «Selezione cartella».` });
       return;
     }
     if (h.name !== "FATTURE PASSIVE") { setRicon({ ok: false, problema: `È stata scelta la cartella «${h.name}»: si sceglie solo la cartella «FATTURE PASSIVE» dentro «00.DATI PROGRAMMA CONTABILITA' INDUSTRIALE». Mi fermo.` }); return; }
+    // versione 381 (revisione): la cartella di Podere Verde ha le cartelle degli anni; un'altra cartella con lo stesso nome no
+    try { if (!(await haGliAnni(h))) { setRicon({ ok: false, problema: "Nella cartella scelta non ci sono le cartelle degli anni 2019 … 2026: non è la cartella FATTURE PASSIVE di Podere Verde. Mi fermo." }); return; } } catch (e) { setErrore(`La cartella scelta non si legge: ${e.message}`); return; }
     const { data: par, error } = await supabase.from("ci_parametri").select("valore").eq("chiave", PARAMETRO_CODICE).maybeSingle();
     if (error) { setErrore(`Lettura del codice della cartella: ${error.message}`); return; }
     let testo = null;
-    try { testo = leggiTesto(await leggiFile(h, `PROGRAMMA\\${FILE_RICONOSCIMENTO_FATTURE}`)); } catch { testo = null; }
+    try { testo = leggiTesto(await leggiFile(h, `FATTURE PASSIVE DA SMISTARE\\${FILE_RICONOSCIMENTO_FATTURE}`)); } catch { testo = null; }
+    // versione 381 (revisione): il file di riconoscimento si legge anche nel posto di prima, per controllare che sia Podere Verde PRIMA di dire che cosa spostare
+    if (testo == null) { try { testo = leggiTesto(await leggiFile(h, `PROGRAMMA\\${FILE_RICONOSCIMENTO_FATTURE}`)); } catch { testo = null; } }
     if (testo == null) {
       // si prepara solo la prima volta in assoluto (nessun codice nel programma); se il codice c'è, una cartella senza file non è quella in uso
       setRadice(par?.valore ? null : h);
       setRicon({ ok: false, manca: !par?.valore, problema: par?.valore
-        ? `In «FATTURE PASSIVE\\PROGRAMMA» non c'è il file «${FILE_RICONOSCIMENTO_FATTURE}», ma il programma ha già il codice di una cartella: questa non è la cartella in uso. Mi fermo.`
-        : `In «FATTURE PASSIVE\\PROGRAMMA» non c'è il file «${FILE_RICONOSCIMENTO_FATTURE}»: la cartella non è ancora preparata. Mi fermo.` });
+        ? `In «FATTURE PASSIVE\\FATTURE PASSIVE DA SMISTARE» non c'è il file «${FILE_RICONOSCIMENTO_FATTURE}», ma il programma ha già il codice di una cartella: questa non è la cartella in uso. Mi fermo.`
+        : `In «FATTURE PASSIVE\\FATTURE PASSIVE DA SMISTARE» non c'è il file «${FILE_RICONOSCIMENTO_FATTURE}»: la cartella non è ancora preparata. Mi fermo.` });
       return;
     }
     const r = leggiRiconoscimentoFatture(testo);
@@ -245,6 +257,9 @@ function SchedaFatture({ accesso }) {
     if (!r.ok) { setRicon({ ok: false, problema: "Il file di riconoscimento non dice «Podere Verde, 15117871002, FATTURE PASSIVE»: mi fermo." }); return; }
     if (!par?.valore) { setRadice(h); setRicon({ ok: false, manca: true, codiceFile: r.codice, problema: "Nel programma non c'è ancora il codice della cartella delle fatture: lo scrive il Dott. Bizzarri con «Prepara la cartella»." }); return; }
     if (r.codice !== par.valore) { setRicon({ ok: false, problema: `Il codice del file (${r.codice}) è diverso da quello del programma (${par.valore}): non è la cartella giusta. Mi fermo.` }); return; }
+    // versione 381: in «PROGRAMMA» non deve restare niente
+    let rimasti = null; try { rimasti = await fileDentroCartella(await cartella(h, "PROGRAMMA")); } catch { rimasti = null; }
+    if (rimasti && rimasti.length) { setRicon({ ok: false, problema: `In «FATTURE PASSIVE\\PROGRAMMA» ci sono ancora ${rimasti.length} file (${rimasti.slice(0, 12).join(" · ")}${rimasti.length > 12 ? " …" : ""}): dal 13/11/2026 vanno spostati in «FATTURE PASSIVE\\FATTURE PASSIVE DA SMISTARE» (il file di riconoscimento direttamente lì); poi si cancella «PROGRAMMA» vuota e si sceglie di nuovo la cartella. Mi fermo.` }); return; }
     setRadice(h); setRicon({ ok: true, codice: r.codice });
     ricordaCartella(CHIAVE_CARTELLA, h); setRicordata(h);
   }
@@ -256,10 +271,12 @@ function SchedaFatture({ accesso }) {
       const { data: par, error: eP } = await supabase.from("ci_parametri").select("valore").eq("chiave", PARAMETRO_CODICE).maybeSingle();
       if (eP) throw new Error(eP.message);
       if (par?.valore) throw new Error("il programma ha già il codice di una cartella delle fatture: non si prepara una seconda cartella");
+      // versione 381: si prepara solo la cartella di Podere Verde, quella con le cartelle degli anni (2019 … 2026)
+      if (!(await haGliAnni(radice))) throw new Error("nella cartella scelta non ci sono le cartelle degli anni 2019 … 2026: non è la cartella FATTURE PASSIVE di Podere Verde");
       const codice = ricon?.codiceFile || nuovoCodice();
       // prima il file, poi il codice nel programma: se il codice non si scrive, il file c'è e «Prepara» lo riprende (revisione, N4)
       await cartella(radice, "FATTURE PASSIVE DA SMISTARE\\CARTA", true);
-      if (!ricon?.codiceFile) await scriviVerificato(radice, `PROGRAMMA\\${FILE_RICONOSCIMENTO_FATTURE}`, new TextEncoder().encode(testoRiconoscimentoFatture(codice, oraRoma())));
+      if (!ricon?.codiceFile) await scriviVerificato(radice, `FATTURE PASSIVE DA SMISTARE\\${FILE_RICONOSCIMENTO_FATTURE}`, new TextEncoder().encode(testoRiconoscimentoFatture(codice, oraRoma())));
       const { error } = await supabase.from("ci_parametri").insert({ chiave: PARAMETRO_CODICE, valore: codice, descrizione: "Codice del file di riconoscimento della cartella FATTURE PASSIVE (versione 355)" });
       if (error) throw new Error(`codice nel programma: ${error.message}`);
       setRadice(null); setRicon(null);
@@ -275,7 +292,7 @@ function SchedaFatture({ accesso }) {
     try {
       setPasso("Leggo i file di FATTURE PASSIVE DA SMISTARE…");
       const dir = await cartella(radice, "FATTURE PASSIVE DA SMISTARE", true); // versione 378: la cartella sta subito dentro la cartella principale; se manca si crea
-      const voci = (await elenco(dir)).filter(x => x.tipo === "file" && !x.nome.startsWith("~$") && !/^PROVVISORIO /.test(x.nome));
+      const voci = (await elenco(dir)).filter(x => x.tipo === "file" && x.nome !== FILE_RICONOSCIMENTO_FATTURE && !x.nome.startsWith("~$") && !/^PROVVISORIO /.test(x.nome));
       const carta = await (async () => { try { return (await elenco(await cartella(radice, "FATTURE PASSIVE DA SMISTARE\\CARTA", true))).filter(x => x.tipo === "file").length; } catch { return 0; } })();
       // versione 378 (revisione): file rimasti nella cartella di prima (PROGRAMMA\\DA SMISTARE): si dicono, perché da lì non si leggono più
       const vecchi = await (async () => { const out = []; for (const sotto of ["PROGRAMMA\\DA SMISTARE", "PROGRAMMA\\DA SMISTARE\\CARTA"]) { try { out.push(...(await elenco(await cartella(radice, sotto))).filter(x => x.tipo === "file").map(x => sotto.endsWith("CARTA") ? `CARTA\\${x.nome}` : x.nome)); } catch { /* cartella che non c'è */ } } return out; })();

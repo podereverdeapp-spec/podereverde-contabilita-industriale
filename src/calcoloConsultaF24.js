@@ -101,7 +101,7 @@ export function consulta(dati) {
     const estratto = estrattoDi(rigaCollegata || rigaProposta);
     const lavoro = f.lavoro_id != null ? lavoriAperti.get(f.lavoro_id) : null;
     const avvisi = [];
-    if (lavoro) avvisi.push(`la lettura «${lavoro.file_lettura}» non è ancora archiviata: il PDF e la quietanza sono in F24\\F24 DA SMISTARE (le letture fatte prima del 13/11/2026: in F24\\PROGRAMMA\\DA SMISTARE)`);
+    if (lavoro) avvisi.push(`la lettura «${lavoro.file_lettura}» non è ancora archiviata: il PDF e la quietanza sono in F24\\F24 DA SMISTARE`);
     if (f.stato === "Pagato" && !saldoZero && !rigaCollegata && !rigaProposta) avvisi.push(s.motivo);
     if (rigaCollegata && righeDaGuardare[String(f.riga_fonte_id)]) avvisi.push(`la riga della banca collegata ${righeDaGuardare[String(f.riga_fonte_id)]}`);
     if (f.stato === "Pagato" && saldoZero && !f.md5_quietanza && !quietanze.length) avvisi.push("la quietanza non è nel programma né nell'archivio");

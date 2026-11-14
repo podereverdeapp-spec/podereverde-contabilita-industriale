@@ -14,7 +14,7 @@ import { C, FONT } from "./style";
 import { oggiRoma } from "./dateRoma";
 import { md5 } from "./md5";
 import { completaFestivi, allarmiScadenze, TRATTAMENTI } from "./calcoloCaricoF24";
-import { leggiLettura, classifica, pianoArchivio, PREFISSO_ARCHIVIO, LIMITE_PERCORSO } from "./calcoloF24Arrivati";
+import { leggiLettura, classifica, pianoArchivio, PREFISSO_ARCHIVIO, LIMITE_PERCORSO, nonEDocumentoArrivato } from "./calcoloF24Arrivati";
 import { cartella, leggiFile, elenco, leggiRiconoscimento, testoRiconoscimento, nuovoCodiceCartella, FILE_RICONOSCIMENTO,
   preparaPdf, scriviVerificato, mettiInSuperati, cancellaOriginale, percorsoInDaSmistare, cercaFile, esiste } from "./archivioF24";
 import { pianoGiaPresenti } from "./giaPresentiF24";
@@ -23,6 +23,11 @@ import { PROMPT_LETTURA_F24 } from "./promptLetturaF24";
 // non più in «F24\PROGRAMMA\DA SMISTARE». Le letture fatte prima restano valide: un file che non è nella cartella nuova si cerca in quella vecchia.
 const DA_SMISTARE_F24 = "F24 DA SMISTARE";
 const VECCHIA_DA_SMISTARE_F24 = "PROGRAMMA\\DA SMISTARE";
+// Versione 381 (13/11/2026 ore 18:45–18:47, ordine del Dott. Bizzarri): niente più «PROGRAMMA». Riconoscimento, LETTURE e
+// ARCHIVIO VECCHIO DA SMISTARE stanno dentro «F24 DA SMISTARE». Finché in F24\PROGRAMMA resta un file, la cartella non si accetta.
+const RICONOSCIMENTO_F24 = `${DA_SMISTARE_F24}\\${FILE_RICONOSCIMENTO}`;
+const LETTURE_F24 = `${DA_SMISTARE_F24}\\LETTURE`;
+const ARCHIVIO_VECCHIO_F24 = `${DA_SMISTARE_F24}\\ARCHIVIO VECCHIO DA SMISTARE`;
 // Se lo stesso percorso c'è in tutte e due le cartelle, vale quella dove il file ha l'impronta letta da Claude (revisione 378).
 async function fileDentro(dir, base) {
   const out = [];
@@ -179,26 +184,37 @@ export default function F24Arrivati({ utente, accesso }) {
     if (h.name !== "F24") { setRiconoscimento({ ok: false, problema: `È stata scelta la cartella «${h.name}»: si può scegliere solo la cartella «F24» di Podere Verde. Mi fermo.` }); return; }
     const base = await caricaDb(); if (!base) return;
     let testo = null;
-    try { testo = leggiTesto(await leggiFile(h, `PROGRAMMA\\${FILE_RICONOSCIMENTO}`)); } catch { testo = null; }
+    try { testo = leggiTesto(await leggiFile(h, RICONOSCIMENTO_F24)); } catch { testo = null; }
+    // versione 381 (revisione): il file di riconoscimento si legge anche nel posto di prima, per controllare che sia Podere Verde PRIMA di dire che cosa spostare
+    if (testo == null) { try { testo = leggiTesto(await leggiFile(h, `PROGRAMMA\\${FILE_RICONOSCIMENTO}`)); } catch { testo = null; } }
     if (testo == null) {
-      setRadice(h);
-      setRiconoscimento({ ok: false, manca: true, problema: `In «F24\\PROGRAMMA» non c'è il file «${FILE_RICONOSCIMENTO}». Questa non è la cartella F24 di Podere Verde, oppure non è ancora stata preparata: mi fermo.` });
+      // versione 381 (revisione): «Prepara» solo la prima volta in assoluto (nessun codice nel programma), come per le fatture
+      setRadice(base.codiceCartella ? null : h);
+      setRiconoscimento({ ok: false, manca: !base.codiceCartella, problema: base.codiceCartella
+        ? `In «F24\\${DA_SMISTARE_F24}» non c'è il file «${FILE_RICONOSCIMENTO}», ma il programma ha già il codice della cartella F24: questa non è la cartella in uso. Mi fermo.`
+        : `In «F24\\${DA_SMISTARE_F24}» non c'è il file «${FILE_RICONOSCIMENTO}». Questa non è la cartella F24 di Podere Verde, oppure non è ancora stata preparata: mi fermo.` });
       return;
     }
     const r = leggiRiconoscimento(testo);
     if (!r.ok) { setRiconoscimento({ ok: false, problema: "Il file di riconoscimento non dice «Podere Verde, 15117871002, F24»: questa non è la cartella F24 di Podere Verde. Mi fermo." }); return; }
     if (!base.codiceCartella) { setRadice(h); setRiconoscimento({ ok: false, manca: true, codiceFile: r.codice, problema: "Nel programma non c'è ancora il codice della cartella F24: lo scrive il Dott. Bizzarri con «Prepara la cartella F24»." }); return; }
     if (r.codice !== base.codiceCartella) { setRiconoscimento({ ok: false, problema: `Il codice del file di riconoscimento (${r.codice}) è diverso da quello del programma (${base.codiceCartella}): questa non è la cartella giusta. Mi fermo.` }); return; }
+    // versione 381: in F24\PROGRAMMA non deve restare niente; si dice che cosa va spostato in «F24 DA SMISTARE»
+    let rimasti = null; try { rimasti = await fileDentro(await cartella(h, "PROGRAMMA"), ""); } catch { rimasti = null; }
+    if (rimasti && rimasti.length) {
+      setRiconoscimento({ ok: false, problema: `In «F24\\PROGRAMMA» ci sono ancora ${rimasti.length} file: dal 13/11/2026 tutto va in «F24\\${DA_SMISTARE_F24}». In Esplora file si spostano dentro «${DA_SMISTARE_F24}» il file «${FILE_RICONOSCIMENTO}», le cartelle «LETTURE» e «ARCHIVIO VECCHIO DA SMISTARE» e il contenuto di «PROGRAMMA\\DA SMISTARE»; poi si cancella «PROGRAMMA» vuota e si sceglie di nuovo F24. File ancora lì: ${rimasti.slice(0, 12).join(" · ")}${rimasti.length > 12 ? ` … e altri ${rimasti.length - 12}` : ""}. Mi fermo.` });
+      return;
+    }
     setRadice(h); setRiconoscimento({ ok: true, codice: r.codice });
     // versione 378: la cartella dei documenti arrivati «F24 DA SMISTARE» sta subito dentro F24; se manca si crea (vuota)
     try { await cartella(h, DA_SMISTARE_F24, true); } catch (e) { setErrore(`La cartella «F24\\${DA_SMISTARE_F24}» non si crea: ${e.message}`); }
     // versione 378 (revisione): un F24 lasciato nella cartella di prima non deve restare senza lettura: si dice per nome
     try { setVecchiF24(await fileDentro(await cartella(h, VECCHIA_DA_SMISTARE_F24), "")); } catch { setVecchiF24([]); }
     try {
-      const dir = await cartella(h, "PROGRAMMA\\LETTURE");
+      const dir = await cartella(h, LETTURE_F24, true);
       const fl = (await elenco(dir)).filter(x => x.tipo === "file" && /\.xlsx$/i.test(x.nome) && !x.nome.startsWith("~$")).sort((a, b) => b.nome.localeCompare(a.nome));
       setLetture(fl); setSceltaLettura(fl[0]?.nome || "");
-    } catch (e) { setErrore(`La cartella «PROGRAMMA\\LETTURE» non si apre: ${e.message}`); }
+    } catch (e) { setErrore(`La cartella «${LETTURE_F24}» non si apre: ${e.message}`); }
   }
 
   // il Dott. Bizzarri prepara la cartella F24 la prima volta: codice nel programma e file di riconoscimento
@@ -217,7 +233,6 @@ export default function F24Arrivati({ utente, accesso }) {
       if (inCorso.error) throw new Error(inCorso.error.message);
       if (inCorso.data.length) throw new Error(`c'è un'archiviazione in corso di ${inCorso.data[0].proprietario_nome || "un'altra persona"}: si aspetta che finisca`);
       const archivio = await cartella(radice, "ARCHIVIO");
-      const programma = await cartella(radice, "PROGRAMMA");
       let base = await caricaDb(); if (!base) throw new Error("database non letto");
       const annota = async (percorso, categoria, cosa, f24Id, documentoId, r) => {
         if (base.fileArchivio.some(x => x.percorso.toUpperCase() === percorso.toUpperCase())) return;
@@ -251,7 +266,7 @@ export default function F24Arrivati({ utente, accesso }) {
         if (x.originale) {
           // il file ricevuto intero: si cerca nell'archivio vecchio; si usa solo se tutte le copie trovate sono identiche
           let trovati = [];
-          try { trovati = await cercaFile(await cartella(programma, "ARCHIVIO VECCHIO DA SMISTARE"), x.originale.nome); } catch { trovati = []; }
+          try { trovati = await cercaFile(await cartella(radice, ARCHIVIO_VECCHIO_F24), x.originale.nome); } catch { trovati = []; }
           const copie = await Promise.all(trovati.map(async t => { const byte = new Uint8Array(await (await t.handle.getFile()).arrayBuffer()); return { ...t, byte, md5: md5(byte) }; }));
           const impronte = [...new Set(copie.map(c => c.md5))];
           if (!copie.length) scrivi(`   Originale «${x.originale.nome}» non trovato nell'archivio vecchio: si sistemerà con il suo anno.`, true);
@@ -281,7 +296,7 @@ export default function F24Arrivati({ utente, accesso }) {
   const [preparazione, setPreparazione] = useState(false);
   async function preparaCartella() {
     if (!admin || !radice || preparazione) return;
-    if (!window.confirm("Preparare la cartella F24 di Podere Verde? Si scrive il file di riconoscimento in F24\\PROGRAMMA e il suo codice nel programma.")) return;
+    if (!window.confirm("Preparare la cartella F24 di Podere Verde? Si scrive il file di riconoscimento in F24\\F24 DA SMISTARE e il suo codice nel programma.")) return;
     setPreparazione(true); setErrore("");
     try {
       const base = await caricaDb(); if (!base) return;
@@ -293,7 +308,7 @@ export default function F24Arrivati({ utente, accesso }) {
         const { error } = await supabase.from("ci_f24_codice_cartella").insert({ id: 1, codice });
         if (error) throw new Error(`codice nel programma: ${error.message}`);
       }
-      if (!riconoscimento?.codiceFile) await scriviVerificato(radice, `PROGRAMMA\\${FILE_RICONOSCIMENTO}`, new TextEncoder().encode(testoRiconoscimento(codice, oraRoma())));
+      if (!riconoscimento?.codiceFile) await scriviVerificato(radice, RICONOSCIMENTO_F24, new TextEncoder().encode(testoRiconoscimento(codice, oraRoma())));
       await caricaDb(); setRiconoscimento(null); setRadice(null);
       alert("Cartella preparata. Ora premi di nuovo «Scegli la cartella F24».");
     } catch (e) { setErrore(`Preparazione non riuscita: ${e.message}`); }
@@ -462,7 +477,6 @@ export default function F24Arrivati({ utente, accesso }) {
         if (!preso?.length) throw new Error("l'archiviazione di questa lettura è già partita (un altro clic o un'altra finestra): ricarica la pagina e, se serve, premi «Riprendi l'archiviazione interrotta»");
         setLavoro(l => ({ ...l, stato: "Archiviazione in corso" }));
       }
-      const programma = await cartella(radice, "PROGRAMMA");
       const archivio = await cartella(radice, "ARCHIVIO");
       // 1) i codici nuovi nella rubrica (e le cartelle nuove nell'elenco)
       for (const [codice, v] of Object.entries(scelte.codici || {})) {
@@ -669,6 +683,7 @@ export default function F24Arrivati({ utente, accesso }) {
           interi++;
           await segna(`${r.esito}: ARCHIVIO\\${r.percorso} (file ricevuto conservato intero)`);
         }
+        if (doc?.nonDocumento || nonEDocumentoArrivato(nome)) { await segna(`non si toglie «${nome}»: non è un documento arrivato`); continue; } // versione 381
         daCancellare.set(nome, doc);
       }
       // 6) solo alla fine: via da DA SMISTARE i file che sono nell'ARCHIVIO identici
@@ -717,7 +732,7 @@ export default function F24Arrivati({ utente, accesso }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 18 }}>
         <div style={{ ...scatola, marginBottom: 0, padding: 16 }}>
           <div style={{ fontWeight: 800, marginBottom: 6 }}>1. Fai leggere i documenti a Claude</div>
-          <div style={{ fontSize: 13.5, marginBottom: 10 }}>Metti i PDF in <b>F24\F24 DA SMISTARE</b>. Nel tuo Claude sul computer collega la cartella <b>F24</b>, incolla il prompt e aspetta che scriva la lettura in <b>LETTURE</b>.</div>
+          <div style={{ fontSize: 13.5, marginBottom: 10 }}>Metti i PDF in <b>F24\F24 DA SMISTARE</b>. Nel tuo Claude sul computer collega la cartella <b>F24</b>, incolla il prompt e aspetta che scriva la lettura in <b>F24 DA SMISTARE\LETTURE</b>.</div>
           {vecchiF24.length > 0 && <div style={{ fontSize: 13.5, marginBottom: 10, padding: 10, borderRadius: 8, background: "#FBE1DE", fontWeight: 700 }}>⛔ Nella cartella di prima, F24\PROGRAMMA\DA SMISTARE, ci sono ancora {vecchiF24.length} file ({vecchiF24.join(", ")}). Se non sono di una lettura già caricata qui, vanno spostati in F24\F24 DA SMISTARE e letti: un F24 lasciato lì resterebbe senza lettura.</div>}
           <button style={bottone()} onClick={() => navigator.clipboard?.writeText(PROMPT_LETTURA_F24).then(() => alert("Prompt di lettura copiato: incollalo nel tuo Claude."))}>📋 Copia il prompt di lettura (versione 3)</button>
         </div>
@@ -742,7 +757,7 @@ export default function F24Arrivati({ utente, accesso }) {
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 6 }}>
             <b>Lettura:</b>
             {letture.length ? <select value={sceltaLettura} onChange={e => setSceltaLettura(e.target.value)} style={{ ...campo, minWidth: 420 }}>{letture.map(x => <option key={x.nome}>{x.nome}</option>)}</select>
-              : <span style={{ color: C.red }}>in «PROGRAMMA\LETTURE» non c'è nessuna lettura: fai prima il passo 1.</span>}
+              : <span style={{ color: C.red }}>in «F24 DA SMISTARE\LETTURE» non c'è nessuna lettura: fai prima il passo 1.</span>}
             {letture.length > 0 && <button style={bottone()} onClick={apriLettura}>Apri la lettura</button>}
           </div>
         </div>
