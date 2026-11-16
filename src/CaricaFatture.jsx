@@ -9,6 +9,8 @@ import { CATEGORIE_AMMORTAMENTO, IMPUTAZIONI_CESPITE, creaCespiteDaRiga, anniDaR
 import { applicaDocumento, assicuraScadenze, chiaveDocumento } from "./documentoFattura"; // versione 350
 import { righeMancanti, normDescr } from "./arubaCarico"; // versione 355
 import { leggiFattureRicevute } from "./letturaXmlRicevute"; // versione 350
+import { rigaDaGrezza, validaRiga } from "./righeFatturePassive"; // versione 384
+import { trovaOCreaFornitore as trovaOCreaFornitoreComune, ricalcolaTotaliFattura, salvaRigaFatturaPassiva } from "./salvataggioFatturePassive"; // versione 384
 import { round2, numeroRobusto, calcolaImponibile, leggiAliquotaIva, formattaData, formattaEuro, formattaNumero, fetchAllPages, leggiInBlocchi } from "./parsingUtils";
 
 // Versione 261: categorie, anni e creazione del cespite nel modulo comune cespitiDaFatture.js
@@ -275,43 +277,8 @@ export default function CaricaFatture({ documentiIniziali = null, incorporata = 
   }
 
   async function elaboraRigheGrezze(dati, verifica = [], documentiPerChiave = null) {
-    const risultati = dati.map((r, i) => {
-      const grezza = {
-        id: `riga-${Date.now()}-${i}`,
-        fornitore: String(r["Fornitore"] || r["fornitore"] || "").trim(),
-        piva: String(r["P.IVA"] || r["Partita IVA"] || r["piva"] || "").trim(),
-        numero: String(r["Numero"] || r["Numero Fattura"] || "").trim(),
-        data: formattaData(r["Data"] || r["Data Fattura"]),
-        descrizione: String(r["Descrizione"] || "").trim(),
-        quantita: numeroRobusto(r["Quantità"] || r["Quantita"] || 1),
-        unita_misura: String(r["U.M."] || r["Unità Misura"] || "").trim(),
-        prezzo_unitario: numeroRobusto(r["Prezzo unitario"] || r["Prezzo Unitario"] || 0),
-        aliquota_iva: leggiAliquotaIva(r),
-        imponibile: calcolaImponibile(r),
-      };
-      const { fornitore: fornitoreObj, ...classificazioneResto } = classificaRiga(grezza, { fornitori, regoleFisse, regoleVariabili });
-      return {
-        ...grezza,
-        ...classificazioneResto,
-        fornitore_obj: fornitoreObj,
-        editArea: classificazioneResto.area || "",
-        editCentro: classificazioneResto.centro_costo || "",
-        editDestinazione: classificazioneResto.destinazione || "",
-        editTipo: classificazioneResto.tipo_costo || "",
-        specieAcquisto: "", razzaAcquisto: "", destAcquisto: "", bdnAcquisto: "", lottoAcquisto: "",
-        importoMacello: "", importoIngresso: "",
-        categoriaAmmortamento: "", imputazioneAmmortamento: "",
-        annoAcquistoAmmortamento: new Date(grezza.data || Date.now()).getFullYear() || "",
-        anniAmmortamento: "",
-        memorizzaRegola: "nessuna", parolaChiaveRegola: "",
-        giaCaricata: false,
-        // Versione 350: totali e pagamento del documento (XML o PDF), se noti
-        documento: documentiPerChiave ? (documentiPerChiave.get(chiaveDocumento(grezza.piva || grezza.fornitore, grezza.numero, grezza.data)) || null) : null,
-        nonQuadra: false, dettaglioQuadratura: null,
-        scartata: false, giaScartataInPrecedenza: false,
-        salvata: false, salvataggioInCorso: false, idsSalvati: null, regolaCreata: null,
-      };
-    });
+    // Versione 384: la riga nasce con rigaDaGrezza (righeFatturePassive.js), lo stesso codice di prima spostato in un modulo comune
+    const risultati = dati.map((r, i) => rigaDaGrezza(r, i, { fornitori, regoleFisse, regoleVariabili }, documentiPerChiave));
 
     // Incrocio con il foglio "Verifica Fatture" (se presente): segnalo le fatture per cui
     // la somma delle righe non coincide con i totali dichiarati sul PDF originale.
@@ -416,103 +383,13 @@ export default function CaricaFatture({ documentiIniziali = null, incorporata = 
     setRighe(prev => prev.map(r => (r.id === id ? { ...r, ...campi } : r)));
   }
 
-  function validaRiga(r) {
-    if (r.editArea === "TRASPORTO ANIMALI") {
-      const somma = (parseFloat(r.importoMacello) || 0) + (parseFloat(r.importoIngresso) || 0);
-      if (Math.abs(somma - r.imponibile) > 0.01) {
-        return `La somma di "Trasporto macello" + "Ingresso allevamento" (${formattaEuro(somma)}) non torna con l'imponibile della riga (${formattaEuro(r.imponibile)}).`;
-      }
-      if ((parseFloat(r.importoMacello) || 0) !== 0 && !r.editTipo) return "Indicare il Tipo di Costo della parte verso il macello (Fisso o Variabile).";
-    }
-    if (r.editArea === "Ammortamenti") {
-      if (!r.categoriaAmmortamento || !r.imputazioneAmmortamento || !anniDaRiga(r)) {
-        return `Per un Ammortamento servono Categoria, Imputazione e Anni di ammortamento (numero intero da 1 a 100).`;
-      }
-    }
-    if (!r.editArea) return `Manca l'Area.`;
-    if (r.memorizzaRegola === "parolaChiave" && !r.parolaChiaveRegola.trim()) {
-      return `Hai scelto di memorizzare una regola per parola chiave, ma non hai scritto la parola chiave.`;
-    }
-    return null;
-  }
+  // Versione 384: validaRiga è in righeFatturePassive.js (stesso codice, spostato)
 
-  // Trova il fornitore già presente nel database, oppure lo crea UNA SOLA VOLTA.
-  // Prima si creava una scheda nuova per ogni riga salvata di un fornitore nuovo: le righe
-  // della stessa fattura finivano su schede diverse e quindi su fatture diverse (fattura
-  // "spezzata"). Ora si cerca nel database al momento del salvataggio, prima per partita IVA
-  // (scritta sempre allo stesso modo: senza spazi, con o senza "IT"), poi per nome.
-  // La classificazione di ogni riga resta esattamente quella di prima.
-  async function trovaOCreaFornitore(riga) {
-    if (riga.fornitore_obj?.id) return riga.fornitore_obj.id;
-    if (!riga.fornitore && !riga.piva) return null;
-
-    const pivaPulita = (riga.piva || "").replace(/\s+/g, "").toUpperCase().replace(/^IT/, "");
-    if (pivaPulita) {
-      const { data: perPiva, error } = await supabase.from("ci_fornitori").select("*")
-        .in("partita_iva", [pivaPulita, `IT${pivaPulita}`, (riga.piva || "").trim()])
-        .order("id").limit(1);
-      if (error) throw new Error(`Errore cercando il fornitore: ${error.message}`);
-      if (perPiva && perPiva.length > 0) return perPiva[0].id;
-    }
-
-    const nomePulito = (riga.fornitore || "").trim().toLowerCase();
-    if (nomePulito) {
-      const { data: perNome, error } = await fetchAllPages((da, a) => supabase.from("ci_fornitori").select("*").order("id").range(da, a));
-      if (error) throw new Error(`Errore cercando il fornitore: ${error.message}`);
-      // Stesso nome: lo riuso solo se non ha una partita IVA diversa da quella della fattura
-      const trovato = (perNome || []).find(f => (f.nome || "").trim().toLowerCase() === nomePulito &&
-        (!pivaPulita || !f.partita_iva || f.partita_iva.replace(/\s+/g, "").toUpperCase().replace(/^IT/, "") === pivaPulita));
-      if (trovato) return trovato.id;
-    }
-
-    // Come prima: senza nome del fornitore non si crea nessuna scheda nuova
-    if (!riga.fornitore) return null;
-    const { data: nuovo, error } = await supabase.from("ci_fornitori")
-      .insert([{ nome: riga.fornitore, partita_iva: riga.piva || null, gruppo_classificazione: "FRO" }])
-      .select().single();
-    if (error) throw new Error(`Errore creando fornitore: ${error.message}`);
-    setFornitori(prev => [...prev, nuovo]);
-    return nuovo.id;
-  }
-
-  // Versione 355: con lo scarico di Aruba la fattura nasce con il suo Identificativo SdI, il nome del file e il tipo di documento
-  async function trovaOCreaFattura(fornitoreId, numero, data, documento = null) {
-    // un file con più fatture ha un solo Identificativo SdI (indice unico nel database): non si scrive su nessuna (revisione, N5)
-    const sdi = documento?.identificativoSdi && (documento.corpi || 1) <= 1 ? String(documento.identificativoSdi) : null;
-    const { data: esistente, error: eE } = await supabase
-      .from("ci_fatture").select("id, identificativo_sdi").eq("fornitore_id", fornitoreId).eq("numero", numero).eq("data", data).maybeSingle();
-    if (eE) throw new Error(`Errore cercando la fattura ${numero}: ${eE.message}`);
-    if (esistente) {
-      if (sdi && !esistente.identificativo_sdi) {
-        const { error: eS } = await supabase.from("ci_fatture").update({ identificativo_sdi: sdi, nome_file_xml: documento.nomeFileSdi || null, tipo_documento: documento.tipoDocumento || null })
-          .eq("id", esistente.id).is("identificativo_sdi", null);
-        if (eS) throw new Error(`Identificativo SdI della fattura ${numero} non scritto: ${eS.message}`);
-      }
-      return esistente.id;
-    }
-    const { data: nuova, error } = await supabase.from("ci_fatture").insert([{
-      numero, data, tipo: "PASSIVA", fornitore_id: fornitoreId, totale_netto: 0, totale_iva: 0, totale_lordo: 0,
-      ...(sdi ? { identificativo_sdi: sdi, nome_file_xml: documento.nomeFileSdi || null, tipo_documento: documento.tipoDocumento || null } : {}),
-    }]).select().single();
-    if (error) throw new Error(`Errore creando fattura ${numero}: ${error.message}`);
-    return nuova.id;
-  }
-
-  // Versione 350: testata dal documento (XML o PDF) e scadenze create al carico. Senza documento:
-  // somma delle righe e scadenza «da completare». Una scadenza già nata dall'XML (acquisto di animali
-  // salvato prima delle altre righe) passa alla fattura, con i suoi pagamenti.
-  async function ricalcolaTotaliFattura(fatturaId, documento = null) {
-    const { data: giaSue } = await supabase.from("ci_scadenze").select("id").eq("fattura_id", fatturaId).limit(1);
-    if ((giaSue || []).length === 0) {
-      const { data: f } = await supabase.from("ci_fatture").select("fornitore_id, numero, data").eq("id", fatturaId).single();
-      // stesso file XML, oppure stesso fornitore, numero e data (fattura caricata da PDF o Excel)
-      let q = supabase.from("ci_scadenze").update({ fattura_id: fatturaId, file_xml: null }).is("fattura_id", null).eq("lato", "fornitore");
-      q = documento?.fileXml ? q.eq("file_xml", documento.fileXml)
-        : q.not("file_xml", "is", null).eq("fornitore_id", f.fornitore_id).eq("numero_documento", f.numero).eq("data_documento", f.data);
-      const { error: eSp } = await q;
-      if (eSp) throw new Error(`Scadenza dell'XML non collegata alla fattura: ${eSp.message}`);
-    }
-    await applicaDocumento(fatturaId, documento);
+  // Versione 384: trovaOCreaFornitore, trovaOCreaFattura, ricalcolaTotaliFattura e le scritture di salvaRiga
+  // sono spostate, senza cambiarle, in salvataggioFatturePassive.js (le usa anche «Leggi le fatture passive di Aruba»).
+  // Qui restano i controlli, le finestre e l'aggiornamento della pagina, come prima.
+  function trovaOCreaFornitore(riga) {
+    return trovaOCreaFornitoreComune(riga, { nuovoFornitore: nuovo => setFornitori(prev => [...prev, nuovo]) });
   }
 
   async function salvaRiga(riga) {
@@ -523,117 +400,15 @@ export default function CaricaFatture({ documentiIniziali = null, incorporata = 
 
     aggiornaRiga(riga.id, { salvataggioInCorso: true });
     try {
-      const fornitoreId = await trovaOCreaFornitore(riga);
-
-      const idsSalvati = {};
-
-      if (riga.editArea === "ACQUISTO ANIMALI") {
-        const { data, error } = await supabase.from("ci_report_acquisto_animali").insert([{
-          fonte: "ACQUISTO_DIRETTO", fornitore_id: fornitoreId, data_fattura: riga.data, numero_fattura: riga.numero,
-          importo: riga.imponibile, quantita: riga.quantita, unita_misura: riga.unita_misura || null, prezzo_unitario: riga.prezzo_unitario,
-          specie: riga.specieAcquisto || null, razza: riga.razzaAcquisto || null,
-          destinazione_acquisto: riga.destAcquisto || null, bdn: riga.bdnAcquisto || null, nr_lotto: riga.lottoAcquisto || null,
-        }]).select().single();
-        if (error) throw new Error(error.message);
-        idsSalvati.reportAcquistoId = data.id;
-        // Versione 350: anche gli acquisti di animali vanno nello scadenzario (decisione del 04/11/2026)
-        const { data: fatturaStessoDoc } = await supabase.from("ci_fatture").select("id").eq("fornitore_id", fornitoreId).eq("numero", riga.numero).eq("data", riga.data).maybeSingle();
-        if (fatturaStessoDoc) await ricalcolaTotaliFattura(fatturaStessoDoc.id, riga.documento);
-        else if (riga.documento?.fileXml) {
-          const esitoScad = await assicuraScadenze({ lato: "fornitore", fileXml: riga.documento.fileXml, fornitoreId, numero: riga.numero, data: riga.data,
-            tipoDocumento: riga.documento.tipoDocumento, totale: riga.documento.totale, ritenuta: riga.documento.ritenuta, rate: riga.documento.rate });
-          idsSalvati.scadenzeCreate = esitoScad.ids || [];
-        } else {
-          alert(`⚠️ Riga salvata nel Report Acquisto Animali, ma la scadenza della fattura ${riga.numero} non è stata creata: per gli acquisti di animali la scadenza nasce dall'XML. Caricare la fattura dall'XML di Aruba.`);
-        }
-      } else if (riga.editArea === "TRASPORTO ANIMALI") {
-        const fatturaId = await trovaOCreaFattura(fornitoreId, riga.numero, riga.data, riga.documento);
-        const importoMacello = parseFloat(riga.importoMacello) || 0;
-        const { data: art, error: eArt } = await supabase.from("ci_articoli_fattura").insert([{
-          fattura_id: fatturaId, descrizione: riga.descrizione, quantita: riga.quantita, unita_misura: riga.unita_misura || null,
-          prezzo_unitario: riga.prezzo_unitario, totale_riga: importoMacello,
-          aliquota_iva: riga.aliquota_iva, totale_iva: riga.aliquota_iva ? round2(importoMacello * riga.aliquota_iva / 100) : 0,
-          area: "TRASPORTO ANIMALI", centro_costo: "Lavorazione prodotti allevamento per Rivendita",
-          destinazione: riga.editDestinazione || null, tipo_costo: riga.editTipo || null, stato_classificazione: "MANUALE",
-        }]).select().single();
-        if (eArt) throw new Error(eArt.message);
-        idsSalvati.articoloFatturaId = art.id; idsSalvati.fatturaId = fatturaId;
-        const { data: acq, error: eAcq } = await supabase.from("ci_report_acquisto_animali").insert([{
-          articolo_fattura_id: art.id, fonte: "TRASPORTO_INGRESSO", fornitore_id: fornitoreId,
-          data_fattura: riga.data, numero_fattura: riga.numero, importo: parseFloat(riga.importoIngresso) || 0,
-          quantita: riga.quantita, unita_misura: riga.unita_misura || null, prezzo_unitario: riga.prezzo_unitario,
-          specie: riga.specieAcquisto || null, destinazione_acquisto: riga.destAcquisto || null,
-          bdn: riga.bdnAcquisto || null, nr_lotto: riga.lottoAcquisto || null,
-        }]).select().single();
-        if (eAcq) throw new Error(eAcq.message);
-        idsSalvati.reportAcquistoId = acq.id;
-        await ricalcolaTotaliFattura(fatturaId, riga.documento);
-      } else {
-        if (riga.editArea === "Ammortamenti" && fornitoreId) {
-          // Controllo anti-duplicati PRIMA di creare qualunque riga (richiesto da
-          // Filippo: i cespiti storici importati non hanno numero fattura, quindi il
-          // confronto si fa per descrizione simile E/O importo simile). ESTESO A TUTTI
-          // I CESPITI, non solo quelli dello stesso fornitore — i dati storici possono
-          // avere un fornitore collegato in modo diverso o assente, quindi limitare il
-          // controllo al solo fornitore corrente perdeva i duplicati reali.
-          const { data: tuttiCespiti } = await fetchAllPages((da, a) => supabase.from("ci_cespiti")
-            .select("id,descrizione,data_acquisto,costo_acquisto,fornitore_id").order("id").range(da, a));
-          const descrizioneNorm = riga.descrizione.trim().toLowerCase();
-          const possibiliDuplicati = (tuttiCespiti || []).filter(c => {
-            const descNormEsistente = (c.descrizione || "").trim().toLowerCase();
-            const stessaDescrizione = descNormEsistente === descrizioneNorm ||
-              (descNormEsistente.length > 5 && (descNormEsistente.includes(descrizioneNorm) || descrizioneNorm.includes(descNormEsistente)));
-            const stessoImporto = Math.abs((c.costo_acquisto || 0) - riga.imponibile) < 0.01;
-            return stessaDescrizione || stessoImporto;
-          });
-          if (possibiliDuplicati.length > 0) {
-            const elenco = possibiliDuplicati.map(c => `- "${c.descrizione}" del ${c.data_acquisto}, ${formattaEuro(c.costo_acquisto)}`).join("\n");
-            const procedi = window.confirm(
-              `⚠️ Possibile cespite già registrato (stessa descrizione o stesso importo, anche di un fornitore diverso — i dati storici potrebbero avere il fornitore collegato in modo diverso):\n\n${elenco}\n\nQuesto bene NON ha numero fattura nei dati storici, quindi il confronto è approssimato — controlla tu se è davvero lo stesso.\n\nOK = registra comunque come nuovo cespite separato.\nAnnulla = fermati qui, non salvare nulla (decidi tu come procedere, es. modificando quello esistente).`
-            );
-            if (!procedi) { aggiornaRiga(riga.id, { salvataggioInCorso: false }); return; }
-          }
-        }
-
-        const fatturaId = await trovaOCreaFattura(fornitoreId, riga.numero, riga.data, riga.documento);
-        const { data: art, error } = await supabase.from("ci_articoli_fattura").insert([{
-          fattura_id: fatturaId, descrizione: riga.descrizione, quantita: riga.quantita, unita_misura: riga.unita_misura || null,
-          prezzo_unitario: riga.prezzo_unitario, totale_riga: riga.imponibile,
-          aliquota_iva: riga.aliquota_iva, totale_iva: riga.aliquota_iva ? round2(riga.imponibile * riga.aliquota_iva / 100) : 0,
-          area: riga.editArea, centro_costo: riga.editCentro || null, destinazione: riga.editDestinazione || null,
-          tipo_costo: riga.editTipo, stato_classificazione: riga.stato,
-        }]).select().single();
-        if (error) throw new Error(error.message);
-        idsSalvati.articoloFatturaId = art.id; idsSalvati.fatturaId = fatturaId;
-
-        if (riga.editArea === "Ammortamenti") {
-          // Versione 261: dettaglio, cespite e quote fino all'anno in corso con la funzione comune
-          const creato = await creaCespiteDaRiga({
-            articoloId: art.id, descrizione: riga.descrizione, fornitoreId, fatturaId, data: riga.data,
-            importo: riga.imponibile, categoria: riga.categoriaAmmortamento, imputazione: riga.imputazioneAmmortamento,
-            anni: anniDaRiga(riga), annoAcquisto: riga.annoAcquistoAmmortamento,
-          });
-          idsSalvati.cespiteId = creato.cespiteId;
-        }
-        await ricalcolaTotaliFattura(fatturaId, riga.documento);
-      }
-
-      let regolaCreata = null;
-      if (riga.memorizzaRegola === "fissa" && fornitoreId) {
-        const { data: rf, error } = await supabase.from("ci_regole_fornitore_fissa").upsert([{
-          fornitore_id: fornitoreId, area: riga.editArea, centro_costo: riga.editCentro || null,
-          destinazione: riga.editDestinazione || null, tipo_costo: riga.editTipo,
-        }], { onConflict: "fornitore_id" }).select().single();
-        if (error) alert(`⚠️ Riga salvata, ma non sono riuscito a creare la regola fissa:\n\n${error.message}`);
-        else { regolaCreata = { tipo: "fissa", id: rf.id }; setRegoleFisse(prev => [...prev.filter(r => r.fornitore_id !== fornitoreId), rf]); }
-      } else if (riga.memorizzaRegola === "parolaChiave" && fornitoreId) {
-        const { data: rv, error } = await supabase.from("ci_regole_fornitore_variabile").insert([{
-          fornitore_id: fornitoreId, parola_chiave: riga.parolaChiaveRegola.trim(), area: riga.editArea,
-          centro_costo: riga.editCentro || null, destinazione: riga.editDestinazione || null, tipo_costo: riga.editTipo,
-        }]).select().single();
-        if (error) alert(`⚠️ Riga salvata, ma non sono riuscito a creare la regola per parola chiave:\n\n${error.message}`);
-        else { regolaCreata = { tipo: "parolaChiave", id: rv.id }; setRegoleVariabili(prev => [...prev, rv]); }
-      }
+      const esito = await salvaRigaFatturaPassiva(riga, {
+        nuovoFornitore: nuovo => setFornitori(prev => [...prev, nuovo]),
+        confermaCespiteDoppio: async (_possibili, testo) => window.confirm(testo),
+        avviso: testo => alert(testo),
+      });
+      if (esito.annullata) { aggiornaRiga(riga.id, { salvataggioInCorso: false }); return; }
+      const { idsSalvati, regolaCreata, regola, fornitoreId } = esito;
+      if (regolaCreata?.tipo === "fissa") setRegoleFisse(prev => [...prev.filter(r => r.fornitore_id !== fornitoreId), regola]);
+      else if (regolaCreata?.tipo === "parolaChiave") setRegoleVariabili(prev => [...prev, regola]);
 
       aggiornaRiga(riga.id, { salvata: true, salvataggioInCorso: false, idsSalvati, regolaCreata });
     } catch (err) {
@@ -840,7 +615,8 @@ function StatBox({ label, value, color }) {
   );
 }
 
-function RigaFattura({ riga, aree, centriPerArea, regoleArmonizzazione, onChange, onSalva, onAnnulla, onScarta }) {
+// Versione 384: esportata per «Leggi le fatture passive di Aruba»; con senzaSalva il tasto «Salva questa riga» non c'è (si registra tutto insieme)
+export function RigaFattura({ riga, aree, centriPerArea, regoleArmonizzazione, onChange, onSalva, onAnnulla, onScarta, senzaSalva = false }) {
   const r = riga;
   const bordoColore = r.giaCaricata ? C.accent : r.scartata ? C.muted : r.salvata ? C.green : r.nonQuadra ? "#B8860B" : r.stato === "MASCHERA" ? C.red : r.stato === "FCF" ? C.blue : C.green;
   const isTrasportoAnimali = r.editArea === "TRASPORTO ANIMALI";
@@ -873,7 +649,7 @@ function RigaFattura({ riga, aree, centriPerArea, regoleArmonizzazione, onChange
 
       {r.stato === "MASCHERA" && !r.salvata && !r.scartata && !r.giaCaricata && (
         <div style={{ fontSize: 12, color: C.red, marginTop: 4, marginBottom: 4 }}>
-          Nessuna regola automatica trovata per questo fornitore/prodotto — scegli qui sotto Area, Centro di Costo, Destinazione e Tipo di Costo, poi salva la riga.
+          Nessuna regola automatica trovata per questo fornitore/prodotto — scegli qui sotto Area, Centro di Costo, Destinazione e Tipo di Costo, {senzaSalva ? "poi, quando tutte le righe sono complete, premi «Registra» in fondo alla pagina." : "poi salva la riga."}
         </div>
       )}
 
@@ -1023,10 +799,10 @@ function RigaFattura({ riga, aree, centriPerArea, regoleArmonizzazione, onChange
           )}
 
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-            <button onClick={onSalva} disabled={r.salvataggioInCorso}
+            {!senzaSalva && <button onClick={onSalva} disabled={r.salvataggioInCorso}
               style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
               {r.salvataggioInCorso ? "Salvataggio..." : "💾 Salva questa riga"}
-            </button>
+            </button>}
             <button onClick={onScarta}
               style={{ background: "none", border: `1.5px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
               🗑️ Scarta e ricorda

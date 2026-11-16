@@ -1,4 +1,7 @@
 import { useEffect, useState } from "react";
+import RiquadroDoveSonoIFile from "./RiquadroDoveSonoIFile"; // versione 384
+import ArchivioVenditeCloud from "./ArchivioVenditeCloud"; // versione 384
+import { md5 } from "./md5";
 import { C } from "./style";
 import { formattaEuro } from "./parsingUtils";
 import { input, btn, scheda, titolo, th, td, testata, chip, dataIt } from "./stileAruba";
@@ -33,15 +36,22 @@ export default function LetturaAruba({ onNavigate, letturaIniziale = null, incor
   const [errore, setErrore] = useState(null);
   const [esito, setEsito] = useState(null);
   const [aperte, setAperte] = useState(() => new Set());
+  const [datiArchivio, setDatiArchivio] = useState(null);
+  const [archivioInCorso, setArchivioInCorso] = useState(false); // versione 384: niente nuova lettura mentre «Archivia nel cloud» lavora // versione 384: { l, file } della lettura, per «Archivia nel cloud»
 
   useEffect(() => { caricaUltimaLettura().then(setUltima); }, []);
   useEffect(() => { if (letturaIniziale) analizza(() => Promise.resolve(letturaIniziale)); }, [letturaIniziale]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function scegli(e) {
-    const files = [...(e.target.files || [])];
+    // versione 384: il file di riconoscimento della cartella e i temporanei di Office non sono scarichi: non si leggono e non si archiviano
+    const files = [...(e.target.files || [])].filter(f => !/^RICONOSCIMENTO CARTELLA FATTURE/i.test(f.name) && !f.name.startsWith("~$"));
     e.target.value = "";
     if (!files.length) return;
-    await analizza(() => leggiFileAruba(files));
+    setDatiArchivio(null);
+    // versione 384: i file scelti si tengono (byte e impronta) per «Archivia nel cloud» dopo la registrazione
+    let copie = null;
+    try { copie = await Promise.all(files.map(async f => { const b = new Uint8Array(await f.arrayBuffer()); return { nome: f.name, bytes: b, md5: md5(b) }; })); } catch { copie = null; }
+    await analizza(async () => { const l = await leggiFileAruba(files); if (copie) setDatiArchivio({ l, file: copie }); return l; });
   }
   async function analizza(leggi) {
     setLavoro(true); setErrore(null); setEsito(null); setRisultati(null);
@@ -98,11 +108,13 @@ export default function LetturaAruba({ onNavigate, letturaIniziale = null, incor
         e «Elenco_Fatture_Emesse_Aruba.csv» con gli stati). Il programma confronta ogni fattura con quelle emesse dal programma e con quelle registrate
         in contabilità e mostra cosa farà. Niente si scrive finché non si preme «Registra la lettura».
       </p>
+      {/* versione 384: riquadro comune «Dove sono i file e come ci si arriva» (decisione del Dott. Bizzarri del 14/11/2026) */}
+      {!incorporata && <RiquadroDoveSonoIFile cartellaFinale={["FATTURE ATTIVE", "FATTURE ATTIVE DA SMISTARE"]} cosaMetterci="i file delle fatture di vendita scaricati da Aruba (Report, XML, PDF)" />}
 
       <div style={{ ...scheda, display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
         <label style={{ ...btn(true), display: "inline-flex", alignItems: "center", opacity: lavoro ? 0.6 : 1 }}>
           📥 Scegli il file .zip di Aruba
-          <input type="file" accept=".zip,.xml,.csv,.p7m,.pdf,.xls,.xlsx" multiple onChange={scegli} disabled={lavoro} style={{ display: "none" }} />
+          <input type="file" accept=".zip,.xml,.csv,.p7m,.pdf,.xls,.xlsx" multiple onChange={scegli} disabled={lavoro || archivioInCorso} style={{ display: "none" }} />
         </label>
         <span style={{ fontSize: 12.5, color: C.muted }}>
           {ultima ? <>Ultima lettura: <b>{quandoItaliano(ultima.letta_il)}</b> — {ultima.fatture_lette} fatture ({ultima.anni}), {ultima.registrate} registrate, {ultima.del_programma} del programma collegate.</> : "Nessuna lettura di Aruba registrata finora."}
@@ -127,6 +139,8 @@ export default function LetturaAruba({ onNavigate, letturaIniziale = null, incor
             <button onClick={() => onNavigate("controllo-attiva")} style={btn(false)}>Vai ai controlli</button>
             <button onClick={() => onNavigate("numero-progressivo")} style={btn(false)}>Vai al numero progressivo</button>
           </div>}
+          {/* versione 384 (decisione «B» del 16/11/2026): archivio facoltativo nel cloud, solo nella pagina (non dentro «Documenti arrivati») */}
+          {!incorporata && datiArchivio && !esito.errori.length && <ArchivioVenditeCloud l={datiArchivio.l} file={datiArchivio.file} onLavoro={setArchivioInCorso} />}
         </div>
       )}
 

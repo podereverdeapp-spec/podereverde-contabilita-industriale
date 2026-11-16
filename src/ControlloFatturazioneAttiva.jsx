@@ -1,4 +1,3 @@
-import { chiediScheda } from "./schedaRichiesta"; // versione 377
 import { useEffect, useState } from "react";
 import { C } from "./style";
 import { formattaEuro } from "./parsingUtils";
@@ -62,10 +61,9 @@ export default function ControlloFatturazioneAttiva({ onNavigate, vediCarico = f
 
       <div style={scheda}>
         <div style={titolo}>2. Fatture emesse dal programma non trovate in Aruba <span style={chip(dati.nonInAruba.length ? C.red : C.green)}>{dati.nonInAruba.length}</span></div>
-        {/* versione 377: il caricamento veloce delle fatture di vendita da Aruba, come per le fatture passive */}
-        {dati.nonInAruba.length > 0 && onNavigate && vediCarico && <div style={{ fontSize: 13, margin: "0 0 10px", padding: 10, background: "#EAF2FB", borderRadius: 8 }}>
-          Se in Aruba ci sono già: si scaricano da «Fatture inviate» (Scarica XML, Scarica PDF, Scarica Report Excel), si mettono in FATTURE ATTIVE\FATTURE ATTIVE DA SMISTARE e si caricano da qui
-          <button onClick={() => { chiediScheda("vendite"); onNavigate("documenti-arrivati"); }} style={{ ...btn(true), marginLeft: 10 }}>Carica le fatture di vendita da Aruba →</button>
+        {/* versione 384 (ordine del Dott. Bizzarri del 14/11/2026): al posto della procedura della 377, un tasto che apre «Leggi le Fatture di Aruba» */}
+        {onNavigate && vediCarico && <div style={{ margin: "0 0 10px" }}>
+          <button onClick={() => onNavigate("lettura-aruba")} style={btn(true)}>📥 Leggi le Fatture di Aruba</button>
         </div>}
         {dati.nonInAruba.length ? (
           <table>

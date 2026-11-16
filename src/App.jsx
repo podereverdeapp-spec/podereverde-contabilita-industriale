@@ -83,7 +83,7 @@ import { ISTRUZIONI_BANCHE, ISTRUZIONI_INCASSI_PAGAMENTI, ISTRUZIONI_PRIMA_NOTA 
 import F24Arrivati from "./F24Arrivati";
 import ConsultaF24 from "./ConsultaF24"; // Versione 362
 import { useAvvisiF24, StrisciaAvvisiF24 } from "./AvvisiF24"; // Versione 363
-import DocumentiArrivati from "./DocumentiArrivati"; // versione 355
+import LetturaPassiveAruba from "./LetturaPassiveAruba"; // versione 384 (al posto di DocumentiArrivati nel menu)
 import { ISTRUZIONI_DOCUMENTI_ARRIVATI } from "./istruzioniDocumentiArrivati"; // versione 356
 import { ISTRUZIONI_F24_ARRIVATI } from "./istruzioniF24Arrivati";
 // Versione 337: la cartella «Accessi» (chi entra nel programma e in quali parti)
@@ -196,7 +196,8 @@ const MENU = [
       // in cima le istruzioni e la pagina del carico da Aruba; poi l'inserimento manuale; in fondo, in ordine, le tre pagine delle fatture di carta.
       // Esce dal menu «Prompt per carico da Aruba»: lo scarico da Aruba ora lo legge la pagina «Carica le fatture da Aruba».
       { id: "istr-documenti-arrivati", label: "Istruzioni", icon: "📖" },
-      { id: "documenti-arrivati", label: "Carica le fatture da Aruba", icon: "📬" },
+      // Versione 384: la stessa voce (stesso permesso «documenti-arrivati») apre «Leggi le fatture passive di Aruba», caricamento come le vendite
+      { id: "documenti-arrivati", label: "Leggi le fatture passive di Aruba", icon: "📥" },
       { id: "inserimento-manuale", label: "Inserimento Manuale Fattura", icon: "✍️" },
       { id: "istr-fatture", label: "Fatture di carta: istruzioni", icon: "📖" },
       { id: "prompt-estrazione-pdf", label: "Fatture di carta: 1. prompt di lettura", icon: "🤖" },
@@ -609,7 +610,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 383</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 384</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={() => (tab === "accessi" && accessiInSospeso.length) ? setUscitaDaAccessi("__esci__") : esci()} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -840,7 +841,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
         {tab === "prompt-carico-aruba" && <PromptCaricoAruba />}
         {tab === "prompt-aruba-emesse" && <PromptFattureEmesseAruba />}
         {tab === "lettura-aruba" && <LetturaAruba onNavigate={vaiA} />}
-        {tab === "controllo-attiva" && <ControlloFatturazioneAttiva onNavigate={vaiA} vediCarico={puo("documenti-arrivati") && puo("lettura-aruba")} />}
+        {tab === "controllo-attiva" && <ControlloFatturazioneAttiva onNavigate={vaiA} vediCarico={puo("lettura-aruba")} />}
         {tab === "elenco-attive" && <ElencoFattureAttive />}
         {tab === "numero-progressivo" && <NumeroProgressivo />}
         {tab === "vendite-per-anno" && <VenditePerAnno />}
@@ -848,7 +849,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
         {tab === "f24-arrivati" && <F24Arrivati utente={utente} accesso={accesso} />}
         {tab === "consulta-f24" && <ConsultaF24 utente={utente} vaiA={vaiA} />}
         {tab === "istr-documenti-arrivati" && <DocumentoIstruzioni doc={ISTRUZIONI_DOCUMENTI_ARRIVATI} />}
-        {tab === "documenti-arrivati" && <DocumentiArrivati utente={utente} accesso={accesso} vediF24={puo("f24-arrivati")} vediVendite={puo("lettura-aruba")} onNavigate={vaiA} />}
+        {tab === "documenti-arrivati" && <LetturaPassiveAruba />}
         {tab === "istr-generali-f24" && <DocumentoIstruzioni doc={ISTRUZIONI_F24_ARRIVATI} />}
         {tab === "carica-costi-lavoro" && <CaricaCostiLavoro />}
         {tab === "consulta-costi-lavoro" && <ConsultaCostiLavoro />}

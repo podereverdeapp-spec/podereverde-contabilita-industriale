@@ -1,3 +1,4 @@
+// Versione 384: alcune funzioni sono solo «esportate» (parola export) per la pagina «Leggi le fatture passive di Aruba»; nessun cambiamento nel loro codice.
 // Versione 378 (13/11/2026, ordine del Dott. Bizzarri delle 14:00–14:10): gli scarichi delle fatture passive in FATTURE PASSIVE\FATTURE PASSIVE DA SMISTARE
 // (subito dentro FATTURE PASSIVE), non più in PROGRAMMA\DA SMISTARE.
 // Versione 355 (10/11/2026, procedura unica di carico — claude/procedura_unica_carico.md, ordine del Dott. Bizzarri):
@@ -25,22 +26,22 @@ import { prendiSchedaRichiesta } from "./schedaRichiesta"; // Versione 377
 import { caricaPdf } from "./pdfFatture";
 
 export const FILE_RICONOSCIMENTO_FATTURE = "RICONOSCIMENTO CARTELLA FATTURE PASSIVE - NON TOCCARE.txt";
-const PARAMETRO_CODICE = "codice_cartella_fatture_passive";
-const leggiTesto = b => (b[0] === 0xff && b[1] === 0xfe ? new TextDecoder("utf-16le").decode(b.subarray(2)) : new TextDecoder("utf-8").decode(b).replace(/^\uFEFF/, ""));
+export const PARAMETRO_CODICE = "codice_cartella_fatture_passive";
+export const leggiTesto = b => (b[0] === 0xff && b[1] === 0xfe ? new TextDecoder("utf-16le").decode(b.subarray(2)) : new TextDecoder("utf-8").decode(b).replace(/^\uFEFF/, ""));
 const oraRoma = () => new Intl.DateTimeFormat("it-IT", { timeZone: "Europe/Rome", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date()).replace(", ", " ore ");
 const dataIt = d => { const s = String(d || "").slice(0, 10); const [a, m, g] = s.split("-"); return g ? `${g}/${m}/${a}` : (s || "—"); };
 // Versione 381 (13/11/2026 ore 18:45–18:47, ordine del Dott. Bizzarri): niente più «PROGRAMMA». Il file di riconoscimento sta in
 // «FATTURE PASSIVE DA SMISTARE»; finché in «PROGRAMMA» resta un file la cartella non si accetta; si prepara solo una cartella con le cartelle degli anni.
-async function fileDentroCartella(dir, base = "") {
+export async function fileDentroCartella(dir, base = "") {
   const out = [];
   for await (const [n, h] of dir.entries()) { if (/^(desktop\.ini|Thumbs\.db)$/i.test(n) || n.startsWith("~$")) continue; if (h.kind === "file") out.push(base ? `${base}\\${n}` : n); else out.push(...await fileDentroCartella(h, base ? `${base}\\${n}` : n)); }
   return out;
 }
-async function haGliAnni(h) { const nomi = new Set(); for await (const [n, x] of h.entries()) if (x.kind === "directory") nomi.add(n); return nomi.has("2019") && nomi.has("2026"); }
+export async function haGliAnni(h) { const nomi = new Set(); for await (const [n, x] of h.entries()) if (x.kind === "directory") nomi.add(n); return nomi.has("2019") && nomi.has("2026"); }
 function testoRiconoscimentoFatture(codice, quando) {
   return `SOCIETA' AGRICOLA PODERE VERDE A R.L.\r\nCODICE FISCALE: ${PIVA_PODERE}\r\nCARTELLA: FATTURE PASSIVE\r\nCODICE DELLA CARTELLA: ${codice}\r\nCREATO IL: ${quando} DAL PROGRAMMA CONTABILITA' INDUSTRIALE\r\n`;
 }
-function leggiRiconoscimentoFatture(t) {
+export function leggiRiconoscimentoFatture(t) {
   const s = String(t || "");
   if (/CARTELLA DISMESSA/i.test(s)) return { ok: false, dismessa: true };
   const codice = (s.match(/CODICE DELLA CARTELLA:\s*(PV-FP-[A-Z0-9]{8})/) || [])[1] || null;
@@ -60,7 +61,7 @@ async function leggiInLavorazione() {
   if (error) throw new Error(`Lettura delle fatture in lavorazione: ${error.message}`);
   try { return { esiste: !!data, sdi: new Set(JSON.parse(data?.valore || "[]").map(String)) }; } catch { throw new Error(`il parametro «${PARAMETRO_LAVORO}» non è leggibile: lo si guarda prima di andare avanti`); }
 }
-async function scriviInLavorazione(aggiungi = [], togli = []) {
+export async function scriviInLavorazione(aggiungi = [], togli = []) {
   const ora = await leggiInLavorazione();
   aggiungi.forEach(x => ora.sdi.add(String(x))); togli.forEach(x => ora.sdi.delete(String(x)));
   const valore = JSON.stringify([...ora.sdi].sort());
@@ -70,7 +71,7 @@ async function scriviInLavorazione(aggiungi = [], togli = []) {
   if (r.error) throw new Error(`Fatture in lavorazione non aggiornate: ${r.error.message}`);
   if (!(r.data || []).length) throw new Error("Fatture in lavorazione non aggiornate: nessuna riga scritta");
 }
-async function leggiProgramma() {
+export async function leggiProgramma() {
   const [f, fo, s, a, dr, lav] = await Promise.all([
     fetchAllPages((da, b) => supabase.from("ci_fatture").select("id, numero, data, fornitore_id, identificativo_sdi, nome_file_xml, totale_lordo, tipo").eq("tipo", "PASSIVA").order("id").range(da, b)),
     fetchAllPages((da, b) => supabase.from("ci_fornitori").select("id, nome, partita_iva").order("id").range(da, b)),
