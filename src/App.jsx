@@ -58,6 +58,10 @@ import ConfermaMovimenti from "./ConfermaMovimenti";
 import MovimentiConsulta from "./MovimentiConsulta"; // versione 382
 import SpesePagateControllo from "./SpesePagateControllo"; // versione 382
 import ContantiPersone from "./ContantiPersone"; // versione 382
+import VerificaCarte from "./VerificaCarte"; // versione 383
+import RimborsiSpese from "./RimborsiSpese"; // versione 383
+import ChiusuraMeseSpese from "./ChiusuraMeseSpese"; // versione 383
+import AbilitatiSpese from "./AbilitatiSpese"; // versione 383
 import PrimaNota from "./PrimaNota";
 import GestioneIncassiPagamenti from "./GestioneIncassiPagamenti";
 import AnticipiFornitori, { contaAnticipiDaGuardare } from "./AnticipiFornitori"; // versione 370
@@ -298,6 +302,10 @@ const MENU = [
     { tipo: "voce", id: "banche-movimenti", label: "Movimenti per conto e carta: consulta", icon: "📒" }, // versione 382
     { tipo: "voce", id: "spese-controllo", label: "Spese pagate: controllo", icon: "🧾" }, // versione 382
     { tipo: "voce", id: "spese-contanti", label: "Contanti per persona", icon: "💶" }, // versione 382
+    { tipo: "voce", id: "carte-verifica", label: "Carte prepagate: verifica", icon: "💳" }, // versione 383
+    { tipo: "voce", id: "spese-rimborsi", label: "Rimborsi delle spese", icon: "💸" }, // versione 383
+    { tipo: "voce", id: "spese-chiusura-mese", label: "Chiusura del mese delle spese", icon: "🔒" }, // versione 383
+    { tipo: "voce", id: "spese-abilitati", label: "Abilitati alle spese", icon: "👥" }, // versione 383
   ]},
   // Versione 357 (10/11/2026): Gestione incassi e pagamenti, il motore che scrive la prima nota (progetto della prima nota, sezioni 2, 3, 5, 6, 10)
   { tipo: "cartella", id: "cart-incassi-pagamenti", label: "Gestione incassi e pagamenti", icon: "💶", contenuto: [
@@ -601,7 +609,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 382</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 383</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={() => (tab === "accessi" && accessiInSospeso.length) ? setUscitaDaAccessi("__esci__") : esci()} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -904,6 +912,10 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
         {tab === "banche-movimenti" && <MovimentiConsulta />}
         {tab === "spese-controllo" && <SpesePagateControllo onCambio={contaSpese} />}
         {tab === "spese-contanti" && <ContantiPersone />}
+        {tab === "carte-verifica" && <VerificaCarte />}
+        {tab === "spese-rimborsi" && <RimborsiSpese />}
+        {tab === "spese-chiusura-mese" && <ChiusuraMeseSpese />}
+        {tab === "spese-abilitati" && <AbilitatiSpese />}
         {tab === "prima-nota" && <PrimaNota />}
         {tab === "incassi-pagamenti" && <GestioneIncassiPagamenti />}
         {tab === "anticipi-fornitori" && <AnticipiFornitori vaiA={vaiA} />}
