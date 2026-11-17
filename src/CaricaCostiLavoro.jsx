@@ -10,6 +10,7 @@ import { C } from "./style";
 // ci_cedolino_voci, ci_contributi_da_versare), archivia i PDF nel bucket «buste-paga» e, anno per anno,
 // sostituisce in ci_costi_diretti le righe dell'area Lavoro con un totale per mese, senza nomi, delle sole
 // persone che entrano nel costo degli animali (decisioni del Dott. Bizzarri del 21/10/2026).
+// Versione 387: non scrive più (le tabelle del lavoro sono di sola lettura; si scrive con le funzioni del database della pagina nuova).
 
 const MESI = ["", "gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"];
 const TIPI = ["mensile", "tredicesima", "quattordicesima"];
@@ -300,7 +301,11 @@ export default function CaricaCostiLavoro() {
 
   return (
     <div style={{ padding: 20, maxWidth: 1050, margin: "0 auto" }}>
-      <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>👷 Carica Costi del Lavoro</h1>
+      <h1 style={{ color: C.primary, fontSize: 24, marginBottom: 4 }}>👷 Vecchio carico da Excel</h1>
+      {/* versione 387 (decisione A del Dott. Bizzarri del 17/11/2026): le tabelle del lavoro si scrivono solo dalla pagina «Leggi le buste paga e i pagamenti» */}
+      <div style={{ background: "#FDECEA", border: `2px solid ${C.red}`, borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 13.5 }}>
+        <b>Questa pagina non scrive più nel programma</b> (dalla versione 387). Le buste paga, i riepiloghi e i pagamenti si caricano da <b>«Leggi le buste paga e i pagamenti»</b>. Qui si può solo aprire un Excel vecchio per guardarlo.
+      </div>
       <p style={{ color: C.muted, marginTop: 0 }}>
         Si carica un anno alla volta: l'Excel «Costi_del_lavoro_AAAA.xlsx» e lo zip «Cedolini_AAAA.zip» preparati con il «Prompt per carico cedolini».
         I dati per persona restano visibili solo all'amministratore e alle persone autorizzate; nei Costi Diretti entra soltanto il totale di ogni mese, senza nomi.
@@ -320,7 +325,7 @@ export default function CaricaCostiLavoro() {
           : <div style={{ marginTop: 6, fontSize: 13, color: C.green }}>Ci sono i PDF di tutte le buste dell'Excel.</div>)}
         {!pdf && <div style={{ marginTop: 6, fontSize: 12, color: C.muted }}>Senza lo zip i costi si caricano lo stesso, ma nella consultazione non si potranno aprire i cedolini.</div>}
         {pdf && dati && stato && stato.giaCaricate.size > 0 && (
-          <button disabled={!!lavoro} onClick={soloPdf}
+          <button disabled onClick={soloPdf}
             style={{ marginTop: 10, background: C.card, border: `1px solid ${C.primary}`, color: C.primary, borderRadius: 8, padding: "7px 14px", fontWeight: 700, fontSize: 13 }}>
             📄 Archivia solo i PDF delle {stato.giaCaricate.size} buste già caricate (i costi non cambiano)
           </button>
@@ -370,8 +375,8 @@ export default function CaricaCostiLavoro() {
               ? <>(oggi {stato.costiDiretti.length}: {stato.costiDiretti.map(c => `${c.data.split("-").reverse().join("/")} ${euro(c.importo)}`).join("; ")})</>
               : "(oggi nessuna)"} vengono sostituite da un totale per mese, senza nomi, delle persone che entrano nel costo degli animali.</li>
           </ul>
-          <button disabled={!!lavoro || dati.problemi.length > 0} onClick={carica}
-            style={{ marginTop: 12, background: dati.problemi.length ? C.muted : C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontWeight: 700, fontSize: 14 }}>
+          <button disabled onClick={carica}
+            style={{ marginTop: 12, background: C.muted, color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontWeight: 700, fontSize: 14 }}>
             {lavoro ? "Caricamento in corso…" : `📥 Carica i costi del lavoro del ${dati.anno}`}
           </button>
           {lavoro && <div style={{ fontSize: 12.5, color: C.muted, marginTop: 6 }}>{lavoro}</div>}

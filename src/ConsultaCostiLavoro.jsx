@@ -8,6 +8,8 @@ import { C } from "./style";
 // ore lavorate nell'anno (per persona e in totale), straordinari, ferie e permessi goduti e residui, malattia,
 // costo e costo per ora, confronto con l'anno prima, cedolini in PDF, contributi da versare. Visibile solo
 // all'amministratore e alle persone autorizzate (regole del database della versione 269).
+// Versione 387: accanto a ogni busta il pagamento (bonifici caricati, con il PDF) e, nelle voci, ferie, permessi, ROL e festività
+// (anno precedente, maturato, goduto, residuo); nei contributi da versare il PDF del riepilogo paghe e contributi.
 
 const MESI = ["", "Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
 const euro = (n) => (n == null || isNaN(n) ? "—" : Number(n).toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
@@ -38,6 +40,34 @@ function residui(righe) {
   return m ? { ferie: m.ferie_residue, permessi: m.permessi_residui, rol: m.rol_residui, festivita: m.festivita_residue, mese: m.mese } : {};
 }
 
+const dataIt = d => (d ? `${String(d).slice(8, 10)}/${String(d).slice(5, 7)}/${String(d).slice(0, 4)}` : "");
+
+// versione 387: ferie, permessi, ROL e festività della busta (solo i numeri: il valore e le scadenze nella versione successiva) e i bonifici
+function DettaglioBusta({ r, pagamenti, apri }) {
+  const righe = [["Ferie", "ferie_anno_precedente", "ferie_maturate", "ferie_godute", "ferie_residue"], ["Permessi", "permessi_anno_precedente", "permessi_maturati", "permessi_goduti", "permessi_residui"],
+    ["ROL", "rol_anno_precedente", "rol_maturati", "rol_goduti", "rol_residui"], ["Festività", "festivita_anno_precedente", "festivita_maturate", "festivita_godute", "festivita_residue"]];
+  const conDati = righe.some(x => x.slice(1, 4).some(k => r[k] != null));
+  const n = v => (v == null ? "—" : Number(v).toLocaleString("it-IT", { maximumFractionDigits: 2 }));
+  return (
+    <div style={{ display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 8 }}>
+      {conDati && (
+        <table style={{ width: "auto" }}>
+          <thead><tr><th style={th}></th><th style={thN}>Anno precedente</th><th style={thN}>Maturato</th><th style={thN}>Goduto</th><th style={thN}>Residuo</th></tr></thead>
+          <tbody>{righe.map(([t, ...k]) => <tr key={t}><td style={td}>{t}</td>{k.map(c => <td key={c} style={tdN}>{n(r[c])}</td>)}</tr>)}</tbody>
+        </table>
+      )}
+      <div style={{ fontSize: 12.5 }}>
+        <div style={{ fontWeight: 700, marginBottom: 4 }}>Pagamento</div>
+        {!pagamenti.length && <div style={{ color: C.muted }}>Nessun bonifico caricato per questa busta.</div>}
+        {pagamenti.map(p => (
+          <div key={p.id}>{dataIt(p.data_esecuzione)} — {euro(p.importo)} a {p.beneficiario}{p.esito ? ` (${p.esito})` : ""}{p.motivo_importo ? ` — motivo: ${p.motivo_importo}` : ""}
+            {p.pdf_percorso && <button onClick={() => apri(p)} style={{ border: "none", background: "transparent", color: C.primary, fontWeight: 700, fontSize: 12.5 }}>📄 Pagamento</button>}</div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Schede({ attiva, onChange, voci }) {
   return (
     <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
@@ -61,6 +91,7 @@ export default function ConsultaCostiLavoro() {
   const [scheda, setScheda] = useState("persone");
   const [aperta, setAperta] = useState(null);      // id della busta di cui si vedono le voci
   const [voci, setVoci] = useState({});
+  const [pagamenti, setPagamenti] = useState({});  // versione 387: costo_lavoro_id → bonifici
 
   useEffect(() => {
     (async () => {
@@ -75,6 +106,9 @@ export default function ConsultaCostiLavoro() {
       setContributi(c || []);
       const { data: e } = await fetchAllPages((da, a) => supabase.from("ci_dipendenti_esclusioni").select("dipendente_id, dal, al, motivo").order("id").range(da, a));
       setEsclusioni(e || []);
+      const { data: p } = await fetchAllPages((da, a) => supabase.from("ci_stipendi_pagamenti").select("id, costo_lavoro_id, importo, data_esecuzione, motivo_importo, esito, pdf_percorso, beneficiario").order("data_esecuzione").order("id").range(da, a));
+      const pp = {}; (p || []).forEach(x => { if (x.costo_lavoro_id) (pp[x.costo_lavoro_id] = pp[x.costo_lavoro_id] || []).push(x); });
+      setPagamenti(pp);
     })();
   }, []);
 
@@ -84,6 +118,15 @@ export default function ConsultaCostiLavoro() {
   const nomi = useMemo(() => [...new Set(dellAnno.map(r => r.cognome_nome))].sort(), [dellAnno]);
   const filtrate = persona === "tutte" ? dellAnno : dellAnno.filter(r => r.cognome_nome === persona);
 
+  // versione 387: togliere o rimettere una persona nel costo degli animali per l'anno (le tabelle si scrivono solo con le funzioni del database)
+  async function cambiaEsclusione(p) {
+    const id = dellAnno.find(r => r.cognome_nome === p.nome)?.dipendente_id; if (!id) return;
+    if (!window.confirm(`${p.esclusa ? "Rimettere" : "Togliere"} ${p.nome} ${p.esclusa ? "nel" : "dal"} costo degli animali per tutto il ${anno}? Si riscrivono i costi diretti di tutti i mesi del ${anno} già caricati.`)) return;
+    const { error } = await supabase.rpc("ci_lavoro_esclusione", { p_dipendente: id, p_anno: anno, p_escluso: !p.esclusa });
+    if (error) { alert("Non riuscito: " + error.message); return; }
+    const { data: e } = await fetchAllPages((da, a) => supabase.from("ci_dipendenti_esclusioni").select("dipendente_id, dal, al, motivo").order("id").range(da, a));
+    setEsclusioni(e || []);
+  }
   const esclusa = (id) => esclusioni.some(e => e.dipendente_id === id && e.dal <= `${anno}-12-31` && (!e.al || e.al >= `${anno}-01-01`));
 
   const perPersona = nomi.map(n => {
@@ -93,9 +136,9 @@ export default function ConsultaCostiLavoro() {
   const totAnno = somma(dellAnno);
   const totPrec = precedente.length ? somma(precedente) : null;
 
-  async function apriPdf(r) {
+  async function apriPdf(r, cosa = "Il cedolino") {
     const { data, error } = await supabase.storage.from("buste-paga").createSignedUrl(r.pdf_percorso, 300);
-    if (error) { alert("Il cedolino non si apre: " + error.message); return; }
+    if (error) { alert(cosa + " non si apre: " + error.message); return; }
     window.open(data.signedUrl, "_blank");
   }
   async function mostraVoci(r) {
@@ -105,6 +148,15 @@ export default function ConsultaCostiLavoro() {
       const { data } = await supabase.from("ci_cedolino_voci").select("*").eq("costo_lavoro_id", r.id).order("id");
       setVoci(v => ({ ...v, [r.id]: data || [] }));
     }
+  }
+
+  // versione 387: stato del pagamento di una busta (solo dai bonifici caricati con «Leggi le buste paga e i pagamenti»)
+  function statoPagamento(r) {
+    const pp = pagamenti[r.id] || [];
+    if (!pp.length) return <span style={{ color: C.muted, fontSize: 12 }}>nessun bonifico caricato</span>;
+    const tot = r2(pp.reduce((s, p) => s + Number(p.importo), 0)), netto = r2(r.netto_busta);
+    const testo = tot === netto ? "pagata" : tot < netto ? `pagati ${euro(tot)} su ${euro(netto)}` : `pagati ${euro(tot)}: più del netto`;
+    return <span style={{ color: tot === netto ? C.green : C.accent, fontSize: 12.5, fontWeight: 700 }}>{testo} ({pp.map(p => dataIt(p.data_esecuzione)).join(", ")})</span>;
   }
 
   function esporta() {
@@ -124,6 +176,7 @@ export default function ConsultaCostiLavoro() {
         "Giorni malattia": r.giorni_malattia, "Ferie residue": r.ferie_residue, "Permessi residui": r.permessi_residui, "ROL residui": r.rol_residui, "Festività residue": r.festivita_residue,
         "Totale lordo": Number(r.totale_lordo), "TFR del mese": Number(r.tfr_mese), "Contributi a carico dell'azienda": r2((+r.inps_azienda || 0) + (+r.inail_azienda || 0) + (+r.altri_contributi_azienda || 0)),
         "Costo totale": Number(r.costo_totale), "Netto in busta": Number(r.netto_busta),
+        "Pagato con i bonifici caricati": r2((pagamenti[r.id] || []).reduce((s, p) => s + Number(p.importo), 0)),
       }))],
       ["Contributi da versare", contributi.filter(c => c.anno === anno).map(c => ({
         "Mese": MESI[c.mese], "Salari": +c.salari, "Stipendi": +c.stipendi, "Netto in busta": +c.netto_in_busta, "INPS agricoltura a carico dell'azienda": +c.inps_azienda,
@@ -190,7 +243,8 @@ export default function ConsultaCostiLavoro() {
                 <tbody>
                   {perPersona.filter(p => persona === "tutte" || p.nome === persona).map(p => (
                     <tr key={p.nome}>
-                      <td style={td}>{p.nome}{p.esclusa && <span title="Fuori dal costo degli animali" style={{ marginLeft: 6, fontSize: 11, color: C.accent }}>(escluso dal costo degli animali)</span>}</td>
+                      <td style={td}>{p.nome}{p.esclusa && <span title="Fuori dal costo degli animali" style={{ marginLeft: 6, fontSize: 11, color: C.accent }}>(escluso dal costo degli animali)</span>}
+                        <button onClick={() => cambiaEsclusione(p)} style={{ marginLeft: 6, border: `1px solid ${C.border}`, background: C.card, color: C.primary, borderRadius: 6, fontSize: 11, padding: "1px 6px" }}>{p.esclusa ? "rimetti nel costo" : "togli dal costo"}</button></td>
                       <td style={td}>{p.qualifica}</td><td style={tdN}>{p.mesi}</td>
                       <td style={tdN}>{numero(p.ore_ordinarie)}</td><td style={tdN}>{numero(p.ore_straordinario)}</td><td style={tdN}>{numero(p.ore_festivita_godute)}</td>
                       <td style={tdN}>{numero(p.giorni_ferie_godute)}</td><td style={tdN}>{numero(p.ore_permessi_goduti)}</td><td style={tdN}>{numero(p.ore_rol_goduti)}</td><td style={tdN}>{numero(p.giorni_malattia)}</td>
@@ -232,7 +286,7 @@ export default function ConsultaCostiLavoro() {
                   <th style={th}>Mese</th><th style={th}>Tipo</th><th style={th}>Cognome e nome</th>
                   <th style={thN}>Ore ordinarie</th><th style={thN}>Ore straordinario</th><th style={thN}>Ore festività</th><th style={thN}>Giorni ferie</th>
                   <th style={thN}>Ore permessi</th><th style={thN}>Ore ROL</th><th style={thN}>Giorni malattia</th><th style={thN}>Ferie residue</th>
-                  <th style={thN}>Totale lordo</th><th style={thN}>Costo totale</th><th style={thN}>Netto in busta</th><th style={th}>Cedolino</th>
+                  <th style={thN}>Totale lordo</th><th style={thN}>Costo totale</th><th style={thN}>Netto in busta</th><th style={th}>Pagamento</th><th style={th}>Cedolino</th>
                 </tr></thead>
                 <tbody>
                   {filtrate.slice().sort((a, b) => a.mese - b.mese || a.cognome_nome.localeCompare(b.cognome_nome)).map(r => (
@@ -242,13 +296,15 @@ export default function ConsultaCostiLavoro() {
                         <td style={tdN}>{numero(r.ore_ordinarie)}</td><td style={tdN}>{numero(r.ore_straordinario)}</td><td style={tdN}>{numero(r.ore_festivita_godute)}</td><td style={tdN}>{numero(r.giorni_ferie_godute)}</td>
                         <td style={tdN}>{numero(r.ore_permessi_goduti)}</td><td style={tdN}>{numero(r.ore_rol_goduti)}</td><td style={tdN}>{numero(r.giorni_malattia)}</td><td style={tdN}>{numero(r.ferie_residue)}</td>
                         <td style={tdN}>{euro(r.totale_lordo)}</td><td style={{ ...tdN, fontWeight: 700 }}>{euro(r.costo_totale)}</td><td style={tdN}>{euro(r.netto_busta)}</td>
+                        <td style={td}>{statoPagamento(r)}</td>
                         <td style={td}>
                           {r.pdf_percorso ? <button onClick={() => apriPdf(r)} style={{ border: "none", background: "transparent", color: C.primary, fontWeight: 700, fontSize: 12.5 }}>📄 PDF</button> : <span style={{ color: C.muted, fontSize: 12 }}>nessun PDF</span>}
-                          <button onClick={() => mostraVoci(r)} style={{ border: "none", background: "transparent", color: C.primary, fontSize: 12.5 }}>{aperta === r.id ? "▾ voci" : "▸ voci"}</button>
+                          <button onClick={() => mostraVoci(r)} style={{ border: "none", background: "transparent", color: C.primary, fontSize: 12.5 }}>{aperta === r.id ? "▾ dettagli" : "▸ dettagli"}</button>
                         </td>
                       </tr>
                       {aperta === r.id && (
-                        <tr><td colSpan={15} style={{ background: "#FAFAF7", padding: "6px 14px" }}>
+                        <tr><td colSpan={16} style={{ background: "#FAFAF7", padding: "6px 14px" }}>
+                          <DettaglioBusta r={r} pagamenti={pagamenti[r.id] || []} apri={p => apriPdf(p, "Il pagamento")} />
                           {!voci[r.id] ? "…" : (
                             <table style={{ width: "auto" }}>
                               <thead><tr><th style={th}>Codice</th><th style={th}>Descrizione</th><th style={thN}>Ore o giorni</th><th style={thN}>Base</th><th style={thN}>Competenza</th><th style={thN}>Trattenuta</th></tr></thead>
@@ -272,7 +328,7 @@ export default function ConsultaCostiLavoro() {
                 <thead><tr>
                   <th style={th}>Mese</th><th style={thN}>Salari</th><th style={thN}>Stipendi</th><th style={thN}>Netto in busta</th>
                   <th style={thN}>INPS agricoltura a carico dell'azienda</th><th style={thN}>INPS agricoltura a carico del dipendente</th><th style={thN}>INPS collaboratori</th>
-                  <th style={thN}>INAIL</th><th style={thN}>IRPEF e addizionali</th><th style={thN}>Crediti da compensare in F24</th>
+                  <th style={thN}>INAIL</th><th style={thN}>IRPEF e addizionali</th><th style={thN}>Crediti da compensare in F24</th><th style={th}>Riepilogo</th>
                 </tr></thead>
                 <tbody>
                   {contributi.filter(c => c.anno === anno).map(c => (
@@ -280,6 +336,7 @@ export default function ConsultaCostiLavoro() {
                       <td style={td}>{MESI[c.mese]}{c.tipo !== "mensile" ? ` (${c.tipo})` : ""}</td><td style={tdN}>{euro(c.salari)}</td><td style={tdN}>{euro(c.stipendi)}</td><td style={tdN}>{euro(c.netto_in_busta)}</td>
                       <td style={tdN}>{euro(c.inps_azienda)}</td><td style={tdN}>{euro(c.inps_dipendente)}</td><td style={tdN}>{euro(c.inps_collaboratori)}</td>
                       <td style={tdN}>{euro(c.inail)}</td><td style={tdN}>{euro(c.irpef_e_addizionali)}</td><td style={tdN}>{euro(c.crediti_730)}</td>
+                      <td style={td}>{c.pdf_percorso ? <button onClick={() => apriPdf(c, "Il riepilogo")} style={{ border: "none", background: "transparent", color: C.primary, fontWeight: 700, fontSize: 12.5 }}>📄 Riepilogo</button> : <span style={{ color: C.muted, fontSize: 12 }}>—</span>}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -47,7 +47,7 @@ import ElencoFattureAttive from "./ElencoFattureAttive";
 import NumeroProgressivo from "./NumeroProgressivo";
 import VenditePerAnno from "./VenditePerAnno";
 import { contaAllarmiFatturazione } from "./calcoloAruba";
-import PromptCedolini from "./PromptCedolini";
+import PromptCedolini from "./PromptCedolini"; // versione 387: fuori dal menu, resta nel codice
 // Versione 347 (04/11/2026): «Scadenzari Clienti e Fornitori» nella cartella «Ricerca: Fatture e Anagrafiche» — posizione di ogni cliente e fornitore, scadenze dagli XML, pagamenti e incassi dagli estratti conto BPER abbinati alle fatture, dilazione concessa, dilazione media reale e ritardo; PDF delle fatture e PDF delle distinte dei pagamenti (archivio «distinte»); compensazioni (note di credito e tra cliente e fornitore con la stessa partita IVA, lettera di proposta nel Registro delle Comunicazioni «da inviare», accettazione, «Togli»).
 import ScadenzariClientiFornitori from "./ScadenzariClientiFornitori";
 // Versione 352 (10/11/2026): cartella «Banche, carte e cassa» (progetto della prima nota, sezione 10-bis); prima pagina «Conti: stato e controlli»
@@ -90,7 +90,9 @@ import { ISTRUZIONI_F24_ARRIVATI } from "./istruzioniF24Arrivati";
 // Versione 337: la cartella «Accessi» (chi entra nel programma e in quali parti)
 import PaginaAccessi, { IstruzioniAccessi } from "./PaginaAccessi";
 import { filtraMenu, pagineDelMenu, puoVedereParte } from "./accessiParti";
-import CaricaCostiLavoro from "./CaricaCostiLavoro";
+import CaricaCostiLavoro from "./CaricaCostiLavoro"; // versione 387: resta solo per guardare un Excel vecchio, non scrive più
+import LetturaBustePaga from "./LetturaBustePaga"; // versione 387
+import { ISTRUZIONI_LAVORO_387 } from "./istruzioniLavoro";
 import ConsultaCostiLavoro from "./ConsultaCostiLavoro";
 import InserimentoManualeFattura from "./InserimentoManualeFattura";
 import VerificaFattureMancanti from "./VerificaFattureMancanti";
@@ -213,8 +215,8 @@ const MENU = [
     // Versione 273: le istruzioni, dal Word approvato dal Dott. Bizzarri il 22/10/2026 alle 11:31.
     { tipo: "sottocartella", id: "sub-dati-lavoro", label: "3. Carica Costi del Lavoro", icon: "👷", voci: [
       { id: "istr-costi-lavoro", label: "Istruzioni Carica Costi del Lavoro", icon: "📖" },
-      { id: "prompt-cedolini", label: "Prompt per carico cedolini", icon: "🤖" },
-      { id: "carica-costi-lavoro", label: "Carica Costi del Lavoro", icon: "📥" },
+      { id: "leggi-buste-paga", label: "Leggi le buste paga e i pagamenti", icon: "📥" }, // versione 387 (prende il posto del prompt e del carico dall'Excel)
+      { id: "carica-costi-lavoro", label: "Vecchio carico da Excel (non scrive più)", icon: "🗄️" },
       { id: "consulta-costi-lavoro", label: "Consulta Costi del Lavoro", icon: "🔍" },
     ]},
     // Versione 326 (ordine del Dott. Bizzarri del 29/10/2026 ore 20:59): la sottocartella degli F24, con dentro la
@@ -611,7 +613,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 386</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 387</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={() => (tab === "accessi" && accessiInSospeso.length) ? setUscitaDaAccessi("__esci__") : esci()} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -853,6 +855,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
         {tab === "documenti-arrivati" && <LetturaPassiveAruba />}
         {tab === "istr-generali-f24" && <DocumentoIstruzioni doc={ISTRUZIONI_F24_ARRIVATI} />}
         {tab === "carica-costi-lavoro" && <CaricaCostiLavoro />}
+        {tab === "leggi-buste-paga" && <LetturaBustePaga />}
         {tab === "consulta-costi-lavoro" && <ConsultaCostiLavoro />}
         {tab === "inserimento-manuale" && <InserimentoManualeFattura />}
         {tab === "verifica-fatture-mancanti" && <VerificaFattureMancanti />}
@@ -864,7 +867,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
         {tab === "istr-carica-dati" && <DocumentoIstruzioni doc={ISTRUZIONI_RIEPILOGO_CARICA_DATI} />}
         {tab === "piano-dei-conti" && <DocumentoIstruzioni doc={PIANO_DEI_CONTI} />}
         {tab === "istr-costi-diretti" && <DocumentoIstruzioni doc={ISTRUZIONI_COSTI_DIRETTI} />}
-        {tab === "istr-costi-lavoro" && <DocumentoIstruzioni doc={ISTRUZIONI_COSTI_LAVORO} />}
+        {tab === "istr-costi-lavoro" && <DocumentoIstruzioni doc={ISTRUZIONI_LAVORO_387} />}
         {tab === "istr-sistema-dati" && <DocumentoIstruzioni doc={ISTRUZIONI_SISTEMA_DATI} />}
         {tab === "istr-verifica" && <DocumentoIstruzioni doc={ISTRUZIONI_VERIFICA} />}
         {tab === "carica-pdf-fatture" && <CaricaPdfFatture />}
