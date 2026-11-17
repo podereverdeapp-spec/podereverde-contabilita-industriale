@@ -131,7 +131,8 @@ export default function LetturaBustePaga() {
   // ── 1. Buste paga e riepiloghi: lettura, nessuna scrittura ────────────────────────────────────────────
   async function sceltiBuste(e) {
     const lista = [...(e.target.files || [])]; e.target.value = "";
-    if (!lista.length || occupato.current) return;
+    if (!lista.length) return;
+    if (occupato.current) { setErrore("C'è già una lettura in corso: attendere che finisca (scritta «⏳» in alto), poi scegliere di nuovo i file. Questa scelta non è stata presa."); return; }
     occupato.current = true; setErrore(""); setEsito([]); setCloud(null);
     try {
       const b = await caricaBase();
@@ -199,7 +200,8 @@ export default function LetturaBustePaga() {
   // ── 2. Pagamenti degli stipendi ────────────────────────────────────────────────────────────────────
   async function sceltiPagamenti(e) {
     const lista = [...(e.target.files || [])]; e.target.value = "";
-    if (!lista.length || occupato.current) return;
+    if (!lista.length) return;
+    if (occupato.current) { setErrore("C'è già una lettura in corso: attendere che finisca (scritta «⏳» in alto), poi scegliere di nuovo i file. Questa scelta non è stata presa."); return; }
     occupato.current = true; setErrore(""); setCloud(null);
     try {
       const b = await caricaBase();
@@ -222,7 +224,7 @@ export default function LetturaBustePaga() {
           if (/\.pdf$/i.test(f.name) && !(await pdfSenzaTesto(byte))) { testo = testoDalPdf(await pagineDalPdf(byte.slice(), pj)); daScansione = false; }
           else {
             const img = /\.pdf$/i.test(f.name) ? await immaginiDalPdf(byte) : await immagineDaFile(byte, tipoMime(f.name));
-            testo = (await leggiConOcr(img.pagine, t => setLavoro(`${f.name}: ${t}`))).map(p => p.testo).join("\n");
+            testo = (await leggiConOcr(img.pagine, t => setLavoro(`Bonifico ${i + 1} di ${lista.length} (${f.name}): ${t} La lettura ottica richiede qualche secondo per bonifico: attendere la fine.`))).map(p => p.testo).join("\n");
           }
         } catch (x) { letti.push({ ...r, stato: "rosso", motivo: `lettura non riuscita: ${x.message}` }); continue; }
         const d = leggiDistinta(normalizzaOcr(testo));
@@ -465,13 +467,15 @@ export default function LetturaBustePaga() {
                   </div>
                   {c.busta && <div style={{ marginTop: 4 }}>Netto della busta {euro(c.busta.netto_busta)}, già pagati {euro(c.busta.gia_pagato)}, ancora da pagare <b>{euro(c.resta)}</b>.</div>}
                   {c.problemi?.map((m, i) => <div key={i} style={{ color: C.red }}>• {m}</div>)}
-                  {c.mancanoConferme?.length > 0 && !c.problemi?.length && <div style={{ color: COLORE.attesa }}>• da confermare: {c.mancanoConferme.map(k => ({ beneficiario: "beneficiario", importo: "importo", data_esecuzione: "data", busta: "busta" })[k]).join(", ")}</div>}
+                  {c.mancanoConferme?.length > 0 && !c.problemi?.length && <div style={{ color: COLORE.attesa }}>• da confermare: {c.mancanoConferme.map(k => ({ beneficiario: "beneficiario", importo: "importo", data_esecuzione: "data", busta: "busta" })[k]).join(", ")}
+                    {" "}<button style={{ ...btn(true), height: 26, marginLeft: 6 }} onClick={() => ["beneficiario", "importo", "data_esecuzione", "busta"].forEach(k => conferma(p.id, k, true))}>✓ Ho confrontato con il documento: confermo i 4 dati</button></div>}
                 </>
               )}
             </div>
           );
         })}
         {pagamenti.length > 0 && <button style={{ ...btn(true), marginTop: 12 }} disabled={!pagPronti || !!lavoro} onClick={registraPagamenti}>✅ Registra {pagPronti} {pagPronti === 1 ? "bonifico pronto" : "bonifici pronti"}</button>}
+        {(() => { const att = pagamenti.filter(p => p.stato === "attesa" && !controllaPagamento(p).pronto); return att.length > 0 && !lavoro ? <div style={{ fontSize: 12.5, color: COLORE.attesa, marginTop: 6 }}>{att.length} {att.length === 1 ? "bonifico non è ancora pronto" : "bonifici non sono ancora pronti"}: in ciascun riquadro arancione è scritto che cosa manca (di solito la conferma dei dati con il pulsante «✓ Ho confrontato…»).</div> : null; })()}
       </div>
 
       {esito.length > 0 && <div style={{ ...scheda, border: `2px solid ${C.green}`, fontSize: 13 }}><b>Registrato</b>{esito.map((r, i) => <div key={i}>• {r}</div>)}</div>}
