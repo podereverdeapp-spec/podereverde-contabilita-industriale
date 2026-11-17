@@ -235,6 +235,8 @@ export default function LetturaBustePaga() {
         letti.push({ ...r, stato: "attesa", daScansione, modello: d?.modello || "", lettoBene: !!righe.length, testoLetto: testo,
           form: { beneficiario: x.beneficiario || "", importo: x.importo != null ? String(x.importo).replace(".", ",") : "", data_esecuzione: x.data_esecuzione || d?.data || "",
             cro: x.cro || "", esito: x.esito || "", iban: x.sicuri?.iban ? (x.iban || "") : "", busta: proposta.busta || "", motivo: proposta.motivo_proposto || "", motivoTesto: "" },
+          // versione 387d (decisione del Dott. Bizzarri del 17/11/2026 16:42): bonifico sicuro (persona riconosciuta, importo = netto da pagare) già confermato
+          conferme: proposta.certezza === "sicura" ? { beneficiario: true, importo: true, data_esecuzione: true, busta: true } : {},
           proposta });
       }
       setPagamenti(p => [...p.filter(x => x.stato !== "rosso"), ...letti]);   // i bonifici già scelti restano, con le loro conferme
@@ -444,7 +446,7 @@ export default function LetturaBustePaga() {
               {p.stato !== "attesa" && <div style={{ color: COLORE[st] }}>{p.motivo}</div>}
               {p.stato === "attesa" && (
                 <>
-                  <div style={{ color: C.muted }}>{p.daScansione ? "Letto con la lettura ottica: confrontare ogni dato con il documento." : "PDF digitale: confrontare i dati con il documento."} {p.proposta?.spiegazione}</div>
+                  <div style={{ color: C.muted }}>{p.proposta?.certezza === "sicura" ? "Persona riconosciuta e importo uguale al netto della busta: dati già confermati (si possono correggere guardando «📄 Apri»)." : (p.daScansione ? "Letto con la lettura ottica: confrontare con il documento i dati non spuntati." : "PDF digitale: confrontare con il documento i dati non spuntati.")} {p.proposta?.certezza === "sicura" ? "" : p.proposta?.spiegazione}</div>
                   <details style={{ marginTop: 2 }}><summary style={{ cursor: "pointer", color: C.muted, fontSize: 11.5 }}>testo letto dal documento</summary><pre className="testo-letto" style={{ whiteSpace: "pre-wrap", fontSize: 11, background: "#FAFAF7", padding: 6, maxHeight: 220, overflow: "auto" }}>{p.testoLetto}</pre></details>
                   <div style={{ display: "grid", gridTemplateColumns: "150px 1fr auto", gap: "4px 10px", alignItems: "center", marginTop: 6, maxWidth: 900 }}>
                     <span>Beneficiario</span><input style={piccolo} value={p.form.beneficiario} onChange={e => cambia(p.id, "beneficiario", e.target.value)} />{spunta(p.conferme.beneficiario, v => conferma(p.id, "beneficiario", v))}
@@ -453,12 +455,19 @@ export default function LetturaBustePaga() {
                     <span>Busta pagata</span>
                     <select style={piccolo} value={p.form.busta} onChange={e => cambia(p.id, "busta", e.target.value)}>
                       <option value="">— scegliere —</option>
-                      {buste.map(b => <option key={b.id} value={b.id}>{etichettaBusta(b)}</option>)}
+                      {(() => { const suo = p.proposta?.persona; const sue = suo ? buste.filter(b => b.dipendente_id === suo) : [];
+                        return suo ? <><optgroup label="buste di questa persona">{sue.map(b => <option key={b.id} value={b.id}>{etichettaBusta(b)}</option>)}</optgroup>
+                          <optgroup label="altre persone">{buste.filter(b => b.dipendente_id !== suo).map(b => <option key={b.id} value={b.id}>{etichettaBusta(b)}</option>)}</optgroup></>
+                          : buste.map(b => <option key={b.id} value={b.id}>{etichettaBusta(b)}</option>); })()}
                     </select>{spunta(p.conferme.busta, v => conferma(p.id, "busta", v))}
-                    <span>Esito</span>
-                    <select style={{ ...piccolo, width: 160 }} value={p.form.esito} onChange={e => cambia(p.id, "esito", e.target.value)}><option value="">non scritto</option><option value="accettato">accettato</option><option value="eseguito">eseguito</option><option value="rifiutato">rifiutato</option></select><span />
-                    <span>CRO</span><input style={{ ...piccolo, width: 220 }} value={p.form.cro} onChange={e => cambia(p.id, "cro", e.target.value)} /><span />
-                    <span>IBAN</span><input style={{ ...piccolo, width: 300 }} value={p.form.iban} onChange={e => cambia(p.id, "iban", e.target.value)} placeholder="se si legge" /><span />
+                    {/* versione 387d: esito, CRO e IBAN in «altri dati» */}
+                    <span style={{ gridColumn: "1 / span 3" }}><details><summary style={{ cursor: "pointer", color: C.muted, fontSize: 11.5 }}>altri dati: esito {p.form.esito || "non scritto"}{p.form.cro ? `, CRO ${p.form.cro}` : ""}{p.form.iban ? `, IBAN ${p.form.iban}` : ""}</summary>
+                      <div style={{ display: "grid", gridTemplateColumns: "150px 1fr", gap: "4px 10px", alignItems: "center", marginTop: 4 }}>
+                        <span>Esito</span>
+                        <select style={{ ...piccolo, width: 160 }} value={p.form.esito} onChange={e => cambia(p.id, "esito", e.target.value)}><option value="">non scritto</option><option value="accettato">accettato</option><option value="eseguito">eseguito</option><option value="rifiutato">rifiutato</option></select>
+                        <span>CRO</span><input style={{ ...piccolo, width: 220 }} value={p.form.cro} onChange={e => cambia(p.id, "cro", e.target.value)} />
+                        <span>IBAN</span><input style={{ ...piccolo, width: 300 }} value={p.form.iban} onChange={e => cambia(p.id, "iban", e.target.value)} placeholder="se si legge" />
+                      </div></details></span>
                     {c.diverso && <>
                       <span style={{ color: C.red }}>Motivo</span>
                       <span><select style={{ ...piccolo, width: 160 }} value={p.form.motivo} onChange={e => cambia(p.id, "motivo", e.target.value)}><option value="">— scegliere —</option>{MOTIVI.map(m => <option key={m} value={m}>{m}</option>)}</select>

@@ -62,7 +62,9 @@ export function abbinaPagamento(pag, buste) {
   const scegli = (l) => l.sort((a, b) => (c.tipo || (c.mese && c.anno) ? 0 : Math.abs(mesiPrima(a) - 1) - Math.abs(mesiPrima(b) - 1)) || (a.anno * 12 + a.mese) - (b.anno * 12 + b.mese))[0];
   if (esatte.length) {
     const b = scegli(esatte);
-    return { persona: dip, busta: b.id, certezza: esatte.length === 1 ? "sicura" : "da controllare", motivo_proposto: null,
+    // più buste con lo stesso netto (es. 100,00 ogni mese): è sicura se una sola è del mese prima del bonifico (lo stipendio si paga il mese dopo)
+    const unicaDelMesePrima = esatte.length > 1 && !c.tipo && !(c.mese && c.anno) && esatte.filter(x => mesiPrima(x) === 1).length === 1 && mesiPrima(b) === 1;
+    return { persona: dip, busta: b.id, certezza: esatte.length === 1 || unicaDelMesePrima ? "sicura" : "da controllare", motivo_proposto: null,
       spiegazione: esatte.length === 1 ? "Stessa persona e importo uguale al netto da pagare." : "Più buste con lo stesso netto: controllare il mese." };
   }
   if (cand.length) {

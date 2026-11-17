@@ -19,9 +19,9 @@ import { C } from "./style";
 import { md5 } from "./md5";
 import { cartella, leggiFile, scriviVerificato, cancellaOriginale } from "./archivioF24";
 import { assicuraScadenze, chiaveDocumento } from "./documentoFattura";
-import { leggiScaricoAruba, collega, contiPerAnno, chiusura, nomeArchivio, pulisciPiva, numeroRidotto, righeMancanti, righeDelDocumento, normDescr } from "./arubaCarico";
+import { leggiScaricoAruba, collega, contiPerAnno, chiusura, nomeArchivio, nomeArchivioEstero, eIntegrazione, pulisciPiva, numeroRidotto, righeMancanti, righeDelDocumento, normDescr } from "./arubaCarico";
 import {
-  statoFatture, cosaMancaNelloScarico, leggiProgramma, scriviInLavorazione,
+  statoFatture, cosaMancaNelloScarico, contiene, leggiProgramma, scriviInLavorazione,
   FILE_RICONOSCIMENTO_FATTURE, PARAMETRO_CODICE, leggiTesto, leggiRiconoscimentoFatture, haGliAnni, fileDentroCartella,
 } from "./DocumentiArrivati";
 import { rigaDaGrezza, righeGrezzeDelDocumento, validaRiga } from "./righeFatturePassive";
@@ -46,14 +46,46 @@ export function rigaDaCompletare(r) {
   return !r.toccata && (r.stato === "MASCHERA" || r.editArea === "TRASPORTO ANIMALI" || r.editArea === "Ammortamenti" || r.editArea === "ACQUISTO ANIMALI");
 }
 
+// Versione 388 (Dottore, 16/11): accanto a ogni riga si dice in parole da dove viene la classificazione proposta (non «FCF»/«FCV»)
+export function daDoveViene(r) {
+  const gasolio = r.stato === "FCV" && /gasolio/i.test(r.descrizione || "") && r.editCentro === "Gasolio e lubrificanti";
+  const riempita = !!(r.editArea || r.area);
+  const base = r.stato === "FCF" ? "regola fissa del fornitore (tutte le sue righe vanno qui)"
+    : gasolio ? "regola generale del gasolio (vale per tutti i fornitori)"
+    : r.stato === "FCV" ? "regola del fornitore per una parola della descrizione"
+    : riempita ? `proposta parziale da completare${r.nota ? `: ${r.nota}` : ""}`
+    : `nessuna regola: la classificazione la sceglie Lei${r.nota ? ` (${r.nota})` : ""}`;
+  return r.toccata ? `${base} · controllata o cambiata da Lei` : base;
+}
+const MODALITA = { MP01: "contanti", MP02: "assegno", MP05: "bonifico", MP08: "carta di pagamento", MP12: "RIBA", MP19: "SEPA addebito diretto", MP20: "SEPA addebito diretto CORE", MP21: "SEPA addebito diretto B2B", MP23: "PagoPA" };
+// Versione 388 (Dottore, 16/11): nella fattura aperta i dati letti dall'XML e il pulsante «📄 Vedi la fattura» (il PDF dello scarico)
+export function DatiFattura({ x }) {
+  const d = x.xml || {}; const rate = d.rate || [];
+  const apri = () => { if (!x.pdf?.bytes) return; const url = URL.createObjectURL(new Blob([x.pdf.bytes], { type: "application/pdf" })); window.open(url, "_blank"); setTimeout(() => URL.revokeObjectURL(url), 60000); };
+  return <div style={{ margin: "4px 0 10px", padding: "8px 10px", background: "#F4F8FC", border: "1px solid #D5E2F0", borderRadius: 8, fontSize: 12.5, lineHeight: 1.6 }}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+      <b>Dati della fattura elettronica (XML)</b>
+      {x.pdf?.bytes ? <button onClick={apri} style={{ background: "#1F5F8B", color: "#fff", border: "none", borderRadius: 6, padding: "4px 12px", fontWeight: 700, cursor: "pointer" }}>📄 Vedi la fattura</button>
+        : <span style={{ color: "#B3261E" }}>Il PDF di questa fattura non è nei file scelti</span>}
+    </div>
+    <div>Fornitore: <b>{d.fornitore || x.report.fornitore}</b> · partita IVA {d.piva || x.report.piva || "—"} · documento {d.tipoDocumento || x.report.tipo || "—"} n. {d.numero || x.report.numero} del {dataIt(d.data || x.report.data)}</div>
+    <div>Imponibile <b>{formattaEuro(Number(d.imponibile) || 0)}</b> · IVA <b>{formattaEuro(Number(d.iva) || 0)}</b> · totale <b>{formattaEuro(Number(d.totale ?? x.report.totale) || 0)}</b>{Number(d.ritenuta) > 0 ? <> · ritenuta d'acconto <b>{formattaEuro(Number(d.ritenuta))}</b> (si archivia in PROFESSIONISTI)</> : " · nessuna ritenuta d'acconto"}</div>
+    <div>Scadenze: {rate.length ? rate.map((q, i) => <span key={i}>{i ? " · " : ""}{formattaEuro(Number(q.importo) || 0)} {q.scadenza ? `il ${dataIt(q.scadenza)}` : q.giorni ? `a ${q.giorni} giorni` : "senza data"}{q.modalita ? ` (${MODALITA[q.modalita] || q.modalita})` : ""}</span>) : "nessuna scadenza nell'XML"}</div>
+  </div>;
+}
+
 export default function LetturaPassiveAruba() {
   const [lettura, setLettura] = useState(null);         // { file, scarico, collegato }
   const [programma, setProgramma] = useState(null);     // leggiProgramma() + riferimenti della classificazione
   const [rif, setRif] = useState(null);                 // { fornitori, regoleFisse, regoleVariabili, pianoConti, regoleArmonizzazione, scartate }
-  const [totaliAruba, setTotaliAruba] = useState({});
+  const [totaliAruba] = useState({}); // versione 388: nessun numero di Aruba da scrivere (resta vuoto)
   const [scelte, setScelte] = useState({});
   const [righe, setRighe] = useState({});               // { chiaveFattura: [righe] }
   const [aperte, setAperte] = useState(() => new Set());
+  // versione 385: ogni fattura nuova va vista e confermata dal Dottore prima di «Registra», anche se le regole l'hanno classificata tutta
+  const [confermate, setConfermate] = useState(() => new Set());
+  // versione 385: le righe che si registrano devono fare l'imponibile della fattura; se no, il Dottore deve dire di aver visto la differenza
+  const [differenzeViste, setDifferenzeViste] = useState(() => new Set());
   const [passo, setPasso] = useState("");
   const [errore, setErrore] = useState("");
   const [esito, setEsito] = useState(null);             // esito di «Registra»
@@ -77,7 +109,7 @@ export default function LetturaPassiveAruba() {
     if (inputFile.current) inputFile.current.value = "";
     if (!scelti.length) return;
     unoAllaVolta(async () => {
-      setErrore(""); setLettura(null); setProgramma(null); setRif(null); setScelte({}); setRighe({}); setAperte(new Set()); setEsito(null); setEsitoChiusura(null); setEsitoArchivio(null);
+      setErrore(""); setLettura(null); setProgramma(null); setRif(null); setScelte({}); setRighe({}); setAperte(new Set()); setConfermate(new Set()); setDifferenzeViste(new Set()); setEsito(null); setEsitoChiusura(null); setEsitoArchivio(null);
       try {
         setPasso("Leggo i file scelti…");
         const file = []; const nonLetti = [];
@@ -96,7 +128,7 @@ export default function LetturaPassiveAruba() {
         setPasso("Controllo le righe già nel programma…");
         const righeLette = await marcaGiaCaricate(preparaRighe(statoFatture(collegato, prog, {}), prog, r));
         setProgramma(prog); setRif(r); setRighe(righeLette);
-        setLettura({ file: file.map(f => ({ nome: f.nome, md5: f.md5, byte: f.byte, contenuto: scarico.file.find(x => x.nome === f.nome)?.contenuto, voci: scarico.file.find(x => x.nome === f.nome)?.voci })), scarico, collegato, bytesFile: new Map(file.map(f => [f.nome, f])) });
+        setLettura({ file: file.map(f => ({ nome: f.nome, md5: f.md5, byte: f.byte, contenuto: scarico.file.find(x => x.nome === f.nome)?.contenuto, parti: scarico.file.find(x => x.nome === f.nome)?.parti || [], voci: scarico.file.find(x => x.nome === f.nome)?.voci })), scarico, collegato, bytesFile: new Map(file.map(f => [f.nome, f])) });
       } catch (er) { setErrore(`Lettura non riuscita: ${er.message}`); }
     });
   };
@@ -178,7 +210,8 @@ export default function LetturaPassiveAruba() {
 
   const riconosciute = useMemo(() => (lettura && programma ? statoFatture(lettura.collegato, programma, scelte) : null), [lettura, programma, scelte]);
   const conti = useMemo(() => (lettura ? contiPerAnno(lettura.collegato, totaliAruba) : []), [lettura, totaliAruba]);
-  const contiOk = conti.length > 0 && conti.every(c => c.torna && c.aruba !== null && c.aruba !== undefined);
+  // versione 388 (Dottore, 16/11): si scarica da Aruba qualunque selezione, senza numero da scrivere: i conti tornano se Report = XML = PDF
+  const contiOk = conti.length > 0 && conti.every(c => c.torna);
   const cosaManca = lettura ? cosaMancaNelloScarico(lettura.file, conti) : [];
   const lista = riconosciute || [];
   const nuove = lista.filter(x => x.esito === "nuova" && x.colore !== "rosso" && x.xml);
@@ -187,7 +220,7 @@ export default function LetturaPassiveAruba() {
   const quanti = { grigio: 0, verde: 0, arancione: 0, rosso: 0 }; lista.forEach(x => { quanti[x.colore]++; });
   const fileNonSpiegati = lettura ? [
     ...lettura.scarico.scartati,
-    ...lettura.file.filter(f => !["XML", "PDF", "REPORT"].includes(f.contenuto)).map(f => `${f.nome}: contenuto ${f.contenuto}`),
+    ...lettura.file.filter(f => !["XML", "PDF", "REPORT"].some(t => contiene(f, t))).map(f => `${f.nome}: contenuto ${f.contenuto}`),
     ...lettura.collegato.xmlSenzaReport.map(d => `XML senza riga nel Report: ${d.fileXml}`),
     ...lettura.collegato.pdfSenzaReport.map(p => `PDF senza riga nel Report: ${p.nome}`),
   ] : [];
@@ -202,7 +235,15 @@ export default function LetturaPassiveAruba() {
   }, [chiaviSenzaRighe, programma, rif]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // una fattura con righe gialle si apre da sola e resta aperta mentre la si completa (si chiude solo a mano)
-  const daAprire = nuove.filter(x => righeDi(x).some(rigaDaCompletare) && !aperte.has(x.chiave) && !aperte.has(`chiusa:${x.chiave}`)).map(x => x.chiave);
+  // versione 385: si aprono da sole tutte le fatture nuove con righe da registrare, non solo quelle con righe gialle
+  const quadratura = x => {
+    const somma = Math.round(righeDi(x).filter(r => !r.scartata).reduce((t, r) => t + (Number(r.imponibile) || 0), 0) * 100) / 100;
+    const imp = Number(x.xml?.imponibile ?? x.report?.imponibile ?? 0);
+    const diff = Math.round((somma - imp) * 100) / 100;
+    return { somma, imp, diff, nonTorna: Math.abs(diff) > (Number(x.scartoRighe) || 0) + 0.01 };
+  };
+  const daConfermareX = x => righeDi(x).some(r => !r.giaCaricata && !r.scartata) && !confermate.has(x.chiave);
+  const daAprire = nuove.filter(x => daConfermareX(x) && !aperte.has(x.chiave) && !aperte.has(`chiusa:${x.chiave}`)).map(x => x.chiave);
   useEffect(() => { if (daAprire.length) setAperte(s => new Set([...s, ...daAprire])); }, [daAprire.join("|")]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const tutteLeRighe = nuove.flatMap(righeDi);
@@ -214,21 +255,25 @@ export default function LetturaPassiveAruba() {
   const daRegistrare = tutteLeRighe.filter(r => !r.giaCaricata && !r.scartata);
   const giaRegistrato = !!esito;
   const righePronte = nuove.every(x => !!righe[x.chiave]);
-  const puoRegistrare = !!lettura && righePronte && contiOk && !arancioniAperte.length && !nonValide.length && !giaRegistrato && !passo;
+  const daConfermare = righePronte ? nuove.filter(daConfermareX) : [];
+  const puoRegistrare = !!lettura && righePronte && contiOk && !arancioniAperte.length && !nonValide.length && !daConfermare.length && !giaRegistrato && !passo;
 
-  function aggiornaRiga(chiave, id, campi) { setRighe(prev => ({ ...prev, [chiave]: (prev[chiave] || []).map(r => (r.id === id ? { ...r, ...campi } : r)) })); }
+  function aggiornaRiga(chiave, id, campi, daRegistra = false) {
+    if (!daRegistra) setConfermate(s => { if (!s.has(chiave)) return s; const n = new Set(s); n.delete(chiave); return n; }); // una riga cambiata: la fattura si riconferma
+    if (!daRegistra) setDifferenzeViste(s => { if (!s.has(chiave)) return s; const n = new Set(s); n.delete(chiave); return n; });
+    setRighe(prev => ({ ...prev, [chiave]: (prev[chiave] || []).map(r => (r.id === id ? { ...r, ...campi } : r)) }));
+  }
   const aree = rif ? [...new Set(rif.pianoConti.map(p => p.area))] : [];
   const centriPerArea = area => (rif ? rif.pianoConti.filter(p => p.area === area).map(p => p.centro_costo) : []);
 
   const adesso = (() => {
     if (!lettura) return "Premi «Scegli i file» e scegli i tre file scaricati da Aruba (XML, PDF, Report Excel): li trovi in FATTURE PASSIVE DA SMISTARE, oppure nella cartella dove li ha messi il browser.";
     if (cosaManca.length && cosaManca.some(m => /^Manca/.test(m))) return cosaManca.find(m => /^Manca/.test(m));
-    const senzaNumero = conti.find(c => c.aruba === null || c.aruba === undefined);
-    if (senzaNumero) return `Nella casella gialla scrivi quante fatture del ${senzaNumero.anno} dice Aruba: è il numero che Aruba mostra in «Seleziona tutti (N)».`;
-    if (!contiOk) return cosaManca[0] || "I conti non tornano: si rifà lo scarico da Aruba con «Seleziona tutti» e si rileggono i file.";
+    if (!contiOk) return cosaManca[0] || "I conti non tornano: nel Report, negli XML e nei PDF non ci sono le stesse fatture. Si rifà lo scarico da Aruba (Report, XML e PDF delle stesse fatture) e si rileggono i file.";
     if (arancioniAperte.length) return `Decidi le ${arancioniAperte.length} fatture «da guardare» con i pulsanti «È la stessa» / «È un'altra».`;
     if (!esito) {
       if (nonValide.length) return `Completa le ${nonValide.length} righe gialle (Area, Centro di Costo, Destinazione, Tipo di Costo, e i dati in più dove servono), poi premi «Registra».`;
+      if (daConfermare.length) return `Controlla le righe di ogni fattura nuova (area, centro di costo, destinazione, animali) e premi «✔ Approvo la classificazione»: ne mancano ${daConfermare.length}.`;
       return nuove.length ? `Controlla le righe e premi «Registra» (${nuove.length} fatture nuove, ${daRegistrare.length} righe).` : "Non ci sono fatture nuove da registrare. Premi «Registra» per scrivere gli Identificativi SdI e i debiti mancanti, se ce ne sono.";
     }
     if (esito.errori.length) return "Ci sono stati errori (riquadro rosso): premi di nuovo «Scegli i file», scegli gli stessi file e premi «Registra»: ciò che è già fatto non si rifà.";
@@ -347,7 +392,7 @@ export default function LetturaPassiveAruba() {
                   const { error } = await supabase.from("ci_righe_scartate").upsert([{ fornitore_id: fid, descrizione: r.descrizione.trim() }], { onConflict: "fornitore_id,descrizione" });
                   if (error) throw new Error(`riga scartata non ricordata: ${error.message}`);
                 }
-                aggiornaRiga(x.chiave, r.id, { scartoScritto: true }); e.scartateOra++;
+                aggiornaRiga(x.chiave, r.id, { scartoScritto: true }, true); e.scartateOra++;
                 continue;
               }
               setPasso(`Righe: ${x.report.fornitore} ${x.report.numero} – ${r.descrizione}`);
@@ -356,7 +401,7 @@ export default function LetturaPassiveAruba() {
                 avviso: testo => e.errori.push(`${x.report.fornitore} ${x.report.numero}: ${testo.replace(/^⚠️\s*/, "")}`),
               });
               if (fatto.annullata) { tutteSalvate = false; e.annullate.push(`${x.report.fornitore} ${x.report.numero}: «${r.descrizione}» non registrata (possibile cespite già registrato)`); break; }
-              aggiornaRiga(x.chiave, r.id, { salvata: true, idsSalvati: fatto.idsSalvati, regolaCreata: fatto.regolaCreata });
+              aggiornaRiga(x.chiave, r.id, { salvata: true, idsSalvati: fatto.idsSalvati, regolaCreata: fatto.regolaCreata }, true);
               r.salvata = true; r.idsSalvati = fatto.idsSalvati; e.righe++;
             }
             if (tutteSalvate) e.fatture++;
@@ -402,8 +447,8 @@ export default function LetturaPassiveAruba() {
   // ── 4. Archivia nel cloud (strada A): PDF e XML in FATTURE PASSIVE\anno\FORNITORE\PDF e \XML, gli scarichi in SCARICHI ARUBA\anno ──
   async function controllaCartella(h) {
     // gli stessi controlli di «Carica le fatture da Aruba»: nome, cartelle degli anni, file di riconoscimento e suo codice, PROGRAMMA vuota
-    if (h.name !== "FATTURE PASSIVE") return `È stata scelta la cartella «${h.name}»: si sceglie la cartella «FATTURE PASSIVE» dentro «00.DATI PROGRAMMA CONTABILITA' INDUSTRIALE» (quella che contiene le cartelle 2019 … 2026 e FATTURE PASSIVE DA SMISTARE).`;
-    if (!(await haGliAnni(h))) return "Nella cartella scelta non ci sono le cartelle degli anni 2019 … 2026: non è la cartella FATTURE PASSIVE di Podere Verde.";
+    if (h.name !== "FATTURE PASSIVE") return `È stata scelta la cartella «${h.name}»: si sceglie la cartella «FATTURE PASSIVE» dentro «00.DATI PROGRAMMA CONTABILITA' INDUSTRIALE» (quella che contiene FORNITORI, SCARICHI ARUBA e FATTURE PASSIVE DA SMISTARE).`;
+    if (!(await haGliAnni(h))) return "Nella cartella scelta non c'è la cartella «FATTURE PASSIVE DA SMISTARE»: non è la cartella FATTURE PASSIVE di Podere Verde.";
     const { data: par, error } = await supabase.from("ci_parametri").select("valore").eq("chiave", PARAMETRO_CODICE).maybeSingle();
     if (error) return `Lettura del codice della cartella: ${error.message}`;
     if (!par?.valore) return "Nel programma non c'è il codice della cartella delle fatture: va avvisato il Dott. Bizzarri.";
@@ -436,7 +481,10 @@ export default function LetturaPassiveAruba() {
       const daArchiviare = adessoTutte.filter(x => x.colore !== "rosso" && (x.esito === "nuova" || (x.xml && prog.inLavorazione?.has(String(x.report.idSdi)))));
       for (const x of daArchiviare) {
         const adessoX = ora.get(x.chiave);
+        // versione 388: le integrazioni TD16–TD19 non vanno in FORNITORI: si archiviano con «Archivia le integrazioni in FATTURE ESTERE»
         if (!adessoX || adessoX.esito === "nuova" || adessoX.esito === "arancione") { ea.nonRegistrate.push(`${x.report.fornitore} ${x.report.numero} del ${dataIt(x.report.data)}${adessoX?.inParte ? ` (${adessoX.motivo})` : ""}`); continue; }
+        // versione 388: le integrazioni TD16–TD19 (registrate) non vanno in FORNITORI: «Archivia le integrazioni in FATTURE ESTERE»
+        if (eIntegrazione(x)) { ea.integrazioni = (ea.integrazioni || 0) + 1; continue; }
         const pivaDoc = pulisciPiva(x.xml?.piva || x.report.piva);
         const fornProg = pivaDoc ? prog.fornitori.filter(fo => pulisciPiva(fo.partita_iva) === pivaDoc).sort((p1, p2) => p1.id - p2.id)[0] : null;
         // il limite di lunghezza si calcola sul percorso di rete (il più lungo), non su «Z:\…» (che vale solo per un computer)
@@ -484,6 +532,35 @@ export default function LetturaPassiveAruba() {
     setEsitoArchivio(ea);
   });
 
+  // ── 6 bis. Versione 388: le integrazioni TD16–TD19 in FATTURE ESTERE\<anno>, accanto alla fattura estera ──
+  const integrazioni = lista.filter(x => eIntegrazione(x) && x.xml && x.colore !== "rosso");
+  const [esitoEstere, setEsitoEstere] = useState(null);
+  const archiviaEstere = () => unoAllaVolta(async () => {
+    let radice;
+    try { radice = await window.showDirectoryPicker({ id: "fatture-estere-podere-verde", mode: "readwrite" }); }
+    catch (er) { if (er?.name !== "AbortError") setErrore(`La finestra per scegliere la cartella non si è aperta: ${er.message}`); return; }
+    if (radice.name !== "FATTURE ESTERE") { setEsitoEstere({ cartellaNo: `È stata scelta la cartella «${radice.name}»: si sceglie la cartella «FATTURE ESTERE» dentro «00.DATI PROGRAMMA CONTABILITA' INDUSTRIALE».`, scritti: [], gia: [], nonRegistrate: [], errori: [] }); return; }
+    const ee = { scritti: [], gia: [], nonRegistrate: [], errori: [] };
+    try {
+      const prog = await leggiProgramma(); setProgramma(prog);
+      const ora = new Map(statoFatture(lettura.collegato, prog, scelte).map(x => [x.chiave, x]));
+      for (const x of integrazioni) {
+        const adessoX = ora.get(x.chiave);
+        if (!adessoX || adessoX.esito === "nuova" || adessoX.esito === "arancione") { ee.nonRegistrate.push(`${x.report.fornitore} ${x.report.numero} del ${dataIt(x.report.data)}`); continue; }
+        const pivaDoc = pulisciPiva(x.xml?.piva || x.report.piva);
+        const fornProg = pivaDoc ? prog.fornitori.filter(fo => pulisciPiva(fo.partita_iva) === pivaDoc).sort((p1, p2) => p1.id - p2.id)[0] : null;
+        const n = nomeArchivioEstero(x, fornProg?.nome || "");
+        try {
+          setPasso(`FATTURE ESTERE: ${n.nome}`);
+          if (x.pdf) { const r = await scriviVerificato(radice, `${n.cartella}${n.nome}.pdf`, x.pdf.bytes); (r.esito === "Già presente uguale" ? ee.gia : ee.scritti).push(r.percorso); }
+          const est = /\.p7m$/i.test(x.xml.nomeOriginaleXml || "") ? ".xml.p7m" : ".xml";
+          const r = await scriviVerificato(radice, `${n.cartella}${n.nome}${est}`, x.xml.byteXml); (r.esito === "Già presente uguale" ? ee.gia : ee.scritti).push(r.percorso);
+        } catch (er) { ee.errori.push(er.message); }
+      }
+    } catch (er) { ee.errori.push(er.message); }
+    setEsitoEstere(ee);
+  });
+
   // ── Disegno ──
   const lavora = !!passo;
   const bottone = (attivo, colore = C.primary) => ({ background: attivo ? colore : C.muted, color: "#fff", border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 13, fontWeight: 700, cursor: attivo ? "pointer" : "not-allowed", marginRight: 8 });
@@ -520,17 +597,16 @@ export default function LetturaPassiveAruba() {
         {lettura && <>
           <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
             {[["REPORT", "Report di Aruba"], ["XML", "XML (le fatture)"], ["PDF", "PDF (le copie da leggere)"]].map(([t, nome]) => {
-              const f = lettura.file.filter(x => x.contenuto === t); const campo = { REPORT: "report", XML: "xml", PDF: "pdf" }[t]; const n = conti.reduce((a, c) => a + (c[campo] || 0), 0);
+              const f = lettura.file.filter(x => contiene(x, t)); const campo = { REPORT: "report", XML: "xml", PDF: "pdf" }[t]; const n = conti.reduce((a, c) => a + (c[campo] || 0), 0);
               return <div key={t} style={{ padding: "8px 14px", borderRadius: 8, fontWeight: 700, fontSize: 14, background: f.length ? COLORI.verde : COLORI.rosso }}>{f.length ? "✅" : "❌"} {nome}: {f.length ? `${n} fatture` : "manca"}</div>;
             })}
           </div>
           <div style={{ marginTop: 12, fontWeight: 800 }}>I conti, per anno</div>
           <table style={{ fontSize: 13, borderCollapse: "collapse", marginTop: 6 }}>
-            <thead><tr><th style={{ padding: "4px 10px" }}>Anno</th><th>Fatture nel Report</th><th>Fatture negli XML</th><th>Fatture nei PDF</th><th>Quante fatture dice Aruba? (il numero di «Seleziona tutti (N)»)</th><th></th></tr></thead>
-            <tbody>{conti.map(c => <tr key={c.anno} style={{ background: c.torna && c.aruba !== null && c.aruba !== undefined ? COLORI.verde : COLORI.rosso }}>
+            <thead><tr><th style={{ padding: "4px 10px" }}>Anno</th><th>Fatture nel Report</th><th>Fatture negli XML</th><th>Fatture nei PDF</th><th></th></tr></thead>
+            <tbody>{conti.map(c => <tr key={c.anno} style={{ background: c.torna ? COLORI.verde : COLORI.rosso }}>
               <td style={{ padding: "4px 10px", fontWeight: 700 }}>{c.anno}</td><td style={{ textAlign: "center" }}>{c.report}</td><td style={{ textAlign: "center" }}>{c.xml}</td><td style={{ textAlign: "center" }}>{c.pdf}</td>
-              <td><input type="number" disabled={giaRegistrato || lavora} style={{ width: 90, background: COLORI.giallo, fontWeight: 700 }} value={totaliAruba[c.anno] ?? ""} onChange={ev => setTotaliAruba(t => ({ ...t, [c.anno]: ev.target.value === "" ? undefined : Number(ev.target.value) }))} placeholder="es. 209" /></td>
-              <td style={{ fontSize: 12, padding: "0 8px" }}>{c.aruba === null || c.aruba === undefined ? "← scrivi qui il numero di Aruba" : c.torna ? "✅ torna" : "⛔ non torna: scarico incompleto o «Seleziona tutti» non premuto"}</td></tr>)}</tbody>
+              <td style={{ fontSize: 12, padding: "0 8px" }}>{c.torna ? "✅ torna: Report, XML e PDF hanno le stesse fatture" : "⛔ non torna: nel Report, negli XML e nei PDF non ci sono le stesse fatture"}</td></tr>)}</tbody>
           </table>
           {cosaManca.length > 0 && <div style={{ marginTop: 8, padding: 10, background: COLORI.rosso, fontSize: 13, lineHeight: 1.5 }}><b>Che cosa manca e come si rimedia:</b><ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>{cosaManca.map((m, i) => <li key={i}>{m.replace(/Il file \.zip va messo in FATTURE PASSIVE DA SMISTARE\./g, "Poi si sceglie anche quel file.")}</li>)}</ul></div>}
           {lettura.collegato.copieDoppie > 0 && <div style={{ marginTop: 8, padding: 8, background: COLORI.arancione, fontSize: 12 }}>Ci sono {lettura.collegato.copieDoppie} copie doppie dello stesso documento: si usa una copia sola.</div>}
@@ -564,18 +640,21 @@ export default function LetturaPassiveAruba() {
 
       {riconosciute && nuove.length > 0 && <div style={riquadro}>
         <div style={{ fontWeight: 800, marginBottom: 6 }}>3. Le righe delle fatture nuove ({nuove.length} fatture, {daRegistrare.length} righe da registrare, {daCompletare.length} da completare)</div>
-        <div style={{ fontSize: 12.5, marginBottom: 10 }}>Le righe sono classificate dalle regole di sempre. Si aprono da sole le fatture con righe <b style={{ background: COLORI.giallo }}>gialle</b>: le regole non le sanno classificare, oppure servono dati in più (trasporto animali, acquisto animali, ammortamenti). Le altre si possono aprire per controllarle.</div>
+        <div style={{ fontSize: 12.5, marginBottom: 10 }}>Si aprono da sole tutte le fatture nuove. Le righe sono già classificate dalle regole di sempre: si controllano area, centro di costo, destinazione e animali, si cambia quello che non va e si preme <b>«✔ Approvo la classificazione»</b>. Le righe <b style={{ background: COLORI.giallo }}>gialle</b> le regole non le sanno classificare, oppure servono dati in più (trasporto animali, acquisto animali, ammortamenti): vanno completate. «Registra» si accende solo quando la classificazione di tutte le fatture nuove è approvata.</div>
         {nuove.map(x => {
           const rr = righeDi(x); const gialle = rr.filter(rigaDaCompletare);
           const aperta = aperte.has(x.chiave);
           return <div key={x.chiave} data-fattura={x.report.idSdi} style={{ border: `1.5px solid ${gialle.length ? "#E0B800" : C.border}`, borderRadius: 10, marginBottom: 8, background: gialle.length ? "#FFFBEA" : "#fff" }}>
             <div style={{ padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
               onClick={() => { if (aperta) setAperte(s => { const n = new Set(s); n.delete(x.chiave); n.add(`chiusa:${x.chiave}`); return n; }); else setAperte(s => { const n = new Set(s); n.add(x.chiave); n.delete(`chiusa:${x.chiave}`); return n; }); }}>
-              <div><b>{x.report.fornitore}</b> · n. {x.report.numero} del {dataIt(x.report.data)} · {formattaEuro(Number(x.report.totale) || 0)} · {rr.length} righe{gialle.length ? <b style={{ color: "#8B6F00" }}> · {gialle.length} da completare</b> : " · tutte classificate"}</div>
+              <div><b>{x.report.fornitore}</b> · n. {x.report.numero} del {dataIt(x.report.data)} · {formattaEuro(Number(x.report.totale) || 0)} · {rr.length} righe{gialle.length ? <b style={{ color: "#8B6F00" }}> · {gialle.length} da completare</b> : " · tutte classificate"}{confermate.has(x.chiave) ? <b style={{ color: "#1B5E20" }}> · ✅ classificazione approvata</b> : daConfermareX(x) ? <b style={{ color: "#B3261E" }}> · classificazione proposta dal programma · da approvare</b> : null}</div>
               <span style={{ fontSize: 12, color: C.muted }}>{aperta ? "▲ chiudi" : "▼ apri"}</span>
             </div>
-            {aperta && <div style={{ padding: "0 12px 10px" }}>{rr.map(r => (
+            {aperta && <div style={{ padding: "0 12px 10px" }}>
+              <DatiFattura x={x} />
+              {rr.map(r => (
               <div key={r.id} data-riga={r.id} style={{ marginBottom: 6, background: rigaDaCompletare(r) ? COLORI.giallo : "transparent", borderRadius: 8 }}>
+                {!r.giaCaricata && !r.scartata && <div style={{ fontSize: 11.5, color: "#4A4A4A", padding: "4px 10px 0" }}>Proposta: <b>{daDoveViene(r)}</b></div>}
                 <RigaFattura riga={r} aree={aree} centriPerArea={centriPerArea} regoleArmonizzazione={rif?.regoleArmonizzazione || []} senzaSalva
                   onChange={campi => !giaRegistrato && !lavora && aggiornaRiga(x.chiave, r.id, { ...campi, toccata: true })}
                   onSalva={() => {}}
@@ -588,6 +667,15 @@ export default function LetturaPassiveAruba() {
                 {!r.giaCaricata && !r.scartata && validaRiga(r) && <div style={{ fontSize: 12, color: C.red, padding: "0 10px 6px" }}>Manca: {validaRiga(r)}</div>}
                 {r.scartata && !r.giaScartataInPrecedenza && !r.rigaAZero && !r.salvata && !giaRegistrato && !lavora && <div style={{ padding: "0 10px 6px" }}><button style={{ ...bottone(true, C.muted), padding: "3px 10px", fontSize: 11 }} onClick={() => aggiornaRiga(x.chiave, r.id, { scartata: false })}>↩️ Non scartarla</button> <span style={{ fontSize: 11, color: C.muted }}>Lo scarto si ricorda per il futuro solo con «Registra».</span></div>}
               </div>))}
+              {daConfermareX(x) && !giaRegistrato && <div style={{ marginTop: 6 }}>
+                {(() => { const q = quadratura(x); if (!q.nonTorna) return null; return <div style={{ marginBottom: 6, padding: 8, background: COLORI.rosso, borderRadius: 6, fontSize: 12.5 }}>
+                  ⛔ Le righe che si registrano sommano <b>{formattaEuro(q.somma)}</b>, l'imponibile della fattura è <b>{formattaEuro(q.imp)}</b>: differenza <b>{formattaEuro(q.diff)}</b>. Controllare quale riga manca o è stata scartata.
+                  <label style={{ display: "block", marginTop: 4 }}><input type="checkbox" checked={differenzeViste.has(x.chiave)} disabled={lavora} onChange={ev => setDifferenzeViste(s => { const n = new Set(s); if (ev.target.checked) n.add(x.chiave); else n.delete(x.chiave); return n; })} /> Ho controllato: la differenza è giusta</label>
+                </div>; })()}
+                <button disabled={lavora || gialle.length > 0 || (quadratura(x).nonTorna && !differenzeViste.has(x.chiave))} style={{ ...bottone(!lavora && !gialle.length && !(quadratura(x).nonTorna && !differenzeViste.has(x.chiave)), C.green || C.primary), padding: "5px 14px", fontSize: 13 }}
+                  onClick={() => { setConfermate(s => new Set([...s, x.chiave])); setAperte(s => { const n = new Set(s); n.delete(x.chiave); n.add(`chiusa:${x.chiave}`); return n; }); }}>✔ Approvo la classificazione</button>
+                {gialle.length > 0 && <span style={{ marginLeft: 8, fontSize: 12, color: C.red }}>Prima si completano le {gialle.length} righe gialle.</span>}
+              </div>}
             </div>}
           </div>;
         })}
@@ -597,9 +685,10 @@ export default function LetturaPassiveAruba() {
         <div style={{ fontWeight: 800, marginBottom: 8 }}>4. Registra</div>
         <div style={{ fontSize: 12.5, marginBottom: 8 }}>Per ogni fattura nuova il programma crea il debito verso il fornitore, registra le righe (come «Carica Fatture») e mette il PDF nel programma. Scrive anche gli Identificativi SdI e i debiti che mancano alle fatture già presenti. Poi confronta con il Report di Aruba.</div>
         <button style={bottone(puoRegistrare)} disabled={!puoRegistrare} onClick={registra}>💾 Registra</button>
-        {!contiOk && lettura && <span style={{ fontSize: 12, color: C.red }}>{conti.some(c => c.aruba === null || c.aruba === undefined) ? "Manca il numero di fatture che dice Aruba (casella gialla): non si registra." : "I conti non tornano: non si registra."}</span>}
+        {!contiOk && lettura && <span style={{ fontSize: 12, color: C.red }}>I conti non tornano (Report, XML e PDF non hanno le stesse fatture): non si registra.</span>}
         {arancioniAperte.length > 0 && <span style={{ fontSize: 12, color: C.red }}>Decidi prima le {arancioniAperte.length} fatture da guardare.</span>}
         {nonValide.length > 0 && <span style={{ fontSize: 12, color: C.red }}>Completa prima le {nonValide.length} righe gialle.</span>}
+        {daConfermare.length > 0 && <span style={{ fontSize: 12, color: C.red }}>Approva prima la classificazione delle {daConfermare.length} fatture nuove (pulsante «✔ Approvo la classificazione» in ogni fattura).</span>}
         {!righePronte && <span style={{ fontSize: 12, color: C.red }}>Preparo le righe delle fatture nuove… (se resta così, rileggere i file)</span>}
         {rosse.length > 0 && <div style={{ fontSize: 12, marginTop: 6, color: C.red }}>{rosse.length} fatture rosse non si registrano finché non sono sistemate (il motivo è nella tabella del punto 2).</div>}
         {esito && <div style={{ marginTop: 10, padding: 10, borderRadius: 8, background: esito.errori.length || esito.annullate.length ? COLORI.rosso : COLORI.verde, fontSize: 13, lineHeight: 1.5 }}>
@@ -625,7 +714,7 @@ export default function LetturaPassiveAruba() {
 
       {esito && <div style={riquadro}>
         <div style={{ fontWeight: 800, marginBottom: 8 }}>6. Archivia nel cloud (facoltativo)</div>
-        <div style={{ fontSize: 12.5, marginBottom: 8 }}>Solo da un computer che raggiunge la cartella FATTURE PASSIVE del cloud, con Chrome o Edge. Si sceglie la cartella <b>FATTURE PASSIVE</b>: il programma mette ogni PDF e XML in <b>{"FATTURE PASSIVE\\anno\\NOME FORNITORE\\PDF"}</b> e <b>{"…\\XML"}</b>, conserva i tre file in <b>{"SCARICHI ARUBA\\anno"}</b> e li toglie da FATTURE PASSIVE DA SMISTARE solo se le copie sono identiche. Se questo computer non raggiunge il cloud, è tutto registrato lo stesso: l'archivio lo fa chi raggiunge la cartella (rileggendo gli stessi file).</div>
+        <div style={{ fontSize: 12.5, marginBottom: 8 }}>Solo da un computer che raggiunge la cartella FATTURE PASSIVE del cloud, con Chrome o Edge. Si sceglie la cartella <b>FATTURE PASSIVE</b>: il programma mette PDF e XML di ogni fattura in <b>{"FATTURE PASSIVE\\FORNITORI\\NOME FORNITORE\\ANNO aaaa"}</b> (con il nome del fornitore scritto nel programma), oppure in <b>{"FATTURE PASSIVE\\PROFESSIONISTI\\…"}</b> se la fattura ha la ritenuta d'acconto, conserva i tre file in <b>{"SCARICHI ARUBA\\anno"}</b> e li toglie da FATTURE PASSIVE DA SMISTARE solo se le copie sono identiche. Se questo computer non raggiunge il cloud, è tutto registrato lo stesso: l'archivio lo fa chi raggiunge la cartella (rileggendo gli stessi file).</div>
         {conFinestraCartelle
           ? <button style={bottone(!lavora)} disabled={lavora} onClick={archivia}>🗄️ Archivia nel cloud</button>
           : <div style={{ fontSize: 12, padding: 8, background: COLORI.arancione, borderRadius: 8 }}>Con questo browser l'archivio nel cloud non si può fare (serve Chrome o Edge). È tutto registrato: l'archivio lo fa chi usa Chrome o Edge e raggiunge la cartella.</div>}
@@ -634,9 +723,21 @@ export default function LetturaPassiveAruba() {
             File scritti nel cloud: {esitoArchivio.scritti.length} · già presenti uguali: {esitoArchivio.gia.length}{esitoArchivio.pdfProgramma ? ` · PDF messi nel programma: ${esitoArchivio.pdfProgramma}` : ""}
             {esitoArchivio.scritti.length > 0 && <div>Scritti in FATTURE PASSIVE: {esitoArchivio.scritti.join(" · ")}</div>}
             {esitoArchivio.nonRegistrate.length > 0 && <div>Non ancora registrate: {esitoArchivio.nonRegistrate.join(" · ")}</div>}
+            {esitoArchivio.integrazioni > 0 && <div>Integrazioni TD16–TD19 ({esitoArchivio.integrazioni}): non vanno qui, si archiviano con il pulsante qui sotto in FATTURE ESTERE.</div>}
             {esitoArchivio.fermo.length > 0 && <div><b>Gli scarichi restano in FATTURE PASSIVE DA SMISTARE:</b> {esitoArchivio.fermo.join("; ")}.</div>}
             {esitoArchivio.scarichi.length > 0 && <div>{esitoArchivio.scarichi.join(" · ")}</div>}
             {esitoArchivio.errori.length > 0 && <div>Errori: {esitoArchivio.errori.join(" · ")}</div>}</>}
+        </div>}
+        {integrazioni.length > 0 && <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px dashed ${C.border}` }}>
+          <div style={{ fontSize: 12.5, marginBottom: 6 }}><b>Integrazioni IVA per acquisti dall'estero ({integrazioni.length}: {integrazioni.map(x => `${x.report.fornitore} ${x.report.numero}`).join(", ")})</b>: vanno in <b>{"FATTURE ESTERE\\anno"}</b>, accanto alla fattura estera, con il nome «…_INTEGRAZIONE TD18». Si sceglie la cartella <b>FATTURE ESTERE</b>.</div>
+          {conFinestraCartelle && <button style={bottone(!lavora)} disabled={lavora} onClick={archiviaEstere}>🌍 Archivia le integrazioni in FATTURE ESTERE</button>}
+          {esitoEstere && <div style={{ marginTop: 8, padding: 8, background: esitoEstere.cartellaNo || esitoEstere.errori.length || esitoEstere.nonRegistrate.length ? COLORI.rosso : COLORI.verde, fontSize: 12 }}>
+            {esitoEstere.cartellaNo ? <>⛔ {esitoEstere.cartellaNo} Non ho scritto niente.</> : <>
+              File scritti in FATTURE ESTERE: {esitoEstere.scritti.length} · già presenti uguali: {esitoEstere.gia.length}
+              {esitoEstere.scritti.length > 0 && <div>{esitoEstere.scritti.join(" · ")}</div>}
+              {esitoEstere.nonRegistrate.length > 0 && <div>Non ancora registrate (prima «Registra»): {esitoEstere.nonRegistrate.join(" · ")}</div>}
+              {esitoEstere.errori.length > 0 && <div>Errori: {esitoEstere.errori.join(" · ")}</div>}</>}
+          </div>}
         </div>}
       </div>}
     </div>

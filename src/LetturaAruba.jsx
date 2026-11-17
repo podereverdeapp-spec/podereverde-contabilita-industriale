@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import RiquadroDoveSonoIFile from "./RiquadroDoveSonoIFile"; // versione 384
 import ArchivioVenditeCloud from "./ArchivioVenditeCloud"; // versione 384
+import IntegrazioniDaPassive from "./IntegrazioniDaPassive"; // versione 389
 import { md5 } from "./md5";
 import { C } from "./style";
 import { formattaEuro } from "./parsingUtils";
@@ -166,6 +167,7 @@ export default function LetturaAruba({ onNavigate, letturaIniziale = null, incor
               {lettura.pdf && lettura.pdf.length > 0 ? ` PDF: ${lettura.pdf.length}.` : ""}
             </div>
             {lettura.autofatture.length > 0 && <div style={{ fontSize: 12.5, color: C.muted }}>{lettura.autofatture.length === 1 ? "1 autofattura" : `${lettura.autofatture.length} autofatture`} ({lettura.autofatture.map(a => a.numero).join(", ")}): Podere Verde è il cliente, non sono vendite e non si registrano.</div>}
+            {lettura.autofatture.length > 0 && <IntegrazioniDaPassive autofatture={lettura.autofatture} />}
             {lettura.scartati.map((s, i) => <div key={i} style={{ color: C.red, fontSize: 12.5, fontWeight: 700 }}>⚠️ File {s.file} non letto: {s.motivo}.</div>)}
             {(lettura.pdfSenzaFattura || []).map((p, i) => <div key={"p" + i} style={{ color: C.red, fontSize: 12.5, fontWeight: 700 }}>⚠️ Il PDF {p.nome} non si collega a nessuna fattura letta.</div>)}
             {lettura.mancantiNeiFile.map((r, i) => <div key={i} style={{ color: C.red, fontSize: 12.5, fontWeight: 700 }}>⚠️ {r.numero} del {dataIt(r.data)} è nell'elenco ma il suo file XML manca.</div>)}

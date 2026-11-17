@@ -37,7 +37,9 @@ export async function fileDentroCartella(dir, base = "") {
   for await (const [n, h] of dir.entries()) { if (/^(desktop\.ini|Thumbs\.db)$/i.test(n) || n.startsWith("~$")) continue; if (h.kind === "file") out.push(base ? `${base}\\${n}` : n); else out.push(...await fileDentroCartella(h, base ? `${base}\\${n}` : n)); }
   return out;
 }
-export async function haGliAnni(h) { const nomi = new Set(); for await (const [n, x] of h.entries()) if (x.kind === "directory") nomi.add(n); return nomi.has("2019") && nomi.has("2026"); }
+// versione 388: dal 17/11/2026 FATTURE PASSIVE non ha più le cartelle degli anni (archivio per fornitore: FORNITORI, PROFESSIONISTI).
+// La cartella si riconosce dalla sottocartella «FATTURE PASSIVE DA SMISTARE» (dove sta il file di riconoscimento, il controllo vero).
+export async function haGliAnni(h) { const nomi = new Set(); for await (const [n, x] of h.entries()) if (x.kind === "directory") nomi.add(n); return nomi.has("FATTURE PASSIVE DA SMISTARE"); }
 function testoRiconoscimentoFatture(codice, quando) {
   return `SOCIETA' AGRICOLA PODERE VERDE A R.L.\r\nCODICE FISCALE: ${PIVA_PODERE}\r\nCARTELLA: FATTURE PASSIVE\r\nCODICE DELLA CARTELLA: ${codice}\r\nCREATO IL: ${quando} DAL PROGRAMMA CONTABILITA' INDUSTRIALE\r\n`;
 }
@@ -124,8 +126,10 @@ const CHIAVE_CARTELLA = "fatture-passive";
 
 // ── Che cosa manca nello scarico, detto con le parole di Aruba (versione 356) ──────────────────────────
 const IN_ARUBA = "in Aruba: «Fatture ricevute», l'anno giusto, casella in alto, poi «Seleziona tutti (N)», poi la tendina «Azioni»";
+// versione 385: che cosa contiene un file scelto (uno zip di Aruba può avere Report, XML e PDF insieme)
+export const contiene = (f, t) => (f.parti || [f.contenuto]).includes(t);
 export function cosaMancaNelloScarico(file, conti) {
-  const ha = t => file.some(f => f.contenuto === t);
+  const ha = t => file.some(f => contiene(f, t));
   const out = [];
   if (!ha("REPORT")) out.push(`Manca il Report. Si scarica ${IN_ARUBA} → «Scarica Report Excel» → «APPLICA». Il file .zip va messo in FATTURE PASSIVE DA SMISTARE.`);
   if (!ha("XML")) out.push(`Manca lo scarico degli XML. Si scarica ${IN_ARUBA} → «Scarica XML» → «APPLICA». Il file .zip va messo in FATTURE PASSIVE DA SMISTARE.`);
@@ -160,10 +164,12 @@ export function statoFatture(collegato, prog, scelte = {}) {
       if (mancano.length) { esito = "nuova"; inParte = true; colore = anomaliaGrave ? "rosso" : "verde"; motivo = `registrata in parte: mancano ${mancano.length} righe su ${righe.length}`; }
     }
     const integrazione = /^TD1[6-9]$/.test(String(x.xml?.tipoDocumento || x.report.tipo || ""));
-    if (esito === "nuova" && integrazione) { colore = "rosso"; motivo = "integrazione (TD16–TD19): non è un debito verso il fornitore e non si carica con questa versione; resta in FATTURE PASSIVE DA SMISTARE"; }
+    // versione 385 (Dottore, 16/11 ore 18:16): l'integrazione (TD16–TD19, autofattura per acquisti dall'estero) si carica come le altre,
+    // come sono già nel programma le TD18 di 333 Corporate (fatture 414, 49, 864, 871, 969): proposta, approvazione del Dottore, debito
+    if (esito === "nuova" && integrazione && !motivo) motivo = "integrazione IVA (autofattura per un acquisto dall'estero): si classifica e si approva come le altre";
     const acquistoSenzaDebito = esito === "grigio" && x.trovata?.acquisto && !x.trovata.debitoSoltanto && !x.trovata.fileXml && !prog.haDebito(k) && !anomaliaGrave;
-    // il debito nasce alla lettura per ogni fattura nuova di Podere Verde, anche rossa (regola 2), tranne integrazioni e fatture già in parte registrate
-    const daDebito = esito === "nuova" && !!x.xml && !inParte && !integrazione && !clienteNonPodere;
+    // il debito nasce alla lettura per ogni fattura nuova di Podere Verde, anche rossa (regola 2), tranne le fatture già in parte registrate (versione 385: anche le integrazioni, come le TD18 già nel programma)
+    const daDebito = esito === "nuova" && !!x.xml && !inParte && !clienteNonPodere;
     return { ...x, esito, colore, motivo, inParte, integrazione, acquistoSenzaDebito, daDebito, anomaliaGrave };
   });
 }
@@ -238,7 +244,7 @@ function SchedaFatture({ accesso }) {
     }
     if (h.name !== "FATTURE PASSIVE") { setRicon({ ok: false, problema: `È stata scelta la cartella «${h.name}»: si sceglie solo la cartella «FATTURE PASSIVE» dentro «00.DATI PROGRAMMA CONTABILITA' INDUSTRIALE». Mi fermo.` }); return; }
     // versione 381 (revisione): la cartella di Podere Verde ha le cartelle degli anni; un'altra cartella con lo stesso nome no
-    try { if (!(await haGliAnni(h))) { setRicon({ ok: false, problema: "Nella cartella scelta non ci sono le cartelle degli anni 2019 … 2026: non è la cartella FATTURE PASSIVE di Podere Verde. Mi fermo." }); return; } } catch (e) { setErrore(`La cartella scelta non si legge: ${e.message}`); return; }
+    try { if (!(await haGliAnni(h))) { setRicon({ ok: false, problema: "Nella cartella scelta non c'è la cartella «FATTURE PASSIVE DA SMISTARE»: non è la cartella FATTURE PASSIVE di Podere Verde. Mi fermo." }); return; } } catch (e) { setErrore(`La cartella scelta non si legge: ${e.message}`); return; }
     const { data: par, error } = await supabase.from("ci_parametri").select("valore").eq("chiave", PARAMETRO_CODICE).maybeSingle();
     if (error) { setErrore(`Lettura del codice della cartella: ${error.message}`); return; }
     let testo = null;
@@ -273,7 +279,7 @@ function SchedaFatture({ accesso }) {
       if (eP) throw new Error(eP.message);
       if (par?.valore) throw new Error("il programma ha già il codice di una cartella delle fatture: non si prepara una seconda cartella");
       // versione 381: si prepara solo la cartella di Podere Verde, quella con le cartelle degli anni (2019 … 2026)
-      if (!(await haGliAnni(radice))) throw new Error("nella cartella scelta non ci sono le cartelle degli anni 2019 … 2026: non è la cartella FATTURE PASSIVE di Podere Verde");
+      if (!(await haGliAnni(radice))) throw new Error("nella cartella scelta non c'è la cartella «FATTURE PASSIVE DA SMISTARE»: non è la cartella FATTURE PASSIVE di Podere Verde");
       const codice = ricon?.codiceFile || nuovoCodice();
       // prima il file, poi il codice nel programma: se il codice non si scrive, il file c'è e «Prepara» lo riprende (revisione, N4)
       await cartella(radice, "FATTURE PASSIVE DA SMISTARE\\CARTA", true);
@@ -313,7 +319,7 @@ function SchedaFatture({ accesso }) {
       setPasso("Leggo il programma…");
       const prog = await leggiProgramma();
       setProgramma(prog);
-      setLettura({ vecchi, file: file.map(f => ({ nome: f.nome, md5: f.md5, byte: f.byte, contenuto: scarico.file.find(x => x.nome === f.nome)?.contenuto, voci: scarico.file.find(x => x.nome === f.nome)?.voci })), scarico, collegato, carta, bytesFile: new Map(file.map(f => [f.nome, f])) });
+      setLettura({ vecchi, file: file.map(f => ({ nome: f.nome, md5: f.md5, byte: f.byte, contenuto: scarico.file.find(x => x.nome === f.nome)?.contenuto, parti: scarico.file.find(x => x.nome === f.nome)?.parti || [], voci: scarico.file.find(x => x.nome === f.nome)?.voci })), scarico, collegato, carta, bytesFile: new Map(file.map(f => [f.nome, f])) });
     } catch (e) { setErrore(`Lettura non riuscita: ${e.message}`); }
   });
 
@@ -330,7 +336,7 @@ function SchedaFatture({ accesso }) {
   // file che lo scarico non spiega: finché ci sono, niente esce da FATTURE PASSIVE DA SMISTARE
   const fileNonSpiegati = lettura ? [
     ...lettura.scarico.scartati,
-    ...lettura.file.filter(f => !["XML", "PDF", "REPORT"].includes(f.contenuto)).map(f => `${f.nome}: contenuto ${f.contenuto}`),
+    ...lettura.file.filter(f => !["XML", "PDF", "REPORT"].some(t => contiene(f, t))).map(f => `${f.nome}: contenuto ${f.contenuto}`),
     ...lettura.collegato.xmlSenzaReport.map(d => `XML senza riga nel Report: ${d.fileXml}`),
     ...lettura.collegato.pdfSenzaReport.map(p => `PDF senza riga nel Report: ${p.nome}`),
   ] : [];
@@ -527,7 +533,7 @@ function SchedaFatture({ accesso }) {
         {lettura && <>
           <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
             {[["REPORT", "Report di Aruba"], ["XML", "XML (le fatture)"], ["PDF", "PDF (le copie da leggere)"]].map(([t, nome]) => {
-              const f = lettura.file.filter(x => x.contenuto === t); const campo = { REPORT: "report", XML: "xml", PDF: "pdf" }[t]; const n = conti.reduce((a, c) => a + (c[campo] || 0), 0);
+              const f = lettura.file.filter(x => contiene(x, t)); const campo = { REPORT: "report", XML: "xml", PDF: "pdf" }[t]; const n = conti.reduce((a, c) => a + (c[campo] || 0), 0);
               return <div key={t} style={{ padding: "8px 14px", borderRadius: 8, fontWeight: 700, fontSize: 14, background: f.length ? COLORI.verde : COLORI.rosso }}>{f.length ? "✅" : "❌"} {nome}: {f.length ? `${n} fatture` : "manca"}</div>;
             })}
           </div>
@@ -550,7 +556,7 @@ function SchedaFatture({ accesso }) {
           {cosaManca.length > 0 && <div style={{ marginTop: 8, padding: 10, background: COLORI.rosso, fontSize: 13, lineHeight: 1.5 }}><b>Che cosa manca e come si rimedia:</b><ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>{cosaManca.map((m, i) => <li key={i}>{m}</li>)}</ul></div>}
           {lettura.collegato.copieDoppie > 0 && <div style={{ marginTop: 8, padding: 8, background: COLORI.arancione, fontSize: 12 }}>Ci sono {lettura.collegato.copieDoppie} copie doppie dello stesso documento (lo stesso scarico messo due volte): si usa una copia sola; vanno comunque in SCARICHI ARUBA.</div>}
           {fileNonSpiegati.length > 0 && <div style={{ marginTop: 8, padding: 8, background: COLORI.rosso, fontSize: 12 }}>
-            <b>{fileNonSpiegati.length} file o voci che lo scarico non spiega</b>{lettura.collegato.xmlSenzaReport.length > 0 && !lettura.file.some(f => f.contenuto === "REPORT") ? " (il Report di Aruba non c'è o non è stato letto)" : ""}: finché ci sono, niente esce da FATTURE PASSIVE DA SMISTARE.
+            <b>{fileNonSpiegati.length} file o voci che lo scarico non spiega</b>{lettura.collegato.xmlSenzaReport.length > 0 && !lettura.file.some(f => contiene(f, "REPORT")) ? " (il Report di Aruba non c'è o non è stato letto)" : ""}: finché ci sono, niente esce da FATTURE PASSIVE DA SMISTARE.
             <details><summary style={{ cursor: "pointer" }}>Vedi l'elenco</summary>{fileNonSpiegati.join(" · ")}</details></div>}
         </>}
       </div>}

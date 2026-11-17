@@ -74,19 +74,19 @@ export async function leggiScaricoAruba(XLSX, file) {
   const out = { report: [], documenti: [], pdf: [], scartati: [], file: [] };
   for (const f of file) {
     const basso = f.nome.toLowerCase();
-    const info = { nome: f.nome, byte: f.bytes.length, contenuto: "ALTRO", voci: 0 };
+    const info = { nome: f.nome, byte: f.bytes.length, contenuto: "ALTRO", voci: 0, parti: [] }; // parti: che cosa contiene (REPORT, XML, PDF); versione 385: uno zip di Aruba può contenerle tutte e tre
     out.file.push(info);
     try {
       if (basso.endsWith(".xls") || basso.endsWith(".xlsx")) {
         const r = leggiReportAruba(XLSX, f.bytes);
         if (r.errore) { out.scartati.push(`${f.nome}: ${r.errore}`); continue; }
-        info.contenuto = "REPORT"; info.voci = r.righe.length; r.righe.forEach(x => out.report.push({ ...x, file: f.nome }));
+        info.contenuto = "REPORT"; info.parti = ["REPORT"]; info.voci = r.righe.length; r.righe.forEach(x => out.report.push({ ...x, file: f.nome }));
         continue;
       }
       if (basso.endsWith(".xml") || basso.endsWith(".p7m")) {
         const r = leggiDocumentiDaByte(f.nome, f.bytes);
         if (r.scartato) { out.scartati.push(r.scartato); continue; }
-        info.contenuto = "XML"; info.voci = r.documenti.length;
+        info.contenuto = "XML"; info.parti = ["XML"]; info.voci = r.documenti.length;
         r.documenti.forEach(d => out.documenti.push({ ...d, nomeSdi: nomeFileSdi(d.fileXml), byteXml: f.bytes, nomeOriginaleXml: f.nome, file: f.nome }));
         continue;
       }
@@ -110,7 +110,8 @@ export async function leggiScaricoAruba(XLSX, file) {
           nXml++; r.documenti.forEach(d => out.documenti.push({ ...d, nomeSdi: nomeFileSdi(d.fileXml), byteXml: b, nomeOriginaleXml: v.name.split("/").pop(), file: f.nome }));
         } else out.scartati.push(`${f.nome} → ${v.name}: file non previsto`);
       }
-      info.contenuto = nRep ? "REPORT" : nPdf && !nXml ? "PDF" : nXml && !nPdf ? "XML" : (nXml || nPdf) ? "MISTO" : "ALTRO";
+      info.parti = [nRep && "REPORT", nXml && "XML", nPdf && "PDF"].filter(Boolean);
+      info.contenuto = info.parti.length ? info.parti.join(" + ") : "ALTRO";
       info.voci = nRep ? out.report.filter(x => x.file.startsWith(f.nome)).length : nXml + nPdf;
     } catch (e) {
       out.scartati.push(`${f.nome}: non leggibile (${e.message})`);
@@ -267,22 +268,40 @@ export function cartellaFornitore(nome) {
 }
 // percorsoBase: il percorso vero della cartella FATTURE PASSIVE (per il limite di Windows, 250 caratteri)
 // nomeFornitoreProgramma: il nome del fornitore nel programma, trovato per partita IVA (vuoto se non c'è)
+// Versione 388 (decisioni del Dott. Bizzarri del 17/11/2026, 08:17–15:12): archivio nuovo dal 2026, per fornitore e poi per anno,
+// come le cartelle dell'amministrazione: FATTURE PASSIVE\FORNITORI\<NOME>\ANNO <aaaa>\ (PDF e XML insieme, accanto alle cartelle
+// dei pagamenti «PAG DEL …» che fa l'amministrazione). Una fattura con la ritenuta d'acconto va in FATTURE PASSIVE\PROFESSIONISTI\…
+// Il nome della cartella e del file è il nome del fornitore scritto nel programma (per partita IVA); se non c'è, quello della fattura.
+// Le integrazioni TD16–TD19 non vanno qui: si archiviano in FATTURE ESTERE\<aaaa> (vedi nomeArchivioEstero).
+export const eIntegrazione = f => /^TD1[6-9]$/.test(String(f?.xml?.tipoDocumento || f?.report?.tipo || ""));
+export const conRitenuta = f => Number(f?.xml?.ritenuta) > 0;
 export function nomeArchivio(f, percorsoBase = "", nomeFornitoreProgramma = "") {
   const r = f.report; const anno = String(r.data || "").slice(0, 4) || "SENZA ANNO";
   const nomeDoc = f.xml?.fornitore || r.fornitore || "FORNITORE";
   // un nome del programma fatto di soli spazi o segni non vale: si usa il nome della fattura (revisione 359, punto 3)
-  const forn = cartellaFornitore(pulisciNome(nomeFornitoreProgramma) ? nomeFornitoreProgramma : nomeDoc);
-  const fornitoreFile = pulisciNome(nomeDoc).toUpperCase();
+  const nomeScelto = pulisciNome(nomeFornitoreProgramma) ? nomeFornitoreProgramma : nomeDoc;
+  const forn = cartellaFornitore(nomeScelto);
+  const fornitoreFile = pulisciNome(nomeScelto).toUpperCase();
   const coda = `_${r.data || "SENZA DATA"}_${pulisciNome(r.numero) || "SENZA NUMERO"}`;
-  const cartellaPdf = `${anno}\\${forn}\\PDF\\`;
-  const cartellaXml = `${anno}\\${forn}\\XML\\`;
+  const gruppo = conRitenuta(f) ? "PROFESSIONISTI" : "FORNITORI";
+  const cartellaPdf = `${gruppo}\\${forn}\\ANNO ${anno}\\`;
+  const cartellaXml = cartellaPdf;
   // limite 250 sul percorso più lungo che si scrive davvero (revisione 359, punto 1): cartella XML, estensione «.xml.p7m» (8),
   // il nome provvisorio «PROVVISORIO <13 cifre> » di scriviVerificato (26), un «_99» se il nome c'è già (3), il file di appoggio
   // «.crswap» che Chrome crea durante la scrittura (7)
   const RISERVA = 8 + 26 + 3 + 7;
   const spazio = 250 - percorsoBase.length - 1 - cartellaXml.length - coda.length - RISERVA;
   const fn = spazio >= 10 ? fornitoreFile.slice(0, spazio).trim() : fornitoreFile.slice(0, 10);
-  return { cartellaPdf, cartellaXml, cartellaFornitore: forn, nome: `${fn}${coda}`, accorciato: fn.length < fornitoreFile.length };
+  return { cartellaPdf, cartellaXml, cartellaFornitore: forn, gruppo, nome: `${fn}${coda}`, accorciato: fn.length < fornitoreFile.length };
+}
+// Versione 388 (Dottore, 16/11): l'integrazione TD16–TD19 va in FATTURE ESTERE\<aaaa>, accanto alla fattura estera,
+// con lo stesso nome della fattura estera e la coda «_INTEGRAZIONE TD18» (o TD16, TD17, TD19)
+export function nomeArchivioEstero(f, nomeFornitoreProgramma = "") {
+  const r = f.report; const anno = String(r.data || "").slice(0, 4) || "SENZA ANNO";
+  const nomeDoc = f.xml?.fornitore || r.fornitore || "FORNITORE";
+  const nomeScelto = pulisciNome(nomeFornitoreProgramma) ? nomeFornitoreProgramma : nomeDoc;
+  const td = String(f.xml?.tipoDocumento || r.tipo || "TD18");
+  return { cartella: `${anno}\\`, nome: `${pulisciNome(nomeScelto).toUpperCase().slice(0, 60)}_${r.data || "SENZA DATA"}_${pulisciNome(r.numero) || "SENZA NUMERO"}_INTEGRAZIONE ${td}` };
 }
 
 // ── Righe di un documento non ancora registrate nel programma (versione 355) ───────────────────────────
