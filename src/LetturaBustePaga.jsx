@@ -56,6 +56,9 @@ function testoDalPdf(pagine) {
     return righe.map(r => r.voci.sort((a, b) => a.x - b.x).map(v => v.s).join(" ")).join("\n");
   }).join("\n");
 }
+// la lettura ottica nel browser legge a volte «Smart CB/» o «Smart CB|» al posto di «Smart CBI» (bonifici istantanei di settembre 2026):
+// senza questa correzione il documento non è riconosciuto come distinta di Smart CBI
+export const normalizzaOcr = s => String(s || "").replace(/Smart\s*CB[\/|lI1!\]]/g, "Smart CBI").replace(/Bon[il1|]sta/g, "Bonista");
 // una pagina del PDF del mese come PDF a sé (il PDF di ogni persona, come nella versione 271)
 async function paginaComePdf(byte, numeroPagina) {
   const sorgente = await PDFDocument.load(byte);
@@ -222,12 +225,12 @@ export default function LetturaBustePaga() {
             testo = (await leggiConOcr(img.pagine, t => setLavoro(`${f.name}: ${t}`))).map(p => p.testo).join("\n");
           }
         } catch (x) { letti.push({ ...r, stato: "rosso", motivo: `lettura non riuscita: ${x.message}` }); continue; }
-        const d = leggiDistinta(testo);
+        const d = leggiDistinta(normalizzaOcr(testo));
         const righe = d?.righe || [];
         if (righe.length > 1) { letti.push({ ...r, stato: "rosso", motivo: `nel documento ci sono ${righe.length} bonifici: qui si carica un bonifico per file (lo stipendio di una persona)` }); continue; }
         const x = righe[0] || {};
         const proposta = righe.length ? abbinaPagamento({ beneficiario: x.beneficiario, causale: x.causale, importo: x.importo, data_esecuzione: x.data_esecuzione || d?.data }, bb) : { busta: null, spiegazione: "La lettura non ha trovato il bonifico: scrivere i dati guardando il documento." };
-        letti.push({ ...r, stato: "attesa", daScansione, modello: d?.modello || "", lettoBene: !!righe.length,
+        letti.push({ ...r, stato: "attesa", daScansione, modello: d?.modello || "", lettoBene: !!righe.length, testoLetto: testo,
           form: { beneficiario: x.beneficiario || "", importo: x.importo != null ? String(x.importo).replace(".", ",") : "", data_esecuzione: x.data_esecuzione || d?.data || "",
             cro: x.cro || "", esito: x.esito || "", iban: x.sicuri?.iban ? (x.iban || "") : "", busta: proposta.busta || "", motivo: proposta.motivo_proposto || "", motivoTesto: "" },
           proposta });
@@ -440,6 +443,7 @@ export default function LetturaBustePaga() {
               {p.stato === "attesa" && (
                 <>
                   <div style={{ color: C.muted }}>{p.daScansione ? "Letto con la lettura ottica: confrontare ogni dato con il documento." : "PDF digitale: confrontare i dati con il documento."} {p.proposta?.spiegazione}</div>
+                  <details style={{ marginTop: 2 }}><summary style={{ cursor: "pointer", color: C.muted, fontSize: 11.5 }}>testo letto dal documento</summary><pre className="testo-letto" style={{ whiteSpace: "pre-wrap", fontSize: 11, background: "#FAFAF7", padding: 6, maxHeight: 220, overflow: "auto" }}>{p.testoLetto}</pre></details>
                   <div style={{ display: "grid", gridTemplateColumns: "150px 1fr auto", gap: "4px 10px", alignItems: "center", marginTop: 6, maxWidth: 900 }}>
                     <span>Beneficiario</span><input style={piccolo} value={p.form.beneficiario} onChange={e => cambia(p.id, "beneficiario", e.target.value)} />{spunta(p.conferme.beneficiario, v => conferma(p.id, "beneficiario", v))}
                     <span>Importo (€)</span><input style={{ ...piccolo, width: 140 }} value={p.form.importo} onChange={e => cambia(p.id, "importo", e.target.value)} />{spunta(p.conferme.importo, v => conferma(p.id, "importo", v))}
