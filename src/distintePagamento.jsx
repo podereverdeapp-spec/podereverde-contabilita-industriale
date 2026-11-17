@@ -60,7 +60,7 @@ export function PulsanteDistinta({ movimento, distinte, onCambiato }) {
   const input = useRef(null);
   const [lavoro, setLavoro] = useState(false);
   const d = movimento.distinta_id ? distinte[movimento.distinta_id] : null;
-  const stesse = Object.values(distinte || {}).filter(x => x.data === movimento.data && x.id !== movimento.distinta_id);
+  const stesse = Object.values(distinte || {}).filter(x => x.data === movimento.data && x.id !== movimento.distinta_id && !x.sostituita_da);   // versione 386: non le distinte sostituite
   const stile = { background: "none", border: `1.5px solid ${d ? C.primary : C.border}`, color: d ? C.primary : C.muted,
     borderRadius: 8, padding: "2px 8px", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" };
   async function scelto(e) {

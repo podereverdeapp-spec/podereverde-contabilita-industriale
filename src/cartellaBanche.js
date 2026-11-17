@@ -6,7 +6,10 @@
 import { md5 } from "./md5";
 
 export const FILE_RICONOSCIMENTO = "RICONOSCIMENTO CARTELLA BANCHE - NON TOCCARE.txt";
-export const DA_SMISTARE = "ESTRATTI CONTO DA SMISTARE";
+// Versione 386 (decisioni del Dott. Bizzarri del 16/11/2026, 14:11 e 15:21): una cartella sola per estratti, liste della carta e distinte.
+// La cartella vecchia la rinomina il programma (sistemaDaSmistare); finché ha dei file si legge anche quella.
+export const DA_SMISTARE = "ESTRATTI CONTO E DISTINTE DA SMISTARE";
+export const VECCHIA_DA_SMISTARE = "ESTRATTI CONTO DA SMISTARE";
 export const SCARTATI = "SCARTATI";   // non usata dal programma per spostare: i file rossi restano in DA SMISTARE
 const PARTITA_IVA = "15117871002";
 
@@ -58,7 +61,7 @@ export async function controllaCartella(radice, codiceProgramma) {
   // versione 360: scelta una cartella che sta DENTRO BANCHE (errore facile: si sceglie quella dove si sono copiati i file).
   // Nessun «manca», così la pagina non propone di «preparare» per sbaglio quella cartella come BANCHE.
   const dentro = String(radice?.name || "").trim().toUpperCase();
-  if (dentro === "ESTRATTI CONTO DA SMISTARE" || /^(BPER BANCA|CARIGE|CARTA PREPAGATA|ESTRATTI CONTO |LISTE MOVIMENTI |DISTINTE DI PAGAMENTO |\d{4} )/.test(dentro))
+  if (dentro === VECCHIA_DA_SMISTARE || dentro === DA_SMISTARE || /^(BPER BANCA|CARIGE|CARTA PREPAGATA|ESTRATTI CONTO |LISTE MOVIMENTI |DISTINTE DI PAGAMENTO |\d{4} )/.test(dentro))
     return { ok: false, problema: `Hai scelto «${radice.name}», che sta dentro BANCHE. Premi di nuovo il pulsante e scegli la cartella sopra, BANCHE: un clic su BANCHE, senza entrarci, poi «Seleziona cartella».` };
   let testo = null;
   try { testo = new TextDecoder().decode(await leggiByte(radice, FILE_RICONOSCIMENTO)); } catch { testo = null; }
@@ -160,9 +163,9 @@ export async function scriviVerificato(radice, percorso, byte) {
     throw new Error(`«${nomeChiesto}», ${passo}: ${e?.name && e.name !== "Error" ? e.name + " — " : ""}${e?.message || e}`);
   }
 }
-// toglie un file da DA SMISTARE solo se è ancora quello letto (stessa impronta)
-export async function togliDaSmistare(radice, nome, impronta) {
-  const dir = await cartella(radice, DA_SMISTARE);
+// toglie un file da DA SMISTARE solo se è ancora quello letto (stessa impronta). Versione 386: anche dalla cartella vecchia.
+export async function togliDaSmistare(radice, nome, impronta, dove = DA_SMISTARE) {
+  const dir = await cartella(radice, dove);
   const gia = await esiste(dir, nome); if (!gia) return "Non c'era più";
   const b = new Uint8Array(await (await (await dir.getFileHandle(gia)).getFile()).arrayBuffer());
   if (md5(b) !== impronta) throw new Error(`«${nome}» è cambiato dopo la lettura: non si toglie`);
@@ -187,4 +190,41 @@ export function posizioneInArchivio(conto, { tipo, formato, dal, al, estensione 
   const t = `ESTRATTI CONTO ${banca}`;
   const cosa = formato === "lista CBI" ? "lista movimenti" : formato === "saldi e movimenti EC" ? "saldi e movimenti" : "estratto conto";
   return `${base}\\${t}\\${anno} ${t}\\${sigla} - ${cosa} dal ${dal} al ${al}${ext}`;
+}
+
+// ── Versione 386: la cartella «da smistare» cambia nome ───────────────────────────────────────────
+// Se c'è solo la vecchia: si rinomina (se il browser lo permette) oppure si spostano i file uno per uno con copia verificata;
+// la vecchia si toglie solo quando è vuota. Se ci sono tutte e due: non si tocca niente, si leggono tutte e due.
+// Esito: { esito: "nuova" | "rinominata" | "spostati" | "tutte e due" | "già a posto", spostati: [nomi], rimasti: [nomi] }
+async function sottocartella(radice, nome) {
+  const vero = await esiste(radice, nome);
+  if (!vero) return null;
+  try { return await radice.getDirectoryHandle(vero); } catch { return null; }
+}
+export async function sistemaDaSmistare(radice) {
+  const vecchia = await sottocartella(radice, VECCHIA_DA_SMISTARE);
+  const nuova = await sottocartella(radice, DA_SMISTARE);
+  if (!vecchia) { if (!nuova) { await cartella(radice, DA_SMISTARE, true); return { esito: "nuova", spostati: [], rimasti: [] }; } return { esito: "già a posto", spostati: [], rimasti: [] }; }
+  if (!nuova && typeof vecchia.move === "function") {
+    try { await vecchia.move(DA_SMISTARE); if (await sottocartella(radice, DA_SMISTARE)) return { esito: "rinominata", spostati: [], rimasti: [] }; } catch { /* si spostano i file */ }
+  }
+  // ci sono tutte e due (o il browser non rinomina): i file della vecchia si spostano uno per uno nella nuova, con copia verificata
+  const spostati = [], rimasti = [];
+  for (const f of await fileDiCartella(vecchia)) {
+    try {
+      const byte = new Uint8Array(await (await f.handle.getFile()).arrayBuffer());
+      const w = await scriviVerificato(radice, `${DA_SMISTARE}\\${f.nome}`, byte);
+      // nella nuova c'è già un file con lo stesso nome ma diverso: la copia «_2» si toglie e l'originale resta nella vecchia (lo si guarda a mano)
+      if (w.esito === "Scritto" && !w.percorso.endsWith(`\\${f.nome}`)) {
+        try { const nuova = await cartella(radice, DA_SMISTARE); await nuova.removeEntry(w.percorso.split("\\").pop()); } catch { /* resta: si vede */ }
+        rimasti.push(`${f.nome} (nella cartella nuova c'è un file diverso con lo stesso nome)`); continue;
+      }
+      await vecchia.removeEntry(f.nome);
+      spostati.push(f.nome);
+    } catch (e) { rimasti.push(`${f.nome} (${e.message})`); }
+  }
+  let vuota = true; for await (const _ of vecchia.entries()) { vuota = false; break; }
+  if (vuota) { try { await radice.removeEntry(vecchia.name); } catch { /* resta vuota: non fa danno */ } }
+  else for await (const [n, h] of vecchia.entries()) if (h.kind !== "file" && !rimasti.some(r => r.startsWith(n))) rimasti.push(`${n} (cartella)`);
+  return { esito: rimasti.length ? "spostati in parte" : vuota ? "spostati" : "spostati, restano cartelle", spostati, rimasti };
 }

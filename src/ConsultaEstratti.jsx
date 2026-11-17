@@ -97,7 +97,7 @@ export default function ConsultaEstratti() {
         setAvvisoCopia(x.message + " Si mostra la copia della cartella BANCHE del cloud.");   // si prosegue con il cloud, come prima della 365
       }
     }
-    if (!percorso) { setMessaggio(`Il documento n. ${doc.id} non è ancora nell'archivio di BANCHE: metterne una copia in «ESTRATTI CONTO DA SMISTARE» e fare «Leggi» e «Archivia e carica» (risulterà già caricato e verrà archiviato).`); return; }
+    if (!percorso) { setMessaggio(`Il documento n. ${doc.id} non è ancora nell'archivio di BANCHE: sceglierne una copia con «Leggi i documenti della banca» (risulterà già caricato), poi «Registra» e «Archivia nel cloud».`); return; }
     // versione 361: la prima volta la finestra di Windows si apre solo dopo la spiegazione, con il pulsante «Scegli la cartella BANCHE»
     if (!radice) { setInAttesa({ doc, pagina }); return; }
     const h = await prendiCartella(); if (!h) return;          // ricontrolla la cartella a ogni apertura, come nella 360
@@ -121,14 +121,14 @@ export default function ConsultaEstratti() {
       const tipo = percorso.toLowerCase().endsWith(".pdf") ? "application/pdf" : percorso.toLowerCase().endsWith(".xlsx") ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "application/vnd.ms-excel";
       vedi(byte, percorso.split("\\").pop(), tipo, pagina);
     } catch (x) {
-      setMessaggio("Apertura non riuscita: " + x.message + (d.gestore ? " — Se il file è stato spostato o rinominato nel cloud: «Togli la registrazione» qui sotto, poi rimettere il file in «ESTRATTI CONTO DA SMISTARE» e fare «Leggi» e «Archivia e carica»." : " — Avvisare chi gestisce i conti."));
+      setMessaggio("Apertura non riuscita: " + x.message + (d.gestore ? " — Se il file è stato spostato o rinominato nel cloud: «Togli la registrazione» qui sotto, poi scegliere il file con «Leggi i documenti della banca» e fare «Registra» e «Archivia nel cloud»." : " — Avvisare chi gestisce i conti."));
       if (d.gestore) setDaTogliere({ impronta: imp, percorso });
     }
   }
   async function togliRegistrazione() {
     const { error } = await supabase.from("ci_banche_archivio").delete().eq("impronta", daTogliere.impronta);
     if (error) { setMessaggio("Non tolta: " + error.message); return; }
-    setDaTogliere(null); setMessaggio(`Registrazione tolta: ${daTogliere.percorso}. Ora rimettere il file in «ESTRATTI CONTO DA SMISTARE».`); await carica();
+    setDaTogliere(null); setMessaggio(`Registrazione tolta: ${daTogliere.percorso}. Ora scegliere il file con «Leggi i documenti della banca» e fare «Archivia nel cloud».`); await carica();
   }
   // versione 365: copia DENTRO il programma degli estratti che sono solo nella cartella BANCHE del cloud (chi gestisce i conti).
   // Ogni file si rilegge dal cloud e si controlla l'impronta prima di salvarlo; i file di documenti eliminati non si copiano.

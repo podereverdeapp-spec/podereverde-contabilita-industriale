@@ -52,7 +52,8 @@ import PromptCedolini from "./PromptCedolini";
 import ScadenzariClientiFornitori from "./ScadenzariClientiFornitori";
 // Versione 352 (10/11/2026): cartella «Banche, carte e cassa» (progetto della prima nota, sezione 10-bis); prima pagina «Conti: stato e controlli»
 import BancheConti from "./BancheConti";
-import CaricaDocumentiBanca from "./CaricaDocumentiBanca";
+import CaricaDocumentiBanca from "./CaricaDocumentiBanca"; // versione 386: fuori dal menu, resta nel codice
+import LetturaDocumentiBanca from "./LetturaDocumentiBanca"; // versione 386
 import ConsultaEstratti from "./ConsultaEstratti";
 import ConfermaMovimenti from "./ConfermaMovimenti";
 import MovimentiConsulta from "./MovimentiConsulta"; // versione 382
@@ -297,7 +298,7 @@ const MENU = [
   { tipo: "cartella", id: "cart-banche", label: "Banche, carte e cassa", icon: "🏦", contenuto: [
     { tipo: "voce", id: "istr-banche", label: "Istruzioni", icon: "📖" }, // versione 357
     { tipo: "voce", id: "banche-conti", label: "Conti: stato e controlli", icon: "🏦" },
-    { tipo: "voce", id: "banche-carica", label: "Carica documenti della banca", icon: "📥" },
+    { tipo: "voce", id: "banche-carica", label: "Leggi i documenti della banca", icon: "📥" }, // versione 386 (prima «Carica documenti della banca»)
     { tipo: "voce", id: "banche-consulta", label: "Estratti e movimenti: consulta", icon: "🔎" },
     { tipo: "voce", id: "banche-conferma", label: "Conferma dei movimenti", icon: "✅" }, // versione 354
     { tipo: "voce", id: "banche-movimenti", label: "Movimenti per conto e carta: consulta", icon: "📒" }, // versione 382
@@ -610,7 +611,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 384</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 386</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={() => (tab === "accessi" && accessiInSospeso.length) ? setUscitaDaAccessi("__esci__") : esci()} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -907,7 +908,8 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
         {tab === "ricerca" && <Ricerca />}
         {tab === "scadenzari" && <ScadenzariClientiFornitori />}
         {tab === "banche-conti" && <BancheConti />}
-        {tab === "banche-carica" && <CaricaDocumentiBanca />}
+        {tab === "banche-carica" && <LetturaDocumentiBanca />}
+        {tab === "banche-carica-vecchia" && <CaricaDocumentiBanca />}
         {tab === "banche-consulta" && <ConsultaEstratti />}
         {tab === "banche-conferma" && <ConfermaMovimenti />}
         {tab === "banche-movimenti" && <MovimentiConsulta />}

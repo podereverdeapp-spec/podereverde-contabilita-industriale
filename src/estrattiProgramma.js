@@ -12,7 +12,8 @@ export const ARCHIVIO_PROGRAMMA = "banche";
 export const tipoDaNome = (nome) => {
   const n = String(nome || "").toLowerCase();
   return n.endsWith(".pdf") ? "application/pdf" : n.endsWith(".xlsx") ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    : n.endsWith(".xls") ? "application/vnd.ms-excel" : n.endsWith(".csv") ? "text/csv" : "application/octet-stream";
+    : n.endsWith(".xls") ? "application/vnd.ms-excel" : n.endsWith(".csv") ? "text/csv"
+    : /\.jpe?g$/.test(n) ? "image/jpeg" : n.endsWith(".png") ? "image/png" : "application/octet-stream";   // versione 386: scansioni e foto
 };
 
 // Le impronte dei file già salvati nel programma (insieme di stringhe). Chi non può leggere l'archivio riceve un insieme vuoto.

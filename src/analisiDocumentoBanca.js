@@ -66,12 +66,14 @@ export async function analizza(l, conto, stato, opz = {}) {
   const e = l.esito, ctr = [], C2 = (ok, nome, dettaglio, rinviabile = false) => ctr.push({ ok, nome, dettaglio, rinviabile });
   const dal = l.dal, al = l.al;
   C2(TIPO_DOCUMENTO_PER_CONTO[conto.tipo] === e.tipo, "Documento adatto al conto", `${e.tipo} su ${conto.nome}`);
-  if (e.tipo === "estratto conto") C2(!!(conto.iban && e.iban && conto.iban === e.iban), "IBAN del documento uguale a quello del conto", `documento ${e.iban || "non letto"}, conto ${conto.iban || "senza IBAN"}`);
+  if (e.contoScelto) C2(true, "Conto scelto da una persona (scansione)", `${conto.nome}: confermato guardando il documento`);   // versione 386
+  else if (e.tipo === "estratto conto") C2(!!(conto.iban && e.iban && conto.iban === e.iban), "IBAN del documento uguale a quello del conto", `documento ${e.iban || "non letto"}, conto ${conto.iban || "senza IBAN"}`);
   else C2(!!e.carta && e.carta === conto.ultime_quattro_cifre, "Carta del documento uguale a quella del conto", `documento …${e.carta || "?"}, conto …${conto.ultime_quattro_cifre || "?"}`);
   const docs = await fetchAllPages((a, b) => supabase.from("ci_documenti_fonte")
     .select("id, tipo, periodo_dal, periodo_al, saldo_iniziale, pdf_impronta, file_digitale_impronta, caricato_il, annullato_il").eq("conto_id", conto.id).order("id").range(a, b));
   if (docs.error) throw new Error(docs.error.message);
-  const vivi = (docs.data || []).filter(d => !d.annullato_il);
+  // versione 386: opz.escludiDocumento = la scansione che il documento digitale sostituisce (si annulla nella stessa operazione)
+  const vivi = (docs.data || []).filter(d => !d.annullato_il && d.id !== opz.escludiDocumento);
   const stesso = vivi.find(d => d.pdf_impronta === l.impronta || d.file_digitale_impronta === l.impronta);
   C2(!stesso, "File non ancora caricato", stesso ? `è già il documento n. ${stesso.id}, caricato il ${dataIt(stesso.caricato_il)}` : "impronta nuova");
   const partenza = stato?.partenza_alla_data;
@@ -127,7 +129,7 @@ export async function analizza(l, conto, stato, opz = {}) {
     if (seguenti.length) C2(sbagliati.length === 0, "Collegamento con i documenti già caricati dopo", sbagliati.length ? sbagliati.join("; ") : `${seguenti.length} documenti dopo: i saldi si collegano`);
   }
   const payload = { conto_id: conto.id, tipo: e.tipo, origine: e.origine, periodo_dal: dal, periodo_al: al, saldo_iniziale: saldoIniziale, saldo_finale: saldoFinale, righe: e.righeCarico };
-  if (e.origine === "letto da PDF") Object.assign(payload, { pdf_impronta: l.impronta, pagine_pdf: e.pagine_pdf });
+  if (e.origine === "letto da PDF" || e.origine === "letto da scansione") Object.assign(payload, { pdf_impronta: l.impronta, pagine_pdf: e.pagine_pdf });   // versione 386: scansioni
   else Object.assign(payload, { file_digitale_impronta: l.impronta });
   return { controlli: ctr, payload, righeNuove, giaPresenti: e.righeCarico.length - righeNuove, ok: ctr.every(c => c.ok) && e.valido, documentoGia: stesso || null };
 }
