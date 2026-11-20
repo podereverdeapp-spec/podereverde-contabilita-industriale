@@ -66,6 +66,7 @@ import AbilitatiSpese from "./AbilitatiSpese"; // versione 383
 import PrimaNota from "./PrimaNota";
 import GestioneIncassiPagamenti from "./GestioneIncassiPagamenti";
 import AnticipiFornitori, { contaAnticipiDaGuardare } from "./AnticipiFornitori"; // versione 370
+import RitenuteAcconto, { contaRitenuteDaVersare } from "./RitenuteAcconto"; // versione 390
 import { ISTRUZIONI_BANCHE, ISTRUZIONI_INCASSI_PAGAMENTI, ISTRUZIONI_PRIMA_NOTA } from "./istruzioniBancheIncassiPrimaNota";
 // Versione 346 (03/11/2026): posta del programma — le mail ai clienti e ai fornitori partono da podereverdeapp@gmail.com attraverso il postino (funzione spedisci-mail), con intestazione, logo, firma modificabile e piè di pagina di legge; permesso «Può spedire mail dal programma» nella cartella Accessi; le mail della casella entrano da sole nel Registro delle Comunicazioni (cassetta comunicazioni-ricevi, ritiro ogni 5 minuti); «Togli dal registro» (recuperabile) e «Blocca mittente».
 // Versione 363 (11/11/2026): avvisi in alto «F24 da pagare» e «F24 da caricare» (cartella FISCALE controllata in sola lettura), con i tasti per «F24 arrivati» e «Consulta F24».
@@ -316,6 +317,7 @@ const MENU = [
     { tipo: "voce", id: "istr-incassi-pagamenti", label: "Istruzioni", icon: "📖" },
     { tipo: "voce", id: "incassi-pagamenti", label: "Incassi e pagamenti", icon: "💶" },
     { tipo: "voce", id: "anticipi-fornitori", label: "Anticipi e caparre in attesa di fattura", icon: "⏳" }, // versione 370; caparre versione 374
+    { tipo: "voce", id: "ritenute-acconto", label: "Ritenute d'acconto", icon: "🧾" }, // versione 390
   ]},
   // Versione 354 (10/11/2026): la prima nota (progetto della prima nota, sezioni 3, 4.1, 8 e 9)
   { tipo: "cartella", id: "cart-prima-nota", label: "Prima nota", icon: "📒", contenuto: [
@@ -571,8 +573,11 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
   // si ricontano all'apertura del programma e quando si entra o si esce da «Famiglie di Prodotto»
   const [descrizioniDaAssegnare, setDescrizioniDaAssegnare] = useState(0);
   useEffect(() => { let attivo = true; if (puo("famiglie-prodotto")) contaDescrizioniDaAssegnare().then(n => { if (attivo) setDescrizioniDaAssegnare(n); }).catch(() => { if (attivo) setDescrizioniDaAssegnare(0); }); return () => { attivo = false; }; }, [tab === "famiglie-prodotto"]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Versione 390: ritenute d'acconto da versare (scadute, entro 7 giorni, o F24 con un importo diverso)
+  const [ritenuteDaVersare, setRitenuteDaVersare] = useState([]);
+  useEffect(() => { if (puo("ritenute-acconto")) contaRitenuteDaVersare().then(setRitenuteDaVersare).catch(() => setRitenuteDaVersare([])); }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (puo("anticipi-fornitori")) contaAnticipiDaGuardare().then(setAnticipiDaGuardare).catch(() => setAnticipiDaGuardare(0)); }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
-  const AVVISI = { "cart-banche": speseDaControllare, "spese-controllo": speseDaControllare, "cart-prezzi-acquisto": descrizioniDaAssegnare, "famiglie-prodotto": descrizioniDaAssegnare, "cart-incassi-pagamenti": anticipiDaGuardare, "anticipi-fornitori": anticipiDaGuardare, "cart-posta": postaDaAprire, "posta": postaDaAprire, "sub-dati-f24": numeroF24, "consulta-f24": numeroF24, "cart-modelli4": modelli4Aperti.totale, "modelli4-chiusure": modelli4Aperti.totale, "cart-animali": verificheAnimali, "verifiche-ovini": verificheAnimali, "cart-alimentaria": senzaComposizione, "alimenti-senza-composizione": senzaComposizione, "cart-fatture": (anomalieAperte || 0) + numeroF24, "sub-dati-controllo": anomalieAperte || 0, "registro-controlli": anomalieAperte || 0, "cart-emissione-fatture": daFatturare + allarmiAttiva, "sub-fatturazione-animali": daFatturare, "fatt-animali-da-fatturare": daFatturare, "fatt-animali-prepara": daFatturare, "sub-controllo-attiva": allarmiAttiva, "controllo-attiva": allarmiAttiva, "cart-accessi-registro": richiesteAccesso, "sub-accessi": richiesteAccesso, "accessi": richiesteAccesso };
+  const AVVISI = { "cart-banche": speseDaControllare, "spese-controllo": speseDaControllare, "cart-prezzi-acquisto": descrizioniDaAssegnare, "famiglie-prodotto": descrizioniDaAssegnare, "cart-incassi-pagamenti": anticipiDaGuardare + ritenuteDaVersare.length, "ritenute-acconto": ritenuteDaVersare.length, "anticipi-fornitori": anticipiDaGuardare, "cart-posta": postaDaAprire, "posta": postaDaAprire, "sub-dati-f24": numeroF24, "consulta-f24": numeroF24, "cart-modelli4": modelli4Aperti.totale, "modelli4-chiusure": modelli4Aperti.totale, "cart-animali": verificheAnimali, "verifiche-ovini": verificheAnimali, "cart-alimentaria": senzaComposizione, "alimenti-senza-composizione": senzaComposizione, "cart-fatture": (anomalieAperte || 0) + numeroF24, "sub-dati-controllo": anomalieAperte || 0, "registro-controlli": anomalieAperte || 0, "cart-emissione-fatture": daFatturare + allarmiAttiva, "sub-fatturazione-animali": daFatturare, "fatt-animali-da-fatturare": daFatturare, "fatt-animali-prepara": daFatturare, "sub-controllo-attiva": allarmiAttiva, "controllo-attiva": allarmiAttiva, "cart-accessi-registro": richiesteAccesso, "sub-accessi": richiesteAccesso, "accessi": richiesteAccesso };
 
   // Versione 373: chi esce dalla pagina «Accessi» con schede non salvate viene avvisato prima (ordine del Dott. Bizzarri delle 21:28)
   const [accessiInSospeso, setAccessiInSospeso] = useState([]);
@@ -613,7 +618,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 389</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 390</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={() => (tab === "accessi" && accessiInSospeso.length) ? setUscitaDaAccessi("__esci__") : esci()} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -705,6 +710,13 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
           </div>
         )}
         {vedeF24 && <StrisciaAvvisiF24 avvisi={avvisiF24} vaiA={vaiA} utente={utente} puoCaricare={puo("f24-arrivati")} puoConsultare={puo("consulta-f24")} />}
+        {ritenuteDaVersare.length > 0 && tab !== "ritenute-acconto" && puo("ritenute-acconto") && (
+          <div onClick={() => vaiA("ritenute-acconto")}
+            style={{ background: "#B3261E", color: "#fff", padding: "10px 20px", fontSize: 13.5, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+            🧾 Ritenute d'acconto da versare con l'F24: {ritenuteDaVersare.map(m => { const [a, mm] = m.mese.split("-"); const [ta, tm, tg] = m.termine.split("-"); return `${mm}/${a} entro il ${tg}/${tm}/${ta}${m.stato === "scaduta" ? " (scaduto)" : m.stato === "F24 diverso" ? " (F24 con importo diverso)" : ""}`; }).join(" · ")}.
+            <span style={{ textDecoration: "underline", fontWeight: 800 }}>Vai alle ritenute →</span>
+          </div>
+        )}
         {anticipiDaGuardare > 0 && tab !== "anticipi-fornitori" && puo("anticipi-fornitori") && (
           <div onClick={() => vaiA("anticipi-fornitori")}
             style={{ background: "#2C6E9B", color: "#fff", padding: "10px 20px", fontSize: 13.5, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
@@ -925,6 +937,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
         {tab === "prima-nota" && <PrimaNota />}
         {tab === "incassi-pagamenti" && <GestioneIncassiPagamenti />}
         {tab === "anticipi-fornitori" && <AnticipiFornitori vaiA={vaiA} />}
+        {tab === "ritenute-acconto" && <RitenuteAcconto />}
         {tab === "istr-banche" && <DocumentoIstruzioni doc={ISTRUZIONI_BANCHE} />}
         {tab === "istr-incassi-pagamenti" && <DocumentoIstruzioni doc={ISTRUZIONI_INCASSI_PAGAMENTI} />}
         {tab === "istr-prima-nota" && <DocumentoIstruzioni doc={ISTRUZIONI_PRIMA_NOTA} />}
