@@ -3,6 +3,10 @@
 // carte»), 19:22 (disegno approvato), 19:42 (oltre agli scontrini si pagano altre cose). Sola lettura: la pagina non scrive niente.
 // Per ogni strumento: saldo iniziale, entrate, uscite, saldo finale; in giallo i movimenti in attesa (fuori dal saldo);
 // sotto le righe con il documento: spesa dall'app, fattura (collegata o proposta per importo e data), tra conti, banca, manca.
+// Versione 391 (Tenente, 20/11/2026): con l'app 149 una spesa «Altro» può non avere il documento: «Apri» apre il primo file che c'è.
+// Cassa: le righe sbagliate ora si stornano (decisione del 20/11 ore 15:45): nel saldo e nell'elenco non entrano né la riga stornata né il suo
+// storno, come nel resto del programma (la traccia resta in «Prima nota»). Contanti di una persona: con «Contanti + resto pagato da me»
+// conta solo la parte presa dalla cassa e i rimborsi pagati in contanti escono dai suoi contanti, come in «Contanti per persona».
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { supabase } from "./supabase";
@@ -12,6 +16,7 @@ import { fetchAllPages } from "./parsingUtils";
 // fetchAllPages restituisce { data, error }: qui un errore ferma la lettura con il suo messaggio
 const tutte = async fn => { const r = await fetchAllPages(fn); if (r.error) throw new Error(r.error.message); return r.data; };
 import { dataIt, euro } from "./analisiDocumentoBanca";
+import { apriFileSpesa, primoFileDellaSpesa, dallaCassa, quotaDaMe } from "./fileSpesa";
 import { oggiRoma } from "./dateRoma";
 import { apriEstratto } from "./estrattiProgramma";
 import { costruisciElenco, intervallo, centesimi } from "./calcoloMovimenti";
@@ -67,7 +72,7 @@ export default function MovimentiConsulta() {
     const n = ++ultimaLettura.current;
     setCarico(true); setErrore(""); setAvviso(""); setDati(null);
     try {
-      const spese = await tutte((a, b) => supabase.from("ci_spese").select("id, numero, tipo_documento, pagato_con, data_documento, data_pagamento, importo, stato, pdf_percorso, movimento_id, fattura_id, salvata_da, fornitore_testo").order("id").range(a, b));
+      const spese = await tutte((a, b) => supabase.from("ci_spese").select("id, numero, tipo_documento, pagato_con, data_documento, data_pagamento, importo, stato, pdf_percorso, pagamento_percorso, foto_percorso, insegna_percorso, movimento_id, fattura_id, salvata_da, fornitore_testo, quota_da_me").order("id").range(a, b));
       const daA = new Date(Date.parse(iv.dal) - 20 * 864e5).toISOString().slice(0, 10), alA = new Date(Date.parse(iv.al) + 5 * 864e5).toISOString().slice(0, 10);
       const fatt = await tutte((a, b) => supabase.from("ci_fatture").select("id, numero, data, totale_lordo, tipo, ci_fornitori(nome)").gte("data", daA).lte("data", alA).order("id").range(a, b));
       // si propongono solo fatture ricevute (PASSIVA) che hanno ancora qualcosa da pagare
@@ -91,13 +96,13 @@ export default function MovimentiConsulta() {
 
       if (scelta.conto) {
         const c = scelta.conto;
-        const mov = await tutte((a, b) => supabase.from("ci_pagamenti_fatture").select("id, data, verso, importo, controparte, causale, causale_gruppo, causale_voce, codice_attesa, data_disposizione, confermato_il, riga_fonte_id, stornato_il, esercizio, progressivo").eq("conto_id", c.id).order("id").range(a, b));
+        const mov = await tutte((a, b) => supabase.from("ci_pagamenti_fatture").select("id, data, verso, importo, controparte, causale, causale_gruppo, causale_voce, codice_attesa, data_disposizione, confermato_il, riga_fonte_id, stornato_il, natura, esercizio, progressivo").eq("conto_id", c.id).order("id").range(a, b));
         provvisori = mov.filter(m => m.codice_attesa && !m.confermato_il && !m.stornato_il).map(m => ({ ...m, spesa: spesaPerMov[m.id] }));
         if (c.tipo === "cassa") {
           // la cassa non ha estratto: saldo = partenza + movimenti confermati
           const p = await supabase.from("ci_storico_controlli").select("ok_alla_data, saldo").eq("conto_id", c.id).eq("tipo", "partenza").is("annullato_il", null).maybeSingle();
           if (p.error) throw new Error(p.error.message);
-          const conf = mov.filter(m => m.confermato_il && !m.stornato_il);
+          const conf = mov.filter(m => m.confermato_il && !m.stornato_il && m.natura !== "STORNO");
           if (p.data && iv.prima >= p.data.ok_alla_data) {
             saldoIniziale = (centesimi(p.data.saldo) + conf.filter(m => m.data > p.data.ok_alla_data && m.data <= iv.prima).reduce((s, m) => s + (m.verso === "entrata" ? 1 : -1) * centesimi(m.importo), 0)) / 100;
           } else nota = p.data ? `La cassa parte dal ${dataIt(p.data.ok_alla_data)} con ${euro(p.data.saldo)}: per i periodi prima il saldo non si calcola.` : "La cassa non ha il saldo di partenza: il saldo non si calcola.";
@@ -131,12 +136,16 @@ export default function MovimentiConsulta() {
       } else if (scelta.persona) {
         const p = scelta.persona;
         const cont = await tutte((a, b) => supabase.from("ci_contanti").select("id, tipo, persona, a_persona, data, importo, confermata_il, annullata_il").or(`persona.eq.${p},a_persona.eq.${p}`).order("id").range(a, b));
+        // rimborsi delle spese pagati in contanti da questa persona: escono dai suoi contanti, come in «Contanti per persona» (versione 391)
+        const rimb = await tutte((a, b) => supabase.from("ci_spese_rimborsi").select("id, persona, mese, totale, data_pagamento").eq("pagato_con", "Contanti").eq("pagato_da", p).eq("stato", "Pagato").order("id").range(a, b));
         const tutti = [
           ...cont.filter(c => !c.annullata_il && (c.tipo === "Prelievo" || c.confermata_il)).map(c => ({ id: `c${c.id}`, data: c.data, importo: c.importo,
             verso: c.tipo === "Prelievo" || c.a_persona === p ? "entrata" : "uscita",
             descrizione: c.tipo === "Prelievo" ? "Prelievo con la carta 1894" : c.a_persona === p ? `Contanti ricevuti da ${base.nomi[c.persona] || "—"}` : `Contanti consegnati a ${base.nomi[c.a_persona] || "—"}`,
             documentoFisso: { tipo: "tra conti", colore: "blu", testo: c.tipo === "Prelievo" ? "Tra conti: prelievo" : "Tra persone: consegna confermata" } })),
-          ...spese.filter(s => s.pagato_con === "Contanti" && s.salvata_da === p && s.stato !== "Annullata").map(s => ({ id: `s${s.id}`, data: s.data_pagamento, verso: "uscita", importo: s.importo, descrizione: s.fornitore_testo || "", spesa: s, fatturaCollegata: s.fattura_id ? fatturaDi[s.fattura_id] : null }))
+          ...spese.filter(s => s.pagato_con === "Contanti" && s.salvata_da === p && s.stato !== "Annullata").map(s => ({ id: `s${s.id}`, data: s.data_pagamento, verso: "uscita", importo: dallaCassa(s), descrizione: [s.fornitore_testo || "", quotaDaMe(s) > 0 ? `parte dalla cassa di una spesa di ${euro(s.importo)} (il resto messo da sé)` : ""].filter(Boolean).join(" — "), spesa: s, fatturaCollegata: s.fattura_id ? fatturaDi[s.fattura_id] : null })),
+          ...rimb.map(r => ({ id: `r${r.id}`, data: r.data_pagamento, verso: "uscita", importo: r.totale, descrizione: `Rimborso delle spese n. ${r.id} pagato in contanti a ${base.nomi[r.persona] || "—"}`,
+            documentoFisso: { tipo: "tra conti", colore: "blu", testo: "Rimborso spese pagato in contanti" } }))
         ].sort((x, y) => x.data.localeCompare(y.data));
         saldoIniziale = tutti.filter(r => r.data < iv.dal).reduce((s, r) => s + (r.verso === "entrata" ? 1 : -1) * centesimi(r.importo), 0) / 100;
         righe = tutti.filter(r => r.data >= iv.dal && r.data <= iv.al);
@@ -153,9 +162,10 @@ export default function MovimentiConsulta() {
 
   async function apriSpesa(s) {
     setAvviso("");
-    const { data, error } = await supabase.storage.from("cassa").createSignedUrl(s.pdf_percorso, 120);
-    if (error || !data?.signedUrl) return setAvviso(`Documento della spesa ${s.numero} non leggibile: ${error?.message || "nessun indirizzo"}. Lo vede chi l'ha salvato e chi gestisce i conti.`);
-    window.open(data.signedUrl, "_blank", "noopener");
+    const f = primoFileDellaSpesa(s);
+    if (!f) return setAvviso(`La spesa ${s.numero} non ha file (spesa «Altro» senza documento).`);
+    const errore = await apriFileSpesa(f.percorso);
+    if (errore) setAvviso(`${f.etichetta} della spesa ${s.numero} non leggibile: ${errore}. Lo vede chi l'ha salvato e chi gestisce i conti.`);
   }
   async function apriRiga(r) {
     setAvviso("");

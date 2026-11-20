@@ -2,15 +2,18 @@
 // Chi ha pagato con soldi suoi («Pagato da me») o con la «Carta di credito personale» viene rimborsato una volta al mese.
 // Approva chi gestisce i conti (Demaria, il Dott. Bizzarri o Colabucci). Si paga con bonifico (movimento in attesa della banca: il bonifico si fa
 // in banca e si conferma in «Conferma dei movimenti») o in contanti (li dà chi ha i contanti dell'azienda in carico; l'uscita entra subito in cassa).
+// Versione 391 (Tenente, 20/11/2026): si rimborsano anche «La mia carta» (nome nuovo di «Carta di credito personale», decisione del 20/11 ore 11:18)
+// e, con «Contanti + resto pagato da me», solo la parte messa dalla persona (decisioni del 20/11 ore 10:50 e 11:00): la riga di cassa di quella
+// spesa resta provvisoria e diventa definitiva quando il rimborso è pagato (lo fa il database). Il totale lo calcola ci_rimborso_approva.
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { btn, input, scheda } from "./stileAruba";
 import { fetchAllPages } from "./parsingUtils";
 import { dataIt, euro } from "./analisiDocumentoBanca";
+import { STRUMENTI_PERSONALI, daRimborsare, dallaCassa, nomeStrumento } from "./fileSpesa";
 const tutte = async fn => { const r = await fetchAllPages(fn); if (r.error) throw new Error(r.error.message); return r.data; };
 const nomeP = p => String(p?.nome || "").trim() + (p?.cognome ? " " + p.cognome : "");
-const PERSONALI = ["Pagato da me", "Carta di credito personale"];
 const oggiRoma = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Rome" });
 const meseIt = m => { const [a, b] = String(m).split("-"); return ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"][Number(b) - 1] + " " + a; };
 // ultimo mese finito: il rimborso si approva a mese finito
@@ -28,12 +31,15 @@ export default function RimborsiSpese() {
   async function carica() {
     setErrore("");
     try {
-      const [spese, rimborsi, profili, gestore, saldi, abil] = await Promise.all([
-        tutte((a, b) => supabase.from("ci_spese").select("id, numero, salvata_da, pagato_con, tipo_documento, data_pagamento, importo, fornitore_testo, stato, rimborso_id").in("pagato_con", PERSONALI).order("id").range(a, b)),
+      const campi = "id, numero, salvata_da, pagato_con, tipo_documento, data_pagamento, importo, quota_da_me, fornitore_testo, stato, rimborso_id";
+      const [personali, conResto, rimborsi, profili, gestore, saldi, abil] = await Promise.all([
+        tutte((a, b) => supabase.from("ci_spese").select(campi).in("pagato_con", STRUMENTI_PERSONALI).order("id").range(a, b)),
+        tutte((a, b) => supabase.from("ci_spese").select(campi).eq("pagato_con", "Contanti").gt("quota_da_me", 0).order("id").range(a, b)),
         tutte((a, b) => supabase.from("ci_spese_rimborsi").select("*").order("id", { ascending: false }).range(a, b)),
         supabase.from("profili").select("id, nome, cognome"), supabase.rpc("ci_puo_gestire_conti"), supabase.rpc("ci_contanti_saldi"),
         supabase.from("ci_spese_abilitati").select("profilo_id, attivo, puo_avere_contanti")]);
       for (const x of [profili, gestore]) if (x.error) throw new Error(x.error.message);
+      const spese = [...personali, ...conResto].sort((a, b) => a.id - b.id);
       if (gestore.data === true && (saldi.error || abil.error)) throw new Error("contanti per persona non letti: " + (saldi.error || abil.error).message);
       const attivi = new Set((abil.data || []).filter(a => a.attivo && a.puo_avere_contanti).map(a => a.profilo_id));
       // rimborsi «Disposto» rimasti senza movimento dopo uno storno: uscite BPER confermate con lo stesso importo, da collegare
@@ -54,7 +60,7 @@ export default function RimborsiSpese() {
     if (!d) return [];
     const fine = fineMese(mese); const m = new Map();
     for (const s of d.spese) {
-      if (s.stato === "Annullata" || s.rimborso_id || s.data_pagamento > fine) continue;
+      if (s.stato === "Annullata" || s.rimborso_id || s.data_pagamento > fine || !(daRimborsare(s) > 0)) continue;
       const x = m.get(s.salvata_da) || m.set(s.salvata_da, { persona: s.salvata_da, pronte: [], inControllo: [] }).get(s.salvata_da);
       (s.stato === "Controllata" ? x.pronte : x.inControllo).push(s);
     }
@@ -65,7 +71,7 @@ export default function RimborsiSpese() {
     if (occupato) return; setOccupato(true); setEsito(null);
     const r = await supabase.rpc(nome, args); setOccupato(false);
     if (r.error) return setEsito({ ok: false, testo: r.error.message });
-    setEsito({ ok: true, testo: ok }); setMod({}); await carica();
+    setEsito({ ok: true, testo: typeof ok === "function" ? ok(r.data) : ok }); setMod({}); await carica();
   }
 
   if (!d) return <div style={{ maxWidth: 1100 }}><h2 style={{ color: C.primary }}>Rimborsi delle spese</h2>{errore ? <div style={{ color: C.red }}>{errore}</div> : <div style={{ color: C.muted }}>Leggo…</div>}</div>;
@@ -78,7 +84,7 @@ export default function RimborsiSpese() {
   return (
     <div style={{ maxWidth: 1100 }}>
       <h2 style={{ margin: "0 0 4px", color: C.primary }}>Rimborsi delle spese</h2>
-      <div style={{ fontSize: 13, color: C.muted, marginBottom: 10 }}>Una volta al mese, per ogni persona, le spese pagate con soldi suoi o con la carta di credito personale, già controllate. Approva chi gestisce i conti; si paga con bonifico o in contanti.</div>
+      <div style={{ fontSize: 13, color: C.muted, marginBottom: 10 }}>Una volta al mese, per ogni persona, le spese già controllate pagate con soldi suoi («Pagato da me»), con la sua carta («La mia carta») e, con «Contanti + resto pagato da me», la parte che ha messo lei. Approva chi gestisce i conti; si paga con bonifico o in contanti.</div>
       {!d.gestore && <div style={{ ...scheda, borderColor: C.yellow }}>Vedi solo i tuoi rimborsi: li approva e li paga chi gestisce i conti.</div>}
       {errore && <div style={{ ...scheda, borderColor: C.red, color: C.red }}>{errore}</div>}
       {esito && <div style={{ ...scheda, borderColor: esito.ok ? C.green : C.red, color: esito.ok ? C.green : C.red, fontWeight: 700 }}>{esito.testo}</div>}
@@ -88,18 +94,18 @@ export default function RimborsiSpese() {
           <select style={input} value={mese} onChange={e => setMese(e.target.value)}>{mesi.map(m => <option key={m} value={m}>{meseIt(m)}</option>)}</select>
           <button style={btn(false)} onClick={carica}>Aggiorna</button></div>
         {perPersona.length === 0 && <div style={{ fontSize: 12.5, color: C.muted, marginTop: 6 }}>Nessuna spesa da rimborsare.</div>}
-        {perPersona.map(p => { const tot = p.pronte.reduce((t, s) => t + Number(s.importo), 0);
+        {perPersona.map(p => { const tot = p.pronte.reduce((t, s) => t + daRimborsare(s), 0);
           const gia = d.rimborsi.find(r => r.persona === p.persona && r.mese === mese && r.stato !== "Annullato"); return (
           <div key={p.persona} style={{ borderTop: `1px solid ${C.border}`, padding: "6px 0", fontSize: 12.5 }}>
             <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
               <b style={{ minWidth: 180 }}>{d.nomi[p.persona] || "—"}</b>
               <span>{p.pronte.length} spese controllate: <b>{euro(tot)}</b></span>
-              {p.inControllo.length > 0 && <span style={{ color: C.accent }}>{p.inControllo.length} ancora da controllare ({euro(p.inControllo.reduce((t, s) => t + Number(s.importo), 0))}): restano per il prossimo rimborso</span>}
+              {p.inControllo.length > 0 && <span style={{ color: C.accent }}>{p.inControllo.length} ancora da controllare ({euro(p.inControllo.reduce((t, s) => t + daRimborsare(s), 0))}): restano per il prossimo rimborso</span>}
               {gia && p.pronte.length > 0 && <span style={{ marginLeft: "auto", color: C.accent }}>il rimborso di {meseIt(mese)} c'è già (n. {gia.id}): queste spese vanno nel rimborso del mese dopo, a mese finito</span>}
               {d.gestore && !gia && p.pronte.length > 0 && <button style={{ ...btn(true, C.green), marginLeft: "auto" }} disabled={occupato}
-                onClick={() => chiama("ci_rimborso_approva", { p_persona: p.persona, p_mese: mese }, `Rimborso di ${meseIt(mese)} a ${d.nomi[p.persona]} approvato: ${euro(tot)}.`)}>Approva il rimborso di {meseIt(mese)}</button>}
+                onClick={() => chiama("ci_rimborso_approva", { p_persona: p.persona, p_mese: mese }, x => `Rimborso n. ${x?.id ?? ""} di ${meseIt(mese)} a ${d.nomi[p.persona]} approvato: ${euro(x?.totale ?? tot)} (${x?.spese ?? p.pronte.length} spese).`)}>Approva il rimborso di {meseIt(mese)}</button>}
             </div>
-            {p.pronte.map(s => <div key={s.id} style={{ color: C.muted, paddingLeft: 12 }}>n. {s.numero} del {dataIt(s.data_pagamento)} — {s.pagato_con} — {s.fornitore_testo || s.tipo_documento} — {euro(s.importo)}</div>)}
+            {p.pronte.map(s => <div key={s.id} style={{ color: C.muted, paddingLeft: 12 }}>n. {s.numero} del {dataIt(s.data_pagamento)} — {s.pagato_con === "Contanti" ? "Contanti + resto pagato da me" : nomeStrumento(s.pagato_con)} — {s.fornitore_testo || s.tipo_documento} — {s.pagato_con === "Contanti" ? <>spesa di {euro(s.importo)}: {euro(dallaCassa(s))} dalla cassa, <b>{euro(daRimborsare(s))} messi da sé</b></> : euro(s.importo)}</div>)}
           </div>); })}
       </div>
 
@@ -113,7 +119,7 @@ export default function RimborsiSpese() {
               <span>approvato da {d.nomi[r.approvato_da] || "—"} il {dataIt(r.approvato_il.slice(0, 10))}</span>
               <b style={{ color: r.stato === "Disposto" ? C.blue : C.accent }}>{r.stato === "Disposto" ? (r.movimento_id ? `bonifico disposto il ${dataIt(r.data_pagamento)}: in attesa della banca` : "registrazione del bonifico stornata: collegare l'uscita giusta della banca") : "da pagare"}</b>
             </div>
-            <div style={{ color: C.muted, paddingLeft: 12 }}>{speseDi(r.id).map(s => `n. ${s.numero} ${euro(s.importo)}`).join(" · ")}</div>
+            <div style={{ color: C.muted, paddingLeft: 12 }}>{speseDi(r.id).map(s => `n. ${s.numero} ${euro(daRimborsare(s))}${s.pagato_con === "Contanti" ? ` (parte messa da sé di ${euro(s.importo)})` : ""}`).join(" · ")}</div>
             {d.gestore && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 4 }}>
               {r.stato === "Approvato" && <>
                 <input type="date" style={input} value={m.data || oggiRoma()} onChange={e => set("data", e.target.value)} />
@@ -131,7 +137,7 @@ export default function RimborsiSpese() {
               <button style={btn(false, C.red)} disabled={occupato} onClick={() => chiama("ci_rimborso_annulla", { p_id: r.id, p_motivo: m.motivo || null }, "Rimborso annullato: le spese tornano da rimborsare.")}>Annulla</button>
             </div>}
           </div>); })}
-        <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>Bonifico: il programma mette il movimento in prima nota «in attesa della banca» (conto BPER, «Personale – Rimborso spese»); il bonifico si fa in banca. Quando arriva l'estratto e si conferma in «Conferma dei movimenti», il rimborso diventa «Pagato» e le spese «Rimborsata». Contanti: l'uscita entra subito in cassa e scala dai contanti di chi li dà.</div>
+        <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>Bonifico: il programma mette il movimento in prima nota «in attesa della banca» (conto BPER, «Personale – Rimborso spese»); il bonifico si fa in banca. Quando arriva l'estratto e si conferma in «Conferma dei movimenti», il rimborso diventa «Pagato» e le spese «Rimborsata». Contanti: l'uscita entra subito in cassa e scala dai contanti di chi li dà. Con «Contanti + resto pagato da me» la riga di cassa della spesa resta provvisoria finché il rimborso non è pagato; allora diventa definitiva.</div>
       </div>
 
       <div style={scheda}>

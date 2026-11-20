@@ -3,12 +3,15 @@
 // 3. ogni riga dell'estratto con la sua spesa salvata dall'app (unita / da unire / senza documento, «Chiedi la spesa»), le spese dell'app che
 // non sono sull'estratto, 4. esito: «Registra in prima nota» solo se l'estratto fa scopa. L'esito e la registrazione li decide il database
 // (ci_carta_esito, ci_carta_registra): la pagina mostra e propone.
+// Versione 391 (Tenente, 20/11/2026): con l'app 149 una spesa «Altro» può non avere il documento: «PDF» apre il primo file che c'è
+// (documento, ricevuta di pagamento, foto del bene, foto dell'insegna).
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import { btn, input, scheda } from "./stileAruba";
 import { fetchAllPages } from "./parsingUtils";
 import { dataIt, euro } from "./analisiDocumentoBanca";
+import { apriFileSpesa, primoFileDellaSpesa } from "./fileSpesa";
 const tutte = async fn => { const r = await fetchAllPages(fn); if (r.error) throw new Error(r.error.message); return r.data; };
 const nomeP = p => String(p?.nome || "").trim() + (p?.cognome ? " " + p.cognome : "");
 const cent = x => Math.round(Number(x) * 100);
@@ -62,7 +65,7 @@ export default function VerificaCarte() {
       const ids = righe.map(r => r.id);
       const [mov, spese, rich, esitoDb] = await Promise.all([
         ids.length ? tutte((a, b) => supabase.from("ci_pagamenti_fatture").select("id, riga_fonte_id, confermato_il, esercizio, progressivo, causale_voce").in("riga_fonte_id", ids).order("id").range(a, b)) : [],
-        tutte((a, b) => supabase.from("ci_spese").select("id, numero, salvata_da, tipo_documento, data_documento, data_pagamento, importo, fornitore_testo, stato, riga_fonte_id, movimento_id, pdf_percorso")
+        tutte((a, b) => supabase.from("ci_spese").select("id, numero, salvata_da, tipo_documento, data_documento, data_pagamento, importo, fornitore_testo, stato, riga_fonte_id, movimento_id, pdf_percorso, pagamento_percorso, foto_percorso, insegna_percorso")
           .eq("pagato_con", `Carta prepagata ${carta.ultime_quattro_cifre}`).order("id").range(a, b)),
         base.gestore ? tutte((a, b) => supabase.from("ci_spese_richieste").select("*").is("chiusa_il", null).order("id").range(a, b)) : [],
         base.gestore ? supabase.rpc("ci_carta_esito", { p_documento: doc.id }) : { data: [] }]);
@@ -81,9 +84,11 @@ export default function VerificaCarte() {
     setEsito({ ok: true, testo: typeof ok === "function" ? ok(r.data) : ok }); setScelta({}); await leggi();
   }
   async function apriPdf(s) {
-    const { data, error } = await supabase.storage.from("cassa").createSignedUrl(s.pdf_percorso, 120);
-    if (error || !data?.signedUrl) return setEsito({ ok: false, testo: `Documento della spesa ${s.numero} non leggibile: ${error?.message || "nessun indirizzo"}` });
-    window.open(data.signedUrl, "_blank", "noopener");
+    if (!s) return;
+    const f = primoFileDellaSpesa(s);
+    if (!f) return setEsito({ ok: false, testo: `La spesa ${s.numero} non ha file (spesa «Altro» senza documento).` });
+    const errore = await apriFileSpesa(f.percorso);
+    if (errore) setEsito({ ok: false, testo: `${f.etichetta} della spesa ${s.numero} non leggibile: ${errore}` });
   }
 
   if (!base) return <div style={{ maxWidth: 1100 }}><h2 style={{ color: C.primary }}>Carte prepagate: verifica</h2>{errore ? <div style={{ color: C.red }}>{errore}</div> : <div style={{ color: C.muted }}>Leggo…</div>}</div>;
