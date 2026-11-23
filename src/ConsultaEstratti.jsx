@@ -1,3 +1,4 @@
+// Versione 393 (Tenente, 23/11/2026): titolo «Estratti conto caricati e ricerca movimenti» (prima «Estratti e movimenti: consulta»; ok del Dott. Bizzarri delle 14:02).
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
@@ -97,7 +98,7 @@ export default function ConsultaEstratti() {
         setAvvisoCopia(x.message + " Si mostra la copia della cartella BANCHE del cloud.");   // si prosegue con il cloud, come prima della 365
       }
     }
-    if (!percorso) { setMessaggio(`Il documento n. ${doc.id} non è ancora nell'archivio di BANCHE: sceglierne una copia con «Leggi i documenti della banca» (risulterà già caricato), poi «Registra» e «Archivia nel cloud».`); return; }
+    if (!percorso) { setMessaggio(`Il documento n. ${doc.id} non è ancora nell'archivio di BANCHE: sceglierne una copia con «Carica dal cloud estratti conto e distinte» (risulterà già caricato), poi «Registra» e «Archivia nel cloud».`); return; }
     // versione 361: la prima volta la finestra di Windows si apre solo dopo la spiegazione, con il pulsante «Scegli la cartella BANCHE»
     if (!radice) { setInAttesa({ doc, pagina }); return; }
     const h = await prendiCartella(); if (!h) return;          // ricontrolla la cartella a ogni apertura, come nella 360
@@ -121,14 +122,14 @@ export default function ConsultaEstratti() {
       const tipo = percorso.toLowerCase().endsWith(".pdf") ? "application/pdf" : percorso.toLowerCase().endsWith(".xlsx") ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "application/vnd.ms-excel";
       vedi(byte, percorso.split("\\").pop(), tipo, pagina);
     } catch (x) {
-      setMessaggio("Apertura non riuscita: " + x.message + (d.gestore ? " — Se il file è stato spostato o rinominato nel cloud: «Togli la registrazione» qui sotto, poi scegliere il file con «Leggi i documenti della banca» e fare «Registra» e «Archivia nel cloud»." : " — Avvisare chi gestisce i conti."));
+      setMessaggio("Apertura non riuscita: " + x.message + (d.gestore ? " — Se il file è stato spostato o rinominato nel cloud: «Togli la registrazione» qui sotto, poi scegliere il file con «Carica dal cloud estratti conto e distinte» e fare «Registra» e «Archivia nel cloud»." : " — Avvisare chi gestisce i conti."));
       if (d.gestore) setDaTogliere({ impronta: imp, percorso });
     }
   }
   async function togliRegistrazione() {
     const { error } = await supabase.from("ci_banche_archivio").delete().eq("impronta", daTogliere.impronta);
     if (error) { setMessaggio("Non tolta: " + error.message); return; }
-    setDaTogliere(null); setMessaggio(`Registrazione tolta: ${daTogliere.percorso}. Ora scegliere il file con «Leggi i documenti della banca» e fare «Archivia nel cloud».`); await carica();
+    setDaTogliere(null); setMessaggio(`Registrazione tolta: ${daTogliere.percorso}. Ora scegliere il file con «Carica dal cloud estratti conto e distinte» e fare «Archivia nel cloud».`); await carica();
   }
   // versione 365: copia DENTRO il programma degli estratti che sono solo nella cartella BANCHE del cloud (chi gestisce i conti).
   // Ogni file si rilegge dal cloud e si controlla l'impronta prima di salvarlo; i file di documenti eliminati non si copiano.
@@ -170,8 +171,8 @@ export default function ConsultaEstratti() {
   if (!d) return <div>Lettura in corso…</div>;
   return (
     <div style={{ maxWidth: 1200 }}>
-      <h2 style={{ color: C.primary, margin: "0 0 4px" }}>Estratti e movimenti della banca</h2>
-      <div style={{ color: C.muted, fontSize: 13, marginBottom: 12 }}>Saldi, documenti caricati e ricerca di un movimento su tutti i conti.{!browserAdatto() && " Per aprire i PDF serve Chrome o Edge."}</div>
+      <h2 style={{ color: C.primary, margin: "0 0 4px" }}>Estratti conto caricati e ricerca movimenti</h2>
+      <div style={{ color: C.muted, fontSize: 13, marginBottom: 12 }}>I PDF degli estratti caricati, conto per conto; la ricerca di un movimento su tutti i conti; i costi della banca.{!browserAdatto() && " Per aprire i PDF serve Chrome o Edge."}</div>
       {/* versione 361: documento, messaggi, scelta della cartella e conferme si aprono in una finestra sopra la pagina, davanti a chi ha premuto */}
       {vista && <Finestra larga onChiudi={() => { URL.revokeObjectURL(vista.url); setVista(null); setAvvisoCopia(""); }}>
         {avvisoCopia && <div style={{ fontSize: 13, color: C.red, fontWeight: 700, borderLeft: `4px solid ${C.red}`, paddingLeft: 8, marginBottom: 6 }}>Attenzione: {avvisoCopia} Avvisare chi gestisce i conti.</div>}

@@ -1,3 +1,4 @@
+// Versione 393 (Tenente, 23/11/2026): titolo «Gestione e controllo banca, carte e cassa» (prima «Conti: stato e controlli»; decisione del Dott. Bizzarri delle 12:48).
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
@@ -267,7 +268,7 @@ export default function BancheConti() {
 
   return (
     <div>
-      <div style={{ fontSize: 22, fontWeight: 800, color: C.primary, marginBottom: 4 }}>🏦 Conti: stato e controlli</div>
+      <div style={{ fontSize: 22, fontWeight: 800, color: C.primary, marginBottom: 4 }}>🏦 Gestione e controllo banca, carte e cassa</div>
       <div style={{ fontSize: 13, color: C.muted, marginBottom: 12, maxWidth: 980 }}>
         Ogni posto dove Podere Verde ha dei soldi: banche, carte, cassa. Per ognuno, fino a quale giorno i documenti della banca
         sono completi e tornano tra loro (<b>Controllo</b>) e fino a quale giorno la prima nota è uguale ai documenti (<b>Quadratura</b>).

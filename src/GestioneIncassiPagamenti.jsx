@@ -1,3 +1,4 @@
+// Versione 393 (Tenente, 23/11/2026): rimandi con i nomi nuovi delle pagine di «Banche, carte e cassa».
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
@@ -110,7 +111,7 @@ export default function GestioneIncassiPagamenti() {
     for (const c of base.conti.filter(c => c.stato === "aperto" && c.tipo !== "cassa")) {
       const st = base.stati.find(s => s.conto_id === c.id);
       if (st?.controllo_ok_alla_data && giorniLavorativi(st.controllo_ok_alla_data, oggi) > 5)
-        out.push({ tipo: "Movimenti della banca non caricati", testo: `${c.nome}: documenti caricati solo fino al ${dataIt(st.controllo_ok_alla_data)}. Scaricare dalla banca i movimenti successivi e caricarli in «Banche, carte e cassa» → «Carica documenti della banca»: senza di loro i pagamenti disposti non si possono confermare.` });
+        out.push({ tipo: "Movimenti della banca non caricati", testo: `${c.nome}: documenti caricati solo fino al ${dataIt(st.controllo_ok_alla_data)}. Scaricare dalla banca i movimenti successivi e caricarli in «Banche, carte e cassa» → «Carica dal cloud estratti conto e distinte»: senza di loro i pagamenti disposti non si possono confermare.` });
     }
     return out;
   }, [base]);
@@ -194,7 +195,7 @@ function ComeEConCheCosa({ base, verso, v, cambia, importo }) {
         {adatti.map(c => { const d = disp(c.id); const blocco = c.tipo === "cassa" && !conPartenza(c.id);
           return <option key={c.id} value={c.id} disabled={blocco}>{c.nome}{blocco ? " — bloccata: manca il saldo di partenza" : d !== null ? ` — disponibile ${euro(d)}` : ""}</option>; })}
       </select>
-      {v.modalita && !adatti.length && <span style={{ color: C.red, fontWeight: 400 }}>Nessun conto o carta registrato per «{v.modalita}»: aprirlo in «Banche, carte e cassa» → «Conti: stato e controlli».</span>}
+      {v.modalita && !adatti.length && <span style={{ color: C.red, fontWeight: 400 }}>Nessun conto o carta registrato per «{v.modalita}»: aprirlo in «Banche, carte e cassa» → «Gestione e controllo banca, carte e cassa».</span>}
       {scelto && verso === "uscita" && importo && disp(scelto.id) !== null && disp(scelto.id) < importo && <span style={{ color: C.red, fontWeight: 700 }}>Il disponibile non copre l'importo.</span>}
     </label>
     {v.modalita === "Carta di debito" && v.conto_id && <label style={L}>Quale carta di debito o bancomat

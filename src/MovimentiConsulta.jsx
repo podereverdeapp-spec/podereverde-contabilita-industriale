@@ -1,3 +1,5 @@
+// Versione 393 (Tenente, 23/11/2026, decisioni del Dott. Bizzarri delle 12:26–13:59): nome «Consultazione movimenti banca, carte e cassa», apertura su BPER
+// all'ultimo mese con operazioni, un tasto per ogni file della spesa (Scontrino/Fattura/Ricevuta, Ricevuta POS, Foto del bene, Foto dell'insegna).
 // Versione 382 (Tenente Fatture, 13/11/2026): «Movimenti per conto e carta: consulta».
 // Ordini del Dott. Bizzarri del 13/11: 19:12 («ci deve essere nel programma un modo di vedere i movimenti di cassa, banca,
 // carte»), 19:22 (disegno approvato), 19:42 (oltre agli scontrini si pagano altre cose). Sola lettura: la pagina non scrive niente.
@@ -16,7 +18,7 @@ import { fetchAllPages } from "./parsingUtils";
 // fetchAllPages restituisce { data, error }: qui un errore ferma la lettura con il suo messaggio
 const tutte = async fn => { const r = await fetchAllPages(fn); if (r.error) throw new Error(r.error.message); return r.data; };
 import { dataIt, euro } from "./analisiDocumentoBanca";
-import { apriFileSpesa, primoFileDellaSpesa, dallaCassa, quotaDaMe } from "./fileSpesa";
+import { apriFileSpesa, fileDellaSpesa, dallaCassa, quotaDaMe } from "./fileSpesa";
 import { oggiRoma } from "./dateRoma";
 import { apriEstratto } from "./estrattiProgramma";
 import { costruisciElenco, intervallo, centesimi } from "./calcoloMovimenti";
@@ -32,6 +34,17 @@ function periodiPossibili() {
     out.push({ v: `${y}`, t: `anno ${y}` });
   }
   return out;
+}
+
+// nome del tasto di ogni file della spesa: il documento col suo tipo (Scontrino, Fattura, Ricevuta, Acquisto online), poi Ricevuta POS, Foto del bene, Foto dell'insegna
+function nomeTasto(s, f) {
+  if (f.campo === "pdf_percorso") return s.tipo_documento && s.tipo_documento !== "Altro" ? s.tipo_documento : "Documento";
+  if (f.campo === "pagamento_percorso") {
+    if (s.tipo_documento === "Acquisto online") return "Conferma del pagamento";   // la conferma del venditore (decisione 20/11 11:18), non il POS
+    if (s.tipo_ricevuta === "PagoPA o bollettino") return "Prova del pagamento";    // nell'app può essere la stessa ricevuta PagoPA («usa lo stesso file»)
+    return "Ricevuta POS";
+  }
+  return { foto_percorso: "Foto del bene", insegna_percorso: "Foto dell'insegna" }[f.campo] || f.etichetta;
 }
 
 export default function MovimentiConsulta() {
@@ -60,7 +73,14 @@ export default function MovimentiConsulta() {
       for (const k of carte.data || []) if (k.attiva) scelte.push({ v: `carta:${k.id}`, t: `Carta di debito ${k.ultime_quattro_cifre} (spese e prelievi dall'app)`, carta: k });
       for (const a of abil.data || []) if (a.attivo && a.puo_avere_contanti) scelte.push({ v: `persona:${a.profilo_id}`, t: `Contanti di ${nomi[a.profilo_id] || "—"}`, persona: a.profilo_id });
       setBase({ scelte, nomi });
-      setStrumento(s => s || scelte.find(x => x.conto?.tipo === "cassa")?.v || scelte[0]?.v || "");
+      // versione 393 (Dottore 23/11/2026 ore 12:26): si apre su BPER Banca, sull'ultimo mese che ha operazioni caricate
+      const bper = scelte.find(x => x.conto?.tipo === "banca" && /bper/i.test(x.conto.nome) && x.conto.stato !== "chiuso") || scelte.find(x => x.conto?.tipo === "banca") || scelte[0];
+      if (bper?.conto) {
+        const ult = await supabase.from("ci_righe_fonte").select("data_contabile, ci_documenti_fonte!inner(annullato_il)").eq("conto_id", bper.conto.id).is("ci_documenti_fonte.annullato_il", null).order("data_contabile", { ascending: false }).limit(1);
+        const mese = !ult.error && ult.data?.[0]?.data_contabile ? String(ult.data[0].data_contabile).slice(0, 7) : "";
+        if (mese && mese >= periodiPossibili().filter(x => /^\d{4}-\d{2}$/.test(x.v)).slice(-1)[0].v) setPeriodo(p => (p === oggiRoma().slice(0, 7) ? mese : p));
+      }
+      setStrumento(s => s || bper?.v || "");
     } catch (e) { setErrore("Lettura dei conti non riuscita: " + e.message); }
   })(); }, []);
 
@@ -72,7 +92,7 @@ export default function MovimentiConsulta() {
     const n = ++ultimaLettura.current;
     setCarico(true); setErrore(""); setAvviso(""); setDati(null);
     try {
-      const spese = await tutte((a, b) => supabase.from("ci_spese").select("id, numero, tipo_documento, pagato_con, data_documento, data_pagamento, importo, stato, pdf_percorso, pagamento_percorso, foto_percorso, insegna_percorso, movimento_id, fattura_id, salvata_da, fornitore_testo, quota_da_me").order("id").range(a, b));
+      const spese = await tutte((a, b) => supabase.from("ci_spese").select("id, numero, tipo_documento, tipo_ricevuta, pagato_con, data_documento, data_pagamento, importo, stato, pdf_percorso, pagamento_percorso, foto_percorso, insegna_percorso, movimento_id, fattura_id, salvata_da, fornitore_testo, quota_da_me").order("id").range(a, b));
       const daA = new Date(Date.parse(iv.dal) - 20 * 864e5).toISOString().slice(0, 10), alA = new Date(Date.parse(iv.al) + 5 * 864e5).toISOString().slice(0, 10);
       const fatt = await tutte((a, b) => supabase.from("ci_fatture").select("id, numero, data, totale_lordo, tipo, ci_fornitori(nome)").gte("data", daA).lte("data", alA).order("id").range(a, b));
       // si propongono solo fatture ricevute (PASSIVA) che hanno ancora qualcosa da pagare
@@ -113,14 +133,14 @@ export default function MovimentiConsulta() {
           const s0 = await supabase.rpc("ci_saldo_al", { p_conto: c.id, p_giorno: iv.prima });
           if (s0.error) throw new Error(s0.error.message);
           saldoIniziale = s0.data === null ? null : Number(s0.data);
-          if (saldoIniziale === null) nota = "Per questo periodo il saldo non si calcola: è prima della partenza del conto (vedi «Conti: stato e controlli»).";
-          const rf = await tutte((a, b) => supabase.from("ci_righe_fonte").select("id, data_contabile, verso, importo, descrizione, documento_id, ci_documenti_fonte!inner(annullato_il, pdf_impronta)").eq("conto_id", c.id).gte("data_contabile", iv.dal).lte("data_contabile", iv.al).is("ci_documenti_fonte.annullato_il", null).order("data_contabile").order("id", { ascending: false }).range(a, b));
+          if (saldoIniziale === null) nota = "Per questo periodo il saldo non si calcola: è prima della partenza del conto (vedi «Gestione e controllo banca, carte e cassa»).";
+          const rf = await tutte((a, b) => supabase.from("ci_righe_fonte").select("id, data_contabile, verso, importo, descrizione, documento_id, pagina_pdf, ci_documenti_fonte!inner(annullato_il, pdf_impronta)").eq("conto_id", c.id).gte("data_contabile", iv.dal).lte("data_contabile", iv.al).is("ci_documenti_fonte.annullato_il", null).order("data_contabile").order("id", { ascending: false }).range(a, b));
           const movPerRiga = Object.fromEntries(mov.filter(m => m.riga_fonte_id && !m.stornato_il).map(m => [m.riga_fonte_id, m]));
           const fm = await fatturaDelMov(rf.map(r => movPerRiga[r.id]?.id).filter(Boolean));
           righe = rf.map(r => { const m = movPerRiga[r.id]; const s = m ? spesaPerMov[m.id] : null;
-            return { id: `r${r.id}`, data: r.data_contabile, verso: r.verso, importo: r.importo, descrizione: r.descrizione, impronta: r.ci_documenti_fonte?.pdf_impronta, movimento: m,
+            return { id: `r${r.id}`, data: r.data_contabile, verso: r.verso, importo: r.importo, descrizione: r.descrizione, impronta: r.ci_documenti_fonte?.pdf_impronta, pagina: r.pagina_pdf || null, movimento: m,
               numeroPrimaNota: m?.progressivo ? `${m.esercizio}/${String(m.progressivo).padStart(6, "0")}` : "", spesa: s, fatturaCollegata: (m && fm[m.id]) || (s?.fattura_id ? fatturaDi[s.fattura_id] : null) }; });
-          if (c.tipo === "carta prepagata") nota = "Il saldo della carta parte dalla partenza scritta in «Conti: stato e controlli»: se lì è segnata come provvisoria, anche questi saldi lo sono.";
+          if (c.tipo === "carta prepagata") nota = "Il saldo della carta parte dalla partenza scritta in «Gestione e controllo banca, carte e cassa»: se lì è segnata come provvisoria, anche questi saldi lo sono.";
         }
       } else if (scelta.carta) {
         // carta di debito: le sue righe sono sull'estratto del conto (scegliere il conto); qui le spese e i prelievi dall'app e il limite del mese
@@ -160,21 +180,27 @@ export default function MovimentiConsulta() {
     if (n === ultimaLettura.current) setCarico(false);
   }
 
-  async function apriSpesa(s) {
+  // versione 393 (Dottore 23/11/2026 ore 13:57–13:59): un tasto per ogni file che la spesa ha (documento, ricevuta del POS, foto del bene, foto dell'insegna)
+  async function apriFile(s, f) {
     setAvviso("");
-    const f = primoFileDellaSpesa(s);
-    if (!f) return setAvviso(`La spesa ${s.numero} non ha file (spesa «Altro» senza documento).`);
     const errore = await apriFileSpesa(f.percorso);
-    if (errore) setAvviso(`${f.etichetta} della spesa ${s.numero} non leggibile: ${errore}. Lo vede chi l'ha salvato e chi gestisce i conti.`);
+    if (errore) setAvviso(`${nomeTasto(s, f)} della spesa ${s.numero} non leggibile: ${errore}. Lo vede chi l'ha salvato e chi gestisce i conti.`);
+  }
+  function tastiSpesa(s) {
+    const files = fileDellaSpesa(s);
+    if (!files.length) return <span style={{ fontSize: 11.5, color: C.muted }}>spesa {s.numero}: nessun file</span>;
+    return files.map(f => <button key={f.campo} style={{ ...btn(false), height: 26, marginRight: 4 }} title={`${f.etichetta} della spesa n. ${s.numero}`} onClick={() => apriFile(s, f)}>{nomeTasto(s, f)}</button>);
   }
   async function apriRiga(r) {
     setAvviso("");
     try {
       const e = await apriEstratto({ impronta: r.impronta });
       if (e.serveCartella) throw new Error("serve la cartella BANCHE");
-      const url = URL.createObjectURL(new Blob([e.byte], { type: e.tipo || "application/pdf" }));
-      window.open(url, "_blank", "noopener");
-    } catch (er) { setAvviso(`L'estratto non è nell'archivio del programma (${er.message}): aprirlo da «Estratti e movimenti: consulta».`); }
+      const tipo = e.tipo || "application/pdf";
+      const url = URL.createObjectURL(new Blob([e.byte], { type: tipo }));
+      // versione 393: il PDF si apre alla pagina della riga, come «Apri pagina N» degli estratti caricati
+      window.open(tipo === "application/pdf" && r.pagina ? `${url}#page=${r.pagina}` : url, "_blank", "noopener");
+    } catch (er) { setAvviso(`L'estratto non è nell'archivio del programma (${er.message}): aprirlo da «Estratti conto caricati e ricerca movimenti».`); }
   }
 
   const visibili = useMemo(() => {
@@ -203,7 +229,7 @@ export default function MovimentiConsulta() {
 
   return (
     <div style={{ maxWidth: 1180 }}>
-      <h2 style={{ margin: "0 0 4px", color: C.primary }}>Movimenti per conto e carta: consulta</h2>
+      <h2 style={{ margin: "0 0 4px", color: C.primary }}>Consultazione movimenti banca, carte e cassa</h2>
       <div style={{ fontSize: 13, color: C.muted, marginBottom: 10 }}>Sola lettura. Si sceglie lo strumento e il periodo: in alto i saldi, in giallo ciò che aspetta la banca (fuori dal saldo), sotto ogni movimento con il suo documento.</div>
       {errore && <div style={{ ...scheda, borderColor: C.red, color: C.red }}>{errore}</div>}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
@@ -229,7 +255,7 @@ export default function MovimentiConsulta() {
             : <table style={{ width: "100%", fontSize: 12.5, marginTop: 6, borderCollapse: "collapse" }}><tbody>{dati.provvisori.map(m => (
               <tr key={m.id} style={{ borderTop: `1px solid ${C.border}` }}><td style={{ padding: "4px 6px", fontWeight: 700 }}>{m.codice_attesa}</td><td style={{ padding: "4px 6px" }}>{dataIt(m.data_disposizione || m.data)}</td>
                 <td style={{ padding: "4px 6px" }}>{m.controparte || m.causale || ""}</td><td style={{ padding: "4px 6px", textAlign: "right" }}>{m.verso === "entrata" ? "+" : "−"}{euro(m.importo)}</td>
-                <td style={{ padding: "4px 6px" }}>{m.spesa ? <button style={{ ...btn(false), height: 26 }} onClick={() => apriSpesa(m.spesa)}>Apri {m.spesa.tipo_documento.toLowerCase()} {m.spesa.numero}</button> : null}</td></tr>))}</tbody></table>}
+                <td style={{ padding: "4px 6px", whiteSpace: "nowrap" }}>{m.spesa ? tastiSpesa(m.spesa) : null}</td></tr>))}</tbody></table>}
         </div>
         <table style={{ width: "100%", fontSize: 12.5, borderCollapse: "collapse", background: "#fff" }}>
           <thead><tr style={{ color: C.muted, textAlign: "left" }}><th style={{ padding: 6 }}>Data</th><th style={{ padding: 6 }}>Descrizione</th><th style={{ padding: 6, textAlign: "right" }}>Entrata</th><th style={{ padding: 6, textAlign: "right" }}>Uscita</th><th style={{ padding: 6, textAlign: "right" }}>Saldo</th><th style={{ padding: 6 }}>Documento</th><th style={{ padding: 6 }}></th></tr></thead>
@@ -240,8 +266,8 @@ export default function MovimentiConsulta() {
               <td style={{ padding: "5px 6px", textAlign: "right" }}>{r.saldo === null ? "" : euro(r.saldo)}</td>
               <td style={{ padding: "5px 6px", color: COLORE[r.documento.colore], fontWeight: 700 }}>{r.documento.testo}{r.documento.altre > 0 ? <span style={{ fontWeight: 400, color: C.muted }}> (e altre {r.documento.altre} con lo stesso importo)</span> : null}</td>
               <td style={{ padding: "5px 6px", whiteSpace: "nowrap" }}>
-                {r.documento.spesa ? <button style={{ ...btn(false), height: 26 }} onClick={() => apriSpesa(r.documento.spesa)}>Apri</button> : null}
-                {r.impronta ? <button style={{ ...btn(false, C.blue), height: 26, marginLeft: 4 }} onClick={() => apriRiga(r)}>Estratto</button> : null}</td></tr>))}</tbody>
+                {r.documento.spesa ? tastiSpesa(r.documento.spesa) : null}
+                {r.impronta ? <button style={{ ...btn(false, C.blue), height: 26, marginLeft: 4 }} title={r.pagina ? `Apre l'estratto alla pagina ${r.pagina}` : "Apre l'estratto"} onClick={() => apriRiga(r)}>Estratto</button> : null}</td></tr>))}</tbody>
         </table>
         <div style={{ fontSize: 12, color: C.muted, marginTop: 8 }}>Documento: <span style={{ color: C.green }}>verde</span> spesa dall'app o fattura (quella «proposta» ha stesso importo e data vicina: la conferma chi controlla); <span style={{ color: C.blue }}>blu</span> tra conti o tra persone; grigio spesa della banca; <span style={{ color: C.red }}>rosso</span> manca il documento.</div>
       </>}

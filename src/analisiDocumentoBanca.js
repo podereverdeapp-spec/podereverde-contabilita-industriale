@@ -77,7 +77,7 @@ export async function analizza(l, conto, stato, opz = {}) {
   const stesso = vivi.find(d => d.pdf_impronta === l.impronta || d.file_digitale_impronta === l.impronta);
   C2(!stesso, "File non ancora caricato", stesso ? `è già il documento n. ${stesso.id}, caricato il ${dataIt(stesso.caricato_il)}` : "impronta nuova");
   const partenza = stato?.partenza_alla_data;
-  C2(!!partenza && dal > partenza, "Il documento comincia dopo la partenza del conto", partenza ? `partenza al ${dataIt(partenza)}, documento dal ${dataIt(dal)}` : "il conto non ha la partenza: scriverla prima (pagina «Conti: stato e controlli»)");
+  C2(!!partenza && dal > partenza, "Il documento comincia dopo la partenza del conto", partenza ? `partenza al ${dataIt(partenza)}, documento dal ${dataIt(dal)}` : "il conto non ha la partenza: scriverla prima (pagina «Gestione e controllo banca, carte e cassa»)");
   const coperti = new Set();
   for (const d of vivi.filter(d => d.tipo === e.tipo)) for (let g = d.periodo_dal > dal ? d.periodo_dal : dal; g <= d.periodo_al && g <= al; g = piuGiorni(g, 1)) coperti.add(g);
   let esistenti = [];

@@ -1,3 +1,4 @@
+// Versione 393 (Tenente, 23/11/2026): rimando con il nome nuovo «Carica dal cloud estratti conto e distinte».
 // Versione 383 (Tenente, 16/11/2026): «Chiusura del mese delle spese» (B6 approvata dal Dott. Bizzarri il 13/11/2026 alle 13:05; conta dei contanti B3).
 // Entro il 5 del mese dopo: estratti delle carte caricati, spese controllate, contanti contati per persona, rimborsi approvati.
 // Il programma elenca ciò che impedisce la chiusura (ci_spese_mese_impedimenti); con l'elenco vuoto chi gestisce i conti preme «Chiudi il mese
@@ -90,7 +91,7 @@ export default function ChiusuraMeseSpese() {
           <b>2. Che cosa impedisce la chiusura di {meseIt(mese)}</b>
           {d.imp.length === 0 ? <div style={{ color: C.green, fontWeight: 700, marginTop: 6 }}>✓ Niente: il mese si può chiudere.</div>
             : d.imp.map((x, i) => <div key={i} style={{ fontSize: 12.5, color: C.red, marginTop: 3 }}>✗ <b>{x.tipo}</b>: {x.descrizione}{Number(x.quanti) > 1 || (Number(x.quanti) === 1 && !x.tipo.startsWith("Contanti")) ? ` — ${x.quanti}` : ""}{Number(x.importo) ? `, ${euro(x.importo)}` : ""}</div>)}
-          <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>Dove si sistemano: spese → «Spese pagate: controllo»; carta 8006 → «Carte prepagate: verifica»; carta 1894 e prelievi → «Conferma dei movimenti»; estratti → «Carica documenti della banca»; consegne → chi riceve conferma dall'app; rimborsi → «Rimborsi delle spese».</div>
+          <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>Dove si sistemano: spese → «Spese pagate: controllo»; carta 8006 → «Carte prepagate: verifica»; carta 1894 e prelievi → «Conferma dei movimenti»; estratti → «Carica dal cloud estratti conto e distinte»; consegne → chi riceve conferma dall'app; rimborsi → «Rimborsi delle spese».</div>
         </div>
         <div style={scheda}>
           <b>3. Chiudi il mese</b>

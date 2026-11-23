@@ -146,7 +146,7 @@ export default function ConsultaF24({ utente, vaiA }) {
   }
   function apriEstratto(e) {
     setMessaggio("");
-    if (!e?.percorso) { setMessaggio("L'estratto conto di questo addebito non è nell'archivio BANCHE: si mette con la pagina «Carica documenti della banca»."); return; }
+    if (!e?.percorso) { setMessaggio("L'estratto conto di questo addebito non è nell'archivio BANCHE: si mette con la pagina «Carica dal cloud estratti conto e distinte» (cartella «Banche, carte e cassa»)."); return; }
     conCartella("BANCHE", async () => {
       const h = await prendiBanche(); if (!h) return;
       try { mostra(await leggiByte(h, e.percorso), e.percorso.split("\\").pop(), e.pagina); }

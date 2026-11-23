@@ -1,3 +1,4 @@
+// Versione 393 (Tenente, 23/11/2026): il Registro delle spese è la versione 394 (rinumerato dal Dott. Bizzarri il 23/11 alle 14:02).
 // Versione 383 (Tenente, 16/11/2026): «Abilitati alle spese» – chi usa «Spese pagate» nell'app, chi può avere contanti dell'azienda in carico,
 // quali strumenti di pagamento si possono scegliere nell'app («Pagato con»). Solo chi gestisce i conti cambia; ogni cambio resta nel registro con il motivo.
 // A chi ha ancora contanti dell'azienda in carico non si tolgono i contanti: prima li consegna o li restituisce (controllo del database).
@@ -93,7 +94,7 @@ export default function AbilitatiSpese() {
         </div>}
         {!registrata && eCarta(s) && s.conto_id != null && <div style={{ color: C.muted, marginTop: 3 }}>Posizione in «Banche, carte e cassa»: {conto(s.conto_id)} · la usano tutti gli abilitati alle spese</div>}
         {registrata && !s.annullata_il && s.tipo === "Carta prepagata" && s.conto_id != null && <div style={{ color: C.muted, marginTop: 3 }}>Il saldo di partenza della carta si inserisce in «Banche, carte e cassa» (partenza del conto): finché manca, nell'app compare «Limite: da inserire dall'amministrazione».</div>}
-        {registrata && !s.annullata_il && s.tipo === "Carta di credito" && <div style={{ color: C.muted, marginTop: 3 }}>Carta di credito: le spese restano «da addebitare» fino all'addebito mensile in banca, che si unisce alle spese con il Registro delle spese (versione 393).</div>}
+        {registrata && !s.annullata_il && s.tipo === "Carta di credito" && <div style={{ color: C.muted, marginTop: 3 }}>Carta di credito: le spese restano «da addebitare» fino all'addebito mensile in banca, che si unisce alle spese con il Registro delle spese (versione 394).</div>}
 
         {(o.spese + o.prelievi) > 0 && <div style={{ background: "#FFFBEA", border: `1px solid ${C.yellow}`, borderRadius: 8, padding: "8px 10px", marginTop: 6 }}>
           <div style={{ marginBottom: 6 }}><b>{o.spese} {o.spese === 1 ? "spesa" : "spese"} e {o.prelievi} {o.prelievi === 1 ? "prelievo" : "prelievi"} senza banca</b> rimasti a una registrazione annullata di questa carta. Se la carta vera era un'altra (cifre o tipo sbagliati), si spostano sulla carta giusta: entrano in attesa della banca di quella carta. Altrimenti si annulla la spesa in «Spese pagate: controllo».</div>

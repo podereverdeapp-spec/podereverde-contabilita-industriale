@@ -1,3 +1,4 @@
+// Versione 393 (Tenente, 23/11/2026): rimando con il nome nuovo «Estratti conto caricati e ricerca movimenti».
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
@@ -287,7 +288,7 @@ function Modulo({ e, s, gruppi, causali, anno, cambia, base, sommaFatture }) {
       {e.riga.verso !== "uscita" && <div style={{ color: C.red, fontWeight: 700 }}>Questa voce è solo per i pagamenti in uscita.</div>}
       {(s.scadenze || []).length > 0 && <div style={{ color: C.red, fontWeight: 700 }}>Un anticipo non chiude fatture: togliere le fatture spuntate oppure scegliere «Acconto su fattura».</div>}
       {!s.fornitore_id && <div style={{ color: C.muted }}>Se il fornitore non è ancora in anagrafica si conferma lo stesso: lo si sceglie poi nella scheda dell'anticipo.</div>}</div>}
-    {e.riga.pagina_pdf ? <div style={{ color: C.muted }}>Pagina del PDF dell'estratto: {e.riga.pagina_pdf} (si apre da «Estratti e movimenti: consulta»)</div> : null}
+    {e.riga.pagina_pdf ? <div style={{ color: C.muted }}>Pagina del PDF dell'estratto: {e.riga.pagina_pdf} (si apre da «Estratti conto caricati e ricerca movimenti»)</div> : null}
   </div>;
 }
 

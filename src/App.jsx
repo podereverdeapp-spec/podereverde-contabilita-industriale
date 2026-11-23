@@ -300,11 +300,12 @@ const MENU = [
   // Prima pagina: i conti con «Controllo … ok alla data …», «Quadratura con prima nota ok alla data …», periodi mancanti e partenza.
   { tipo: "cartella", id: "cart-banche", label: "Banche, carte e cassa", icon: "🏦", contenuto: [
     { tipo: "voce", id: "istr-banche", label: "Istruzioni", icon: "📖" }, // versione 357
-    { tipo: "voce", id: "banche-conti", label: "Conti: stato e controlli", icon: "🏦" },
-    { tipo: "voce", id: "banche-carica", label: "Leggi i documenti della banca", icon: "📥" }, // versione 386 (prima «Carica documenti della banca»)
-    { tipo: "voce", id: "banche-consulta", label: "Estratti e movimenti: consulta", icon: "🔎" },
+    // versione 393 (Dott. Bizzarri 23/11/2026 ore 12:26–14:02): la consultazione subito dopo «Istruzioni»; nomi nuovi delle pagine
+    { tipo: "voce", id: "banche-movimenti", label: "Consultazione movimenti banca, carte e cassa", icon: "📒" }, // versione 382 (prima «Movimenti per conto e carta: consulta»)
+    { tipo: "voce", id: "banche-conti", label: "Gestione e controllo banca, carte e cassa", icon: "🏦" }, // prima «Conti: stato e controlli»
+    { tipo: "voce", id: "banche-carica", label: "Carica dal cloud estratti conto e distinte", icon: "📥" }, // versione 386 (prima «Leggi i documenti della banca»)
+    { tipo: "voce", id: "banche-consulta", label: "Estratti conto caricati e ricerca movimenti", icon: "🔎" }, // prima «Estratti e movimenti: consulta»
     { tipo: "voce", id: "banche-conferma", label: "Conferma dei movimenti", icon: "✅" }, // versione 354
-    { tipo: "voce", id: "banche-movimenti", label: "Movimenti per conto e carta: consulta", icon: "📒" }, // versione 382
     { tipo: "voce", id: "spese-controllo", label: "Spese pagate: controllo", icon: "🧾" }, // versione 382
     { tipo: "voce", id: "spese-contanti", label: "Contanti per persona", icon: "💶" }, // versione 382
     { tipo: "voce", id: "carte-verifica", label: "Carte prepagate: verifica", icon: "💳" }, // versione 383
@@ -618,7 +619,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 392</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 393</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={() => (tab === "accessi" && accessiInSospeso.length) ? setUscitaDaAccessi("__esci__") : esci()} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>

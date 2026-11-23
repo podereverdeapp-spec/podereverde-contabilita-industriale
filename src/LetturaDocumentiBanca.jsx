@@ -1,3 +1,4 @@
+// Versione 393 (Tenente, 23/11/2026): nome «Carica dal cloud estratti conto e distinte» e brevi istruzioni in cima (decisioni del Dott. Bizzarri delle 13:43–13:44).
 // Versione 386 (Tenente, 16/11/2026) — «Leggi i documenti della banca»: caricamento veloce di estratti conto, liste della carta e
 // distinte, come «Leggi le fatture passive di Aruba» (384). Prende il posto di «Carica documenti della banca» nel menu (decisione
 // del Dott. Bizzarri delle 15:04); la pagina vecchia resta nel codice.
@@ -507,8 +508,17 @@ export default function LetturaDocumentiBanca() {
 
   return (
     <div style={{ maxWidth: 1250 }}>
-      <h2 style={{ color: C.primary, margin: "0 0 4px" }}>Leggi i documenti della banca</h2>
-      <div style={{ color: C.muted, fontSize: 13, marginBottom: 10 }}>Estratti conto, liste movimenti delle carte e distinte di pagamento. Si scelgono i file, il programma li legge e li controlla <b>senza scrivere niente</b>; poi «Registra» e, se il computer raggiunge il cloud, «Archivia nel cloud».</div>
+      <h2 style={{ color: C.primary, margin: "0 0 4px" }}>Carica dal cloud estratti conto e distinte</h2>
+      {/* versione 393 (Dott. Bizzarri 23/11/2026 ore 13:43–13:44): brevi istruzioni all'inizio della pagina, testo approvato */}
+      <div style={{ ...scheda, background: "#EEF5EE", border: `2px solid ${C.green}`, fontSize: 13.5, lineHeight: 1.55 }}>
+        <b>In breve.</b> Qui si caricano gli estratti conto della banca, le liste dei movimenti della carta prepagata e le distinte dei bonifici, così come si scaricano dalla banca (PDF o Excel).
+        <ol style={{ margin: "4px 0 0", paddingLeft: 22 }}>
+          <li>Salvare i file nella cartella del cloud <b>BANCHE → {DA_SMISTARE}</b>.</li>
+          <li>Premere <b>«Scegli i file»</b>, selezionarli tutti insieme e premere «Apri»: il programma li legge, senza scrivere niente.</li>
+          <li>Guardare il colore di ogni file: 🟢 si registra, 🟡 è già caricato, 🔴 va sistemato (il motivo è scritto accanto).</li>
+          <li>Premere <b>«Registra»</b>; per le distinte, <b>«Unisci»</b> ogni bonifico al suo pagamento; infine <b>«Archivia nel cloud»</b>.</li>
+        </ol>
+      </div>
 
       <div style={{ ...scheda, background: "#FFF4E5", border: `2px solid #D9822B`, fontSize: 13.5 }}>
         <b>⚠️ Solo documenti digitali.</b> Si salvano e si usano solo i documenti <b>scaricati dalla banca</b> (in Smart CBI: salvare il documento in PDF, non stamparlo e non scansionarlo).
