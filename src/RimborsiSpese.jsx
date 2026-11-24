@@ -5,6 +5,9 @@
 // Versione 391 (Tenente, 20/11/2026): si rimborsano anche «La mia carta» (nome nuovo di «Carta di credito personale», decisione del 20/11 ore 11:18)
 // e, con «Contanti + resto pagato da me», solo la parte messa dalla persona (decisioni del 20/11 ore 10:50 e 11:00): la riga di cassa di quella
 // spesa resta provvisoria e diventa definitiva quando il rimborso è pagato (lo fa il database). Il totale lo calcola ci_rimborso_approva.
+// Versione 399 (Tenente, 24/11/2026; decisione del Dott. Bizzarri 16:02): «Annulla il pagamento in contanti» per un rimborso pagato in contanti per errore
+// (ci_rimborso_annulla_contanti): la riga di cassa si storna con il motivo, il rimborso torna da pagare e le spese «Controllata». Solo a mese aperto.
+// La riga di cassa di un rimborso in contanti non si scollega più in «Conferma dei movimenti» (lo rifiuta il database).
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
@@ -143,8 +146,16 @@ export default function RimborsiSpese() {
       <div style={scheda}>
         <b>3. Rimborsi pagati e annullati (ultimi 30)</b>
         {chiusi.length === 0 && <div style={{ fontSize: 12.5, color: C.muted }}>Nessuno.</div>}
-        {chiusi.map(r => <div key={r.id} style={{ fontSize: 12.5, color: r.stato === "Annullato" ? C.muted : C.text }}>
-          n. {r.id} — {d.nomi[r.persona]} — {meseIt(r.mese)} — {euro(r.totale)} — {r.stato === "Pagato" ? `pagato ${r.pagato_con === "Contanti" ? `in contanti da ${d.nomi[r.pagato_da]}` : "con bonifico"} il ${dataIt(r.data_pagamento)}` : `annullato: ${r.annullato_motivo}`}</div>)}
+        {chiusi.map(r => { const m = mod[r.id] || {}; const set = (k, v) => setMod(x => ({ ...x, [r.id]: { ...m, [k]: v } })); return <div key={r.id} style={{ fontSize: 12.5, color: r.stato === "Annullato" ? C.muted : C.text }}>
+          n. {r.id} — {d.nomi[r.persona]} — {meseIt(r.mese)} — {euro(r.totale)} — {r.stato === "Pagato" ? `pagato ${r.pagato_con === "Contanti" ? `in contanti da ${d.nomi[r.pagato_da]}` : "con bonifico"} il ${dataIt(r.data_pagamento)}` : `annullato: ${r.annullato_motivo}`}
+          {d.gestore && r.stato === "Pagato" && r.pagato_con === "Contanti" && (m.apri
+            ? <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", margin: "4px 0 6px 12px" }}>
+                <input style={{ ...input, flex: "1 1 260px" }} placeholder="motivo (obbligatorio): perché i contanti non sono stati dati" value={m.motivo || ""} onChange={e => set("motivo", e.target.value)} />
+                <button style={btn(true, C.red)} disabled={occupato || !String(m.motivo || "").trim()} onClick={() => chiama("ci_rimborso_annulla_contanti", { p_id: r.id, p_motivo: m.motivo }, `Pagamento in contanti del rimborso n. ${r.id} annullato: la riga di cassa è stornata, il rimborso è di nuovo da pagare.`)}>Annulla il pagamento in contanti</button>
+                <button style={btn(false)} onClick={() => set("apri", false)}>Lascia stare</button>
+                <span style={{ fontSize: 12, color: C.muted }}>Solo se i contanti non sono stati dati: la riga di cassa si storna (resta visibile con il motivo) e il rimborso torna fra quelli da pagare. Non si può a mese delle spese chiuso.</span>
+              </div>
+            : <button style={{ ...btn(false, C.red), height: 24, marginLeft: 8 }} onClick={() => set("apri", true)}>Annulla il pagamento…</button>)}</div>; })}
       </div>
     </div>
   );
