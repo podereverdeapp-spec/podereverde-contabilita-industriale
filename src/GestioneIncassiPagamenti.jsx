@@ -1,3 +1,4 @@
+// Versione 396 (Tenente, 24/11/2026): pulsante «F24» (si sceglie l'F24 da pagare, come e da quale conto; regole nel database: ci_f24_disponi).
 // Versione 393 (Tenente, 23/11/2026): rimandi con i nomi nuovi delle pagine di «Banche, carte e cassa».
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "./supabase";
@@ -13,6 +14,7 @@ import {
   ibanPulito, ibanValido, ibanBello, abiDiIban, pulisciCausale, causaleValida, componiCausale, statoAttesa, oggiRoma, dataIt, giorniLavorativi,
 } from "./regoleIncassiPagamenti";
 import { useStatiFatture, EtichettaStatoFattura, CONTESTATA, ATTESA_NC } from "./statoFatture"; // versione 375
+import { md5 } from "./md5"; // versione 396
 
 // Versione 357 — «Gestione incassi e pagamenti»: il motore che scrive la prima nota.
 // L'operatore sceglie che cosa pagare o incassare, come (modalità) e con che cosa (conto o carta), controlla IBAN e causale e preme
@@ -25,7 +27,7 @@ import { useStatiFatture, EtichettaStatoFattura, CONTESTATA, ATTESA_NC } from ".
 
 // Versione 370: «Anticipo su fattura da ricevere» subito dopo «Pagamento fatture» (pagamento su proforma, preventivo o offerta)
 const TAB = [...SEZIONI.map(s => ({ id: s.id, nome: s.nome })), { id: "attesa", nome: "In attesa della banca" }, { id: "anomalie", nome: "Anomalie" }]
-  .flatMap(t => t.id === "pagamento_fatture" ? [t, { id: "anticipo", nome: "Anticipo o caparra su fattura da ricevere" }] : [t]);
+  .flatMap(t => t.id === "pagamento_fatture" ? [t, { id: "anticipo", nome: "Anticipo o caparra su fattura da ricevere" }] : t.id === "altri_pagamenti" ? [t, { id: "f24", nome: "F24" }] : [t]);   // versione 396: «F24»
 const ANTICIPO = "Acconto su fattura da ricevere";
 const CAPARRA = "Caparra confirmatoria su preventivo";   // versione 374 (decisione del Dott. Bizzarri del 12/11/2026 ore 17:57)
 const copia = t => { try { navigator.clipboard.writeText(String(t)); } catch { /* il browser non permette: si copia a mano */ } };
@@ -44,7 +46,7 @@ const Copia = ({ etichetta, valore }) => valore ? <span style={{ display: "inlin
   <span style={{ fontSize: 12, color: C.muted }}>{etichetta}:</span> <b style={{ fontSize: 13 }}>{valore}</b>
   <button style={{ ...btn(false), height: 24, fontSize: 11, padding: "0 8px" }} onClick={() => copia(etichetta === "IBAN" ? ibanPulito(valore) : valore)}>Copia</button></span> : null;
 
-export default function GestioneIncassiPagamenti() {
+export default function GestioneIncassiPagamenti({ vaiA } = {}) {
   const [base, setBase] = useState(null);
   const [errore, setErrore] = useState("");
   const [tab, setTab] = useState("pagamento_fatture");
@@ -147,6 +149,7 @@ export default function GestioneIncassiPagamenti() {
       {tab === "anticipo" && <SezioneAnticipo key={giro} base={base} fatto={fatto} oggi={oggi} />}
       {(tab === "altri_pagamenti" || tab === "altri_incassi") && <SezioneAltri key={tab + giro} sezione={tab} base={base} fatto={fatto} oggi={oggi} />}
       {tab === "giroconti" && <SezioneGiroconti key={giro} base={base} fatto={fatto} oggi={oggi} />}
+      {tab === "f24" && <SezioneF24 key={giro} base={base} fatto={fatto} oggi={oggi} vaiA={vaiA} />}
       {tab === "attesa" && <InAttesa base={base} oggi={oggi} fatto={fatto} />}
       {tab === "anomalie" && <div style={scheda}>
         <div style={{ fontWeight: 800, color: C.red, marginBottom: 6 }}>Anomalie ({anomalie.length})</div>
@@ -412,7 +415,7 @@ function SezioneFatture({ sezione, base, fatto, oggi }) {
       <div style={{ fontWeight: 800, color: C.primary, fontSize: 15, marginBottom: 8 }}>{pag ? "Il pagamento" : "L'incasso"}: {scelte.length === 1 ? "1 fattura" : `${scelte.length} fatture`}, totale {euro(totale)}</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 10 }}>
         <ComeEConCheCosa base={base} verso={verso} v={v} cambia={cambia} importo={totale} />
-        <label style={L}>3. Data di disposizione<input type="date" style={sel(!v.data_disposizione)} value={v.data_disposizione} onChange={e => cambia("data_disposizione", e.target.value)} />
+        <label style={L}>3. Data di addebito in banca (proposta: la scadenza)<input type="date" style={sel(!v.data_disposizione)} value={v.data_disposizione} onChange={e => cambia("data_disposizione", e.target.value)} />
           {v.data_disposizione && v.data_disposizione !== oggi && <span style={{ color: C.yellow, fontWeight: 700 }}>Non è oggi: disporre in banca lo stesso giorno in cui si registra qui.</span>}</label>
         <label style={L}>4. Causale contabile (gruppo Fatture)<select style={sel(false)} value={voce} onChange={e => cambia("causale_voce", e.target.value)}>
           {vociDellaSezione(base.causali, sezione, "Fatture").map(c => <option key={c.voce}>{c.voce}</option>)}</select>
@@ -612,7 +615,7 @@ function SezioneAltri({ sezione, base, fatto, oggi }) {
   }
   return <div style={{ ...scheda, border: `2px solid ${C.primary}` }}>
     <div style={{ fontWeight: 800, color: C.primary, fontSize: 15, marginBottom: 4 }}>{pag ? "Altri pagamenti" : "Altri incassi"}</div>
-    <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 10 }}>{pag ? "Pagamenti senza fattura nel programma: stipendi, compensi, tasse ed enti, assicurazioni, quote, affitti, investimenti, soci, rimborsi, finanziamenti. Gli F24 hanno la loro sezione."
+    <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 10 }}>{pag ? "Pagamenti senza fattura nel programma: stipendi, compensi, tasse ed enti, assicurazioni, quote, affitti, investimenti, soci, rimborsi, finanziamenti. Gli F24 si pagano con il pulsante «F24»."
       : "Incassi senza fattura nel programma: soci, contributi, rimborsi, finanziamenti, vendita di beni strumentali. Il documento è obbligatorio (delibera, decreto, contratto, lettera)."}</div>
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 10 }}>
       <label style={L}>Per che cosa: gruppo<select style={sel(!v.causale_gruppo)} value={v.causale_gruppo} onChange={e => { cambia("causale_gruppo", e.target.value); cambia("causale_voce", ""); }}>
@@ -643,6 +646,139 @@ function SezioneAltri({ sezione, base, fatto, oggi }) {
     {problemi.length > 0 && <div style={{ color: C.red, fontSize: 12.5, marginTop: 10 }}>Per confermare: {problemi.join("; ")}.</div>}
     {errore && <div style={{ color: C.red, fontWeight: 700, marginTop: 8 }}>⚠️ {errore}</div>}
     <div style={{ marginTop: 10 }}><button style={btn(true)} disabled={!!problemi.length || lavoro} onClick={invia}>{lavoro ? "Registro…" : pag ? "Conferma e manda in pagamento" : "Conferma e registra l'incasso atteso"}</button></div>
+  </div>;
+}
+
+// ---------------- F24 (versione 396) ----------------
+// Ordini del Dott. Bizzarri del 24/11/2026: 08:55 (pulsante «F24» come per fatture e stipendi), 09:04 (tutti i modi di pagamento),
+// 09:58 (si sceglie l'F24 da pagare, con il protocollo interno). Le regole le controlla il database (ci_f24_disponi):
+// saldo zero o compensazioni → solo i servizi dell'Agenzia delle Entrate; saldo zero → nessun movimento in banca;
+// si paga solo da un conto di banca. La quietanza si carica da «F24 e quietanze arrivati»: lì l'F24 passa a «Pagato».
+const MODI_F24 = [
+  { id: "Agenzia tramite intermediario (Entratel)", agenzia: true, nota: "lo presenta lo Studio con Entratel; l'addebito arriva sul conto della società" },
+  { id: "Agenzia direttamente (F24 web)", agenzia: true, nota: "lo presenta la società con i servizi online dell'Agenzia (Fisconline)" },
+  { id: "Home banking della banca", agenzia: false, nota: "solo senza compensazioni e con saldo maggiore di zero" },
+  { id: "Poste o altro intermediario convenzionato", agenzia: false, nota: "solo senza compensazioni e con saldo maggiore di zero" },
+];
+function SezioneF24({ base, fatto, oggi, vaiA }) {
+  const [elenco, setElenco] = useState(null);
+  const [scelto, setScelto] = useState(null);
+  const [v, setV] = useState({ modo: "", conto_id: "", data_disposizione: oggi, soglia_vista: false });
+  const [lavoro, setLavoro] = useState(false); const [errore, setErrore] = useState(""); const [avviso, setAvviso] = useState("");
+  const [vista, setVista] = useState(null);
+  const [annulla, setAnnulla] = useState({ id: null, motivo: "" });
+  const cambia = (k, x) => setV(o => ({ ...o, [k]: x }));
+  useEffect(() => { (async () => {
+    const { data, error } = await supabase.rpc("ci_f24_per_pagamento");
+    if (error) { setErrore("Lettura degli F24 non riuscita: " + error.message); setElenco([]); return; }
+    setElenco(data || []);
+  })(); }, []);
+  useEffect(() => () => { if (vista?.url) URL.revokeObjectURL(vista.url); }, [vista]);
+  if (!elenco) return <div style={scheda}>Lettura degli F24…</div>;
+  const daPagare = elenco.filter(f => f.stato === "Da pagare");
+  const disposti = elenco.filter(f => f.stato === "Disposto");
+  const f = daPagare.find(x => x.id === scelto) || null;
+  const saldo = f ? Number(f.saldo) : 0;
+  const soloAgenzia = f && (saldo === 0 || Number(f.totale_credito) > 0);
+  const modo = MODI_F24.find(m => m.id === v.modo);
+  const banche = base.conti.filter(c => c.stato === "aperto" && c.tipo === "banca");
+  const disp = id => { const s = base.saldi[id]; if (!s) return null; return s.saldo - base.attesa.filter(m => m.conto_id === id && m.verso === "uscita").reduce((t, m) => t + Number(m.importo), 0); };
+  const problemi = [];
+  if (!f) problemi.push("scegliere l'F24 da pagare");
+  if (f && !v.modo) problemi.push("scegliere come si paga");
+  if (f && modo && soloAgenzia && !modo.agenzia) problemi.push(saldo === 0 ? "un F24 a saldo zero si presenta solo con i servizi dell'Agenzia delle Entrate" : "un F24 con compensazioni si presenta solo con i servizi dell'Agenzia delle Entrate");
+  if (f && saldo > 0 && !v.conto_id) problemi.push("scegliere il conto di banca");
+  if (!v.data_disposizione) problemi.push("scrivere la data di disposizione");
+  if (saldo > 5000 && !v.soglia_vista) problemi.push("spuntare «Ho visto: sopra 5.000 €»");
+  async function apriPdf(x) {
+    setAvviso("");
+    if (!x.md5_pdf) { setAvviso(`Il PDF di ${x.protocollo_interno} non è salvato nel programma: aprirlo da «4. Carica F24» → «Consulta F24».`); return; }
+    const { data, error } = await supabase.storage.from("f24").download(`${x.codice_delega}/F24.pdf`);
+    if (error) { setAvviso(`Il PDF di ${x.protocollo_interno} non si apre da qui (${error.message}): aprirlo da «4. Carica F24» → «Consulta F24».`); return; }
+    const byte = new Uint8Array(await data.arrayBuffer());
+    if (md5(byte) !== x.md5_pdf) { setAvviso(`Il PDF di ${x.protocollo_interno} salvato nel programma non è quello registrato (impronta diversa): non lo apro. Avvisare il Dott. Bizzarri.`); return; }
+    if (vista?.url) URL.revokeObjectURL(vista.url);
+    setVista({ url: URL.createObjectURL(new Blob([byte], { type: "application/pdf" })), nome: `${x.protocollo_interno} – ${x.codice_delega}` });
+  }
+  async function invia() {
+    if (problemi.length || lavoro) return; setLavoro(true); setErrore("");
+    const p = { f24_id: f.id, modo_pagamento: v.modo, data_disposizione: v.data_disposizione, conto_id: saldo > 0 ? Number(v.conto_id) : "" };
+    const { data, error } = await supabase.rpc("ci_f24_disponi", { p });
+    setLavoro(false);
+    if (error) return setErrore("Il database non l'ha accettato, non è stato registrato niente: " + error.message);
+    const conto = banche.find(c => c.id === Number(v.conto_id));
+    fatto({ titolo: `${data.protocollo_interno}: F24 mandato in pagamento — «Disposto»${data.codice_attesa ? `, movimento ${data.codice_attesa} in attesa della banca` : ""}`,
+      testo: saldo > 0
+        ? `Adesso presentare l'F24 (${v.modo}). L'addebito su ${conto?.nome || "la banca"} prenderà il numero di prima nota alla conferma dell'estratto. Quando arriva la quietanza, caricarla da «4. Carica F24» → «F24 e quietanze arrivati»: l'F24 passa a «Pagato».`
+        : `F24 a saldo zero: nessun movimento in banca e niente in prima nota. Adesso presentarlo (${v.modo}); quando arriva la quietanza, caricarla da «4. Carica F24» → «F24 e quietanze arrivati»: l'F24 passa a «Pagato».`,
+      copie: [["Protocollo interno", data.protocollo_interno], ["Codice delega", data.codice_delega], ["Saldo", importoIt(saldo)], ["Data", dataIt(v.data_disposizione)]] });
+  }
+  async function annullaSaldoZero(x) {
+    if (!annulla.motivo.trim() || lavoro) return; setLavoro(true); setErrore("");
+    const { error } = await supabase.rpc("ci_f24_annulla_disposizione", { p_f24: x.id, p_motivo: annulla.motivo.trim() });
+    setLavoro(false);
+    if (error) return setErrore("Il database non l'ha accettato, non è cambiato niente: " + error.message);
+    fatto({ titolo: `${x.protocollo_interno}: disposizione annullata — torna «Da pagare»`, testo: `Motivo: ${annulla.motivo.trim()}.` });
+  }
+  const riga = { padding: "5px 8px", borderBottom: `1px solid ${C.border}` };
+  return <div style={{ ...scheda, border: `2px solid ${C.primary}` }}>
+    <div style={{ fontWeight: 800, color: C.primary, fontSize: 15, marginBottom: 4 }}>F24</div>
+    <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 10 }}>Si sceglie l'F24 da pagare (con il suo protocollo interno), come si paga e da quale conto, poi «Conferma e manda in pagamento».
+      Un F24 con saldo maggiore di zero fa nascere il movimento della banca in attesa; un F24 a saldo zero non tocca la banca. La quietanza si carica da «4. Carica F24» → «F24 e quietanze arrivati»: l'F24 passa a «Pagato».</div>
+    {errore && <div style={{ color: C.red, fontWeight: 700, marginBottom: 8 }}>⚠️ {errore}</div>}
+    {avviso && <div style={{ color: C.yellow, fontWeight: 700, marginBottom: 8 }}>{avviso} {vaiA && <button style={btn(false)} onClick={() => vaiA("consulta-f24")}>Vai a «Consulta F24»</button>}</div>}
+    <div style={{ fontWeight: 700, margin: "6px 0" }}>F24 da pagare ({daPagare.length})</div>
+    {!daPagare.length ? <div style={{ color: C.green }}>Nessun F24 da pagare. Gli F24 entrano nel programma da «4. Carica F24» → «F24 e quietanze arrivati».</div> :
+    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+      <thead><tr style={{ textAlign: "left" }}>{["", "Protocollo e delega", "Che cosa", "Scadenza", "Debito", "Crediti in compensazione", "Saldo da pagare", "PDF"].map(h => <th key={h} style={riga}>{h}</th>)}</tr></thead>
+      <tbody>{daPagare.map(x => { const scaduto = x.data_scadenza < oggi;
+        return <tr key={x.id} style={{ background: x.id === scelto ? `${C.primary}18` : "transparent" }}>
+          <td style={riga}><input type="radio" checked={x.id === scelto} onChange={() => { setScelto(x.id); setV(o => ({ ...o, modo: "", conto_id: "", soglia_vista: false, data_disposizione: x.data_scadenza > oggi ? x.data_scadenza : oggi })); }} /></td>
+          <td style={riga}><b>{x.protocollo_interno}</b><div style={{ fontSize: 11, color: C.muted }}>{x.codice_delega}</div></td>
+          <td style={riga}>{x.oggetto}</td>
+          <td style={{ ...riga, color: scaduto ? C.red : undefined, fontWeight: scaduto ? 700 : 400 }}>{dataIt(x.data_scadenza)}{scaduto ? " (scaduto)" : ""}</td>
+          <td style={riga}>{euro(Number(x.totale_debito))}</td><td style={riga}>{Number(x.totale_credito) > 0 ? euro(Number(x.totale_credito)) : "—"}</td>
+          <td style={{ ...riga, fontWeight: 700 }}>{euro(Number(x.saldo))}{Number(x.saldo) === 0 ? " (saldo zero)" : ""}</td>
+          <td style={riga}><button style={btn(false)} onClick={() => apriPdf(x)}>Apri il PDF</button></td></tr>; })}</tbody>
+    </table>}
+    {f && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 10, marginTop: 12 }}>
+      <label style={L}>1. Come si paga {f.protocollo_interno}
+        <select style={sel(!v.modo || (modo && soloAgenzia && !modo.agenzia))} value={v.modo} onChange={e => cambia("modo", e.target.value)}>
+          <option value="">— scegliere —</option>
+          {MODI_F24.map(m => <option key={m.id} value={m.id} disabled={soloAgenzia && !m.agenzia}>{m.id}{soloAgenzia && !m.agenzia ? " — non ammesso per questo F24" : ""}</option>)}</select>
+        {modo && <span style={{ fontWeight: 400, color: C.muted }}>{modo.nota}</span>}
+        {soloAgenzia && <span style={{ fontWeight: 400, color: C.muted }}>{saldo === 0 ? "Saldo zero" : "Compensazioni con crediti"}: si presenta solo con i servizi dell'Agenzia delle Entrate.</span>}</label>
+      {saldo > 0 ? <label style={L}>2. Da quale conto di banca
+        <select style={sel(!v.conto_id)} value={v.conto_id} onChange={e => cambia("conto_id", e.target.value)}>
+          <option value="">— scegliere —</option>
+          {banche.map(c => { const d = disp(c.id); return <option key={c.id} value={c.id}>{c.nome}{d !== null ? ` — disponibile ${euro(d)}` : ""}</option>; })}</select>
+        {v.conto_id && disp(Number(v.conto_id)) !== null && disp(Number(v.conto_id)) < saldo && <span style={{ color: C.red, fontWeight: 700 }}>Il disponibile non copre il saldo dell'F24.</span>}</label>
+        : <div style={{ ...L, fontWeight: 400 }}>2. Conto: nessuno. A saldo zero non si paga niente in banca e non nasce nessun movimento.</div>}
+      <label style={L}>3. Data di disposizione<input type="date" style={sel(!v.data_disposizione)} value={v.data_disposizione} onChange={e => cambia("data_disposizione", e.target.value)} />
+        <span style={{ fontWeight: 400, color: C.muted }}>Il giorno in cui la banca addebita l'F24 (di solito la scadenza): la conferma dell'estratto cerca l'addebito da 2 giorni prima a 15 giorni dopo questa data.</span>
+        {v.data_disposizione && f.data_scadenza && v.data_disposizione > f.data_scadenza && <span style={{ color: C.red, fontWeight: 700 }}>Dopo la scadenza del {dataIt(f.data_scadenza)}.</span>}</label>
+    </div>}
+    {f && saldo > 5000 && <label style={{ display: "block", marginTop: 8, color: C.red, fontWeight: 700, fontSize: 13 }}><input type="checkbox" checked={v.soglia_vista} onChange={e => cambia("soglia_vista", e.target.checked)} /> Ho visto: sopra 5.000 €. Sarà segnalato al Dott. Bizzarri e a Teresa Demaria.</label>}
+    {f && problemi.length > 0 && <div style={{ color: C.red, fontSize: 12.5, marginTop: 10 }}>Per confermare: {problemi.join("; ")}.</div>}
+    {f && <div style={{ marginTop: 10 }}><button style={btn(true)} disabled={!!problemi.length || lavoro} onClick={invia}>{lavoro ? "Registro…" : "Conferma e manda in pagamento"}</button></div>}
+    <div style={{ fontWeight: 700, margin: "16px 0 6px" }}>F24 disposti: in attesa della quietanza ({disposti.length})</div>
+    {!disposti.length ? <div style={{ color: C.muted, fontSize: 12.5 }}>Nessuno.</div> :
+    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+      <thead><tr style={{ textAlign: "left" }}>{["Protocollo e delega", "Che cosa", "Saldo", "Come", "Disposto il", "Movimento della banca", ""].map(h => <th key={h} style={riga}>{h}</th>)}</tr></thead>
+      <tbody>{disposti.map(x => <tr key={x.id}>
+        <td style={riga}><b>{x.protocollo_interno}</b><div style={{ fontSize: 11, color: C.muted }}>{x.codice_delega}</div></td><td style={riga}>{x.oggetto}</td>
+        <td style={riga}>{euro(Number(x.saldo))}</td><td style={riga}>{x.modo_pagamento}</td><td style={riga}>{dataIt(x.data_disposizione)}</td>
+        <td style={riga}>{x.codice_attesa ? `${x.codice_attesa} su ${x.conto}` : "nessuno (saldo zero)"}</td>
+        <td style={riga}><span style={{ color: C.yellow, fontWeight: 700 }}>In attesa della quietanza</span>{vaiA && <div><button style={btn(false)} onClick={() => vaiA("f24-arrivati")}>Carica la quietanza</button></div>}
+          {!x.codice_attesa && (annulla.id === x.id
+            ? <div style={{ marginTop: 4 }}><input style={sel(!annulla.motivo.trim())} placeholder="Motivo dell'annullamento" value={annulla.motivo} onChange={e => setAnnulla({ id: x.id, motivo: e.target.value })} />
+                <button style={btn(true, C.red)} disabled={!annulla.motivo.trim() || lavoro} onClick={() => annullaSaldoZero(x)}>Annulla la disposizione</button>
+                <button style={btn(false)} onClick={() => setAnnulla({ id: null, motivo: "" })}>Lascia stare</button></div>
+            : <div><button style={btn(false)} onClick={() => setAnnulla({ id: x.id, motivo: "" })}>Disposto per errore?</button></div>)}</td></tr>)}</tbody>
+    </table>}
+    <div style={{ fontSize: 12, color: C.muted, marginTop: 8 }}>Un F24 disposto per errore torna «Da pagare» annullando il suo movimento in «In attesa della banca», con il motivo; a saldo zero (nessun movimento) con «Disposto per errore?» qui sopra. Un F24 già «Pagato» non si annulla.</div>
+    {vista && <div style={{ marginTop: 12 }}><div style={{ fontWeight: 700 }}>{vista.nome} <button style={btn(false)} onClick={() => setVista(null)}>Chiudi</button></div>
+      <iframe title={vista.nome} src={vista.url} style={{ width: "100%", height: 700, border: `1px solid ${C.border}` }} /></div>}
   </div>;
 }
 
