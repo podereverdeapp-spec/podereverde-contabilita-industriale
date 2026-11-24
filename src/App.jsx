@@ -59,6 +59,7 @@ import ConfermaMovimenti from "./ConfermaMovimenti";
 import MovimentiConsulta from "./MovimentiConsulta"; // versione 382
 import SpesePagateControllo from "./SpesePagateControllo"; // versione 382
 import ContantiPersone from "./ContantiPersone"; // versione 382
+import RegistroSpese from "./RegistroSpese"; // versione 397
 import VerificaCarte from "./VerificaCarte"; // versione 383
 import RimborsiSpese from "./RimborsiSpese"; // versione 383
 import ChiusuraMeseSpese from "./ChiusuraMeseSpese"; // versione 383
@@ -309,6 +310,7 @@ const MENU = [
     { tipo: "voce", id: "banche-consulta", label: "Estratti conto caricati e ricerca movimenti", icon: "🔎" }, // prima «Estratti e movimenti: consulta»
     { tipo: "voce", id: "banche-conferma", label: "Conferma dei movimenti", icon: "✅" }, // versione 354
     { tipo: "voce", id: "spese-controllo", label: "Spese pagate: controllo", icon: "🧾" }, // versione 382
+    { tipo: "voce", id: "spese-registro", label: "Registro delle spese", icon: "📋" }, // versione 397 (Dott. Bizzarri 24/11/2026 ore 15:29–15:35)
     { tipo: "voce", id: "spese-contanti", label: "Contanti per persona", icon: "💶" }, // versione 382
     { tipo: "voce", id: "carte-verifica", label: "Carte prepagate: verifica", icon: "💳" }, // versione 383
     { tipo: "voce", id: "spese-rimborsi", label: "Rimborsi delle spese", icon: "💸" }, // versione 383
@@ -621,7 +623,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 396</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 397</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={() => (tab === "accessi" && accessiInSospeso.length) ? setUscitaDaAccessi("__esci__") : esci()} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -933,6 +935,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
         {tab === "banche-movimenti" && <MovimentiConsulta />}
         {tab === "spese-controllo" && <SpesePagateControllo onCambio={contaSpese} />}
         {tab === "spese-contanti" && <ContantiPersone />}
+        {tab === "spese-registro" && <RegistroSpese vaiA={vaiA} puo={puo} />}
         {tab === "carte-verifica" && <VerificaCarte />}
         {tab === "spese-rimborsi" && <RimborsiSpese />}
         {tab === "spese-chiusura-mese" && <ChiusuraMeseSpese />}
