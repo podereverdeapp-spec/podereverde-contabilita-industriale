@@ -69,6 +69,7 @@ import AnticipiFornitori, { contaAnticipiDaGuardare } from "./AnticipiFornitori"
 import RitenuteAcconto, { contaRitenuteDaVersare } from "./RitenuteAcconto"; // versione 390
 import { ISTRUZIONI_BANCHE, ISTRUZIONI_INCASSI_PAGAMENTI, ISTRUZIONI_PRIMA_NOTA } from "./istruzioniBancheIncassiPrimaNota";
 // Versione 346 (03/11/2026): posta del programma — le mail ai clienti e ai fornitori partono da podereverdeapp@gmail.com attraverso il postino (funzione spedisci-mail), con intestazione, logo, firma modificabile e piè di pagina di legge; permesso «Può spedire mail dal programma» nella cartella Accessi; le mail della casella entrano da sole nel Registro delle Comunicazioni (cassetta comunicazioni-ricevi, ritiro ogni 5 minuti); «Togli dal registro» (recuperabile) e «Blocca mittente».
+// Versione 395 (Tenente, 24/11/2026): protocollo interno degli F24 («F24 AAAA/NNNN») nelle pagine degli F24; pagina «F24 e quietanze arrivati: controlla e archivia».
 // Versione 363 (11/11/2026): avvisi in alto «F24 da pagare» e «F24 da caricare» (cartella FISCALE controllata in sola lettura), con i tasti per «F24 arrivati» e «Consulta F24».
 // Versione 362 (11/11/2026): «Consulta F24» nel menu «4. Carica F24» — tutti gli F24 con stato, come e quando sono stati pagati, F24, quietanza e pagina dell'estratto conto.
 // Versione 345 (02/11/2026): pagina F24 arrivati — un'archiviazione sola alla volta; un file esce da DA SMISTARE solo se è identico a un file dell'ARCHIVIO (altrimenti prima si conserva intero in ORIGINALI RICEVUTI); scrittura riprovata sul disco di rete.
@@ -227,7 +228,7 @@ const MENU = [
       // Versione 339 (ordine del Dott. Bizzarri del 31/10/2026): al posto delle due sottocartelle «Smistamento nel cloud» e
       // «Carico nel programma», le istruzioni nuove e la pagina che legge, controlla e archivia (cloud e programma).
       { id: "istr-generali-f24", label: "Istruzioni Generali", icon: "📖" },
-      { id: "f24-arrivati", label: "F24 arrivati: controlla e archivia", icon: "🧾" },
+      { id: "f24-arrivati", label: "F24 e quietanze arrivati: controlla e archivia", icon: "🧾" },
       // Versione 362 (ordini del Dott. Bizzarri dell'11/11/2026 ore 12:52 e 13:07): consultazione degli F24, con come e quando sono stati pagati e le prove
       { id: "consulta-f24", label: "Consulta F24", icon: "🔍" },
     ]},
@@ -619,7 +620,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 393</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 395</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={() => (tab === "accessi" && accessiInSospeso.length) ? setUscitaDaAccessi("__esci__") : esci()} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>

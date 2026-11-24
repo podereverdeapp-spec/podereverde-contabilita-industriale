@@ -65,7 +65,7 @@ export function giaNelProgramma({ f24 = [], documenti = [], fileArchivio = [] })
   const nome = (n, chi, imp) => { const b = base(n); if (!b) return; if (!nomi.has(b)) nomi.set(b, chi); if (!imp) senzaImpronta.add(b); };
   for (const f of f24) {
     [f.md5_pdf, f.md5_quietanza, f.md5_contabile].forEach(aggiungi);
-    [[f.nome_file_ricevuto, f.md5_pdf], [f.nome_file_quietanza, f.md5_quietanza], [f.nome_file_contabile, f.md5_contabile]].forEach(([n, imp]) => nome(n, `F24 ${f.codice_delega} (${f.oggetto || ""})`, imp));
+    [[f.nome_file_ricevuto, f.md5_pdf], [f.nome_file_quietanza, f.md5_quietanza], [f.nome_file_contabile, f.md5_contabile]].forEach(([n, imp]) => nome(n, `${f.protocollo_interno || "F24"} ${f.codice_delega} (${f.oggetto || ""})`, imp));
   }
   for (const d of documenti) { aggiungi(d.md5); aggiungi(d.md5_file_ricevuto); nome(d.nome_file_ricevuto, `documento n. ${d.id}`, d.md5 || d.md5_file_ricevuto); }
   for (const x of fileArchivio) aggiungi(x.md5);

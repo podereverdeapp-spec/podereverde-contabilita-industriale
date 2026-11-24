@@ -46,7 +46,7 @@ export default function ConsultaF24({ utente, vaiA }) {
   async function carica() {
     const q = (tab, sel, ord = "id") => fetchAllPages((a, b) => supabase.from(tab).select(sel).order(ord).range(a, b));
     const [f, r, fa, rb, docs, arch, ct, lav, cb, cf] = await Promise.all([
-      q("ci_f24", "id, codice_delega, oggetto, data_scadenza, anno, totale_debito, totale_credito, saldo, tipo_pagamento, stato, data_pagamento, banca_addebito, protocollo_telematico, nome_file_ricevuto, nome_file_quietanza, md5_pdf, md5_quietanza, riga_fonte_id, lavoro_id, note, cartella_pagamento"),
+      q("ci_f24", "id, codice_delega, protocollo_interno, oggetto, data_scadenza, anno, totale_debito, totale_credito, saldo, tipo_pagamento, stato, data_pagamento, banca_addebito, protocollo_telematico, nome_file_ricevuto, nome_file_quietanza, md5_pdf, md5_quietanza, riga_fonte_id, lavoro_id, note, cartella_pagamento"),
       q("ci_f24_righe", "id, f24_id, numero_riga, sezione, codice_tributo, descrizione_codice, codice_ente_sede, rateazione_mese, anno_riferimento, importo_debito, importo_credito, trattamento"),
       q("ci_f24_file_archivio", "id, percorso, cartella, cosa, superato, f24_id, md5, dimensione"),
       q("ci_righe_fonte", "id, documento_id, conto_id, data_contabile, verso, importo, descrizione, pagina_pdf"),
@@ -250,7 +250,7 @@ export default function ConsultaF24({ utente, vaiA }) {
   }
 
   function scaricaExcel() {
-    const righe = visibili.map(f => ({ "Codice delega": f.codice_delega, "Scadenza": dataIt(f.data_scadenza), "Che cosa si paga": f.oggetto, "Totale a debito": Number(f.totale_debito),
+    const righe = visibili.map(f => ({ "Protocollo interno": f.protocollo_interno, "Codice delega": f.codice_delega, "Scadenza": dataIt(f.data_scadenza), "Che cosa si paga": f.oggetto, "Totale a debito": Number(f.totale_debito),
       "Totale a credito": Number(f.totale_credito), "Saldo": Number(f.saldo), "Stato": f.stato, "Come è stato pagato": f.come, "Data del pagamento": f.dataPagamento ? dataIt(f.dataPagamento) : "",
       "Pagamento da confermare": f.daConfermare ? "SÌ" : "", "Riga della banca": (f.rigaCollegata || f.rigaProposta) ? `${dataIt((f.rigaCollegata || f.rigaProposta).data_contabile)} ${(f.rigaCollegata || f.rigaProposta).descrizione}` : "",
       "Pagina dell'estratto": f.estratto ? `${f.estratto.percorso || "non nell'archivio"} pagina ${f.estratto.pagina}` : "", "Quietanza": f.md5_quietanza || f.quietanze.length ? "SÌ" : "NO",
@@ -327,7 +327,7 @@ export default function ConsultaF24({ utente, vaiA }) {
           {nonPagati.length > 0 && <li style={{ color: C.red }}><b>{nonPagati.length} F24 scadut{nonPagati.length === 1 ? "o" : "i"} e non pagat{nonPagati.length === 1 ? "o" : "i"}</b> (in banca non c'è l'addebito): {nonPagati.map(f => `${dataIt(f.data_scadenza)} ${euro(f.saldo)}`).join("; ")}. Se è stato sostituito da altre deleghe (per esempio un ravvedimento), aprirlo e premere «Segna "Sostituito"».</li>}
           {daConfermare.length > 0 && <li><b>{daConfermare.length} F24 pagati secondo l'estratto conto, da confermare</b>: {daConfermare.filter(f => f.stato !== "Pagato").length} ancora «Da pagare» e {daConfermare.filter(f => f.stato === "Pagato").length} «Pagato» senza la riga della banca collegata. Si confermano nel riquadro «Chiusura» in fondo a questa pagina: un clic per riga, poi «Aggiorna l'elenco».</li>}
           {d.senzaF24.length > 0 && <li><b>{d.senzaF24.length} pagamenti di F24 in banca senza l'F24 nel programma</b> (dal {dataIt(d.daQuando)}): {d.senzaF24.map(r => `${dataIt(r.data_contabile)} ${euro(r.importo)}`).join("; ")}. Gli F24 vanno caricati con «F24 arrivati».</li>}
-          {lettureAperte.map(a => <li key={a}>Per {d.elenco.filter(f => f.avvisi.includes(a)).length} F24 {a}: si finisce con «F24 arrivati: controlla e archivia».</li>)}
+          {lettureAperte.map(a => <li key={a}>Per {d.elenco.filter(f => f.avvisi.includes(a)).length} F24 {a}: si finisce con «F24 e quietanze arrivati: controlla e archivia».</li>)}
           {senzaQuietanza.length > 0 && <li>{senzaQuietanza.length} F24 pagati con i crediti senza la quietanza nel programma o nell'archivio.</li>}
           {pronteDaAllegare.length > 0 && <li>{pronteDaAllegare.length} F24 con il pagamento confermato hanno la pagina dell'estratto da allegare. <button style={{ ...btn(false), height: 26 }} onClick={() => preparaAllega(pronteDaAllegare)}>Allega a tutti</button></li>}
         </ul>
@@ -394,7 +394,7 @@ function Riga({ f, aperto, cella, onApri, onDocumento, onEstratto, onAllega, onS
     <tr style={{ background: COLORI[f.colore] }}>
       <td style={{ ...cella, cursor: "pointer", width: 18 }} onClick={onApri}>{aperto ? "▾" : "▸"}</td>
       <td style={{ ...cella, whiteSpace: "nowrap" }}>{dataIt(f.data_scadenza)}</td>
-      <td style={cella}>{f.oggetto}<div style={{ fontSize: 11, color: C.muted }}>{f.codice_delega}</div></td>
+      <td style={cella}>{f.oggetto}<div style={{ fontSize: 11, color: C.muted }}><b style={{ color: C.text }}>{f.protocollo_interno}</b> · {f.codice_delega}</div></td>
       <td style={{ ...cella, textAlign: "right", whiteSpace: "nowrap" }}>{euro(f.saldo)}</td>
       <td style={{ ...cella, fontWeight: 700 }}>{f.stato}</td>
       <td style={cella}>{f.come}</td>

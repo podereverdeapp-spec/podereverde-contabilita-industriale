@@ -144,12 +144,12 @@ export function totaliPerAnno(elenco) {
   return Object.values(out).sort((a, b) => String(b.anno).localeCompare(String(a.anno)));
 }
 
-// Testo per la ricerca libera: oggetto, codice delega, codici tributo, importi
+// Testo per la ricerca libera (versione 395: anche il protocollo interno): oggetto, codice delega, codici tributo, importi
 export function corrisponde(f, testo) {
   const t = String(testo || "").trim().toLowerCase();
   if (!t) return true;
   const num = t.includes(",") ? Number(t.replace(/\./g, "").replace(",", ".")) : Number(t);
   if (/^[\d.,]+$/.test(t) && !Number.isNaN(num) && [f.saldo, f.totale_debito, f.totale_credito].some(v => Math.abs(Number(v) - num) < 0.005)) return true;
-  return [f.oggetto, f.codice_delega, f.come, f.nome_file_ricevuto, it(f.data_scadenza), it(f.dataPagamento), ...f.righe.map(r => r.codice_tributo), ...f.righe.map(r => r.descrizione_codice)]
+  return [f.oggetto, f.protocollo_interno, f.codice_delega, f.come, f.nome_file_ricevuto, it(f.data_scadenza), it(f.dataPagamento), ...f.righe.map(r => r.codice_tributo), ...f.righe.map(r => r.descrizione_codice)]
     .some(v => String(v || "").toLowerCase().includes(t));
 }

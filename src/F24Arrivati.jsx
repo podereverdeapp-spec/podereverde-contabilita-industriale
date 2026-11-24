@@ -1,3 +1,4 @@
+// Versione 395 (Tenente, 24/11/2026): titolo «F24 e quietanze arrivati: controlla e archivia», riquadro «da qui anche le quietanze», protocollo interno degli F24.
 // Versione 339 (31/10/2026, ordine del Dott. Bizzarri): pagina «F24 arrivati: controlla e archivia».
 // Versione 345 (02/11/2026): un'archiviazione sola alla volta; un file esce da DA SMISTARE solo se è identico a un file dell'ARCHIVIO (altrimenti prima si conserva intero in ORIGINALI RICEVUTI), anche quando l'archiviazione riprende; scrittura riprovata sul disco di rete.
 // Versione 344 (02/11/2026): «Archivia» archivia le righe a posto e lascia in sospeso le rosse (con i loro file in DA SMISTARE); il lavoro resta aperto finché non è tutto archiviato; la quietanza senza F24 riceve il nome «F24 <data del pagamento>.pdf».
@@ -718,7 +719,14 @@ export default function F24Arrivati({ utente, accesso }) {
   // ── Disegno ──
   return (
     <div style={{ maxWidth: 1180, margin: "0 auto", padding: 20, fontFamily: FONT, color: C.text }}>
-      <h2 style={{ margin: "0 0 4px", color: C.primary }}>🧾 F24 arrivati: controlla e archivia</h2>
+      <h2 style={{ margin: "0 0 4px", color: C.primary }}>🧾 F24 e quietanze arrivati: controlla e archivia</h2>
+      {/* versione 395 (Dott. Bizzarri 24/11/2026 ore 09:55–09:56): da qui si caricano anche le quietanze */}
+      <div style={{ ...scatola, padding: 12, background: "#EEF5FF", border: `1.5px solid ${C.primary}`, fontSize: 14 }}>
+        <b>Da qui si caricano gli F24 da pagare e anche le loro quietanze:</b> quella dello Studio, quella scaricata dal cassetto fiscale e la contabile dell'home banking.
+        Mettile in F24 DA SMISTARE, falle leggere da Claude, carica qui la lettura e premi «Archivia».
+        Ogni quietanza si aggancia al suo F24 con il protocollo interno (per esempio <b>F24 2026/0012</b>).
+        <b>Nella Gestione incassi e pagamenti le quietanze non si caricano.</b>
+      </div>
       <div style={{ color: C.muted, fontSize: 13.5, marginBottom: 16 }}>Tre passi: 1) Claude legge i documenti di F24 DA SMISTARE; 2) qui si carica la sua lettura e si controlla; 3) «Archivia» copia tutto nell'ARCHIVIO e nel programma.</div>
       {errore && <div style={{ ...scatola, padding: 12, background: COL.rosso.sfondo, color: COL.rosso.testo, fontWeight: 700 }}>⚠️ {errore}</div>}
 
@@ -820,6 +828,7 @@ export default function F24Arrivati({ utente, accesso }) {
           {cl.deleghe.map(d => (
             <Riga key={d.codice_delega} colore={d.colore} aperta={aperte.has(d.codice_delega)} onApri={() => apri(d.codice_delega)} testata={<>
               <Etichetta colore={d.colore}>{d.doppioneDi ? `Doppione di ${d.doppioneDi}` : d.nienteDiNuovo ? "Già nel programma e in archivio" : d.soloPagamento ? (d.esistente && !d.suo ? "Paga un F24 del programma" : "Quietanza senza F24") : COL[d.colore].nome}</Etichetta>
+              {d.esistente?.protocollo_interno ? <b style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 6, padding: "0 6px" }}>{d.soloPagamento && d.esistente && !d.suo ? `Quietanza → ${d.esistente.protocollo_interno}` : d.esistente.protocollo_interno}</b> : <span style={{ fontSize: 12, color: C.muted }}>protocollo al salvataggio</span>}
               <b>{d.oggetto}</b>
               <span style={{ color: C.muted }}>{d.soloPagamento ? `pagato il ${dataIt(d.data_pagamento)}` : `scade il ${dataIt(d.data_scadenza)}`}</span>
               <b>{euro(d.saldo)}</b>
@@ -846,7 +855,7 @@ export default function F24Arrivati({ utente, accesso }) {
                 <div style={{ background: "#fff", border: `1.5px solid ${COL.rosso.bordo}`, borderRadius: 10, padding: 12, marginTop: 10 }}>
                   <b>Nel programma c'è già un F24 con la stessa scadenza e le stesse cartelle, ma con righe diverse.</b> È una versione corretta che lo sostituisce, o un F24 in più da pagare?
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 8 }}>
-                    {d.decisione.candidati.map(f => <button key={f.codice_delega} disabled={bloccato} style={bottone(f.stato !== "Pagato", d.s.sostituisce === f.codice_delega ? C.green : C.primary)} onClick={() => f.stato !== "Pagato" && setDelega(d.codice_delega, { versione: "corretta", sostituisce: f.codice_delega })}>Sostituisce {f.codice_delega} ({f.stato}, {euro(f.saldo)})</button>)}
+                    {d.decisione.candidati.map(f => <button key={f.codice_delega} disabled={bloccato} style={bottone(f.stato !== "Pagato", d.s.sostituisce === f.codice_delega ? C.green : C.primary)} onClick={() => f.stato !== "Pagato" && setDelega(d.codice_delega, { versione: "corretta", sostituisce: f.codice_delega })}>Sostituisce {f.protocollo_interno} – {f.codice_delega} ({f.stato}, {euro(f.saldo)})</button>)}
                     <button disabled={bloccato} style={bottone(true, d.s.versione === "in più" ? C.green : C.accent)} onClick={() => decidiInPiu(d)}>È un F24 in più</button>
                   </div>
                   <div style={{ color: C.muted, fontSize: 12.5, marginTop: 6 }}>Un F24 già «Pagato» non può essere sostituito: se le righe sono diverse, chiedi allo studio.</div>
@@ -855,7 +864,7 @@ export default function F24Arrivati({ utente, accesso }) {
               {d.decisione?.tipo === "scegli" && (
                 <div style={{ marginTop: 10 }}><b>Più F24 del programma hanno le stesse righe: quale paga?</b>{" "}
                   <select disabled={bloccato} value={d.s.abbinaA || ""} onChange={e => setDelega(d.codice_delega, { abbinaA: e.target.value })} style={{ ...campo, minWidth: 320 }}>
-                    <option value="">— scegli —</option>{d.decisione.candidati.map(f => <option key={f.codice_delega} value={f.codice_delega}>{f.codice_delega}: {f.oggetto}, {dataIt(f.data_scadenza)}, {f.stato}</option>)}
+                    <option value="">— scegli —</option>{d.decisione.candidati.map(f => <option key={f.codice_delega} value={f.codice_delega}>{f.protocollo_interno} – {f.codice_delega}: {f.oggetto}, {dataIt(f.data_scadenza)}, {f.stato}</option>)}
                   </select></div>
               )}
               {d.scansione && (
@@ -865,7 +874,7 @@ export default function F24Arrivati({ utente, accesso }) {
                 </label>
               )}
               {d.soloPagamento && (d.esistente && !d.suo ? (
-                <div style={{ marginTop: 8 }}>Paga l'F24 <b>{d.esistente.codice_delega}</b> del programma ({d.esistente.oggetto}, scadenza {dataIt(d.esistente.data_scadenza)}): stesse righe e stesso saldo. È già segnato «Pagato».</div>
+                <div style={{ marginTop: 8 }}>Paga l'F24 <b>{d.esistente.protocollo_interno}</b> ({d.esistente.codice_delega}) del programma ({d.esistente.oggetto}, scadenza {dataIt(d.esistente.data_scadenza)}): stesse righe e stesso saldo. È già segnato «Pagato».</div>
               ) : <>
                 <div style={{ color: COL.arancione.testo, marginTop: 8 }}>Nessun F24 con queste righe, né in questa lettura né nel programma: il pagamento è nel programma come «Pagato» e <b>l'F24 si chiede allo studio</b>.</div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8, alignItems: "center" }}>

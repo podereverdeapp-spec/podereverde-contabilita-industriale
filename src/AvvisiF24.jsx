@@ -11,7 +11,7 @@ import { cartellaQuietanze, controllaFiscale, segnaNonDaCaricare, ID_FINESTRA } 
 // Versione 363 (11/11/2026, ordini del Dott. Bizzarri delle 14:03–14:04): avvisi «F24 da pagare» e «F24 da caricare»
 // in alto nel programma, con i tasti che portano alla pagina di carico («F24 arrivati») e alla «Consulta F24».
 
-const SEL_F24 = "id, codice_delega, oggetto, data_scadenza, saldo, totale_debito, totale_credito, stato, data_pagamento, riga_fonte_id, nome_file_quietanza, md5_quietanza, lavoro_id, md5_pdf, md5_contabile, nome_file_ricevuto, nome_file_contabile";
+const SEL_F24 = "id, codice_delega, protocollo_interno, oggetto, data_scadenza, saldo, totale_debito, totale_credito, stato, data_pagamento, riga_fonte_id, nome_file_quietanza, md5_quietanza, lavoro_id, md5_pdf, md5_contabile, nome_file_ricevuto, nome_file_contabile";
 
 // legge tutto quello che serve agli avvisi (poche righe: gli F24 e le sole uscite della banca con «F24»)
 export async function caricaAvvisiF24() {
@@ -120,7 +120,7 @@ export function StrisciaAvvisiF24({ avvisi, vaiA, utente, puoCaricare, puoConsul
     </div>}
     {fiscale && fiscale.daCaricare.length > 0 && <div style={striscia("#C0392B")}>
       📥 {fiscale.daCaricare.length === 1 ? "C'è 1 F24 da caricare" : `Ci sono ${fiscale.daCaricare.length} F24 da caricare`}: PDF nuovi nella cartella FISCALE\QUIETANZE F24 (controllo del {dataIt(dataRoma(fiscale.ultimo.eseguito_il))}).
-      {puoCaricare && <button style={tasto} onClick={() => vaiA("f24-arrivati")}>Vai a «F24 arrivati» per caricarli →</button>}
+      {puoCaricare && <button style={tasto} onClick={() => vaiA("f24-arrivati")}>Vai a «F24 e quietanze arrivati» per caricarli →</button>}
       {puoConsultare && <button style={tasto} onClick={() => vaiA("consulta-f24")}>Vedi l'elenco</button>}
       {!fiscale.vecchio && <button style={tasto} onClick={controlla} disabled={!!lavoro}>Controlla di nuovo FISCALE</button>}
     </div>}
@@ -163,7 +163,7 @@ export function RiquadroFiscale({ utente, vaiA }) {
     <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 6 }}>
       <div style={{ fontWeight: 800, color: C.primary, flex: 1 }}>F24 da caricare dalla cartella FISCALE\QUIETANZE F24</div>
       <button style={btn(true)} onClick={controlla} disabled={!!lavoro && !/finito/.test(lavoro)}>Controlla FISCALE</button>
-      <button style={btn(false)} onClick={() => vaiA("f24-arrivati")}>Vai a «F24 arrivati» per caricarli</button>
+      <button style={btn(false)} onClick={() => vaiA("f24-arrivati")}>Vai a «F24 e quietanze arrivati» per caricarli</button>
     </div>
     <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 6 }}>Il programma guarda la cartella del cloud solo in lettura: non sposta, non copia e non cancella niente. Un PDF è «caricato» se la sua impronta è nel programma; «stesso nome» se nel programma c'è un file con lo stesso nome ma non si può dire che sia lo stesso (da guardare). I file con una data prima del {DATA_PARTENZA.split("-").reverse().join("/")} sono «storico». Se il controllo ha più di {GIORNI_CONTROLLO_VECCHIO} giorni, in alto compare l'avviso.</div>
     {lavoro && <div style={{ fontSize: 13, background: "#EAF2FB", padding: 6, marginBottom: 6 }}>⏳ {lavoro}</div>}

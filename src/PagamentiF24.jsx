@@ -26,7 +26,7 @@ export default function PagamentiF24({ utente }) {
   const carica = useCallback(async () => {
     setErrore("");
     const [f, r, c, d] = await Promise.all([
-      fetchAllPages((da, a) => supabase.from("ci_f24").select("id, codice_delega, oggetto, data_scadenza, saldo, stato, data_pagamento, riga_fonte_id, banca_addebito, nome_file_quietanza, nome_file_contabile, note").order("data_scadenza").order("id").range(da, a)),
+      fetchAllPages((da, a) => supabase.from("ci_f24").select("id, codice_delega, protocollo_interno, oggetto, data_scadenza, saldo, stato, data_pagamento, riga_fonte_id, banca_addebito, nome_file_quietanza, nome_file_contabile, note").order("data_scadenza").order("id").range(da, a)),
       fetchAllPages((da, a) => supabase.from("ci_righe_fonte").select("id, documento_id, conto_id, data_contabile, importo, descrizione, verso").order("data_contabile").order("id").range(da, a)),
       supabase.from("ci_conti").select("id, nome"),
       fetchAllPages((da, a) => supabase.from("ci_documenti_fonte").select("id, annullato_il").order("id").range(da, a)),
@@ -107,7 +107,7 @@ export default function PagamentiF24({ utente }) {
   });
   const conferma = (f, riga) => unoAllaVolta(async () => {
     if (!riga) return;
-    if (!window.confirm(`F24 ${f.codice_delega} (${f.oggetto || ""}), saldo ${formattaEuro(Number(f.saldo))}, scadenza ${dataIt(f.data_scadenza)}.\n\nRiga della banca: ${dataIt(riga.data_contabile)}, ${formattaEuro(Number(riga.importo))}, «${riga.descrizione}».\n\nConfermare che questo F24 è pagato con questa riga?`)) return;
+    if (!window.confirm(`${f.protocollo_interno || "F24"} – ${f.codice_delega} (${f.oggetto || ""}), saldo ${formattaEuro(Number(f.saldo))}, scadenza ${dataIt(f.data_scadenza)}.\n\nRiga della banca: ${dataIt(riga.data_contabile)}, ${formattaEuro(Number(riga.importo))}, «${riga.descrizione}».\n\nConfermare che questo F24 è pagato con questa riga?`)) return;
     try {
       if (f.stato === "Pagato") await collega(f, riga); else await confermaPagato(f, riga);
       setEsiti([`${f.codice_delega}: ${f.stato === "Pagato" ? "collegato" : "«Pagato» confermato"}`]);
@@ -148,11 +148,11 @@ export default function PagamentiF24({ utente }) {
           </div>}
           {daMostrare.length === 0 ? <div style={{ fontSize: 13 }}>✅ Nessun F24 da guardare.</div> :
           <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
-            <thead><tr style={{ textAlign: "left" }}><th>Delega</th><th>Oggetto</th><th>Scadenza</th><th style={{ textAlign: "right" }}>Saldo</th><th>Stato</th><th>Che cosa ho trovato</th><th></th></tr></thead>
+            <thead><tr style={{ textAlign: "left" }}><th>Protocollo e delega</th><th>Oggetto</th><th>Scadenza</th><th style={{ textAlign: "right" }}>Saldo</th><th>Stato</th><th>Che cosa ho trovato</th><th></th></tr></thead>
             <tbody>{daMostrare.map(f => {
               const scelta = f.proposta || (f.candidati || []).find(r => String(r.id) === String(scelte[f.id]));
               return <tr key={f.id} style={{ background: COLORI[f.colore], borderBottom: "1px solid #ddd" }}>
-                <td>{f.codice_delega}</td><td>{f.oggetto}</td><td>{dataIt(f.data_scadenza)}</td><td style={{ textAlign: "right" }}>{formattaEuro(Number(f.saldo))}</td><td>{f.stato}</td>
+                <td><b>{f.protocollo_interno}</b><div style={{ fontSize: 11, color: C.muted }}>{f.codice_delega}</div></td><td>{f.oggetto}</td><td>{dataIt(f.data_scadenza)}</td><td style={{ textAlign: "right" }}>{formattaEuro(Number(f.saldo))}</td><td>{f.stato}</td>
                 <td>{f.motivo}{f.proposta && <div style={{ color: C.muted }}>Riga della banca: {dataIt(f.proposta.data_contabile)} · {conti[f.proposta.conto_id]} · «{f.proposta.descrizione}»</div>}
                   {(f.esito === "scegliere" || f.esito === "ritardo" || (f.esito === "senza-scadenza" && f.candidati.length > 0)) && <div><select value={scelte[f.id] || ""} onChange={e => setScelte(s => ({ ...s, [f.id]: e.target.value }))}>
                     <option value="">— scegli la riga della banca —</option>
