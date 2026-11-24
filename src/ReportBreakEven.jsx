@@ -2,6 +2,10 @@
 // analitico come i report iniziali. Per ogni specie e per l'azienda: il giudizio, l'andamento, perché, le leve in ordine
 // di peso, le alternative quando il pareggio non è raggiungibile, quanto sono certi i numeri. Si ricalcola a ogni apertura
 // con gli stessi dati e lo stesso motore delle pagine del Break Even (cartella «Analisi Costi»). Sola lettura.
+// Versione 398 (ordine del Dott. Bizzarri del 24/11/2026 ore 16:13, «procedi»): pulsante «Ricalcola con i dati di adesso»
+// (prima il calcolo restava quello della prima apertura della sessione, anche se il sottotitolo diceva il contrario);
+// «nel 2025» al posto di «nell'2025» nella parte 7; tolta la riga fissa del 27/10 sulla vita economica dei cespiti.
+// Parte 6: «Il piano si rifà da solo quando cambiano i dati» → si rifà con il pulsante (ricontrollo indipendente del 24/11).
 import { useEffect, useMemo } from "react";
 import { C } from "./style";
 import { useStatoBreakEven, caricaSeServe } from "./statoBreakEven";
@@ -24,11 +28,17 @@ export default function ReportBreakEven({ onNavigate }) {
       <h1 style={{ color: C.primary, fontSize: 24, margin: "0 0 4px" }}>⚖️ Report di Analisi — Break Even</h1>
       <p style={{ color: C.muted, margin: 0, fontSize: 13.5, lineHeight: 1.5, maxWidth: 900 }}>
         Dove siamo rispetto al pareggio, perché, quali leve contano e quanto, e — dove il pareggio non si raggiunge — quali alternative ci sono, con i numeri.
-        Si ricalcola a ogni apertura con i dati del momento. Gli strumenti per provare altre ipotesi sono nella cartella «Analisi Costi», sottocartella «Analisi Break Even».
+        Si calcola alla prima apertura; per rifarlo con i dati inseriti dopo, premere «Ricalcola con i dati di adesso». Gli strumenti per provare altre ipotesi sono nella cartella «Analisi Costi», sottocartella «Analisi Break Even».
       </p>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 10 }}>
+        <button onClick={() => caricaSeServe(true)} disabled={s.caricamento} style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 6, padding: "7px 14px", fontSize: 13.5, cursor: s.caricamento ? "default" : "pointer" }}>
+          {s.caricamento ? "Calcolo in corso…" : "Ricalcola con i dati di adesso"}
+        </button>
+        {s.A?.caricatoIl && !s.caricamento && <span style={{ fontSize: 12, color: C.muted }}>Calcolato il {new Date(s.A.caricatoIl).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>}
+      </div>
       {s.errore && <div style={{ marginTop: 10 }}><Avviso tipo="rosso">⚠️ {s.errore}</Avviso></div>}
-      {!r && !s.errore && <p style={{ color: C.muted }}>Calcolo del report (animali, parti, fatture, costi)…</p>}
-      {r && <Contenuto r={r} A={s.A} vai={vai} />}
+      {(!r || s.caricamento) && !s.errore && <p style={{ color: C.muted }}>Calcolo del report (animali, parti, fatture, costi)…</p>}
+      {r && !s.caricamento && <Contenuto r={r} A={s.A} vai={vai} />}
     </div>
   );
 }
@@ -91,16 +101,15 @@ function Contenuto({ r, A, vai }) {
           <tr style={{ fontWeight: 800 }}><td style={{ ...td, ...sx }} colSpan={2}>Azienda intera</td><td style={{ ...td, color: colRis(r.piano.oggi) }}>{euro(r.piano.oggi, 0)}</td><td style={{ ...td, color: colRis(r.piano.piano) }}>{euro(r.piano.piano, 0)}</td><td style={td}>{euro(r.piano.piano - r.piano.oggi, 0)}</td></tr>
         </tbody>
       </table>
-      <div style={{ marginTop: 10 }}><Avviso tipo="blu">ℹ️ Il piano tiene i costi comuni dell'azienda come sono oggi (il lavoro compreso): più capi all'ingrasso possono chiedere più lavoro, e i suini in più chiedono posti all'ingrasso e clienti per la carne (da controllare con la Scheda di rilevazione delle strutture). I prezzi di vendita restano quelli delle fatture. Il piano si rifà da solo quando cambiano i dati; le singole ipotesi si provano nelle pagine «Break Even» e «Nati o comprati».</Avviso></div>
+      <div style={{ marginTop: 10 }}><Avviso tipo="blu">ℹ️ Il piano tiene i costi comuni dell'azienda come sono oggi (il lavoro compreso): più capi all'ingrasso possono chiedere più lavoro, e i suini in più chiedono posti all'ingrasso e clienti per la carne (da controllare con la Scheda di rilevazione delle strutture). I prezzi di vendita restano quelli delle fatture. Il piano si rifà con «Ricalcola con i dati di adesso», in alto; le singole ipotesi si provano nelle pagine «Break Even» e «Nati o comprati».</Avviso></div>
     </Sezione>
 
     <Sezione titolo="7. Che cosa manca per decidere con certezza" sottotitolo="I dati da verificare e da completare: finché mancano, il report ragiona sullo scenario prudente.">
       <ul style={{ fontSize: 13, lineHeight: 1.7, margin: 0 }}>
         <li><strong>Suini «attivi» troppo vecchi ({suiniLottoAnomali(A).length}):</strong> suinetti dei lotti ancora «attivi» con più di 15 mesi, quasi certamente usciti e non registrati. Nello scenario base contano fino a 15 mesi di età e poi escono senza vendita. Da verificare in stalla (Sborchia).</li>
-        <li><strong>Capi macellati senza peso della carcassa:</strong> nello scenario base non contano tra i capi prodotti ({SPECIE.map(sp => `${NOMI[sp].toLowerCase()} ${r.specie[sp].certezza.senzaPeso}`).join(", ")} nell'{P.breve}).</li>
+        <li><strong>Capi macellati senza peso della carcassa:</strong> nello scenario base non contano tra i capi prodotti ({SPECIE.map(sp => `${NOMI[sp].toLowerCase()} ${r.specie[sp].certezza.senzaPeso}`).join(", ")} {P.tipo === "anno" ? `nel ${P.breve}` : `nell'anno mobile ${P.breve}`}).</li>
         <li><strong>Ovini:</strong> parti delle pecore non registrati tutti e agnelli senza peso nell'app: capi e chili vengono dalle fatture, i mesi in azienda degli agnelli mancano (il loro mantenimento non è calcolato).</li>
         <li><strong>Nati morti dei suini:</strong> l'app non distingue i nati morti dai morti prima della registrazione nel lotto: il protocollo per gli operatori è stato ordinato.</li>
-        <li><strong>Vita economica dei cespiti:</strong> proposta del 27/10/2026 in attesa di decisione (file «Vita_economica_cespiti_v316.xlsx»): gli ammortamenti del 2025 scenderebbero di 9.926 €.</li>
       </ul>
     </Sezione>
     <p style={{ fontSize: 11.5, color: C.muted, marginTop: 18 }}>ℹ️ {TESTO_RISULTATO}</p>
