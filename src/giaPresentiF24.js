@@ -3,6 +3,7 @@
 // Non si cambiano importi, stati, scadenze: si scrivono solo i file e la cartella del pagamento (già decisa nel programma).
 import { LIMITE_PERCORSO, PREFISSO_ARCHIVIO, nomeCartellaValido } from "./calcoloF24Arrivati";
 import { nomeNonAccettato } from "./archivioF24";
+import { nomeConProtocollo } from "./nomiArchivioF24"; // versione 400
 
 // cartelle di pagamento decise dai codici a debito (i crediti non contano)
 function categorieDi(f, db) {
@@ -33,9 +34,11 @@ export function pianoGiaPresenti(db, oggi) {
     if (!f.md5_pdf) problemi.push("il PDF di questo F24 non è nel programma: si archivia con la sua lettura");
     const anno = String(f.data_scadenza || "").slice(0, 4);
     if (!/^\d{4}$/.test(anno)) problemi.push("manca la scadenza");
-    const pezzi = [{ cosa: "F24", archivio: `${f.codice_delega}/F24.pdf`, md5Atteso: f.md5_pdf, nomeFile: `F24 ${f.data_scadenza}.pdf` }];
-    if (f.md5_quietanza) pezzi.push({ cosa: "Quietanza", archivio: `${f.codice_delega}/quietanza.pdf`, md5Atteso: f.md5_quietanza, nomeFile: `QUIETANZA ${f.data_pagamento || "SENZA DATA"}.pdf` });
-    if (f.md5_contabile) pezzi.push({ cosa: "Contabile della banca", archivio: `${f.codice_delega}/contabile.pdf`, md5Atteso: f.md5_contabile, nomeFile: `CONTABILE BANCA ${f.data_pagamento || "SENZA DATA"}.pdf` });
+    // versione 400: nel nome il protocollo interno (l'F24 è già nel programma e ce l'ha)
+    if (!nomeConProtocollo("F24", f.protocollo_interno)) problemi.push("l'F24 non ha il protocollo interno");
+    const pezzi = [{ cosa: "F24", archivio: `${f.codice_delega}/F24.pdf`, md5Atteso: f.md5_pdf, nomeFile: nomeConProtocollo("F24", f.protocollo_interno) || `F24 ${f.data_scadenza}.pdf` }];
+    if (f.md5_quietanza) pezzi.push({ cosa: "Quietanza", archivio: `${f.codice_delega}/quietanza.pdf`, md5Atteso: f.md5_quietanza, nomeFile: nomeConProtocollo("Quietanza", f.protocollo_interno) || `QUIETANZA ${f.data_pagamento || "SENZA DATA"}.pdf` });
+    if (f.md5_contabile) pezzi.push({ cosa: "Contabile della banca", archivio: `${f.codice_delega}/contabile.pdf`, md5Atteso: f.md5_contabile, nomeFile: nomeConProtocollo("Contabile della banca", f.protocollo_interno) || `CONTABILE BANCA ${f.data_pagamento || "SENZA DATA"}.pdf` });
     const file = [];
     for (const cat of categorie) for (const p of pezzi) {
       const destinazione = `${cat}\\${anno}\\${nome}\\${p.nomeFile}`;

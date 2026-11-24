@@ -12,8 +12,13 @@ import { oggiRoma } from "./dateRoma";
 import { md5 } from "./md5";
 import { browserAdatto, controllaCartella, leggiByte } from "./cartellaBanche";
 import { cartella as cartellaF24, esiste, leggiFile, leggiRiconoscimento, nomeNonAccettato, FILE_RICONOSCIMENTO } from "./archivioF24";
+import { pianoRinomina, nomeConProtocollo } from "./nomiArchivioF24"; // versione 400
+import { rinominaFile } from "./rinominaArchivioF24"; // versione 400
 import { consulta, totaliPerAnno, corrisponde, lunghezze, nomeAllegatoEstratto, COSA_ESTRATTO, LIMITE_FINALE, LIMITE_PROVVISORIO } from "./calcoloConsultaF24";
 
+// Versione 400 (Tenente, 24/11/2026; Dott. Bizzarri 18:41 «procedi per il meglio»): «Nomi con il protocollo» rinomina i file degli F24 già
+// nell'archivio (F24, quietanze, contabili, pagine dell'estratto) con il protocollo interno al posto della data; la pagina dell'estratto
+// nuova si chiama «F24 AAAA-NNNN ESTRATTO.pdf». Per ogni file: copia con il nome nuovo, rilettura e impronta, programma aggiornato, poi via il nome vecchio.
 // Versione 362 (11/11/2026, ordini del Dott. Bizzarri delle 12:52 e delle 13:07) — «Consulta F24».
 // Elenco di tutti gli F24 del programma: stato, come sono stati pagati (banca o compensazione con i crediti), data del pagamento;
 // si aprono l'F24, la quietanza e la pagina dell'estratto conto con l'addebito. Due sole scritture, sempre con conferma:
@@ -39,6 +44,7 @@ export default function ConsultaF24({ utente, vaiA }) {
   const [chiediCartella, setChiediCartella] = useState(null);   // { quale: "BANCHE" | "F24", poi: funzione }
   const [sostituisci, setSostituisci] = useState(null); // { f, scelti: Set, motivo, avviso, inCorso }
   const [allega, setAllega] = useState(null);           // { elenco: [F24], righe: [testo], inCorso, finito }
+  const [rinomina, setRinomina] = useState(null);       // versione 400: { righe: [testo], inCorso, finito, f24: bool }
   const banche = useRef(null);
   const f24root = useRef(null);
   const occupato = useRef(false);
@@ -61,7 +67,8 @@ export default function ConsultaF24({ utente, vaiA }) {
     const conti = Object.fromEntries((ct.data || []).map(x => [x.id, x.nome]));
     const calcolo = consulta({ f24: f.data || [], righeTributo: r.data || [], fileArchivio: fa.data || [], righeBanca: rb.data || [], documenti: docs.data || [],
       bancheArchivio: new Map((arch.data || []).map(a => [a.impronta, a.percorso])), conti, lavori: lav.data || [], oggi: oggiRoma() });
-    setD({ ...calcolo, conti, codiceBanche: cb.data?.[0]?.codice || null, codiceF24: cf.data?.[0]?.codice || null, fileArchivio: fa.data || [] });
+    setD({ ...calcolo, conti, codiceBanche: cb.data?.[0]?.codice || null, codiceF24: cf.data?.[0]?.codice || null, fileArchivio: fa.data || [],
+      rinomina: pianoRinomina(fa.data || [], f.data || []) });
   }
   useEffect(() => { carica().catch(x => setErrore("Lettura non riuscita: " + x.message)); }, []);
 
@@ -196,7 +203,8 @@ export default function ConsultaF24({ utente, vaiA }) {
       const archivio = await cartellaF24(hf, "ARCHIVIO");
       const pagine = new Map();
       for (const f of allega.elenco) {
-        const e = f.estratto; const nome = nomeAllegatoEstratto(f.rigaCollegata);
+        // versione 400: nel nome il protocollo interno dell'F24 (senza protocollo resta il nome di prima)
+        const e = f.estratto; const nome = nomeConProtocollo(COSA_ESTRATTO, f.protocollo_interno) || nomeAllegatoEstratto(f.rigaCollegata);
         scrivi(`F24 ${f.codice_delega} — ${f.oggetto} (${dataIt(f.data_scadenza)}, ${euro(f.saldo)}): estratto ${e.conto}, pagina ${e.pagina}`);
         try {
           const chiave = `${e.percorso}|${e.pagina}`;
@@ -229,6 +237,52 @@ export default function ConsultaF24({ utente, vaiA }) {
       }
     } catch (x) { scrivi(`⛔ Lavoro fermato: ${x.message}`); }
     finally { occupato.current = false; setAllega(a => ({ ...a, inCorso: false, finito: true })); await carica().catch(() => {}); }
+  }
+
+  // ── Versione 400: nomi dei file dell'archivio con il protocollo interno ─────────────────────────────────
+  // Per ogni file: si controlla che nel cloud ci sia proprio il file registrato (impronta), si scrive la copia con il nome nuovo
+  // (nome provvisorio, rilettura, impronta), si aggiorna il programma (solo se il percorso è ancora quello vecchio) e solo alla fine
+  // si toglie il nome vecchio, dopo averlo riletto. Un file che non va si salta e resta com'era; niente si sovrascrive.
+  async function eseguiRinomina() {
+    if (occupato.current || !rinomina) return;
+    occupato.current = true;
+    const righe = []; const scrivi = t => { righe.push(t); setRinomina(a => ({ ...a, righe: [...righe] })); };
+    setRinomina(a => ({ ...a, inCorso: true }));
+    let fatti = 0, saltati = 0;
+    try {
+      const hf = await prendiF24(true); if (!hf) throw new Error("cartella F24 non scelta o senza il permesso di modificare");
+      const archivio = await cartellaF24(hf, "ARCHIVIO");
+      // il piano si rifà con i dati di adesso (un'altra persona può aver lavorato nel frattempo)
+      const q = (tab, sel) => fetchAllPages((a, b) => supabase.from(tab).select(sel).order("id").range(a, b));
+      const [fa, f] = await Promise.all([q("ci_f24_file_archivio", "id, percorso, cartella, cosa, superato, f24_id, md5"), q("ci_f24", "id, protocollo_interno, codice_delega")]);
+      if (fa.error || f.error) throw new Error((fa.error || f.error).message);
+      // ricontrollo indipendente (punto 3): non si rinomina mentre qualcuno archivia nella pagina «F24 e quietanze arrivati»
+      const { data: inCorso, error: eL } = await supabase.from("ci_f24_lavori").select("id").eq("stato", "Archiviazione in corso");
+      if (eL) throw new Error(eL.message);
+      if ((inCorso || []).length) throw new Error("in questo momento c'è un'archiviazione in corso nella pagina «F24 e quietanze arrivati»: riprovare quando è finita");
+      const piano = pianoRinomina(fa.data || [], f.data || []);
+      if (!piano.daFare.length) scrivi("Non c'è niente da rinominare: i nomi hanno già il protocollo.");
+      const db = {
+        aggiorna: async (id, vecchio, nuovo) => {
+          const { data, error } = await supabase.from("ci_f24_file_archivio").update({ percorso: nuovo }).eq("id", id).eq("percorso", vecchio).select("id");
+          return error ? { ok: false, motivo: error.message } : (data || []).length ? { ok: true } : { ok: false, motivo: "nessuna riga cambiata" };
+        },
+        rileggi: async id => { const { data, error } = await supabase.from("ci_f24_file_archivio").select("percorso").eq("id", id).maybeSingle(); return error || !data ? null : data; },
+      };
+      for (const x of piano.daFare) {
+        const pezzi = x.vecchio.split("\\");
+        scrivi(`${x.protocollo} — ${x.cosa}: ${pezzi.pop()} → ${x.nuovo.split("\\").pop()}   (ARCHIVIO\\${pezzi.join("\\")})`);
+        try {
+          const r = await rinominaFile(archivio, x, db);
+          if (r.esito === "saltato") { scrivi(`   ⏭️ saltato: ${r.motivo}`); saltati++; }
+          else if (r.esito === "da ricontrollare") { scrivi(`   ⚠️ ${r.motivo}`); saltati++; }
+          else { scrivi(r.esito === "rinominato" ? "   ✅ rinominato" : `   ✅ rinominato nel programma; ⚠️ ${r.motivo}`); fatti++; }
+        } catch (e) { scrivi(`   ⛔ ${e.message}`); saltati++; }
+      }
+      for (const p of piano.problemi) scrivi(`⏭️ non toccato: ARCHIVIO\\${p.vecchio}: ${p.motivo}`);
+      scrivi(`Fine: ${fatti} rinominati, ${saltati} saltati${piano.problemi.length ? `, ${piano.problemi.length} non toccati` : ""}.`);
+    } catch (x) { scrivi(`⛔ Lavoro fermato: ${x.message}. I file già rinominati restano rinominati; si può ripremere: riparte da quelli rimasti.`); }
+    finally { occupato.current = false; setRinomina(a => ({ ...a, inCorso: false, finito: true })); await carica().catch(() => {}); }
   }
 
   // ── «Sostituito» ────────────────────────────────────────────────────────────────────────────────────────
@@ -281,7 +335,7 @@ export default function ConsultaF24({ utente, vaiA }) {
       {allega && <Finestra larga onChiudi={() => { if (!allega.inCorso) setAllega(null); }}>
         <div style={{ fontWeight: 800, color: C.primary, fontSize: 15, marginBottom: 8 }}>Allegare la pagina dell'estratto conto a {allega.elenco.length} F24</div>
         {!allega.inCorso && !allega.finito && <div style={{ fontSize: 13.5, lineHeight: 1.55 }}>
-          Per ogni F24 il programma prende dall'archivio BANCHE l'estratto conto con l'addebito, ne stacca la pagina, la scrive nella cartella dell'F24 dell'ARCHIVIO con il nome «ESTRATTO CONTO &lt;data dell'addebito&gt;.pdf», la rilegge e controlla l'impronta. Non sovrascrive niente e non tocca l'estratto.
+          Per ogni F24 il programma prende dall'archivio BANCHE l'estratto conto con l'addebito, ne stacca la pagina, la scrive nella cartella dell'F24 dell'ARCHIVIO con il nome «F24 &lt;protocollo interno&gt; ESTRATTO.pdf» (per esempio «F24 2026-0012 ESTRATTO.pdf»), la rilegge e controlla l'impronta. Non sovrascrive niente e non tocca l'estratto.
           Servono le due cartelle, una alla volta, con i pulsanti 1 e 2 qui sotto: nella finestra di Windows aprire il cloud <b>Company</b> → <code>SOCIETA</code> → <code>SOCIETA' AGRICOLA PODERE VERDE A R.L</code> → <code>00.DATI PROGRAMMA CONTABILITA' INDUSTRIALE</code>, cliccare una volta sulla cartella (BANCHE, poi F24) e premere «Seleziona cartella». Per la cartella F24 Chrome chiede il permesso di modificare i file: rispondere di sì.
           <ul style={{ margin: "6px 0", paddingLeft: 22 }}>{allega.elenco.map(f => <li key={f.id}>{dataIt(f.data_scadenza)} — {f.oggetto} — {euro(f.saldo)}: pagina {f.estratto.pagina} dell'estratto, in {f.daAllegare.length} cartell{f.daAllegare.length === 1 ? "a" : "e"}</li>)}</ul></div>}
         {allega.righe.length > 0 && <div style={{ fontFamily: "monospace", fontSize: 12, whiteSpace: "pre-wrap", background: "#FAFAF7", border: `1px solid ${C.border}`, padding: 8, maxHeight: "50vh", overflow: "auto" }}>{allega.righe.join("\n")}</div>}
@@ -290,6 +344,23 @@ export default function ConsultaF24({ utente, vaiA }) {
           {!allega.finito && !allega.inCorso && <button style={btn(allega.banche && !allega.f24)} disabled={!allega.banche || allega.f24} onClick={async () => { if (await prendiF24(true)) setAllega(a => ({ ...a, f24: true })); }}>{allega.f24 ? "✓ Cartella F24 scelta, con il permesso di modificare" : "2. Scegli la cartella F24"}</button>}
           {!allega.finito && <button style={btn(allega.banche && allega.f24)} disabled={allega.inCorso || !allega.banche || !allega.f24} onClick={eseguiAllega}>{allega.inCorso ? "Lavoro in corso…" : "3. Sì, allega"}</button>}
           <button style={btn(false)} disabled={allega.inCorso} onClick={() => setAllega(null)}>{allega.finito ? "Chiudi" : "No, lascia stare"}</button></div>
+      </Finestra>}
+      {rinomina && <Finestra larga onChiudi={() => { if (!rinomina.inCorso) setRinomina(null); }}>
+        <div style={{ fontWeight: 800, color: C.primary, fontSize: 15, marginBottom: 8 }}>Nomi dei file con il protocollo interno</div>
+        {!rinomina.inCorso && !rinomina.finito && <div style={{ fontSize: 13.5, lineHeight: 1.55 }}>
+          Nei nomi dei file degli F24 nell'archivio la data lascia il posto al protocollo interno: <b>«F24 2025-0002.pdf»</b>, <b>«F24 2025-0002 QUIETANZA.pdf»</b>, <b>«F24 2025-0002 CONTABILE.pdf»</b>, <b>«F24 2025-0002 ESTRATTO.pdf»</b>. Le cartelle non cambiano: la data resta nel nome della cartella. Lettere e originali ricevuti non cambiano nome.
+          <div style={{ marginTop: 6 }}>Per ogni file il programma controlla che nel cloud ci sia proprio il file registrato, scrive la copia con il nome nuovo, la rilegge, aggiorna il programma e solo alla fine toglie il nome vecchio. Un file che non va si salta e resta com'era. Non si sovrascrive niente.</div>
+          <div style={{ marginTop: 6 }}><b>{d.rinomina.daFare.length} file da rinominare</b>{d.rinomina.giaGiusti ? `, ${d.rinomina.giaGiusti} hanno già il nome giusto` : ""}{d.rinomina.problemi.length ? `, ${d.rinomina.problemi.length} non si possono rinominare` : ""}.</div>
+          <div style={{ fontFamily: "monospace", fontSize: 11.5, background: "#FAFAF7", border: `1px solid ${C.border}`, padding: 8, maxHeight: "40vh", overflow: "auto", marginTop: 6 }}>
+            {d.rinomina.daFare.map(x => <div key={x.id}>{x.vecchio.split("\\").pop()} → <b>{x.nuovo.split("\\").pop()}</b> <span style={{ color: C.muted }}>({x.vecchio.split("\\").slice(0, -1).join("\\")}; {x.lunghezza} caratteri)</span></div>)}
+            {d.rinomina.problemi.map(x => <div key={"p" + x.id} style={{ color: C.red }}>⛔ {x.vecchio}: {x.motivo}</div>)}
+          </div>
+          <div style={{ marginTop: 6 }}>Serve la cartella F24, con il permesso di modificare: pulsante 1 qui sotto; nella finestra di Windows aprire il cloud <b>Company</b> → <code>SOCIETA</code> → <code>SOCIETA' AGRICOLA PODERE VERDE A R.L</code> → <code>00.DATI PROGRAMMA CONTABILITA' INDUSTRIALE</code>, cliccare una volta su <code>F24</code> e premere «Seleziona cartella»; quando Chrome lo chiede, rispondere «Modifica i file».</div></div>}
+        {rinomina.righe.length > 0 && <div style={{ fontFamily: "monospace", fontSize: 12, whiteSpace: "pre-wrap", background: "#FAFAF7", border: `1px solid ${C.border}`, padding: 8, maxHeight: "55vh", overflow: "auto" }}>{rinomina.righe.join("\n")}</div>}
+        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+          {!rinomina.finito && !rinomina.inCorso && <button style={btn(!rinomina.f24)} disabled={rinomina.f24} onClick={async () => { if (!browserAdatto()) { setMessaggio("Serve Chrome o Edge sul computer."); return; } if (await prendiF24(true)) setRinomina(a => ({ ...a, f24: true })); }}>{rinomina.f24 ? "✓ Cartella F24 scelta, con il permesso di modificare" : "1. Scegli la cartella F24"}</button>}
+          {!rinomina.finito && <button style={btn(rinomina.f24)} disabled={rinomina.inCorso || !rinomina.f24 || !d.rinomina.daFare.length} onClick={eseguiRinomina}>{rinomina.inCorso ? "Lavoro in corso…" : "2. Sì, rinomina"}</button>}
+          <button style={btn(false)} disabled={rinomina.inCorso} onClick={() => setRinomina(null)}>{rinomina.finito ? "Chiudi" : "No, lascia stare"}</button></div>
       </Finestra>}
       {sostituisci && <Finestra onChiudi={() => { if (!sostituisci.inCorso) setSostituisci(null); }}>
         <div style={{ fontWeight: 800, color: C.red, fontSize: 15, marginBottom: 8 }}>Segnare «Sostituito» l'F24 {sostituisci.f.codice_delega}?</div>
@@ -320,7 +391,7 @@ export default function ConsultaF24({ utente, vaiA }) {
         <div style={{ marginTop: 10 }}><button style={btn(false)} onClick={() => setMessaggio("")}>Chiudi</button></div>
       </Finestra>}
 
-      {(nonPagati.length > 0 || daConfermare.length > 0 || d.senzaF24.length > 0 || senzaQuietanza.length > 0 || lettureAperte.length > 0 || pronteDaAllegare.length > 0) &&
+      {(nonPagati.length > 0 || daConfermare.length > 0 || d.senzaF24.length > 0 || senzaQuietanza.length > 0 || lettureAperte.length > 0 || pronteDaAllegare.length > 0 || d.rinomina.daFare.length > 0) &&
       <div style={{ ...scheda, borderLeft: `5px solid ${nonPagati.length ? C.red : C.yellow}` }}>
         <div style={{ fontWeight: 800, color: nonPagati.length ? C.red : C.primary, marginBottom: 6 }}>Prima di tutto</div>
         <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, lineHeight: 1.6 }}>
@@ -329,6 +400,7 @@ export default function ConsultaF24({ utente, vaiA }) {
           {d.senzaF24.length > 0 && <li><b>{d.senzaF24.length} pagamenti di F24 in banca senza l'F24 nel programma</b> (dal {dataIt(d.daQuando)}): {d.senzaF24.map(r => `${dataIt(r.data_contabile)} ${euro(r.importo)}`).join("; ")}. Gli F24 vanno caricati con «F24 arrivati».</li>}
           {lettureAperte.map(a => <li key={a}>Per {d.elenco.filter(f => f.avvisi.includes(a)).length} F24 {a}: si finisce con «F24 e quietanze arrivati: controlla e archivia».</li>)}
           {senzaQuietanza.length > 0 && <li>{senzaQuietanza.length} F24 pagati con i crediti senza la quietanza nel programma o nell'archivio.</li>}
+          {d.rinomina.daFare.length > 0 && <li>{d.rinomina.daFare.length} file degli F24 nell'archivio hanno ancora la data nel nome al posto del protocollo interno. <button style={{ ...btn(false), height: 26 }} onClick={() => setRinomina({ righe: [], inCorso: false, finito: false, f24: false })}>Nomi con il protocollo</button></li>}
           {pronteDaAllegare.length > 0 && <li>{pronteDaAllegare.length} F24 con il pagamento confermato hanno la pagina dell'estratto da allegare. <button style={{ ...btn(false), height: 26 }} onClick={() => preparaAllega(pronteDaAllegare)}>Allega a tutti</button></li>}
         </ul>
       </div>}

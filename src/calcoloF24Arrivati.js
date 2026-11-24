@@ -6,6 +6,7 @@ import { leggiData, testo, r2, vuoto, SEZIONI, TRATTAMENTI } from "./calcoloCari
 
 // Versione 368 (11/11/2026): la cartella F24 dal 03/11/2026 è dentro «00.DATI PROGRAMMA CONTABILITA' INDUSTRIALE» (104 caratteri, non più 61):
 // il controllo della lunghezza dei percorsi si fa sul percorso vero (l'archiviazione della lettura del 02/11 si è fermata l'11/11 alle 15:10).
+import { nomeConProtocollo, nomeConSegnaposto } from "./nomiArchivioF24"; // versione 400
 export const PREFISSO_ARCHIVIO = "Z:\\SOCIETA\\SOCIETA' AGRICOLA PODERE VERDE A R.L\\00.DATI PROGRAMMA CONTABILITA' INDUSTRIALE\\F24\\ARCHIVIO\\"; // 104 caratteri
 export const LIMITE_PERCORSO = 250;
 export const CODICE_FISCALE = "15117871002";
@@ -388,14 +389,18 @@ export function pianoArchivio(cl, oggi, documenti = []) {
   for (const d of cl.deleghe) {
     if (d.colore === "rosso" || d.inSospeso || d.nienteDiNuovo || d.doppioneDi) continue;
     const anno = annoDi(d.esistente?.data_scadenza || d.sostituisce?.data_scadenza || (d.soloPagamento ? d.data_pagamento : d.data_scadenza));
+    // versione 400: nel nome il protocollo interno. Un F24 già nel programma ce l'ha; uno che entra adesso (o la versione corretta)
+    // lo riceve dal database quando entra: nel piano c'è il segnaposto «F24 ____-____», della stessa lunghezza, sostituito alla scrittura.
+    const protocollo = d.esistente && !d.sostituisce ? d.esistente.protocollo_interno : null;
+    const nomeFile = cosa => nomeConProtocollo(cosa, protocollo) || nomeConSegnaposto(cosa);
     for (const cat of d.cartelle) {
       const base = `${cat}\\${anno}\\${d.nome}`;
       if (!d.soloPagamento && !d.giaArchiviato)
-        passi.push({ cosa: "F24", sorgente: d.nome_file_ricevuto, pagine: d.pagine, destinazione: `${base}\\F24 ${d.data_scadenza}.pdf`, delega: d.codice_delega, categoria: cat });
+        passi.push({ cosa: "F24", sorgente: d.nome_file_ricevuto, pagine: d.pagine, destinazione: `${base}\\${nomeFile("F24")}`, delega: d.codice_delega, categoria: cat });
       if (d.nome_file_quietanza && d.nuovaQuietanza)
-        passi.push({ cosa: "Quietanza", sorgente: d.nome_file_quietanza, pagine: d.pagine_quietanza, destinazione: `${base}\\QUIETANZA ${d.data_pagamento}.pdf`, delega: d.codice_delega, categoria: cat });
+        passi.push({ cosa: "Quietanza", sorgente: d.nome_file_quietanza, pagine: d.pagine_quietanza, destinazione: `${base}\\${nomeFile("Quietanza")}`, delega: d.codice_delega, categoria: cat });
       if (d.nome_file_contabile && d.nuovaContabile)
-        passi.push({ cosa: "Contabile della banca", sorgente: d.nome_file_contabile, pagine: d.pagine_contabile, destinazione: `${base}\\CONTABILE BANCA ${d.data_pagamento}.pdf`, delega: d.codice_delega, categoria: cat });
+        passi.push({ cosa: "Contabile della banca", sorgente: d.nome_file_contabile, pagine: d.pagine_contabile, destinazione: `${base}\\${nomeFile("Contabile della banca")}`, delega: d.codice_delega, categoria: cat });
     }
   }
   for (const c of cl.comunicazioni) {

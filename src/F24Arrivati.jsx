@@ -1,3 +1,5 @@
+// Versione 400 (Tenente, 24/11/2026; Dott. Bizzarri 18:41): i file dell'F24 nell'archivio prendono il protocollo interno nel nome («F24 2026-0012.pdf», «… QUIETANZA.pdf», «… CONTABILE.pdf»);
+// la versione vecchia di un F24 corretto va in SUPERATI trovandola dal programma, non dal nome.
 // Versione 395 (Tenente, 24/11/2026): titolo «F24 e quietanze arrivati: controlla e archivia», riquadro «da qui anche le quietanze», protocollo interno degli F24.
 // Versione 339 (31/10/2026, ordine del Dott. Bizzarri): pagina «F24 arrivati: controlla e archivia».
 // Versione 345 (02/11/2026): un'archiviazione sola alla volta; un file esce da DA SMISTARE solo se è identico a un file dell'ARCHIVIO (altrimenti prima si conserva intero in ORIGINALI RICEVUTI), anche quando l'archiviazione riprende; scrittura riprovata sul disco di rete.
@@ -19,6 +21,7 @@ import { leggiLettura, classifica, pianoArchivio, PREFISSO_ARCHIVIO, LIMITE_PERC
 import { cartella, leggiFile, elenco, leggiRiconoscimento, testoRiconoscimento, nuovoCodiceCartella, FILE_RICONOSCIMENTO,
   preparaPdf, scriviVerificato, mettiInSuperati, cancellaOriginale, percorsoInDaSmistare, cercaFile, esiste } from "./archivioF24";
 import { pianoGiaPresenti } from "./giaPresentiF24";
+import { nomeConProtocollo, SUFFISSI, SEGNAPOSTO } from "./nomiArchivioF24"; // versione 400
 import { PROMPT_LETTURA_F24 } from "./promptLetturaF24";
 // Versione 378 (13/11/2026, ordine del Dott. Bizzarri delle 14:00–14:10): i documenti arrivati stanno in «F24\F24 DA SMISTARE», subito dentro F24,
 // non più in «F24\PROGRAMMA\DA SMISTARE». Le letture fatte prima restano valide: un file che non è nella cartella nuova si cerca in quella vecchia.
@@ -619,17 +622,54 @@ export default function F24Arrivati({ utente, accesso }) {
       for (const p of piano) {
         const v = p.cosa === "Originale ricevuto" ? pronti.get(`${p.sorgente}|Originale ricevuto`) : await pdf(p.sorgente, p.pagine);
         const d = p.delega ? cl.deleghe.find(x => x.codice_delega === p.delega) : null;
-        // versione corretta: il file vecchio della stessa cartella va in SUPERATI
+        const f24Id = d ? idDi.get(d.codice_delega) : null;
+        // versione 400: il nome del file con il protocollo interno dell'F24 a cui va il file, letto adesso dal database
+        // (un F24 nuovo l'ha ricevuto entrando al punto 3; nel piano c'era il segnaposto)
+        let destinazione = p.destinazione;
+        if (d && p.cosa in SUFFISSI) {
+          const riga = base.f24.find(x => x.id === f24Id);
+          const nome = nomeConProtocollo(p.cosa, riga?.protocollo_interno);
+          if (!nome) throw new Error(`F24 ${d.codice_delega}: nel programma manca il protocollo interno, il file «${p.destinazione}» non si scrive. Avvisare il Dott. Bizzarri.`);
+          destinazione = `${p.destinazione.split("\\").slice(0, -1).join("\\")}\\${nome}`;
+          if (destinazione.includes(SEGNAPOSTO)) throw new Error(`nome del file non completato: ${destinazione}`);
+          if (PREFISSO_ARCHIVIO.length + destinazione.length > LIMITE_PERCORSO) throw new Error(`percorso troppo lungo: ARCHIVIO\\${destinazione}`);
+        }
+        // versione corretta: il file vecchio della stessa cartella va in SUPERATI.
+        // Versione 400: il file vecchio si trova dal programma (F24 sostituito, stessa cartella) e non più dal nome, che ora ha il protocollo del vecchio F24
         if (d?.sostituisce && p.cosa === "F24") {
-          const sup = await mettiInSuperati(archivio, p.destinazione, oggi);
-          if (sup) {
-            const vecchio = base.fileArchivio.find(x => x.percorso.toUpperCase() === p.destinazione.toUpperCase());
-            if (vecchio) await supabase.from("ci_f24_file_archivio").update({ percorso: sup.destinazione, superato: true }).eq("id", vecchio.id);
-            await segna(`Versione vecchia in SUPERATI: ${sup.destinazione}`);
+          const cartellaDest = destinazione.split("\\").slice(0, -1).join("\\").toUpperCase();
+          const vecchi = base.fileArchivio.filter(x => x.f24_id === d.sostituisce.id && x.cosa === "F24" && !x.superato
+            && x.percorso.split("\\").slice(0, -1).join("\\").toUpperCase() === cartellaDest);
+          const perNome = base.fileArchivio.find(x => !x.superato && x.percorso.toUpperCase() === destinazione.toUpperCase());
+          if (perNome && !vecchi.includes(perNome)) vecchi.push(perNome);
+          for (const vecchio of vecchi) {
+            const sup = await mettiInSuperati(archivio, vecchio.percorso, oggi);
+            // ricontrollo indipendente (punto 3): un file vecchio registrato nel programma che nel cloud non c'è ferma l'archiviazione
+            // (per esempio rinominato in quel momento da «Nomi con il protocollo»): si riprende con «Riprendi l'archiviazione interrotta»
+            // secondo giro del ricontrollo (difetto A): se il file è già in SUPERATI (archiviazione interrotta dopo lo spostamento) si aggiorna la riga e si prosegue
+            if (!sup && vecchio !== perNome) {
+              const cartellaV = vecchio.percorso.split("\\").slice(0, -1).join("\\");
+              let trovato = null;
+              try {
+                const dirSup = await cartella(archivio, `${cartellaV}\\SUPERATI`);
+                for await (const [n, h] of dirSup.entries()) if (h.kind === "file" && md5(new Uint8Array(await (await h.getFile()).arrayBuffer())) === vecchio.md5) { trovato = `${cartellaV}\\SUPERATI\\${n}`; break; }
+              } catch { trovato = null; }
+              if (trovato) {
+                const { error } = await supabase.from("ci_f24_file_archivio").update({ percorso: trovato, superato: true }).eq("id", vecchio.id);
+                if (error) throw new Error(`Versione vecchia già in SUPERATI ma non aggiornata nel programma (${trovato}): ${error.message}`);
+                await segna(`Versione vecchia già in SUPERATI (ripresa): ${trovato}`);
+                continue;
+              }
+            }
+            if (!sup && vecchio !== perNome) throw new Error(`la versione vecchia «ARCHIVIO\\${vecchio.percorso}» registrata nel programma non c'è nel cloud: forse è stata rinominata proprio adesso. Ricaricare la pagina e riprendere l'archiviazione`);
+            if (sup) {
+              const { error } = await supabase.from("ci_f24_file_archivio").update({ percorso: sup.destinazione, superato: true }).eq("id", vecchio.id);
+              if (error) throw new Error(`Versione vecchia messa in SUPERATI ma non aggiornata nel programma (${sup.destinazione}): ${error.message}`);
+              await segna(`Versione vecchia in SUPERATI: ${sup.destinazione}`);
+            }
           }
         }
-        const r = await scriviVerificato(archivio, p.destinazione, v.byte);
-        const f24Id = d ? idDi.get(d.codice_delega) : null;
+        const r = await scriviVerificato(archivio, destinazione, v.byte);
         const documentoId = p.comunicazione ? docId.get(p.comunicazione) : p.cosa === "Originale ricevuto" ? docId.get(`orig|${p.sorgente}`)
           : p.cosa !== "F24" ? base.documenti.find(x => x.md5 === v.md5)?.id || null : null;
         if (!annotati.has(r.percorso.toUpperCase())) {
@@ -942,7 +982,7 @@ export default function F24Arrivati({ utente, accesso }) {
         <div style={{ ...scatola, padding: 16 }}>
           <div style={{ fontWeight: 800, fontSize: 15.5, marginBottom: 8 }}>3. Archivia</div>
           {lavoro.stato !== "Chiuso" && <div style={{ fontSize: 13.5, lineHeight: 1.7 }}>
-            Il programma scriverà <b>{piano.length} file</b> nell'ARCHIVIO ({PREFISSO_ARCHIVIO}…), ognuno con un nome provvisorio: lo rilegge, controlla l'impronta e solo allora gli dà il nome vero.
+            Il programma scriverà <b>{piano.length} file</b> nell'ARCHIVIO ({PREFISSO_ARCHIVIO}…), ognuno con un nome provvisorio: lo rilegge, controlla l'impronta e solo allora gli dà il nome vero. Nel nome c'è il protocollo interno dell'F24: dove si legge «{SEGNAPOSTO}», il numero lo dà il programma quando l'F24 entra.
             Poi salva tutto nel programma e, alla fine, toglie da F24 DA SMISTARE gli originali archiviati e verificati.
           </div>}
           {(daSistemare.length + inSospeso.length) > 0 && lavoro.stato !== "Chiuso" && <div style={{ color: COL.rosso.testo, fontWeight: 700, marginTop: 10 }}>
