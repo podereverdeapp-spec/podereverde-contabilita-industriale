@@ -41,7 +41,7 @@ export default function VariazionePrezzi({ onNavigate }) {
 function Contenuto({ r, onNavigate }) {
   const daSistemare = r.anomale.length + r.senzaConversione.length + r.nuove.length;
   const riquadri = [
-    { etichetta: "Rincari: quanto costano in un anno", valore: `${it(r.totaleRincari, 0)} €`, nota: `${r.rincari.length} prodotti con l'ultima fattura più cara della precedente, calcolati sulle quantità comprate negli ultimi 12 mesi.`, bollino: r.rincari.some(s => s.gravita === "alta") ? ["b-rosso", "● da guardare subito"] : ["b-arancio", "▲ da tenere d'occhio"] },
+    { etichetta: "Rincari: quanto costano in un anno", valore: `${it(r.totaleRincari, 0)} €`, nota: `${r.rincari.length} prodotti con l'ultima fattura più cara della precedente, calcolati sulle quantità degli ultimi 12 mesi (o dell'anno precedente, o di una fattura per i prodotti comprati una volta l'anno).`, bollino: r.rincari.some(s => s.gravita === "alta") ? ["b-rosso", "● da guardare subito"] : ["b-arancio", "▲ da tenere d'occhio"] },
     { etichetta: "Opportunità di risparmio", valore: `${it(r.totaleOpportunita, 0)} €`, nota: `${r.opportunita.length} prodotti con un altro fornitore o un prezzo di mercato più basso (stima sull'anno, da verificare).`, bollino: ["b-verde", "● da trattare"] },
     { etichetta: "Ribassi", valore: `${it(-r.totaleRibassi, 0)} €`, nota: `${r.ribassi.length} prodotti con l'ultima fattura più economica della precedente.`, bollino: ["b-verde", "● risparmio"] },
     { etichetta: "Da sistemare", valore: `${daSistemare}`, nota: "Righe di fattura con prezzi o quantità che non tornano e descrizioni nuove senza famiglia.", bollino: daSistemare ? ["b-rosso", "● da sistemare"] : ["b-verde", "● tutto in ordine"] },
@@ -62,9 +62,10 @@ function Contenuto({ r, onNavigate }) {
         {r.ribassi.length ? r.ribassi.map(s => <Scheda key={s.famiglia.id} s={s} />) : <p style={{ color: C.muted }}>Nessun prezzo sceso nell'ultima fattura.</p>}
       </Sezione>
 
-      <Sezione titolo="Tutti gli altri prodotti comprati negli ultimi 24 mesi" sottotitolo="Prezzo invariato tra le ultime due fatture, o una sola fattura, o nessun acquisto negli ultimi 12 mesi.">
-        <TabellaAltre l={r.altre} />
+      <Sezione titolo={`Tutti gli altri prodotti comprati dal 1° gennaio ${r.annoPrec}`} sottotitolo="Prezzo invariato tra le ultime due fatture, oppure una sola fattura.">
+        <TabellaAltre l={r.altre} annoPrec={r.annoPrec} />
       </Sezione>
+
 
       <Sezione titolo="Da sistemare prima di fidarsi dei numeri">
         {r.anomale.length > 0 && <>
@@ -94,9 +95,14 @@ function Contenuto({ r, onNavigate }) {
         {!daSistemare && <p style={{ color: C.muted }}>Niente da sistemare.</p>}
       </Sezione>
 
+      {/* Versione 405: ultima fattura più vecchia dell'anno solare precedente → il prodotto non si considera più */}
+      <Sezione titolo="Prodotti non più considerati" sottotitolo={`L'ultima fattura è più vecchia del 1° gennaio ${r.annoPrec}: le loro variazioni di prezzo non entrano nei rincari né nei ribassi. Se il prodotto si ricompra, rientra da solo.`}>
+        <TabellaAltre l={r.nonPiuComprati} annoPrec={r.annoPrec} />
+      </Sezione>
+
       <p style={{ fontSize: 12, color: C.muted, marginTop: 24 }}>
         Come si calcola: ogni riga di fattura è convertita in € al kg (o al litro) con le regole di conversione del programma o con l'unità scritta in fattura; le righe della stessa fattura e della stessa famiglia si sommano.
-        L'ultima fattura si confronta con la precedente dello stesso fornitore (se c'è), altrimenti con la precedente della famiglia. Quanto vale in un anno = differenza di prezzo × quantità comprata negli ultimi 12 mesi.
+        L'ultima fattura si confronta con la precedente dello stesso fornitore (se c'è), altrimenti con la precedente della famiglia. Quanto vale in un anno = differenza di prezzo × quantità comprata negli ultimi 12 mesi; se negli ultimi 12 mesi ci sono meno di due fatture ma nell'anno precedente almeno due, × quantità dell'anno precedente; se il prodotto si compra una volta l'anno, × quantità di una fattura. Se l'ultima fattura è di oltre 12 mesi fa, il numero è quello dell'anno passato e resta fino all'arrivo della fattura nuova; se è più vecchia del 1° gennaio dell'anno precedente il prodotto non si considera.
         Sono escluse le fatture con un prezzo oltre {it(SOGLIE.anomaliaSopra, 1)} volte o sotto {it(SOGLIE.anomaliaSotto, 1)} volte la mediana delle altre fatture della famiglia.
       </p>
     </>
@@ -120,8 +126,9 @@ function Scheda({ s, opportunita }) {
         <div style={{ flex: "1 1 120px" }}><div style={{ fontSize: 11.5, color: C.muted }}>Variazione</div><div style={{ fontSize: 15, fontWeight: 700, color: coloreVar }}>{var_ === null ? "—" : `${var_ > 0 ? "+" : ""}${it(var_, 1)}%`}</div></div>
         {opportunita
           ? <div style={{ flex: "1 1 150px" }}><div style={{ fontSize: 11.5, color: C.muted }}>Risparmio possibile in un anno</div><div style={{ fontSize: 15, fontWeight: 700, color: SCENDE }}>{it(Math.max(s.risparmioFornitore, s.risparmioMercato), 0)} €</div><div style={{ fontSize: 12, color: C.muted }}>{s.voci.map(v => v.testo).join("; ")}</div></div>
-          : <div style={{ flex: "1 1 120px" }}><div style={{ fontSize: 11.5, color: C.muted }}>Quanto vale in un anno</div><div style={{ fontSize: 15, fontWeight: 700, color: coloreVar }}>{s.impatto > 0 ? "+" : ""}{it(s.impatto, 0)} €</div></div>}
+          : <div style={{ flex: "1 1 120px" }}><div style={{ fontSize: 11.5, color: C.muted }}>Quanto vale in un anno</div><div style={{ fontSize: 15, fontWeight: 700, color: coloreVar }}>{s.impatto > 0 ? "+" : ""}{it(s.impatto, 0)} €</div>{s.annoPassato && s.impatto !== 0 && <div style={{ fontSize: 12, fontWeight: 700, color: C.yellow }}>{s.impatto > 0 ? "incremento" : "ribasso"} dell'anno passato</div>}{!s.annoPassato && s.impatto !== 0 && (!s.piuVolte ? <div style={{ fontSize: 12, color: C.muted }}>su una fattura l'anno</div> : s.n12 < 2 ? <div style={{ fontSize: 12, color: C.muted }}>quantità del {s.annoPrec}</div> : null)}</div>}
         <div style={{ flex: "1 1 120px" }}><div style={{ fontSize: 11.5, color: C.muted }}>Spesa ultimi 12 mesi</div><div style={{ fontSize: 14 }}>{it(s.spesa12, 0)} €</div><div style={{ fontSize: 12, color: C.muted }}>{it(s.incidenza, 1)}% degli acquisti</div></div>
+        <div style={{ flex: "1 1 110px" }}><div style={{ fontSize: 11.5, color: C.muted }}>Spesa {s.annoPrec}</div><div style={{ fontSize: 14 }}>{it(s.spesaAnnoPrec, 0)} €</div><div style={{ fontSize: 12, color: C.muted }}>anno intero</div></div>
       </div>
       {aperta && <Dettaglio s={s} />}
     </div>
@@ -200,17 +207,17 @@ function GraficoPrezzi({ s }) {
   );
 }
 
-function TabellaAltre({ l }) {
+function TabellaAltre({ l, annoPrec }) {
   if (!l.length) return <p style={{ color: C.muted }}>Nessun altro prodotto.</p>;
   return (
     <div style={{ overflowX: "auto" }}><table style={T.tabella}>
-      <thead><tr><th style={T.thSx}>Famiglia</th><th style={T.thSx}>Fornitore</th><th style={T.th}>Ultima fattura</th><th style={T.th}>Prezzo</th><th style={T.th}>Fattura precedente</th><th style={T.th}>Spesa ultimi 12 mesi</th></tr></thead>
+      <thead><tr><th style={T.thSx}>Famiglia</th><th style={T.thSx}>Fornitore</th><th style={T.th}>Ultima fattura</th><th style={T.th}>Prezzo</th><th style={T.th}>Fattura precedente</th><th style={T.th}>Spesa ultimi 12 mesi</th><th style={T.th}>Spesa {annoPrec}</th></tr></thead>
       <tbody>{l.map(s => (
         <tr key={s.famiglia.id}>
           <td style={T.tdSx}>{s.famiglia.nome}</td><td style={T.tdSx}>{s.ultimo.fornitore}</td><td style={T.td}>{data(s.ultimo.data)}</td>
           <td style={T.td}>{it(s.ultimo.prezzo, s.unita.decimali)} {s.unita.etichetta}</td>
           <td style={T.td}>{s.precedente ? `${it(s.precedente.prezzo, s.unita.decimali)} (${data(s.precedente.data)})` : "—"}{s.variazione ? ` ${s.variazione > 0 ? "+" : ""}${it(s.variazione, 1)}%` : ""}</td>
-          <td style={T.td}>{it(s.spesa12, 0)} €</td>
+          <td style={T.td}>{it(s.spesa12, 0)} €</td><td style={T.td}>{it(s.spesaAnnoPrec, 0)} €</td>
         </tr>))}</tbody>
     </table></div>
   );

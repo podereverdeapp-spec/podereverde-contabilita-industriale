@@ -86,6 +86,10 @@ export function analisiPrezzi(d, oggi = oggiRoma()) {
   const reg = new Map(d.regole.map(r => [`${r.fornitore_id}|${(r.centro_costo || "").trim()}|${String(r.descrizione_prodotto || "").trim().toLowerCase()}`, num(r.fattore_kg)]));
   const da12 = new Date(new Date(oggi) - 365 * GIORNO).toISOString().slice(0, 10);
   const da24 = new Date(new Date(oggi) - 730 * GIORNO).toISOString().slice(0, 10);
+  // Versione 405 (decisioni del Dott. Bizzarri del 25/11/2026 ore 17:01–17:10): anno solare precedente intero.
+  // Un prodotto la cui ultima fattura è più vecchia dell'anno solare precedente non si considera.
+  const annoPrec = Number(String(oggi).slice(0, 4)) - 1;
+  const daAnnoPrec = `${annoPrec}-01-01`, aAnnoPrec = `${annoPrec}-12-31`;
 
   // spesa totale delle fatture d'acquisto negli ultimi 12 mesi (senza i cespiti), per l'incidenza
   let spesaTotale12 = 0;
@@ -163,8 +167,22 @@ export function analisiPrezzi(d, oggi = oggiRoma()) {
     let variazione = precedente && precedente.prezzoBase > 0 ? (ultimo.prezzoBase / precedente.prezzoBase - 1) * 100 : null;
     // sotto lo 0,05% è solo arrotondamento dei centesimi in fattura: prezzo invariato
     if (variazione !== null && Math.abs(variazione) < 0.05) { variazione = 0; deltaBase = 0; }
-    const quantitaAnno = F.unita === "importo" ? Math.max(1, ult12.length) : base12;
-    const impatto = precedente && ultimo.data >= da24 ? deltaBase * quantitaAnno : 0;
+    // Versione 405: spesa dell'anno solare precedente intero, accanto a quella degli ultimi 12 mesi
+    const annoPrecF = valide.filter(x => x.data >= daAnnoPrec && x.data <= aAnnoPrec);
+    const spesaAnnoPrec = somma(annoPrecF.map(x => x.totale));
+    // Versione 405: se l'ultima fattura è fuori dagli ultimi 12 mesi, il rincaro è quello dell'anno passato: resta finché
+    // non arriva la fattura nuova, con la scritta «incremento dell'anno passato» (o «ribasso»).
+    // «comprato più volte»: almeno due fatture negli ultimi 12 mesi, oppure almeno due nell'anno solare precedente
+    // (ricontrollo del 25/11: Mangime pollame, Sprint 60). Quantità: quella degli ultimi 12 mesi; se lì c'è una sola
+    // fattura (o nessuna), quella dell'anno solare precedente.
+    const piuVolte = ult12.length >= 2 || annoPrecF.length >= 2;
+    const baseAnnoPrec = somma(annoPrecF.map(x => x.base));
+    const quantitaAnno = ult12.length >= 2 ? (F.unita === "importo" ? ult12.length : base12)
+      : annoPrecF.length >= 2 ? (F.unita === "importo" ? annoPrecF.length : baseAnnoPrec)
+      : (F.unita === "importo" ? 1 : ultimo.base);
+    const annoPassato = !!precedente && ultimo.data < da12;
+    const attivo = ultimo.data >= daAnnoPrec;
+    const impatto = precedente && attivo ? deltaBase * quantitaAnno : 0;
     // tendenza: ultime tre fatture dello stesso fornitore in salita
     const serieForn = valide.filter(x => x.fornitore === ultimo.fornitore).slice(-3);
     const inSalita = serieForn.length === 3 && serieForn[0].prezzoBase < serieForn[1].prezzoBase && serieForn[1].prezzoBase < serieForn[2].prezzoBase;
@@ -188,7 +206,8 @@ export function analisiPrezzi(d, oggi = oggiRoma()) {
     const gravita = impatto >= SOGLIE.gravitaAltaEuro || (variazione >= SOGLIE.gravitaAltaPercento && spesa12 >= SOGLIE.gravitaAltaSpesa) ? "alta"
       : impatto >= SOGLIE.gravitaMediaEuro ? "media" : impatto > 0 ? "bassa" : null;
     const s = { famiglia: F, unita: U, fatture: valide, ultimo, precedente, cambioFornitore, variazione, delta: deltaBase * U.fattore, impatto, base12, spesa12, n12: ult12.length,
-      incidenza, inSalita, fornitori, piuEconomico, risparmioFornitore, mercato, sopraMercato, risparmioMercato, trasporto, gravita, attivo: ultimo.data >= da24 };
+      incidenza, inSalita, fornitori, piuEconomico, risparmioFornitore, mercato, sopraMercato, risparmioMercato, trasporto, gravita, attivo,
+      piuVolte, annoPassato, spesaAnnoPrec, annoPrec, finoAl: Number(String(ultimo.data).slice(0, 4)) + 2 };
     const farina = /farina/i.test(F.nome) && mercato && /granella/i.test(mercato.nome);
     s.voci = [
       ...(risparmioFornitore > 0 ? [{ euro: risparmioFornitore, testo: `prezzo di ${piuEconomico.nome}` }] : []),
@@ -205,7 +224,7 @@ export function analisiPrezzi(d, oggi = oggiRoma()) {
   const altre = attive.filter(s => !(s.impatto > 0) && !(s.impatto < 0)).sort((a, b) => b.spesa12 - a.spesa12 || (a.ultimo.data < b.ultimo.data ? 1 : -1));
   const nuoveL = [...nuove.values()].map(x => ({ ...x, fornitori: [...x.fornitori].join(", ") })).sort((a, b) => b.spesa - a.spesa);
   return {
-    oggi, da12, spesaTotale12, schede, rincari, opportunita, ribassi, altre, anomale: anomale.sort((a, b) => (a.data < b.data ? 1 : -1)),
+    oggi, da12, annoPrec, spesaTotale12, schede, nonPiuComprati: schede.filter(s => !s.attivo).sort((a, b) => (a.ultimo.data < b.ultimo.data ? 1 : -1)), rincari, opportunita, ribassi, altre, anomale: anomale.sort((a, b) => (a.data < b.data ? 1 : -1)),
     senzaConversione: senzaConversione.sort((a, b) => (a.data < b.data ? 1 : -1)),
     nuove: nuoveL.filter(x => x.spesa >= SOGLIE.segnalaNuoveEuro), nuoveSottoSoglia: nuoveL.filter(x => x.spesa < SOGLIE.segnalaNuoveEuro).length,
     nuoveTutte: nuoveL.length,   // versione 376: numero rosso nel menu «Controllo Prezzi di Acquisto»
@@ -243,7 +262,10 @@ function consigli(s, d) {
   const p = (t, testo) => out.push({ tipo: t, testo });
   if (precedente && s.variazione !== null && Math.abs(s.variazione) >= 0.05) {
     p(s.variazione > 0 ? "problema" : "buono", `${s.cambioFornitore ? `Cambio di fornitore: da ${precedente.fornitore} a ${ultimo.fornitore}. ` : ""}Ultima fattura ${ultimo.numero} del ${data(ultimo.data)}: ${it(ultimo.prezzo, U.decimali)} ${U.etichetta}; la precedente (${precedente.numero} del ${data(precedente.data)}) ${it(precedente.prezzo, U.decimali)}: ${s.variazione > 0 ? "+" : ""}${it(s.variazione, 1)}%.` +
-      (F.unita === "importo" ? "" : ` Con le quantità degli ultimi 12 mesi vale ${s.impatto > 0 ? "+" : ""}${it(s.impatto, 0)} € l'anno.`));
+      (!s.piuVolte ? ` Si compra una volta l'anno: la variazione vale ${s.impatto > 0 ? "+" : ""}${it(s.impatto, 0)} € l'anno, su una fattura.`
+        : s.n12 >= 2 ? (F.unita === "importo" ? "" : ` Con le quantità degli ultimi 12 mesi vale ${s.impatto > 0 ? "+" : ""}${it(s.impatto, 0)} € l'anno.`)
+        : ` Negli ultimi 12 mesi ci sono meno di due fatture: si usano le quantità del ${s.annoPrec}, ${s.impatto > 0 ? "+" : ""}${it(s.impatto, 0)} € l'anno.`) +
+      (s.annoPassato ? ` È ${s.impatto >= 0 ? "l'incremento" : "il ribasso"} dell'anno passato: resta finché non arriva la fattura nuova; dal 1° gennaio ${s.finoAl} il prodotto non si considera più.` : ""));
   }
   if (s.inSalita) p("problema", `Le ultime tre fatture di ${ultimo.fornitore} sono in salita: ${s.fatture.filter(x => x.fornitore === ultimo.fornitore).slice(-3).map(x => it(x.prezzo, U.decimali)).join(" → ")} ${U.etichetta}. Chiedere un prezzo bloccato per 6–12 mesi in cambio della quantità annua.`);
   if (s.risparmioFornitore > 0) {

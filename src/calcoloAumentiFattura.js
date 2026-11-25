@@ -1,7 +1,7 @@
 // Versione 374 — «Prezzo aumentato» accanto alle fatture da pagare (decisioni del Dott. Bizzarri del 12/11/2026, 20:59–21:04).
 // Stessi numeri del «Controllo Prezzi di Acquisto» (calcoloVariazionePrezzi.js, analisiPrezzi): per ogni famiglia di prodotto
 // e per ogni fattura, prezzo contro la fattura precedente dello stesso fornitore (se non c'è, la precedente di qualunque fornitore),
-// «quanto vale in un anno» = aumento × quantità comprate negli ultimi 12 mesi, gravità con le stesse soglie.
+// «quanto vale in un anno» con la stessa regola della pagina (versione 405: 12 mesi, anno precedente o una fattura), gravità con le stesse soglie.
 // Per l'ultima fattura di ogni famiglia il risultato è identico a quello della pagina del controllo prezzi; qui si calcola
 // anche per le fatture precedenti, perché una fattura da pagare può non essere più l'ultima. Sola lettura.
 import { SOGLIE, it, data } from "./calcoloVariazionePrezzi";
@@ -11,7 +11,14 @@ export function aumentiPerFattura(analisi) {
   const da24 = new Date(new Date(analisi.oggi) - 730 * 86400000).toISOString().slice(0, 10);
   for (const s of analisi.schede) {
     const F = s.famiglia, U = s.unita, valide = s.fatture;
-    const quantitaAnno = F.unita === "importo" ? Math.max(1, s.n12) : s.base12;
+    // Versione 405: stessa regola del Controllo Prezzi — almeno due fatture negli ultimi 12 mesi → quantità dei 12 mesi;
+    // altrimenti almeno due nell'anno solare precedente → quantità di quell'anno; altrimenti una fattura (la sua quantità).
+    // I prodotti che il Controllo Prezzi non considera più (ultima fattura prima del 1° gennaio dell'anno precedente) si saltano.
+    if (!s.attivo) continue;
+    const annoPrecF = valide.filter(y => String(y.data).slice(0, 4) === String(s.annoPrec));
+    const quantitaAnno = x => s.n12 >= 2 ? (F.unita === "importo" ? s.n12 : s.base12)
+      : annoPrecF.length >= 2 ? (F.unita === "importo" ? annoPrecF.length : annoPrecF.reduce((t, y) => t + y.base, 0))
+      : (F.unita === "importo" ? 1 : x.base);
     valide.forEach((x, i) => {
       if (i === 0 || x.data < da24) return;
       const prima = valide.slice(0, i);
@@ -22,7 +29,7 @@ export function aumentiPerFattura(analisi) {
       let deltaBase = x.prezzoBase - prec.prezzoBase;
       if (Math.abs(variazione) < 0.05) { variazione = 0; deltaBase = 0; }
       if (!(deltaBase > 0)) return;
-      const impatto = deltaBase * quantitaAnno;
+      const impatto = deltaBase * quantitaAnno(x);
       if (!(impatto > 0)) return;   // nessuna quantità comprata nell'ultimo anno: il controllo prezzi non la conta come rincaro
       const gravita = impatto >= SOGLIE.gravitaAltaEuro || (variazione >= SOGLIE.gravitaAltaPercento && s.spesa12 >= SOGLIE.gravitaAltaSpesa) ? "alta"
         : impatto >= SOGLIE.gravitaMediaEuro ? "media" : "bassa";
