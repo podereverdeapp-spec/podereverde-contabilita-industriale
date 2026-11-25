@@ -19,7 +19,7 @@ const VOCI_ESCLUSE = {
   pagamento_fatture: ["Acconto su fattura da emettere", "Caparra ricevuta da cliente", "Compensazione tra fatture"],   // versione 402: la caparra del cliente si incassa
   // versione 402: anche gli acconti e le caparre dei clienti, che il database qui non accetta senza fatture: si registrano dall'estratto in «Conferma dei movimenti»
   incasso_fatture: ["Acconto su fattura da ricevere", "Caparra confirmatoria su preventivo", "Caparra penitenziale su preventivo", "Acconto su fattura da emettere", "Caparra ricevuta da cliente", "Compensazione tra fatture"],
-  altri_pagamenti: ["Versamento F24", "Storno di registrazione"],
+  altri_pagamenti: ["Versamento F24", "Storno di registrazione", "Acconto su bene strumentale"],   // versione 403: l'acconto su bene strumentale si paga da «Anticipo o caparra», con il documento
   altri_incassi: ["Storno di registrazione", "Acconto su bene strumentale"],   // versione 402: l'acconto su bene strumentale è solo un pagamento
   giroconti: [],
 };

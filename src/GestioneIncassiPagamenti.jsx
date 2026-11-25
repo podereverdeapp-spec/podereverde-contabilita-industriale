@@ -18,7 +18,7 @@ import {
   ibanPulito, ibanValido, ibanBello, abiDiIban, pulisciCausale, causaleValida, componiCausale, statoAttesa, oggiRoma, dataIt, giorniLavorativi,
 } from "./regoleIncassiPagamenti";
 import { useStatiFatture, EtichettaStatoFattura, CONTESTATA, ATTESA_NC } from "./statoFatture"; // versione 375
-import { md5 } from "./md5"; // versione 396
+import { md5, md5File } from "./md5"; // versione 396; md5File versione 403
 import { mandaMailFornitore } from "./statoFatture"; // versione 401
 import { PulsanteDistinta, leggiDistinte } from "./distintePagamento"; // versione 401
 import { scaricaWordPagamento } from "./wordPagamento"; // versione 401
@@ -38,6 +38,7 @@ const TAB = [...SEZIONI.map(s => ({ id: s.id, nome: s.nome })), { id: "attesa", 
 const ANTICIPO = "Acconto su fattura da ricevere";
 const CAPARRA = "Caparra confirmatoria su preventivo";   // versione 374 (decisione del Dott. Bizzarri del 12/11/2026 ore 17:57)
 const PENITENZIALE = "Caparra penitenziale su preventivo";   // versione 402 (art. 1386 c.c.)
+const BENE = "Acconto su bene strumentale";   // versione 403: dal modulo dell'anticipo, con il documento (gruppo «Investimenti»)
 const copia = t => { try { navigator.clipboard.writeText(String(t)); } catch { /* il browser non permette: si copia a mano */ } };
 const importoIt = n => Number(n).toFixed(2).replace(".", ",");
 const leggiImporto = t => { const s = String(t || "").trim().replace(/\s|€/g, ""); if (!s) return null; const x = s.includes(",") ? s.replace(/\./g, "").replace(",", ".") : s;
@@ -348,6 +349,31 @@ function SezioneFatture({ sezione, base, fatto, oggi, professionisti = false }) 
   // Versione 375: fatture contestate (pagamento bloccato) e in attesa di nota di credito (mail al fornitore prima di pagare)
   const [statiFatture] = useStatiFatture(pag ? sue.map(s => s.fattura_id) : []);
   const scelte = sue.filter(s => spunte[s.scadenza_id] !== undefined);
+  // versione 403: acconti o caparre aperti dello stesso fornitore (scelta obbligatoria prima di pagare: è di questa fattura / non c'entra)
+  //   e acconti già agganciati alla fattura (causale «DEDOTTO ACCONTO DEL …»)
+  const [aperti, setAperti] = useState({}); const [giroAperti, setGiroAperti] = useState(0); const [motiviNc, setMotiviNc] = useState({}); const [erroreAperti, setErroreAperti] = useState("");
+  const chiaviScelte = pag ? scelte.map(s => s.scadenza_id).join(",") : "";
+  const [leggoAperti, setLeggoAperti] = useState(false);
+  useEffect(() => { setAperti({}); if (!chiaviScelte) { setLeggoAperti(false); return; } let vivo = true; setLeggoAperti(true); (async () => {
+    const r = {}; let err = "";
+    for (const id of chiaviScelte.split(",").map(Number)) { const x = await supabase.rpc("ci_anticipi_aperti_per_fattura", { p_scadenza: id }); if (x.error) err = x.error.message; else r[id] = x.data || []; }
+    if (vivo) { setAperti(r); setErroreAperti(err); setLeggoAperti(false); }
+  })(); return () => { vivo = false; }; }, [chiaviScelte, giroAperti]);
+  const [dedotti, setDedotti] = useState({}); const [erroreDedotti, setErroreDedotti] = useState(""); // scadenza_id → [date degli acconti agganciati]
+  useEffect(() => { setDedotti({}); setErroreDedotti(""); if (!pag || !sogg) return; (async () => {
+    const a = await supabase.from("ci_v_anticipi").select("pagamento_id, data_pagamento").eq("fornitore_id", sogg).neq("stato", "annullato");
+    if (a.error) return setErroreDedotti(a.error.message);
+    const ids = (a.data || []).map(x => x.pagamento_id); if (!ids.length) return;
+    const b = await supabase.from("ci_abbinamenti_pagamenti").select("pagamento_id, scadenza_id").in("pagamento_id", ids);
+    if (b.error) return setErroreDedotti(b.error.message);
+    const r = {}; for (const x of b.data || []) { const d = (a.data || []).find(y => y.pagamento_id === x.pagamento_id)?.data_pagamento; if (d) (r[x.scadenza_id] = r[x.scadenza_id] || []).push(d); }
+    setDedotti(r);
+  })(); }, [sogg, giroAperti]);
+  async function nonCentra(s, a) {
+    const motivo = String(motiviNc[`${s.scadenza_id}-${a.anticipo_id}`] || "").trim(); if (!motivo) return;
+    const r = await supabase.rpc("ci_acconto_non_centra", { p_anticipo: a.anticipo_id, p_scadenza: s.scadenza_id, p_motivo: motivo });
+    if (r.error) setErroreAperti(r.error.message); else setGiroAperti(g => g + 1);
+  }
   const noteLibere = pag ? tutte.filter(s => Number(s.importo) < 0 && Number(s.residuo) < -0.005) : [];
   const noteScelte = noteLibere.filter(n => nc[n.scadenza_id]).map(n => ({ n, imp: leggiImporto(nc[n.scadenza_id].importo), fattura: Number(nc[n.scadenza_id].fattura) || null }));
   const dedotto = id => Math.round(noteScelte.filter(x => x.fattura === id).reduce((t, x) => t + (x.imp || 0), 0) * 100) / 100;
@@ -361,7 +387,9 @@ function SezioneFatture({ sezione, base, fatto, oggi, professionisti = false }) 
   const voce = v.causale_voce || vocePropria;
   const comp = componiCausale(quote.filter(q => q.imp).map(q => ({ numero: q.s.numero_documento, data: q.s.data_documento, tipo: q.s.tipo_documento, importo: q.imp, resto: Number(q.s.residuo), ritenuta: q.s.ritenuta })), !pag);
   const meno = noteScelte.filter(x => x.imp).map(x => `MENO NC N. ${x.n.numero_documento} DEL ${dataIt(x.n.data_documento)}`).join(" ");
-  const causale = pulisciCausale([comp.testo, meno, v.aggiunta].filter(Boolean).join(" "));
+  // versione 403: «SALDO FATTURA N. … DEDOTTO ACCONTO DEL …» quando alla fattura è già agganciato un acconto
+  const dedottoAcconto = pag ? [...new Set(scelte.flatMap(s => dedotti[s.scadenza_id] || []))].sort().map(d => `DEDOTTO ACCONTO DEL ${dataIt(d)}`).join(" ") : "";
+  const causale = pulisciCausale([comp.testo, dedottoAcconto, meno, v.aggiunta].filter(Boolean).join(" "));
   const bonifico = ["Bonifico", "Bonifico istantaneo"].includes(v.modalita);
   const ibanFattura = [...new Set(scelte.map(s => s.iban).filter(Boolean))];
   const conosciuti = [...new Set(tutte.map(s => s.iban).filter(Boolean))];
@@ -393,6 +421,14 @@ function SezioneFatture({ sezione, base, fatto, oggi, professionisti = false }) 
     if (st?.stato === ATTESA_NC && !(mail > 0.005)) problemi.push(`la fattura ${s.numero_documento} è IN ATTESA DI NOTA DI CREDITO: prima di pagare va mandata la mail al fornitore con l'importo («💶 Prepara un pagamento» nel dettaglio della fattura, in Fatture passive o Ricerca Fatture)`);
     // versione 375 (Dottore 22:12 «metti»): l'importo pagato deve essere quello scritto nella mail, né più né meno
     else if (st?.stato === ATTESA_NC && imp && Math.abs(imp - mail) > 0.005) problemi.push(`la fattura ${s.numero_documento} è IN ATTESA DI NOTA DI CREDITO e la mail al fornitore dice ${euro(mail)}, qui si pagano ${euro(imp)}: scrivere ${euro(mail)}, oppure mandare prima la mail di rettifica con ${euro(imp)} («💶 Prepara un pagamento» nel dettaglio della fattura: la mail nuova sostituisce la precedente)`); }
+  // versione 403: la parte della fattura coperta da acconti o caparre aperti non si paga (il database la ferma): si paga la differenza,
+  // oppure si sceglie prima «è di questa fattura» (aggancio di chi gestisce i conti) o «non c'entra» con il motivo
+  if (pag && leggoAperti && scelte.length) problemi.push("attendere la lettura degli acconti aperti del fornitore");
+  if (pag) for (const q of quote) { const ap = aperti[q.s.scadenza_id] || []; if (!ap.length || !q.imp) continue;
+    const massimo = Math.round((Number(q.s.residuo) - ap.reduce((t, a) => t + Number(a.residuo), 0)) * 100) / 100;
+    if (daPagare(q) > massimo + 0.005) problemi.push(`fattura ${q.s.numero_documento}: il fornitore ha ${euro(ap.reduce((t, a) => t + Number(a.residuo), 0))} già dati in acconto o caparra; adesso si possono pagare al massimo ${euro(Math.max(massimo, 0))}, oppure scegliere qui sotto se l'acconto è di questa fattura o non c'entra`); }
+  if (pag && erroreAperti) problemi.push("acconti aperti del fornitore non letti: ricaricare la pagina");
+  if (pag && erroreDedotti && scelte.length) problemi.push("acconti già agganciati non letti (la causale «DEDOTTO ACCONTO» non si può comporre): ricaricare la pagina");
   if (!v.modalita) problemi.push("scegliere come si " + (pag ? "paga" : "incassa"));
   if (v.modalita === "Altro" && !String(v.modalita_altro || "").trim()) problemi.push("scrivere quale modalità");
   if (!v.conto_id) problemi.push("scegliere con che cosa");
@@ -587,6 +623,17 @@ function SezioneFatture({ sezione, base, fatto, oggi, professionisti = false }) 
         {puoForzare && <label style={{ display: "block", marginTop: 6, fontSize: 12.5 }}><input type="checkbox" checked={forza} onChange={e => setForza(e.target.checked)} /> Non mando la mail (autorizzazione «Può forzare il pagamento senza mail»): scrivo il motivo
           {forza && <input style={{ ...input, width: "100%", marginTop: 4, borderColor: motivoForza.trim() ? C.border : C.red }} placeholder="motivo (obbligatorio)" value={motivoForza} onChange={e => setMotivoForza(e.target.value)} />}</label>}
       </div>}
+      {pag && scelte.some(s => (aperti[s.scadenza_id] || []).length) && <div style={{ marginTop: 10, padding: 10, border: `2px solid ${C.red}`, borderRadius: 8 }}>
+        <div style={{ fontWeight: 800, color: C.red }}>Il fornitore ha soldi già dati in acconto o caparra, non ancora scalati</div>
+        {scelte.filter(s => (aperti[s.scadenza_id] || []).length).map(s => (aperti[s.scadenza_id] || []).map(a => { const k = `${s.scadenza_id}-${a.anticipo_id}`; return <div key={k} style={{ borderTop: `1px solid ${C.border}`, padding: "6px 0", fontSize: 13 }}>
+          Fattura <b>{s.numero_documento}</b>: {a.tipo === "acconto" ? "acconto" : a.tipo === "caparra" ? "caparra confirmatoria" : "caparra penitenziale"} di <b>{euro(a.importo)}</b> pagato il {dataIt(a.data)}{a.documento ? ` (${a.documento})` : ""}{a.da_app ? " — registrato dall'app" : ""}; da scalare {euro(a.residuo)}.
+          <div style={{ marginTop: 4 }}><b>È di questa fattura?</b> Adesso si paga solo la differenza; l'acconto lo aggancia chi gestisce i conti in «Anticipi in attesa di fattura»{a.confermato ? "" : " (dopo che la banca ha confermato il suo pagamento)"} e la causale dei pagamenti dopo dirà «DEDOTTO ACCONTO».</div>
+          <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 4, flexWrap: "wrap" }}><b>Non c'entra?</b>
+            <input style={{ ...input, minWidth: 320 }} placeholder="Perché non c'entra (resta scritto)" value={motiviNc[k] || ""} onChange={e => setMotiviNc(o => ({ ...o, [k]: e.target.value }))} />
+            <button style={btn(false)} disabled={!String(motiviNc[k] || "").trim()} onClick={() => nonCentra(s, a)}>Non c'entra con questa fattura</button></div>
+        </div>; }))}
+        {erroreAperti && <div style={{ color: C.red, fontWeight: 700, fontSize: 12.5 }}>⚠️ {erroreAperti}</div>}
+      </div>}
       {problemi.length > 0 && <div style={{ color: C.red, fontSize: 12.5, marginTop: 10 }}>Per confermare: {problemi.join("; ")}.</div>}
       {errore && <div style={{ color: C.red, fontWeight: 700, marginTop: 8 }}>⚠️ {errore}</div>}
       <div style={{ marginTop: 10 }}><button style={btn(true)} disabled={!!problemi.length || lavoro} onClick={invia}>{lavoro ? "Registro…" : pag ? "Conferma e manda in pagamento" : "Conferma e registra l'incasso atteso"}</button></div>
@@ -619,107 +666,200 @@ function DettaglioAumento({ f, vi, nomi, nota, setNota, lavoro, visto }) {
 // Pagamento prima della fattura (proforma, preventivo, offerta): nessuna fattura da spuntare, il documento è obbligatorio.
 // Nasce in attesa della banca come gli altri pagamenti; il database crea l'anticipo, che resta in «Anticipi in attesa di fattura»
 // finché la fattura del fornitore arriva e chi gestisce i conti la aggancia e chiude.
+// Versione 403: fornitore nuovo dal modulo (ragione sociale, partita IVA o codice fiscale, contatti; IBAN nel pagamento);
+// PDF del documento obbligatorio; totale del documento e «già pagato» sullo stesso documento; assegno da 1.000 € solo non trasferibile;
+// contanti sullo stesso documento sotto 5.000 € in tutto; doppione con l'app o con l'ufficio solo con il motivo.
+// Tutte le regole sono nel database (ci_disponi_anticipo): la pagina le mostra prima.
 const TIPI_DOC = [["proforma", "Proforma"], ["preventivo", "Preventivo"], ["offerta", "Offerta"], ["ordine", "Ordine"], ["contratto", "Contratto"], ["altro", "Altro"]];
+const FORN_VUOTO = { nome: "", partita_iva: "", codice_fiscale: "", nazione: "IT", email: "", pec: "", telefono: "", indirizzo: "", citta: "", provincia: "", cap: "", codice_destinatario: "" };
+function FornitoreNuovo({ chiudi, creato }) {
+  const [f, setF] = useState({ ...FORN_VUOTO }); const [lavoro, setLavoro] = useState(false); const [errore, setErrore] = useState("");
+  const c = (k, x) => setF(o => ({ ...o, [k]: x }));
+  const mancano = [];
+  if (f.nome.trim().length < 2) mancano.push("ragione sociale esatta, come sul documento");
+  if (!f.partita_iva.trim() && !f.codice_fiscale.trim()) mancano.push("partita IVA oppure codice fiscale");
+  if (!f.email.trim() && !f.pec.trim() && !f.telefono.trim()) mancano.push("almeno un contatto: mail, PEC o telefono");
+  if (f.email.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.email.trim())) mancano.push("mail non valida");
+  if (f.pec.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.pec.trim())) mancano.push("PEC non valida");
+  async function salva() {
+    if (mancano.length || lavoro) return;
+    setLavoro(true); setErrore("");
+    const { data, error } = await supabase.rpc("ci_fornitore_nuovo", { p: f });
+    setLavoro(false);
+    if (error) return setErrore("Il database non l'ha accettato, non è stato registrato niente: " + error.message);
+    creato({ id: data.id, nome: data.nome, partita_iva: f.partita_iva, esisteva: data.esisteva });
+  }
+  const campo = (k, n, rosso) => <label style={L}>{n}<input style={sel(rosso)} value={f[k]} onChange={e => c(k, e.target.value)} /></label>;
+  return <div style={{ ...scheda, border: `2px solid ${C.primary}` }}>
+    <div style={{ fontWeight: 800, color: C.primary, marginBottom: 6 }}>Fornitore nuovo</div>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+      {campo("nome", "Ragione sociale (esatta, come sul preventivo)", f.nome.trim().length < 2)}
+      {campo("partita_iva", "Partita IVA", !f.partita_iva.trim() && !f.codice_fiscale.trim())}
+      {campo("codice_fiscale", "Codice fiscale (se non ha partita IVA)", false)}
+      <label style={L}>Nazione<input style={sel(false)} value={f.nazione} maxLength={2} onChange={e => c("nazione", e.target.value.toUpperCase())} /></label>
+      {campo("email", "Mail", false)}{campo("pec", "PEC", false)}{campo("telefono", "Telefono", false)}
+      {campo("indirizzo", "Indirizzo", false)}{campo("citta", "Città", false)}{campo("provincia", "Provincia", false)}{campo("cap", "CAP", false)}
+      {campo("codice_destinatario", "Codice destinatario (fattura elettronica)", false)}
+    </div>
+    <div style={{ fontSize: 12.5, color: C.muted, marginTop: 6 }}>L'IBAN per il bonifico si scrive nel pagamento, qui sotto. Se la partita IVA è già nell'anagrafica, il programma usa il fornitore che c'è (niente doppioni).</div>
+    {mancano.length > 0 && <div style={{ color: C.red, fontSize: 12.5, marginTop: 6 }}>Per salvare: {mancano.join("; ")}.</div>}
+    {errore && <div style={{ color: C.red, fontWeight: 700, marginTop: 6 }}>⚠️ {errore}</div>}
+    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+      <button style={btn(true)} disabled={!!mancano.length || lavoro} onClick={salva}>{lavoro ? "Salvo…" : "Salva il fornitore e continua"}</button>
+      <button style={btn(false)} onClick={chiudi}>Annulla</button></div>
+  </div>;
+}
 function SezioneAnticipo({ base, fatto, oggi }) {
   const [cerca, setCerca] = useState(""); const [sogg, setSogg] = useState(null); const [tutte, setTutte] = useState([]); const [erroreStorico, setErroreStorico] = useState("");
-  const [v, setV] = useState({ voce: ANTICIPO, consegna_prevista: "", importo: "", tipo: "proforma", numero: "", data_documento: "", modalita: "", conto_id: "", data_disposizione: oggi, aggiunta: "",
-    iban_scelta: "", iban_scritto: "", iban_confermato: false, iban_diverso_motivo: "", note: "", soglia_vista: false, contanti_persona: "" });
+  const [nuovi, setNuovi] = useState([]); const [apriNuovo, setApriNuovo] = useState(false); const [avvisoNuovo, setAvvisoNuovo] = useState("");
+  const fornitori = useMemo(() => [...base.fornitori, ...nuovi.filter(n => !base.fornitori.some(a => a.id === n.id))], [base, nuovi]);
+  const [v, setV] = useState({ voce: ANTICIPO, consegna_prevista: "", importo: "", tipo: "preventivo", numero: "", data_documento: "", totale: "", modalita: "", conto_id: "", data_disposizione: oggi, aggiunta: "",
+    iban_scelta: "", iban_scritto: "", iban_confermato: false, iban_diverso_motivo: "", note: "", soglia_vista: false, contanti_persona: "", non_trasferibile: false, doppione: "" });
+  const [pdf, setPdf] = useState(null); // { percorso, nome }
+  const [affare, setAffare] = useState(null); const [chiedeDoppione, setChiedeDoppione] = useState("");
   const [lavoro, setLavoro] = useState(false); const [errore, setErrore] = useState("");
   const cambia = (k, x) => setV(o => ({ ...o, [k]: x }));
   const trovati = useMemo(() => {
     const q = cerca.trim().toLowerCase().replace(/[.\s]/g, "");
     if (q.length < 2) return [];
-    return base.fornitori.filter(a => String(a.nome || "").toLowerCase().replace(/[.\s]/g, "").includes(q) || String(a.partita_iva || "").includes(q))
+    return fornitori.filter(a => String(a.nome || "").toLowerCase().replace(/[.\s]/g, "").includes(q) || String(a.partita_iva || "").includes(q))
       .sort((a, b) => String(a.nome || "").localeCompare(String(b.nome || ""))).slice(0, 30);
-  }, [cerca, base]);
+  }, [cerca, fornitori]);
   useEffect(() => { if (!sogg) return; (async () => {
     const r = await fetchAllPages((a, b) => supabase.from("ci_v_scadenzario").select("scadenza_id, iban, data_documento, numero_documento").eq("fornitore_id", sogg).order("data_documento").range(a, b));
     if (r.error) { setErroreStorico("Storico delle fatture non letto: gli IBAN già usati non si vedono. (" + r.error.message + ")"); setTutte([]); return; }
     setErroreStorico(""); setTutte(r.data || []);
   })(); }, [sogg]);
-  const imp = leggiImporto(v.importo);
+  // già pagato sullo stesso documento (stesso fornitore, stesso numero: «PREV 7» = «Prev. n. 07»)
+  useEffect(() => { setAffare(null); if (!sogg || !v.numero.trim()) return; let vivo = true; const t = setTimeout(async () => {
+    const r = await supabase.rpc("ci_affare_pagato", { p_fornitore: sogg, p_doc_tipo: v.tipo || null, p_numero: v.numero.trim(), p_data: v.data_documento || null });
+    if (vivo) setAffare(r.error ? { errore: r.error.message } : (r.data || [])[0] || null);
+  }, 400); return () => { vivo = false; clearTimeout(t); }; }, [sogg, v.numero, v.tipo, v.data_documento]);
+  async function caricaPdf(file) {
+    if (!file) return;
+    if (!/\.pdf$/i.test(file.name) && file.type !== "application/pdf") return setErrore(`«${file.name}» non è un PDF.`);
+    if (file.size > 10 * 1024 * 1024) return setErrore("Il PDF supera 10 MB.");
+    setErrore(""); setLavoro(true);
+    try {
+      const percorso = `nuovi/${await md5File(file)}.pdf`;
+      const up = await supabase.storage.from("anticipi").upload(percorso, file, { upsert: false, contentType: "application/pdf" });
+      if (up.error && !/exist|duplicate|409/i.test(up.error.message || "")) throw new Error(up.error.message);
+      setPdf({ percorso, nome: file.name });
+    } catch (e) { setErrore("PDF non caricato: " + e.message); }
+    setLavoro(false);
+  }
+  const imp = leggiImporto(v.importo); const tot = leggiImporto(v.totale);
   const bonifico = ["Bonifico", "Bonifico istantaneo"].includes(v.modalita);
+  const assegno = ["Assegno bancario", "Assegno circolare"].includes(v.modalita);
   const nomeTipo = TIPI_DOC.find(t => t[0] === v.tipo)?.[1] || "Documento";
-  const documento = v.numero.trim() && v.data_documento ? `${nomeTipo} n. ${v.numero.trim()} del ${dataIt(v.data_documento)}` : "";
   const penitenziale = v.voce === PENITENZIALE; // versione 402
   const caparra = v.voce === CAPARRA || penitenziale;
   const nomeCaparra = penitenziale ? "caparra penitenziale" : "caparra confirmatoria";
   const causale = pulisciCausale([caparra ? causaleAnticipo(v.tipo, v.numero, v.data_documento).replace(/^ACCONTO SU/, penitenziale ? "CAPARRA PENITENZIALE SU" : "CAPARRA CONFIRMATORIA SU") : causaleAnticipo(v.tipo, v.numero, v.data_documento), v.aggiunta].filter(Boolean).join(" "));
   const conosciuti = [...new Set(tutte.map(s => s.iban).filter(Boolean))];
   const ib = ibanDelModulo(v);
+  const gia = affare && !affare.errore ? Number(affare.pagato || 0) : 0;
+  const giaContanti = affare && !affare.errore ? Number(affare.contanti || 0) : 0;
+  const totaleAffare = Math.max(tot || 0, affare && !affare.errore ? Number(affare.totale || 0) : 0);
   const problemi = [];
   if (!sogg) problemi.push("scegliere il fornitore");
-  if (!imp) problemi.push("scrivere l'importo dell'anticipo");
-  if (!v.numero.trim() || !v.data_documento) problemi.push("scrivere numero e data della proforma, del preventivo o dell'offerta");
+  if (!imp) problemi.push("scrivere l'importo");
+  if (!v.numero.trim() || !v.data_documento) problemi.push("scrivere numero e data del documento del fornitore");
+  if (v.data_documento && v.data_documento > oggi) problemi.push("la data del documento è nel futuro");
+  if (!tot) problemi.push("scrivere il totale del documento (quanto costa tutto l'affare)");
+  if (tot && imp && imp > tot + 0.005) problemi.push("l'importo supera il totale del documento");
+  if (imp && totaleAffare && gia + imp > totaleAffare + 0.005) problemi.push(`sul documento sono già stati pagati ${euro(gia)}: con questo si supera il totale (${euro(totaleAffare)})`);
+  if (!pdf) problemi.push("allegare il PDF del documento del fornitore");
   if (caparra && !v.consegna_prevista) problemi.push("scrivere la data di consegna prevista (caparra)");
   if (caparra && v.consegna_prevista && v.data_disposizione && v.consegna_prevista < v.data_disposizione) problemi.push("la consegna prevista è prima del pagamento");
   if (!v.modalita) problemi.push("scegliere come si paga");
   if (v.modalita === "Altro" && !String(v.modalita_altro || "").trim()) problemi.push("scrivere quale modalità");
   if (!v.conto_id) problemi.push("scegliere con che cosa");
   if (v.modalita === "Carta di debito" && !v.carta_di_debito_id) problemi.push("scegliere la carta di debito");
-  if (v.modalita === "Contanti" && imp >= 5000) problemi.push("contanti da 5.000 € in su: vietato (art. 49 D.Lgs. 231/2007)");
+  if (v.modalita === "Contanti" && imp && giaContanti + imp >= 5000) problemi.push(`in contanti sullo stesso documento si arriverebbe a ${euro(giaContanti + imp)}: dai 5.000 € in su è vietato, anche a rate (art. 49 D.Lgs. 231/2007)`);
+  if (assegno && imp >= 1000 && !v.non_trasferibile) problemi.push("assegno da 1.000 € in su: spuntare «Non trasferibile» (art. 49 D.Lgs. 231/2007)");
   problemi.push(...problemiContanti(v, oggi));
   if (!v.data_disposizione) problemi.push("scrivere la data di disposizione");
   if (bonifico && !causaleValida(causale)) problemi.push("causale del bonifico non valida (al massimo 140 caratteri, senza lettere accentate)");
   if (bonifico) { if (!ib) problemi.push("scegliere o scrivere l'IBAN"); else if (!ibanValido(ib)) problemi.push("IBAN non valido"); else if (!v.iban_confermato) problemi.push("premere «Confermi IBAN»"); }
   if (imp > 5000 && !v.soglia_vista) problemi.push("spuntare «Ho visto: sopra 5.000 €»");
+  if (chiedeDoppione && !v.doppione.trim()) problemi.push("scrivere perché non è un doppione");
   async function invia() {
     if (problemi.length || lavoro) return;
     setLavoro(true); setErrore("");
     const p = { sezione: "pagamento_fatture", conto_id: Number(v.conto_id), modalita: v.modalita, modalita_altro: v.modalita_altro || "", carta_di_debito_id: v.carta_di_debito_id || "",
-      data_disposizione: v.data_disposizione, importo: imp, causale_gruppo: "Fatture", causale_voce: caparra ? v.voce : ANTICIPO, fornitore_id: sogg, cliente_id: "",
-      causale: bonifico || causale ? causale : "", iban: bonifico ? ib : "", iban_confermato: !!v.iban_confermato, iban_diverso_motivo: "", note: v.note || "", documento_riferimento: documento,
+      data_disposizione: v.data_disposizione, importo: imp, causale_voce: caparra || v.voce === BENE ? v.voce : ANTICIPO, fornitore_id: sogg, cliente_id: "",
+      causale: bonifico || causale ? causale : "", iban: bonifico ? ib : "", iban_confermato: !!v.iban_confermato, iban_diverso_motivo: "", note: v.note || "",
+      documento_tipo: v.tipo, documento_numero: v.numero.trim(), documento_data: v.data_documento, documento_totale: tot, documento_pdf: pdf.percorso,
+      consegna_prevista: caparra ? v.consegna_prevista : "", non_trasferibile: !!v.non_trasferibile,
+      ...(v.doppione.trim() ? { conferma_doppione: v.doppione.trim() } : {}),
       ...(v.modalita === "Contanti" ? { contanti_persona: v.contanti_persona } : {}) };
-    const { data, error } = await supabase.rpc("ci_disponi_401", { p });
+    const { data, error } = await supabase.rpc("ci_disponi_anticipo", { p });
     setLavoro(false);
-    if (error) return setErrore("Il database non l'ha accettato, non è stato registrato niente: " + error.message);
-    const nome = base.fornitori.find(a => a.id === sogg)?.nome;
-    // versione 374: la caparra ha la data di consegna prevista (dalla quale partono gli avvisi di consegna)
-    let notaConsegna = "";
-    if (caparra) {
-      const an = await supabase.from("ci_anticipi").select("id").eq("pagamento_id", data.movimento_id).maybeSingle();
-      const r = an.data ? await supabase.rpc("ci_caparra_consegna", { p_anticipo: an.data.id, p_data: v.consegna_prevista, p_motivo: "" }) : { error: an.error || { message: "caparra non trovata" } };
-      notaConsegna = r.error ? ` ATTENZIONE: la data di consegna prevista non è stata salvata (${r.error.message}): scriverla nella scheda della caparra.` : ` Consegna prevista: ${dataIt(v.consegna_prevista)}.`;
+    if (error) {
+      if (/DOPPIONE/.test(error.message || "")) { setChiedeDoppione(error.message); return setErrore(""); }
+      const rete = !error.code && /fetch|network|Failed|rete|timeout/i.test(String(error.message || ""));
+      return setErrore(rete ? "La risposta del database non è arrivata: VERIFICARE in «In attesa della banca» se il pagamento è registrato prima di riprovare. " + error.message
+        : "Il database non l'ha accettato, non è stato registrato niente: " + error.message);
     }
-    if (data.definitivo === true) return fatto({ titolo: `${data.codice_attesa}: ${caparra ? nomeCaparra : "anticipo"} a ${nome} pagato in contanti — definitivo, prima nota n. ${data.numero || "—"}`,
-      testo: `Registrato in cassa. ${caparra ? "La caparra è in «Anticipi e caparre in attesa di fattura»." : "L'anticipo è in «Anticipi in attesa di fattura»: quando arriva la fattura del fornitore si aggancia lì."} Conservare la ricevuta del fornitore.${notaConsegna}`,
+    const nome = fornitori.find(a => a.id === sogg)?.nome;
+    const cosa = caparra ? nomeCaparra : "acconto";
+    const notaConsegna = caparra ? ` Consegna prevista: ${dataIt(v.consegna_prevista)}.` : "";
+    const resta = totaleAffare ? ` Sul documento: totale ${euro(totaleAffare)}, pagato con questo ${euro(gia + imp)}, resta ${euro(Math.max(totaleAffare - gia - imp, 0))}.` : "";
+    if (data.definitivo === true) return fatto({ titolo: `${data.codice_attesa}: ${cosa} a ${nome} pagato in contanti — definitivo, prima nota n. ${data.numero || "—"}`,
+      testo: `Registrato in cassa. È in «Anticipi in attesa di fattura». Conservare la ricevuta del fornitore.${notaConsegna}${resta}`,
       copie: [["Beneficiario", nome], ["Importo", importoIt(imp)], ["Descrizione", causale], ["Data", dataIt(v.data_disposizione)]].filter(x => x[1]) });
-    if (caparra) return fatto({ titolo: `${data.codice_attesa}: ${nomeCaparra} a ${nome} mandata in pagamento — in attesa della banca`,
-      testo: `Adesso, oggi stesso, disporre ${v.modalita === "Bonifico istantaneo" ? "il bonifico istantaneo" : v.modalita.toLowerCase()} in banca con questi dati (pulsanti «Copia»). La caparra è in «Anticipi e caparre in attesa di fattura»: alla consegna la fattura del fornitore si aggancia lì; se l'affare salta si sceglie l'esito (restituita, trattenuta, restituita il doppio).${notaConsegna}`,
-      copie: [["Beneficiario", nome], ["IBAN", bonifico ? ibanBello(ib) : ""], ["Importo", importoIt(imp)], ["Causale", causale], ["Data di esecuzione", dataIt(v.data_disposizione)]].filter(x => x[1]) });
-    fatto({ titolo: `${data.codice_attesa}: anticipo a ${nome} mandato in pagamento — in attesa della banca`,
-      testo: `Adesso, oggi stesso, disporre ${v.modalita === "Bonifico istantaneo" ? "il bonifico istantaneo" : v.modalita.toLowerCase()} in banca con questi dati (pulsanti «Copia»). L'anticipo è già in «Anticipi in attesa di fattura»: quando arriva la fattura del fornitore si aggancia lì. Se il pagamento non parte, annullarlo in «In attesa della banca».`,
+    fatto({ titolo: `${data.codice_attesa}: ${cosa} a ${nome} mandato in pagamento — in attesa della banca`,
+      testo: `Adesso, oggi stesso, disporre ${v.modalita === "Bonifico istantaneo" ? "il bonifico istantaneo" : v.modalita.toLowerCase()}${assegno && v.non_trasferibile ? " NON TRASFERIBILE" : ""} in banca con questi dati (pulsanti «Copia»). È già in «Anticipi in attesa di fattura»: ${caparra ? "alla consegna la fattura del fornitore si aggancia lì; se l'affare salta si sceglie l'esito (restituita, trattenuta, restituita il doppio)." : "quando arriva la fattura del fornitore si aggancia lì."} Se il pagamento non parte, annullarlo in «In attesa della banca».${notaConsegna}${resta}`,
       copie: [["Beneficiario", nome], ["IBAN", bonifico ? ibanBello(ib) : ""], ["Importo", importoIt(imp)], ["Causale", causale], ["Data di esecuzione", dataIt(v.data_disposizione)]].filter(x => x[1]) });
   }
+  const fSc = fornitori.find(a => a.id === sogg);
   return <div>
     <div style={scheda}>
       <div style={{ fontWeight: 800, color: C.primary, marginBottom: 4 }}>Anticipo su fattura da ricevere o caparra</div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
         {[[ANTICIPO, "Acconto su fattura da ricevere", "Pagamento di una parte del prezzo: la fattura è dovuta subito (entro 12 giorni); se non arriva, avviso e segnalazione TD29."],
           [CAPARRA, "Caparra confirmatoria su preventivo", "Garanzia dell'affare (art. 1385 c.c.), fuori campo IVA (da confermare con lo Studio): nessuna fattura al pagamento; alla consegna entra nella fattura."],
-          [PENITENZIALE, "Caparra penitenziale su preventivo", "Prezzo per potersi tirare indietro (art. 1386 c.c.): chi recede perde la caparra (o la restituisce il doppio); nessuna fattura al pagamento; alla consegna entra nella fattura."]].map(([k, n, d]) =>
+          [PENITENZIALE, "Caparra penitenziale su preventivo", "Prezzo per potersi tirare indietro (art. 1386 c.c.): chi recede perde la caparra (o la restituisce il doppio); nessuna fattura al pagamento; alla consegna entra nella fattura."],
+          [BENE, "Acconto su bene strumentale", "Acconto per un macchinario, un mezzo o un impianto (cespite): come l'acconto su fattura, nel gruppo «Investimenti»."]].map(([k, n, d]) =>
           <button key={k} title={d} onClick={() => cambia("voce", k)} style={{ ...btn(v.voce === k), height: "auto", padding: "6px 10px", textAlign: "left", maxWidth: 420 }}><b>{v.voce === k ? "● " : "○ "}{n}</b><br /><span style={{ fontSize: 11.5, fontWeight: 400 }}>{d}</span></button>)}
       </div>
-      <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 8, maxWidth: 1000 }}>Per pagare prima della fattura: su una proforma, un preventivo o un'offerta. Non si spuntano fatture. Il pagamento resta in «Anticipi in attesa di fattura» finché arriva la fattura del fornitore; dal pagamento il fornitore ha 12 giorni per emetterla.</div>
+      <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 8, maxWidth: 1000 }}>Per pagare prima della fattura, sul documento del fornitore (preventivo, ordine, proforma, offerta, contratto): il PDF del documento è obbligatorio. Non si spuntano fatture. Il pagamento resta in «Anticipi in attesa di fattura» finché arriva la fattura del fornitore.</div>
       {!sogg ? <>
-        <input style={{ ...input, width: "100%", maxWidth: 520 }} placeholder="Cerca il fornitore: nome anche parziale o partita IVA" value={cerca} onChange={e => setCerca(e.target.value)} />
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input style={{ ...input, width: "100%", maxWidth: 520 }} placeholder="Cerca il fornitore: nome anche parziale o partita IVA" value={cerca} onChange={e => setCerca(e.target.value)} />
+          <button style={btn(false)} onClick={() => { setApriNuovo(true); setAvvisoNuovo(""); }}>+ Fornitore nuovo</button></div>
         <div style={{ marginTop: 6 }}>{trovati.map(a => <div key={a.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "3px 0", borderBottom: `1px solid ${C.border}`, fontSize: 12.5 }}>
           <b style={{ flex: 1 }}>{a.nome}</b><span style={{ color: C.muted }}>{a.partita_iva || "—"}</span><button style={{ ...btn(true), height: 28 }} onClick={() => setSogg(a.id)}>Scegli</button></div>)}</div>
-        {cerca.trim().length >= 2 && !trovati.length && <div style={{ color: C.muted, fontSize: 12.5, marginTop: 6 }}>Nessun fornitore con questo nome. Un fornitore nuovo si aggiunge prima in anagrafica; oppure si paga in banca e si registra poi in «Conferma dei movimenti» con la voce «Acconto su fattura da ricevere».</div>}
+        {cerca.trim().length >= 2 && !trovati.length && !apriNuovo && <div style={{ color: C.muted, fontSize: 12.5, marginTop: 6 }}>Nessun fornitore con questo nome: premere «+ Fornitore nuovo».</div>}
+        {apriNuovo && <FornitoreNuovo chiudi={() => setApriNuovo(false)} creato={f => { setNuovi(o => [...o, f]); setSogg(f.id); setApriNuovo(false);
+          setAvvisoNuovo(f.esisteva ? `La partita IVA era già nell'anagrafica: uso il fornitore che c'è, «${f.nome}». I contatti scritti nel modulo NON sono stati salvati: se sono cambiati, aggiornarli nell'anagrafica dei fornitori.` : `Fornitore «${f.nome}» aggiunto all'anagrafica.`); }} />}
       </> : <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-        <div style={{ fontWeight: 800, color: C.primary, fontSize: 16 }}>{base.fornitori.find(a => a.id === sogg)?.nome} <span style={{ fontSize: 12.5, color: C.muted }}>{base.fornitori.find(a => a.id === sogg)?.partita_iva}</span></div>
-        <button style={btn(false)} onClick={() => setSogg(null)}>← Cambia fornitore</button></div>}
+        <div style={{ fontWeight: 800, color: C.primary, fontSize: 16 }}>{fSc?.nome} <span style={{ fontSize: 12.5, color: C.muted }}>{fSc?.partita_iva}</span></div>
+        <button style={btn(false)} onClick={() => { setSogg(null); setChiedeDoppione(""); }}>← Cambia fornitore</button></div>}
+      {avvisoNuovo && sogg && <div style={{ color: C.primary, fontWeight: 700, fontSize: 12.5, marginTop: 4 }}>{avvisoNuovo}</div>}
       {erroreStorico && <div style={{ color: C.red, fontWeight: 700, fontSize: 12.5 }}>⚠️ {erroreStorico}</div>}
     </div>
     {sogg && <div style={{ ...scheda, border: `2px solid ${C.primary}` }}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 10 }}>
-        <label style={L}>Importo dell'anticipo<input style={sel(!imp)} value={v.importo} onChange={e => cambia("importo", e.target.value)} placeholder="es. 3.660,00" /></label>
-        <label style={L}>Documento<select style={sel(false)} value={v.tipo} onChange={e => cambia("tipo", e.target.value)}>{TIPI_DOC.map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select></label>
-        <label style={L}>Numero del documento<input style={sel(!v.numero.trim())} value={v.numero} onChange={e => cambia("numero", e.target.value)} /></label>
+        <label style={L}>Documento del fornitore<select style={sel(false)} value={v.tipo} onChange={e => cambia("tipo", e.target.value)}>{TIPI_DOC.map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select></label>
+        <label style={L}>Numero del documento<input style={sel(!v.numero.trim())} value={v.numero} onChange={e => { cambia("numero", e.target.value); setChiedeDoppione(""); }} /></label>
         <label style={L}>Data del documento<input type="date" style={sel(!v.data_documento)} value={v.data_documento} onChange={e => cambia("data_documento", e.target.value)} /></label>
+        <label style={L}>Totale del documento (tutto l'affare)<input style={sel(!tot)} value={v.totale} onChange={e => cambia("totale", e.target.value)} placeholder="es. 12.200,00" /></label>
+        <div style={{ ...L, gridColumn: "1 / -1" }}>PDF del documento (obbligatorio)
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontWeight: 400 }}>
+            <input type="file" accept="application/pdf,.pdf" onChange={e => caricaPdf(e.target.files?.[0])} />
+            {pdf ? <span style={{ color: C.primary, fontWeight: 700 }}>✓ {pdf.nome}</span> : <span style={{ color: C.red }}>non allegato</span>}</div></div>
+        {v.numero.trim() && <div style={{ gridColumn: "1 / -1", fontSize: 13, background: "#F4F4F0", border: `1px solid ${C.border}`, borderRadius: 6, padding: "6px 8px" }}>
+          {affare?.errore ? <span style={{ color: C.red }}>Già pagato sul documento non letto: {affare.errore}</span>
+            : <>Sul documento {nomeTipo.toLowerCase()} n. {v.numero.trim()}: totale <b>{totaleAffare ? euro(totaleAffare) : "—"}</b> · già pagato <b>{euro(gia)}</b>{giaContanti ? ` (di cui in contanti ${euro(giaContanti)})` : ""}
+              {imp ? <> · adesso <b>{euro(imp)}</b> · resta da pagare <b>{totaleAffare ? euro(Math.max(totaleAffare - gia - imp, 0)) : "—"}</b></> : null}</>}</div>}
+        <label style={L}>Importo da pagare adesso<input style={sel(!imp)} value={v.importo} onChange={e => cambia("importo", e.target.value)} placeholder="es. 3.660,00" /></label>
         {caparra && <label style={L}>Data di consegna prevista (caparra)<input type="date" style={sel(!v.consegna_prevista)} value={v.consegna_prevista} onChange={e => cambia("consegna_prevista", e.target.value)} /></label>}
         <ComeEConCheCosa base={base} verso="uscita" v={v} cambia={cambia} importo={imp} />
         {v.modalita === "Contanti" && <SceltaContanti verso="uscita" v={v} cambia={cambia} importo={imp} />}
+        {assegno && <label style={{ ...L, flexDirection: "row", alignItems: "center", gap: 6, color: imp >= 1000 && !v.non_trasferibile ? C.red : undefined }}>
+          <input type="checkbox" checked={v.non_trasferibile} onChange={e => cambia("non_trasferibile", e.target.checked)} /> Assegno NON TRASFERIBILE (obbligatorio da 1.000 € in su)</label>}
         <label style={L}>{v.modalita === "Contanti" ? "Data in cui si paga in contanti (non nel futuro)" : "Data di disposizione"}<input type="date" style={sel(!v.data_disposizione)} value={v.data_disposizione} onChange={e => cambia("data_disposizione", e.target.value)} />
           {v.data_disposizione && v.data_disposizione !== oggi && v.modalita !== "Contanti" && <span style={{ color: C.yellow, fontWeight: 700 }}>Non è oggi: disporre in banca lo stesso giorno in cui si registra qui.</span>}</label>
         {bonifico && <SceltaIban ibanFattura={[]} conosciuti={conosciuti} v={v} cambia={cambia} />}
@@ -730,10 +870,13 @@ function SezioneAnticipo({ base, fatto, oggi }) {
         </div>
         <label style={{ ...L, gridColumn: "1 / -1" }}>Nota interna (facoltativa, non va in banca)<input style={sel(false)} value={v.note} onChange={e => cambia("note", e.target.value)} /></label>
       </div>
+      {chiedeDoppione && <div style={{ marginTop: 8, padding: 8, border: `2px solid ${C.red}`, borderRadius: 8 }}>
+        <div style={{ color: C.red, fontWeight: 700, fontSize: 13 }}>{chiedeDoppione}</div>
+        <label style={{ ...L, marginTop: 4 }}>Se è davvero un altro pagamento (per esempio la seconda rata), scrivere perché<input style={sel(!v.doppione.trim())} value={v.doppione} onChange={e => cambia("doppione", e.target.value)} /></label></div>}
       {imp > 5000 && <label style={{ display: "block", marginTop: 8, color: C.red, fontWeight: 700, fontSize: 13 }}><input type="checkbox" checked={v.soglia_vista} onChange={e => cambia("soglia_vista", e.target.checked)} /> Ho visto: sopra 5.000 €. Il movimento sarà segnalato tra le anomalie al Dott. Bizzarri e a Teresa Demaria.</label>}
       {problemi.length > 0 && <div style={{ color: C.red, fontSize: 12.5, marginTop: 10 }}>Per confermare: {problemi.join("; ")}.</div>}
       {errore && <div style={{ color: C.red, fontWeight: 700, marginTop: 8 }}>⚠️ {errore}</div>}
-      <div style={{ marginTop: 10 }}><button style={btn(true)} disabled={!!problemi.length || lavoro} onClick={invia}>{lavoro ? "Registro…" : caparra ? "Conferma e manda in pagamento la caparra" : "Conferma e manda in pagamento l'anticipo"}</button></div>
+      <div style={{ marginTop: 10 }}><button style={btn(true)} disabled={!!problemi.length || lavoro} onClick={invia}>{lavoro ? "Registro…" : caparra ? "Conferma e manda in pagamento la caparra" : "Conferma e manda in pagamento l'acconto"}</button></div>
     </div>}
   </div>;
 }
