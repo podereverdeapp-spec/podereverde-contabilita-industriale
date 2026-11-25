@@ -20,7 +20,10 @@ import { leggiStatiFatture, EtichettaStatoFattura, CONTESTATA, ATTESA_NC } from 
 const ANTICIPO = "Acconto su fattura da ricevere";
 // versione 374: la caparra confirmatoria si tratta come l'anticipo (non chiude fatture, solo in uscita); nasce nella stessa scheda
 const CAPARRA = "Caparra confirmatoria su preventivo";
-const ANTICIPI = [ANTICIPO, CAPARRA];
+const PENITENZIALE = "Caparra penitenziale su preventivo"; // versione 402
+const ANTICIPI_CLIENTE = ["Acconto su fattura da emettere", "Caparra ricevuta da cliente"]; // versione 402: soldi ricevuti dal cliente prima della fattura
+const ANTICIPI = [ANTICIPO, CAPARRA, PENITENZIALE, ...ANTICIPI_CLIENTE];
+const vaBeneIlVerso = (voce, verso) => ANTICIPI_CLIENTE.includes(voce) ? verso === "entrata" : verso === "uscita";
 const MESI = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"];
 const STATI = {
   confermata: { nome: "Confermata", colore: C.green },
@@ -134,7 +137,7 @@ export default function ConfermaMovimenti() {
     if (s.causale_voce === "Altro" && !String(s.causale_altro || "").trim()) return false;
     if (s.modalita === "Altro" && !String(s.modalita_altro || "").trim()) return false;
     if (s.movimento_id === undefined && !String(s.controparte || "").trim()) return false;
-    if (ANTICIPI.includes(s.causale_voce) && ((s.scadenze || []).length || e.riga.verso !== "uscita")) return false;   // versione 370: un anticipo non chiude fatture
+    if (ANTICIPI.includes(s.causale_voce) && ((s.scadenze || []).length || !vaBeneIlVerso(s.causale_voce, e.riga.verso))) return false;   // versioni 370 e 402: un anticipo non chiude fatture
     if (s.movimento_id === undefined && (s.scadenze || []).length) {
       const somma = sommaFatture(s.scadenze); if (somma > Number(e.riga.importo) + 0.005) return false;
     }
@@ -283,11 +286,13 @@ function Modulo({ e, s, gruppi, causali, anno, cambia, base, sommaFatture }) {
     {s.movimento_id === undefined && <label>Soggetto (come sarà scritto in prima nota)<br /><input style={rosso(!String(s.controparte || "").trim())} value={s.controparte || ""} onChange={x => cambia("controparte", x.target.value)} /></label>}
     {s.movimento_id === undefined && daNumerare && (s.fornitore_id || s.cliente_id) && !ANTICIPI.includes(s.causale_voce) ? <FattureDaChiudere e={e} s={s} base={base} cambia={cambia} sommaFatture={sommaFatture} /> : null}
     {daNumerare && ANTICIPI.includes(s.causale_voce) && <div style={{ gridColumn: "1 / -1", border: `1px solid ${C.blue}`, background: `${C.blue}10`, borderRadius: 8, padding: 8 }}>
-      {s.causale_voce === CAPARRA ? <><b>Caparra confirmatoria su preventivo.</b> Alla conferma nasce una caparra in «Gestione incassi e pagamenti» → «Anticipi e caparre in attesa di fattura»: scrivere lì la data di consegna prevista; alla consegna si aggancia la fattura.</>
+      {ANTICIPI_CLIENTE.includes(s.causale_voce) ? <><b>{s.causale_voce}.</b> Alla conferma nasce un {s.causale_voce === "Caparra ricevuta da cliente" ? "caparra" : "acconto"} del cliente in «Anticipi e caparre» (scheda «Ricevuti dai clienti»): Podere Verde emette la fattura e la si aggancia lì.</>
+        : s.causale_voce === PENITENZIALE ? <><b>Caparra penitenziale su preventivo.</b> Alla conferma nasce una caparra penitenziale in «Anticipi e caparre»: scrivere lì la data di consegna prevista; alla consegna si aggancia la fattura.</>
+        : s.causale_voce === CAPARRA ? <><b>Caparra confirmatoria su preventivo.</b> Alla conferma nasce una caparra in «Gestione incassi e pagamenti» → «Anticipi e caparre in attesa di fattura»: scrivere lì la data di consegna prevista; alla consegna si aggancia la fattura.</>
         : <><b>Anticipo su fattura da ricevere.</b> Alla conferma nasce un anticipo in «Gestione incassi e pagamenti» → «Anticipi in attesa di fattura»: resta aperto finché arriva la fattura del fornitore, che si aggancia lì.</>}
-      {e.riga.verso !== "uscita" && <div style={{ color: C.red, fontWeight: 700 }}>Questa voce è solo per i pagamenti in uscita.</div>}
+      {!vaBeneIlVerso(s.causale_voce, e.riga.verso) && <div style={{ color: C.red, fontWeight: 700 }}>{ANTICIPI_CLIENTE.includes(s.causale_voce) ? "Questa voce è solo per gli incassi." : "Questa voce è solo per i pagamenti in uscita."}</div>}
       {(s.scadenze || []).length > 0 && <div style={{ color: C.red, fontWeight: 700 }}>Un anticipo non chiude fatture: togliere le fatture spuntate oppure scegliere «Acconto su fattura».</div>}
-      {!s.fornitore_id && <div style={{ color: C.muted }}>Se il fornitore non è ancora in anagrafica si conferma lo stesso: lo si sceglie poi nella scheda dell'anticipo.</div>}</div>}
+      {!(ANTICIPI_CLIENTE.includes(s.causale_voce) ? s.cliente_id : s.fornitore_id) && <div style={{ color: C.muted }}>Se {ANTICIPI_CLIENTE.includes(s.causale_voce) ? "il cliente" : "il fornitore"} non è ancora in anagrafica si conferma lo stesso: lo si sceglie poi nella scheda dell'anticipo.</div>}</div>}
     {e.riga.pagina_pdf ? <div style={{ color: C.muted }}>Pagina del PDF dell'estratto: {e.riga.pagina_pdf} (si apre da «Estratti conto caricati e ricerca movimenti»)</div> : null}
   </div>;
 }

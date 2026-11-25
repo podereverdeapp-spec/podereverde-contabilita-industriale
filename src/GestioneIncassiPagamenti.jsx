@@ -37,6 +37,7 @@ const TAB = [...SEZIONI.map(s => ({ id: s.id, nome: s.nome })), { id: "attesa", 
   .flatMap(t => t.id === "pagamento_fatture" ? [t, { id: "professionisti", nome: "Professionisti con ritenuta" }, { id: "anticipo", nome: "Anticipo o caparra su fattura da ricevere" }] : t.id === "altri_pagamenti" ? [t, { id: "f24", nome: "F24" }] : [t]);   // versione 396: «F24»
 const ANTICIPO = "Acconto su fattura da ricevere";
 const CAPARRA = "Caparra confirmatoria su preventivo";   // versione 374 (decisione del Dott. Bizzarri del 12/11/2026 ore 17:57)
+const PENITENZIALE = "Caparra penitenziale su preventivo";   // versione 402 (art. 1386 c.c.)
 const copia = t => { try { navigator.clipboard.writeText(String(t)); } catch { /* il browser non permette: si copia a mano */ } };
 const importoIt = n => Number(n).toFixed(2).replace(".", ",");
 const leggiImporto = t => { const s = String(t || "").trim().replace(/\s|€/g, ""); if (!s) return null; const x = s.includes(",") ? s.replace(/\./g, "").replace(",", ".") : s;
@@ -640,8 +641,10 @@ function SezioneAnticipo({ base, fatto, oggi }) {
   const bonifico = ["Bonifico", "Bonifico istantaneo"].includes(v.modalita);
   const nomeTipo = TIPI_DOC.find(t => t[0] === v.tipo)?.[1] || "Documento";
   const documento = v.numero.trim() && v.data_documento ? `${nomeTipo} n. ${v.numero.trim()} del ${dataIt(v.data_documento)}` : "";
-  const caparra = v.voce === CAPARRA;
-  const causale = pulisciCausale([caparra ? causaleAnticipo(v.tipo, v.numero, v.data_documento).replace(/^ACCONTO SU/, "CAPARRA CONFIRMATORIA SU") : causaleAnticipo(v.tipo, v.numero, v.data_documento), v.aggiunta].filter(Boolean).join(" "));
+  const penitenziale = v.voce === PENITENZIALE; // versione 402
+  const caparra = v.voce === CAPARRA || penitenziale;
+  const nomeCaparra = penitenziale ? "caparra penitenziale" : "caparra confirmatoria";
+  const causale = pulisciCausale([caparra ? causaleAnticipo(v.tipo, v.numero, v.data_documento).replace(/^ACCONTO SU/, penitenziale ? "CAPARRA PENITENZIALE SU" : "CAPARRA CONFIRMATORIA SU") : causaleAnticipo(v.tipo, v.numero, v.data_documento), v.aggiunta].filter(Boolean).join(" "));
   const conosciuti = [...new Set(tutte.map(s => s.iban).filter(Boolean))];
   const ib = ibanDelModulo(v);
   const problemi = [];
@@ -664,7 +667,7 @@ function SezioneAnticipo({ base, fatto, oggi }) {
     if (problemi.length || lavoro) return;
     setLavoro(true); setErrore("");
     const p = { sezione: "pagamento_fatture", conto_id: Number(v.conto_id), modalita: v.modalita, modalita_altro: v.modalita_altro || "", carta_di_debito_id: v.carta_di_debito_id || "",
-      data_disposizione: v.data_disposizione, importo: imp, causale_gruppo: "Fatture", causale_voce: caparra ? CAPARRA : ANTICIPO, fornitore_id: sogg, cliente_id: "",
+      data_disposizione: v.data_disposizione, importo: imp, causale_gruppo: "Fatture", causale_voce: caparra ? v.voce : ANTICIPO, fornitore_id: sogg, cliente_id: "",
       causale: bonifico || causale ? causale : "", iban: bonifico ? ib : "", iban_confermato: !!v.iban_confermato, iban_diverso_motivo: "", note: v.note || "", documento_riferimento: documento,
       ...(v.modalita === "Contanti" ? { contanti_persona: v.contanti_persona } : {}) };
     const { data, error } = await supabase.rpc("ci_disponi_401", { p });
@@ -678,10 +681,10 @@ function SezioneAnticipo({ base, fatto, oggi }) {
       const r = an.data ? await supabase.rpc("ci_caparra_consegna", { p_anticipo: an.data.id, p_data: v.consegna_prevista, p_motivo: "" }) : { error: an.error || { message: "caparra non trovata" } };
       notaConsegna = r.error ? ` ATTENZIONE: la data di consegna prevista non è stata salvata (${r.error.message}): scriverla nella scheda della caparra.` : ` Consegna prevista: ${dataIt(v.consegna_prevista)}.`;
     }
-    if (data.definitivo === true) return fatto({ titolo: `${data.codice_attesa}: ${caparra ? "caparra confirmatoria" : "anticipo"} a ${nome} pagato in contanti — definitivo, prima nota n. ${data.numero || "—"}`,
+    if (data.definitivo === true) return fatto({ titolo: `${data.codice_attesa}: ${caparra ? nomeCaparra : "anticipo"} a ${nome} pagato in contanti — definitivo, prima nota n. ${data.numero || "—"}`,
       testo: `Registrato in cassa. ${caparra ? "La caparra è in «Anticipi e caparre in attesa di fattura»." : "L'anticipo è in «Anticipi in attesa di fattura»: quando arriva la fattura del fornitore si aggancia lì."} Conservare la ricevuta del fornitore.${notaConsegna}`,
       copie: [["Beneficiario", nome], ["Importo", importoIt(imp)], ["Descrizione", causale], ["Data", dataIt(v.data_disposizione)]].filter(x => x[1]) });
-    if (caparra) return fatto({ titolo: `${data.codice_attesa}: caparra confirmatoria a ${nome} mandata in pagamento — in attesa della banca`,
+    if (caparra) return fatto({ titolo: `${data.codice_attesa}: ${nomeCaparra} a ${nome} mandata in pagamento — in attesa della banca`,
       testo: `Adesso, oggi stesso, disporre ${v.modalita === "Bonifico istantaneo" ? "il bonifico istantaneo" : v.modalita.toLowerCase()} in banca con questi dati (pulsanti «Copia»). La caparra è in «Anticipi e caparre in attesa di fattura»: alla consegna la fattura del fornitore si aggancia lì; se l'affare salta si sceglie l'esito (restituita, trattenuta, restituita il doppio).${notaConsegna}`,
       copie: [["Beneficiario", nome], ["IBAN", bonifico ? ibanBello(ib) : ""], ["Importo", importoIt(imp)], ["Causale", causale], ["Data di esecuzione", dataIt(v.data_disposizione)]].filter(x => x[1]) });
     fatto({ titolo: `${data.codice_attesa}: anticipo a ${nome} mandato in pagamento — in attesa della banca`,
@@ -690,10 +693,11 @@ function SezioneAnticipo({ base, fatto, oggi }) {
   }
   return <div>
     <div style={scheda}>
-      <div style={{ fontWeight: 800, color: C.primary, marginBottom: 4 }}>Anticipo su fattura da ricevere o caparra confirmatoria</div>
+      <div style={{ fontWeight: 800, color: C.primary, marginBottom: 4 }}>Anticipo su fattura da ricevere o caparra</div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
         {[[ANTICIPO, "Acconto su fattura da ricevere", "Pagamento di una parte del prezzo: la fattura è dovuta subito (entro 12 giorni); se non arriva, avviso e segnalazione TD29."],
-          [CAPARRA, "Caparra confirmatoria su preventivo", "Garanzia dell'affare (art. 1385 c.c.), fuori campo IVA (da confermare con lo Studio): nessuna fattura al pagamento; alla consegna entra nella fattura."]].map(([k, n, d]) =>
+          [CAPARRA, "Caparra confirmatoria su preventivo", "Garanzia dell'affare (art. 1385 c.c.), fuori campo IVA (da confermare con lo Studio): nessuna fattura al pagamento; alla consegna entra nella fattura."],
+          [PENITENZIALE, "Caparra penitenziale su preventivo", "Prezzo per potersi tirare indietro (art. 1386 c.c.): chi recede perde la caparra (o la restituisce il doppio); nessuna fattura al pagamento; alla consegna entra nella fattura."]].map(([k, n, d]) =>
           <button key={k} title={d} onClick={() => cambia("voce", k)} style={{ ...btn(v.voce === k), height: "auto", padding: "6px 10px", textAlign: "left", maxWidth: 420 }}><b>{v.voce === k ? "● " : "○ "}{n}</b><br /><span style={{ fontSize: 11.5, fontWeight: 400 }}>{d}</span></button>)}
       </div>
       <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 8, maxWidth: 1000 }}>Per pagare prima della fattura: su una proforma, un preventivo o un'offerta. Non si spuntano fatture. Il pagamento resta in «Anticipi in attesa di fattura» finché arriva la fattura del fornitore; dal pagamento il fornitore ha 12 giorni per emetterla.</div>

@@ -27,6 +27,13 @@ export const AUTORIZZAZIONI = [
     spiega: "Per le fatture in attesa di nota di credito: registra il pagamento senza mandare la mail al fornitore, scrivendo il motivo. Servirà con la versione delle fatture contestate.",
     versione: 372,
   },
+  {
+    colonna: "puo_segnare_perdita_anticipo",
+    nome: "Può segnare la perdita di un acconto",
+    icona: "💸",
+    spiega: "Chiude un acconto o una caparra senza fattura e senza restituzione, cioè come perdita (fornitore fallito o sparito), scrivendo il motivo.",
+    versione: 402,
+  },
 ];
 
 // L'elenco da mostrare: quelle descritte qui che il database conosce, più quelle del database non ancora descritte
