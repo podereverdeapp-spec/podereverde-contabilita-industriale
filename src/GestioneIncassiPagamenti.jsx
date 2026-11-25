@@ -1,3 +1,5 @@
+// Versione 406 (Tenente, 25/11/2026): scheda «Stipendi e compensi» (SezioneStipendi, regole nel database: ci_paga_stipendio); in «Altri pagamenti»
+// stipendi, acconti, compensi, TFR e prestiti del personale non si scelgono più (VOCI_PERSONALE_STIPENDI).
 // Versione 401 (Soldato, 24/11/2026): «Pagamento fatture» e «Professionisti con ritenuta» (fatture con ritenuta a parte); nota di credito scelta
 // con la fattura e mail al fornitore obbligatoria (ci_paga_fatture_401: prima la prova nel database, poi la mail con il testo scritto dal database,
 // poi il pagamento); Word del pagamento; «Carica la distinta» → «pagato»; contanti definitivi subito in tutte le sezioni e nei giroconti, con chi
@@ -34,7 +36,7 @@ import { scaricaWordPagamento } from "./wordPagamento"; // versione 401
 
 // Versione 370: «Anticipo su fattura da ricevere» subito dopo «Pagamento fatture» (pagamento su proforma, preventivo o offerta)
 const TAB = [...SEZIONI.map(s => ({ id: s.id, nome: s.nome })), { id: "attesa", nome: "In attesa della banca" }, { id: "anomalie", nome: "Anomalie" }]
-  .flatMap(t => t.id === "pagamento_fatture" ? [t, { id: "professionisti", nome: "Professionisti con ritenuta" }, { id: "anticipo", nome: "Anticipo o caparra su fattura da ricevere" }] : t.id === "altri_pagamenti" ? [t, { id: "f24", nome: "F24" }] : [t]);   // versione 396: «F24»
+  .flatMap(t => t.id === "pagamento_fatture" ? [t, { id: "professionisti", nome: "Professionisti con ritenuta" }, { id: "anticipo", nome: "Anticipo o caparra su fattura da ricevere" }] : t.id === "altri_pagamenti" ? [t, { id: "stipendi", nome: "Stipendi e compensi" }, { id: "f24", nome: "F24" }] : [t]);   // versione 396: «F24»; versione 406: «Stipendi e compensi»
 const ANTICIPO = "Acconto su fattura da ricevere";
 const CAPARRA = "Caparra confirmatoria su preventivo";   // versione 374 (decisione del Dott. Bizzarri del 12/11/2026 ore 17:57)
 const PENITENZIALE = "Caparra penitenziale su preventivo";   // versione 402 (art. 1386 c.c.)
@@ -160,6 +162,7 @@ export default function GestioneIncassiPagamenti({ vaiA } = {}) {
       {tab === "professionisti" && <SezioneFatture key={tab + giro} sezione="pagamento_fatture" professionisti base={base} fatto={fatto} oggi={oggi} />}
       {tab === "anticipo" && <SezioneAnticipo key={giro} base={base} fatto={fatto} oggi={oggi} />}
       {(tab === "altri_pagamenti" || tab === "altri_incassi") && <SezioneAltri key={tab + giro} sezione={tab} base={base} fatto={fatto} oggi={oggi} />}
+      {tab === "stipendi" && <SezioneStipendi key={giro} base={base} fatto={fatto} oggi={oggi} />}
       {tab === "giroconti" && <SezioneGiroconti key={giro} base={base} fatto={fatto} oggi={oggi} />}
       {tab === "f24" && <SezioneF24 key={giro} base={base} fatto={fatto} oggi={oggi} vaiA={vaiA} />}
       {tab === "attesa" && <InAttesa base={base} oggi={oggi} fatto={fatto} ricarica={() => setGiro(g => g + 1)} />}
@@ -644,7 +647,7 @@ function SezioneFatture({ sezione, base, fatto, oggi, professionisti = false }) 
 // ---------------- Versione 374: dettaglio del prezzo aumentato di una fattura, con «Visto» ----------------
 function DettaglioAumento({ f, vi, nomi, nota, setNota, lavoro, visto }) {
   return <div style={{ fontSize: 12.5 }}>
-    <b>Prezzi aumentati in questa fattura</b> <span style={{ color: C.muted }}>(stessi numeri del «Controllo Prezzi di Acquisto»: prezzo contro la fattura precedente dello stesso fornitore; «in un anno» = aumento × quantità comprate negli ultimi 12 mesi)</span>
+    <b>Prezzi aumentati in questa fattura</b> <span style={{ color: C.muted }}>(stessi numeri del «Controllo Prezzi di Acquisto»: prezzo contro la fattura precedente dello stesso fornitore; «in un anno» = come nel Controllo Prezzi: quantità degli ultimi 12 mesi, oppure dell'anno precedente, oppure una fattura per i prodotti comprati una volta l'anno)</span>
     <table style={{ borderCollapse: "collapse", marginTop: 4, background: "#fff" }}><thead><tr style={{ background: "#F4F4F0" }}>
       {["Prodotto", "Prima", "Adesso", "Aumento", "In un anno", "Gravità"].map(h => <th key={h} style={{ padding: "3px 8px", textAlign: "left" }}>{h}</th>)}</tr></thead>
       <tbody>{f.righe.map((r, i) => <tr key={i} style={{ borderTop: `1px solid ${C.border}` }}>
@@ -929,7 +932,7 @@ function SezioneAltri({ sezione, base, fatto, oggi }) {
   }
   return <div style={{ ...scheda, border: `2px solid ${C.primary}` }}>
     <div style={{ fontWeight: 800, color: C.primary, fontSize: 15, marginBottom: 4 }}>{pag ? "Altri pagamenti" : "Altri incassi"}</div>
-    <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 10 }}>{pag ? "Pagamenti senza fattura nel programma: stipendi, compensi, tasse ed enti, assicurazioni, quote, affitti, investimenti, soci, rimborsi, finanziamenti. Gli F24 si pagano con il pulsante «F24»."
+    <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 10 }}>{pag ? "Pagamenti senza fattura nel programma: tasse ed enti, fondi ed enti bilaterali del personale, assicurazioni, quote, affitti, investimenti, soci, rimborsi, finanziamenti. Stipendi, compensi, acconti, TFR e prestiti al personale si pagano con il pulsante «Stipendi e compensi»; gli F24 con il pulsante «F24»."
       : "Incassi senza fattura nel programma: soci, contributi, rimborsi, finanziamenti, vendita di beni strumentali. Il documento è obbligatorio (delibera, decreto, contratto, lettera)."}</div>
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 10 }}>
       <label style={L}>Per che cosa: gruppo<select style={sel(!v.causale_gruppo)} value={v.causale_gruppo} onChange={e => { cambia("causale_gruppo", e.target.value); cambia("causale_voce", ""); }}>
@@ -953,7 +956,7 @@ function SezioneAltri({ sezione, base, fatto, oggi }) {
         {ib && !ibanValido(ib) && <span style={{ color: C.red }}>IBAN non valido: forma o cifre di controllo sbagliate.</span>}
         {ib && ibanValido(ib) && <div><button style={btn(!!v.iban_confermato, C.green)} onClick={() => cambia("iban_confermato", true)}>{v.iban_confermato ? `✔ IBAN confermato: ${ibanBello(ib)}` : "Confermi IBAN"}</button></div>}</div>}
       <div style={{ gridColumn: "1 / -1" }}><div style={{ fontSize: 12, fontWeight: 700 }}>{bonifico ? "Causale del bonifico" : "Descrizione"} <Contatore testo={causale} /></div>
-        <input style={{ ...sel(bonifico && !causaleValida(causale)), marginTop: 4 }} value={v.causale} onChange={e => cambia("causale", e.target.value)} placeholder={pag ? "es. STIPENDIO OTTOBRE 2026" : "es. FINANZIAMENTO SOCI"} />
+        <input style={{ ...sel(bonifico && !causaleValida(causale)), marginTop: 4 }} value={v.causale} onChange={e => cambia("causale", e.target.value)} placeholder={pag ? "es. QUOTA ASSOCIATIVA 2026" : "es. FINANZIAMENTO SOCI"} />
         {v.causale && causale !== v.causale.trim() && <div style={{ fontSize: 12, color: C.muted }}>In banca andrà così: <b>{causale}</b></div>}</div>
       <label style={{ ...L, gridColumn: "1 / -1" }}>Nota interna (facoltativa)<input style={sel(false)} value={v.note} onChange={e => cambia("note", e.target.value)} /></label>
     </div>
@@ -962,6 +965,202 @@ function SezioneAltri({ sezione, base, fatto, oggi }) {
     {errore && <div style={{ color: C.red, fontWeight: 700, marginTop: 8 }}>⚠️ {errore}</div>}
     <div style={{ marginTop: 10 }}><button style={btn(true)} disabled={!!problemi.length || lavoro} onClick={invia}>{lavoro ? "Registro…" : pag ? "Conferma e manda in pagamento" : "Conferma e registra l'incasso atteso"}</button></div>
   </div>;
+}
+
+// ---------------- Stipendi e compensi (versione 406) ----------------
+// Decisioni del Dott. Bizzarri del 25/11/2026 ore 17:19–17:44 (claude/tenente_decisioni_25_11_1734_stipendi.md): come per le fatture si sceglie
+// la persona e la busta paga (la voce la dà la busta); senza cedolino si sceglie dal menu, con «Altro» e la casella obbligatoria; solo bonifico
+// o assegno non trasferibile (legge 205/2017, comma 910), consegnato al lavoratore o a un delegato con nome e parentela; causale composta dal
+// programma; Word per il modulo della banca e, per l'assegno, ricevuta di consegna; «Carica la distinta» → pagato. Regole nel database: ci_paga_stipendio.
+const MESI_CAUSALE = ["", "GENNAIO", "FEBBRAIO", "MARZO", "APRILE", "MAGGIO", "GIUGNO", "LUGLIO", "AGOSTO", "SETTEMBRE", "OTTOBRE", "NOVEMBRE", "DICEMBRE"];
+const meseIt = m => MESI_CAUSALE[m].charAt(0) + MESI_CAUSALE[m].slice(1).toLowerCase();
+// TFR e anticipi sul TFR: passano dal cedolino (tassazione separata del consulente) → si pagano con la busta. Prestazioni occasionali di chi
+// non è dipendente: «Professionisti con ritenuta». Rimborsi delle spese: «Rimborsi delle spese» (versione 383). Ricontrollo del 25/11 ore 18:2x.
+const TIPI_SENZA_CEDOLINO = ["Acconto sullo stipendio (busta non ancora arrivata)", "Prestito al dipendente", "Altro"];
+const PARENTELE = ["Coniuge", "Convivente", "Familiare in linea retta (almeno 16 anni)", "Familiare in linea collaterale (almeno 16 anni)"];
+const MODALITA_STIPENDI = ["Bonifico", "Bonifico istantaneo", "Assegno bancario", "Assegno circolare"];
+const collabDi = b => ["COLLABORATORE", "AMMINISTRATORE"].includes(String(b.qualifica || "").toUpperCase());
+const cosaBusta = b => b.tipo === "tredicesima" ? "Tredicesima" : b.tipo === "quattordicesima" ? "Quattordicesima" : (collabDi(b) ? "Compenso" : "Stipendio") + (Number(b.tfr) > 0 ? " + TFR" : "");
+const nomeCausaleBusta = b => b.tipo === "tredicesima" ? `TREDICESIMA ${b.anno}` : b.tipo === "quattordicesima" ? `QUATTORDICESIMA ${b.anno}`
+  : `${collabDi(b) ? "COMPENSO" : "STIPENDIO"} ${MESI_CAUSALE[b.mese]} ${b.anno}${Number(b.tfr) > 0 ? " + TFR" : ""}`;
+// già pagato (dal database, ci_busta_pagato): pagamenti disposti da qui + il maggiore fra ricevute caricate e bonifici già in prima nota + acconti senza cedolino del mese
+const pagatoBusta = b => Number(b.pagato);
+const corto = b => b.tipo === "mensile" ? `${MESI_CAUSALE[b.mese].slice(0, 3)} ${b.anno}` : `${b.tipo.toUpperCase()} ${b.anno}`;
+const restoBusta = b => Math.max(Math.round((Number(b.netto) - pagatoBusta(b)) * 100) / 100, 0);
+
+function SezioneStipendi({ base, fatto, oggi }) {
+  const [dati, setDati] = useState(null); const [erroreDati, setErroreDati] = useState("");
+  const [cerca, setCerca] = useState(""); const [sogg, setSogg] = useState(null); const [strada, setStrada] = useState("busta");
+  const [spunte, setSpunte] = useState({}); // id della busta → importo (testo)
+  const vuotoSenza = () => ({ tipologia: "", descrizione: "", importo: "", rif: oggi.slice(0, 7) });
+  const [senza, setSenza] = useState(vuotoSenza);
+  const vuotoV = () => ({ modalita: "", conto_id: "", data_disposizione: oggi, aggiunta: "", iban_scritto: "", iban_confermato: false, iban_motivo: "", assegno_numero: "", consegnato_a: "lavoratore", delegato_nome: "", delegato_parentela: "", note: "", soglia_vista: false });
+  const [v, setV] = useState(vuotoV);
+  const [lavoro, setLavoro] = useState(false); const [errore, setErrore] = useState("");
+  const cambia = (k, x) => setV(o => ({ ...o, [k]: x }));
+  useEffect(() => { supabase.rpc("ci_stipendi_situazione").then(({ data, error }) => { if (error) setErroreDati(error.message); else setDati(data); }); }, []);
+  const persona = dati?.persone.find(p => p.id === sogg);
+  const busteDi = id => (dati?.buste || []).filter(b => b.dipendente_id === id);
+  const elenco = useMemo(() => {
+    if (!dati) return [];
+    const q = cerca.trim().toLowerCase().replace(/\s/g, "");
+    return dati.persone.map(p => { const ap = busteDi(p.id).filter(b => restoBusta(b) > 0.005); const att = busteDi(p.id).filter(b => Number(b.in_attesa) > 0.005);
+      return { ...p, aperte: ap.length, resto: ap.reduce((t, b) => t + restoBusta(b), 0), attesa: att.length, buste: busteDi(p.id).length }; })
+      .filter(p => p.buste > 0 || !p.cessazione)
+      .filter(p => !q || String(p.nome || "").toLowerCase().replace(/\s/g, "").includes(q) || String(p.codice_fiscale || "").toLowerCase().includes(q))
+      .sort((a, b) => b.resto - a.resto || String(a.nome).localeCompare(String(b.nome)));
+  }, [dati, cerca]);
+  function scegli(p) {
+    // ogni persona riparte da zero: niente spunte, numeri di assegno, delegati o aggiunte rimasti dalla persona di prima
+    setSogg(p.id); setSpunte({}); setStrada("busta"); setSenza(vuotoSenza()); setErrore("");
+    setV({ ...vuotoV(), iban_scritto: p.iban || p.iban_ultimo || "" });
+  }
+  const scelte = persona ? busteDi(persona.id).filter(b => spunte[b.id] !== undefined) : [];
+  const totale = strada === "busta" ? scelte.reduce((t, b) => t + (leggiImporto(spunte[b.id]) || 0), 0) : (leggiImporto(senza.importo) || 0);
+  const bonifico = ["Bonifico", "Bonifico istantaneo"].includes(v.modalita); const assegno = v.modalita.startsWith("Assegno");
+  const ib = ibanPulito(v.iban_scritto);
+  // causale composta dal programma: si può solo aggiungere in coda (decisione del 25/11 ore 17:38)
+  let base_causale = "";
+  if (strada === "busta" && scelte.length) { base_causale = scelte.map(b => { const imp = leggiImporto(spunte[b.id]) || 0; const r = restoBusta(b); const nome = nomeCausaleBusta(b);
+    return imp < r - 0.005 ? "ACCONTO " + nome : pagatoBusta(b) > 0.005 ? `SALDO ${nome} DEDOTTO ACCONTO` : nome; }).join(" + ");
+    // più buste in un bonifico: se la causale supera i 140 caratteri si usa la forma corta («STIPENDI SET 2026 OTT 2026»)
+    if (base_causale.length + (v.aggiunta ? v.aggiunta.length + 1 : 0) > 140) base_causale = `${scelte.some(collabDi) ? "COMPENSI" : "STIPENDI"} ${scelte.map(corto).join(" ")}`; }
+  const [annoRif, meseRif] = (senza.rif || "").split("-").map(Number);
+  const bustaDelMese = persona && senza.tipologia.startsWith("Acconto") ? busteDi(persona.id).find(b => b.tipo === "mensile" && b.anno === annoRif && b.mese === meseRif) : null;
+  if (strada === "senza" && senza.tipologia) { const t = senza.tipologia;
+    base_causale = t.startsWith("Acconto") ? `ACCONTO STIPENDIO ${MESI_CAUSALE[meseRif] || ""} ${annoRif || ""}` : t.startsWith("Prestito") ? "PRESTITO AL DIPENDENTE" : senza.descrizione; }
+  const causale = pulisciCausale([base_causale, v.aggiunta].filter(Boolean).join(" "));
+  const adatti = base.conti.filter(c => c.stato === "aperto" && v.modalita && modalitaAmmessa(c.tipo, v.modalita, "uscita"));
+  const problemi = [];
+  if (strada === "busta") {
+    if (!scelte.length) problemi.push("spuntare almeno una busta paga");
+    scelte.forEach(b => { const imp = leggiImporto(spunte[b.id]); if (!imp) problemi.push(`importo della busta di ${meseIt(b.mese)} ${b.anno}`); else if (imp > restoBusta(b) + 0.005) problemi.push(`${meseIt(b.mese)} ${b.anno}: si pagano ${euro(imp)} ma restano ${euro(restoBusta(b))}`); });
+  } else {
+    if (!senza.tipologia) problemi.push("scegliere la tipologia dal menu");
+    if (senza.tipologia === "Altro" && !senza.descrizione.trim()) problemi.push("scrivere in che cosa consiste «Altro»");
+    if (senza.tipologia.startsWith("Acconto") && (!annoRif || !meseRif || annoRif < 2026)) problemi.push("scegliere il mese dello stipendio (dal 2026)");
+    if (bustaDelMese) problemi.push(`la busta di ${meseIt(meseRif)} ${annoRif} è già caricata: l'acconto si paga da «Con busta paga», riducendo l'importo`);
+    if (!leggiImporto(senza.importo)) problemi.push("scrivere l'importo");
+  }
+  if (!v.modalita) problemi.push("scegliere come si paga");
+  if (!v.conto_id) problemi.push("scegliere da quale conto");
+  if (!v.data_disposizione) problemi.push("scrivere la data");
+  const ibanNoto = persona ? ibanPulito(persona.iban || persona.iban_ultimo || "") : "";
+  const ibanCambiato = bonifico && !!ibanNoto && !!ib && ib !== ibanNoto;
+  if (ibanCambiato && v.iban_motivo.trim().length < 5) problemi.push("IBAN diverso da quello conosciuto: scrivere il motivo del cambio");
+  if (bonifico) { if (!ib) problemi.push("scrivere l'IBAN della persona"); else if (!ibanValido(ib)) problemi.push("IBAN non valido"); else if (!v.iban_confermato) problemi.push("premere «Confermi IBAN»");
+    if (!causaleValida(causale)) problemi.push("causale del bonifico non valida (al massimo 140 caratteri)"); }
+  if (assegno) { if (!v.assegno_numero.trim()) problemi.push("scrivere il numero dell'assegno");
+    if (v.consegnato_a === "delegato" && (!v.delegato_nome.trim() || !v.delegato_parentela)) problemi.push("assegno a un delegato: nome e parentela"); }
+  if (totale > 5000 && !v.soglia_vista) problemi.push("spuntare «Ho visto: sopra 5.000 €»");
+  async function invia() {
+    if (problemi.length || lavoro) return; setLavoro(true); setErrore("");
+    const p = { dipendente_id: persona.id, strada, importo: Math.round(totale * 100) / 100, modalita: v.modalita, conto_id: Number(v.conto_id), data_disposizione: v.data_disposizione,
+      causale, note: v.note, iban: bonifico ? ib : "", iban_confermato: bonifico && !!v.iban_confermato, iban_diverso_motivo: ibanCambiato ? v.iban_motivo.trim() : "",
+      ...(strada === "busta" ? { buste: scelte.map(b => ({ costo_lavoro_id: b.id, importo: leggiImporto(spunte[b.id]) })) }
+        : { tipologia: senza.tipologia, descrizione: senza.descrizione.trim(), ...(senza.tipologia.startsWith("Acconto") ? { anno_rif: annoRif, mese_rif: meseRif } : {}) }),
+      ...(assegno ? { assegno_numero: v.assegno_numero.trim(), consegnato_a: v.consegnato_a, delegato_nome: v.delegato_nome.trim(), delegato_parentela: v.delegato_parentela } : {}) };
+    const { data, error } = await supabase.rpc("ci_paga_stipendio", { p });
+    setLavoro(false);
+    if (error) return setErrore("Il database non l'ha accettato, non è stato registrato niente: " + error.message);
+    const conto = base.conti.find(c => c.id === Number(v.conto_id));
+    const ricevente = v.consegnato_a === "delegato" ? `${v.delegato_nome.trim()} (${v.delegato_parentela.toLowerCase()} di ${persona.nome})` : persona.nome;
+    fatto({ titolo: `${data.codice_attesa}: ${data.voce.toLowerCase()} di ${persona.nome} mandato in pagamento — in attesa della banca`,
+      testo: bonifico ? "Adesso, oggi stesso, fare il bonifico in banca copiando i dati dal Word o con i pulsanti «Copia». Poi caricare la distinta: il pagamento diventa «pagato»; alla conferma dell'estratto prende il numero di prima nota."
+        : "Stampare il Word, compilare l'assegno non trasferibile con questi dati e far firmare la ricevuta di consegna. Diventa definitivo quando l'assegno compare addebitato nell'estratto conto.",
+      copie: [["Beneficiario", persona.nome], ["IBAN", bonifico ? ibanBello(ib) : ""], ["Numero assegno", assegno ? v.assegno_numero.trim() : ""], ["Importo", importoIt(totale)], ["Causale", causale], ["Data di esecuzione", dataIt(v.data_disposizione)]].filter(x => x[1]),
+      word: { codice: data.codice_attesa, beneficiario: persona.nome, iban: bonifico ? ibanBello(ib) : "", importo: "€ " + importoIt(totale), causale, data: dataIt(v.data_disposizione),
+        conto: conto?.nome || "", modalita: v.modalita + (assegno ? " non trasferibile" : ""),
+        buste: strada === "busta" ? scelte.map(b => `${cosaBusta(b)} ${meseIt(b.mese)} ${b.anno}: ${euro(leggiImporto(spunte[b.id]))}`) : [],
+        assegno: assegno ? { tipo: v.modalita === "Assegno circolare" ? "circolare" : "bancario", numero: v.assegno_numero.trim(), ricevente } : null },
+      movimento: bonifico ? { id: data.movimento_id, data: v.data_disposizione, conto: conto?.nome_nei_movimenti || conto?.nome || "", distinta_id: null } : null });
+  }
+  if (erroreDati) return <div style={{ ...scheda, color: C.red, fontWeight: 700 }}>⚠️ Buste paga non lette: {erroreDati}</div>;
+  if (!dati) return <div style={scheda}>Lettura delle buste paga…</div>;
+  return <>
+    {!persona && <div style={scheda}>
+      <div style={{ fontWeight: 800, color: C.primary, marginBottom: 6 }}>Chi si paga?</div>
+      <input style={{ ...input, width: "100%", maxWidth: 520 }} placeholder="Cerca: nome anche parziale o codice fiscale" value={cerca} onChange={e => setCerca(e.target.value)} />
+      <div style={{ fontSize: 12.5, color: C.muted, marginTop: 6 }}>Stipendi, salari, tredicesime, quattordicesime, compensi con cedolino e TFR: si sceglie la busta paga (caricata in «Leggi le buste paga e i pagamenti»). I pagamenti senza cedolino si scelgono dal menu dopo aver scelto la persona. I rimborsi delle spese si pagano da «Rimborsi delle spese». Niente contanti (legge 205/2017). Buste dal 2026: la prima nota parte dal 01/01/2026.</div>
+      <table style={{ width: "100%", marginTop: 8, fontSize: 12.5, background: "#fff" }}><thead><tr style={{ background: C.primary, color: "#fff" }}>
+        {["Persona", "Qualifica", "Buste aperte", "Resto da pagare", "In pagamento", ""].map(h => <th key={h} style={{ padding: "6px 8px", textAlign: "left" }}>{h}</th>)}</tr></thead>
+        <tbody>{elenco.map(p => <tr key={p.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+          <td style={{ padding: "5px 8px", fontWeight: 700 }}>{p.nome}{p.cessazione ? <span style={{ fontWeight: 400, color: C.muted }}> (cessato il {dataIt(p.cessazione)})</span> : ""}</td>
+          <td style={{ padding: "5px 8px" }}>{p.qualifica || "—"}</td><td style={{ padding: "5px 8px" }}>{p.aperte}</td>
+          <td style={{ padding: "5px 8px", textAlign: "right" }}>{euro(p.resto)}</td><td style={{ padding: "5px 8px", color: C.blue }}>{p.attesa ? `${p.attesa} buste` : ""}</td>
+          <td style={{ padding: "5px 8px" }}><button style={btn(true)} onClick={() => scegli(p)}>Scegli</button></td></tr>)}</tbody></table>
+      {!elenco.length && <div style={{ color: C.muted, marginTop: 6 }}>Nessuna persona trovata.</div>}
+    </div>}
+    {persona && <div style={scheda}>
+      <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+        <div style={{ fontWeight: 800, color: C.primary, fontSize: 16 }}>{persona.nome} <span style={{ fontSize: 12.5, color: C.muted }}>{persona.qualifica} · {persona.codice_fiscale}</span></div>
+        <button style={btn(false)} onClick={() => { setSogg(null); setSpunte({}); setSenza(vuotoSenza()); setV(vuotoV()); setErrore(""); }}>← Cambia persona</button></div>
+      <div style={{ display: "flex", gap: 6, margin: "8px 0" }}>
+        <button style={btn(strada === "busta")} onClick={() => setStrada("busta")}>Con busta paga (cedolino)</button>
+        <button style={btn(strada === "senza")} onClick={() => setStrada("senza")}>Senza cedolino</button></div>
+      {strada === "busta" && <>
+        <div style={{ fontSize: 12.5, color: C.muted, margin: "6px 0" }}>Spuntare le buste che si pagano con lo stesso bonifico; l'importo si può ridurre per un acconto. La voce del pagamento la dà la busta. «Già pagato» comprende i pagamenti già disposti da qui, le ricevute caricate o i bonifici già in prima nota con il nome e il mese nella causale, e gli acconti dati senza cedolino per quel mese.</div>
+        <div style={{ overflowX: "auto" }}><table style={{ width: "100%", fontSize: 12.5, background: "#fff" }}><thead><tr style={{ background: C.primary, color: "#fff" }}>
+          {["", "Mese", "Che cosa è", "Netto in busta", "Di cui TFR", "Già pagato", "In pagamento", "Resto", "Da pagare ora"].map(h => <th key={h} style={{ padding: "6px 8px", textAlign: "left", whiteSpace: "nowrap" }}>{h}</th>)}</tr></thead>
+          <tbody>{busteDi(persona.id).map(b => { const r = restoBusta(b); const chiusa = r <= 0.005; const sp = spunte[b.id] !== undefined; const imp = leggiImporto(spunte[b.id]);
+            return <tr key={b.id} style={{ borderBottom: `1px solid ${C.border}`, background: chiusa ? "#F4F4F0" : sp ? "#F2F7EE" : "#fff", color: chiusa ? C.muted : C.text }}>
+              <td style={{ padding: "5px 8px" }}>{chiusa ? "✔" : <input type="checkbox" checked={sp} onChange={e => setSpunte(o => { const n = { ...o }; if (e.target.checked) n[b.id] = importoIt(r); else delete n[b.id]; return n; })} />}</td>
+              <td style={{ padding: "5px 8px", fontWeight: 700 }}>{meseIt(b.mese)} {b.anno}</td><td style={{ padding: "5px 8px" }}>{cosaBusta(b)}</td>
+              <td style={{ padding: "5px 8px", textAlign: "right" }}>{euro(b.netto)}</td><td style={{ padding: "5px 8px", textAlign: "right" }}>{Number(b.tfr) > 0 ? euro(b.tfr) : "—"}</td>
+              <td style={{ padding: "5px 8px", textAlign: "right" }}>{euro(pagatoBusta(b))}</td><td style={{ padding: "5px 8px", color: C.blue }}>{Number(b.in_attesa) > 0.005 ? euro(b.in_attesa) : ""}</td>
+              <td style={{ padding: "5px 8px", textAlign: "right", fontWeight: 700 }}>{chiusa ? "pagata" : euro(r)}</td>
+              <td style={{ padding: "5px 8px" }}>{sp ? <input style={{ ...input, width: 110, borderColor: !imp || imp > r + 0.005 ? C.red : C.border }} value={spunte[b.id]} onChange={e => setSpunte(o => ({ ...o, [b.id]: e.target.value }))} /> : ""}</td></tr>; })}</tbody></table></div>
+        {!busteDi(persona.id).length && <div style={{ color: C.muted }}>Nessuna busta paga del 2026 caricata per questa persona: caricarla in «Leggi le buste paga e i pagamenti», oppure usare «Senza cedolino».</div>}
+      </>}
+      {strada === "senza" && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 10, marginTop: 6 }}>
+        <label style={L}>Tipologia del pagamento<select style={sel(!senza.tipologia)} value={senza.tipologia} onChange={e => setSenza(o => ({ ...o, tipologia: e.target.value }))}>
+          <option value="">— scegliere —</option>{TIPI_SENZA_CEDOLINO.map(t => <option key={t}>{t}</option>)}</select>
+          <span style={{ fontWeight: 400, color: C.muted }}>I rimborsi delle spese non sono qui: si pagano da «Rimborsi delle spese».</span></label>
+        <label style={L}>Importo (€)<input style={sel(!leggiImporto(senza.importo))} value={senza.importo} onChange={e => setSenza(o => ({ ...o, importo: e.target.value }))} placeholder="500,00" /></label>
+        {senza.tipologia === "Altro" && <label style={{ ...L, gridColumn: "1 / -1" }}>In che cosa consiste «Altro» (obbligatorio: diventa la causale)<input style={sel(!senza.descrizione.trim())} value={senza.descrizione} onChange={e => setSenza(o => ({ ...o, descrizione: e.target.value }))} /></label>}
+        {senza.tipologia.startsWith("Acconto") && <label style={L}>Stipendio del mese<input type="month" style={sel(!annoRif || !meseRif || !!bustaDelMese)} value={senza.rif} onChange={e => setSenza(o => ({ ...o, rif: e.target.value }))} /></label>}
+        {senza.tipologia.startsWith("Acconto") && <div style={{ gridColumn: "1 / -1", fontSize: 12.5, color: C.muted }}>Quando arriverà la busta di quel mese, il programma conterà questo acconto come già pagato: resterà da pagare il netto meno l'acconto. Avvisare il consulente del lavoro dell'acconto dato.
+          {(dati.acconti || []).filter(a => a.dipendente_id === persona.id).length > 0 && <div style={{ marginTop: 4 }}>Acconti già dati senza cedolino: {(dati.acconti || []).filter(a => a.dipendente_id === persona.id).map(a => `${meseIt(a.mese)} ${a.anno} ${euro(a.importo)} (${a.codice || ""})`).join("; ")}.</div>}</div>}
+        <div style={{ gridColumn: "1 / -1", fontSize: 12.5, color: C.muted }}>TFR e anticipi sul TFR passano dalla busta paga (il consulente applica la tassazione separata): si pagano da «Con busta paga». Le prestazioni occasionali di chi non è dipendente si pagano da «Professionisti con ritenuta».</div>
+      </div>}
+    </div>}
+    {persona && (scelte.length > 0 || strada === "senza") && <div style={{ ...scheda, border: `2px solid ${C.primary}` }}>
+      <div style={{ fontWeight: 800, color: C.primary, fontSize: 15, marginBottom: 8 }}>Il pagamento: {persona.nome}, totale {euro(totale)}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 10 }}>
+        <label style={L}>1. Come si paga<select style={sel(!v.modalita)} value={v.modalita} onChange={e => { cambia("modalita", e.target.value); cambia("conto_id", ""); }}>
+          <option value="">— scegliere —</option>{MODALITA_STIPENDI.map(m => <option key={m}>{m}</option>)}</select>
+          <span style={{ fontWeight: 400, color: C.muted }}>Contanti non ammessi per stipendi e compensi (legge 205/2017, commi 910–913). L'assegno va emesso non trasferibile.</span></label>
+        <label style={L}>2. Da quale conto<select style={sel(!v.conto_id)} value={v.conto_id} disabled={!v.modalita} onChange={e => cambia("conto_id", e.target.value)}>
+          <option value="">{v.modalita ? "— scegliere —" : "prima scegliere come si paga"}</option>{adatti.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select></label>
+        <label style={L}>3. {assegno ? "Data di consegna dell'assegno" : "Data di addebito in banca"}<input type="date" style={sel(!v.data_disposizione)} value={v.data_disposizione} onChange={e => cambia("data_disposizione", e.target.value)} />
+          {v.data_disposizione !== oggi && bonifico && <span style={{ color: C.yellow, fontWeight: 700 }}>Non è oggi: disporre in banca lo stesso giorno in cui si registra qui.</span>}</label>
+        {bonifico && <div style={{ ...L, gridColumn: "1 / -1" }}>4. IBAN della persona
+          <input style={sel(!ib || !ibanValido(ib))} value={v.iban_scritto} onChange={e => { cambia("iban_scritto", e.target.value); cambia("iban_confermato", false); }} placeholder="IT00 X000 0000 0000 0000 0000 000" />
+          <span style={{ fontWeight: 400, color: C.muted }}>{persona.iban ? "IBAN della scheda della persona." : persona.iban_ultimo ? "Preso dall'ultimo bonifico fatto a questa persona: confermarlo; resterà nella sua scheda." : "Nessun IBAN: scriverlo e confermarlo per telefono con la persona; resterà nella sua scheda."}</span>
+          {ib && !ibanValido(ib) && <span style={{ color: C.red }}>IBAN non valido: forma o cifre di controllo sbagliate.</span>}
+          {ibanCambiato && <label style={{ ...L, color: C.red }}>IBAN diverso da quello conosciuto ({ibanBello(ibanNoto)}): motivo del cambio (obbligatorio; resta nello storico della persona)
+            <input style={{ ...sel(v.iban_motivo.trim().length < 5), maxWidth: 520 }} value={v.iban_motivo} onChange={e => cambia("iban_motivo", e.target.value)} placeholder="es. nuovo conto comunicato per iscritto il 20/11/2026" /></label>}
+          {ib && ibanValido(ib) && <div><button style={btn(!!v.iban_confermato, C.green)} onClick={() => cambia("iban_confermato", true)}>{v.iban_confermato ? `✔ IBAN confermato: ${ibanBello(ib)}` : "Confermi IBAN"}</button></div>}</div>}
+        {assegno && <>
+          <label style={L}>4. Numero dell'assegno<input style={sel(!v.assegno_numero.trim())} value={v.assegno_numero} onChange={e => cambia("assegno_numero", e.target.value)} /></label>
+          <label style={L}>5. Consegnato a<select style={sel(false)} value={v.consegnato_a} onChange={e => cambia("consegnato_a", e.target.value)}>
+            <option value="lavoratore">Al lavoratore</option><option value="delegato">A un delegato (lavoratore impedito)</option></select></label>
+          {v.consegnato_a === "delegato" && <>
+            <label style={L}>Nome del delegato<input style={sel(!v.delegato_nome.trim())} value={v.delegato_nome} onChange={e => cambia("delegato_nome", e.target.value)} /></label>
+            <label style={L}>Parentela<select style={sel(!v.delegato_parentela)} value={v.delegato_parentela} onChange={e => cambia("delegato_parentela", e.target.value)}>
+              <option value="">— scegliere —</option>{PARENTELE.map(x => <option key={x}>{x}</option>)}</select></label></>}
+        </>}
+        <div style={{ gridColumn: "1 / -1" }}><div style={{ fontSize: 12, fontWeight: 700 }}>{bonifico ? "Causale del bonifico (composta dal programma, non si modifica; si può solo aggiungere)" : "Descrizione"} <Contatore testo={causale} /></div>
+          <div style={{ fontFamily: "monospace", fontSize: 13, background: "#F4F4F0", border: `1px solid ${C.border}`, borderRadius: 6, padding: "6px 8px", margin: "4px 0", wordBreak: "break-all" }}>{causale || "—"}</div>
+          <label style={L}>Aggiunta in coda (facoltativa)<input style={{ ...sel(false), maxWidth: 520 }} value={v.aggiunta} onChange={e => cambia("aggiunta", e.target.value)} /></label></div>
+        <label style={{ ...L, gridColumn: "1 / -1" }}>Nota interna (facoltativa)<input style={sel(false)} value={v.note} onChange={e => cambia("note", e.target.value)} /></label>
+      </div>
+      {totale > 5000 && <label style={{ display: "block", marginTop: 8, color: C.red, fontWeight: 700, fontSize: 13 }}><input type="checkbox" checked={v.soglia_vista} onChange={e => cambia("soglia_vista", e.target.checked)} /> Ho visto: sopra 5.000 €. Sarà segnalato al Dott. Bizzarri e a Teresa Demaria.</label>}
+      {problemi.length > 0 && <div style={{ color: C.red, fontSize: 12.5, marginTop: 10 }}>Per confermare: {problemi.join("; ")}.</div>}
+      {errore && <div style={{ color: C.red, fontWeight: 700, marginTop: 8 }}>⚠️ {errore}</div>}
+      <div style={{ marginTop: 10 }}><button style={btn(true)} disabled={!!problemi.length || lavoro} onClick={invia}>{lavoro ? "Registro…" : "Conferma e manda in pagamento"}</button></div>
+    </div>}
+  </>;
 }
 
 // ---------------- F24 (versione 396) ----------------

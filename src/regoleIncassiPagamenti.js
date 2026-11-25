@@ -23,7 +23,10 @@ const VOCI_ESCLUSE = {
   altri_incassi: ["Storno di registrazione", "Acconto su bene strumentale"],   // versione 402: l'acconto su bene strumentale è solo un pagamento
   giroconti: [],
 };
-export const vociDellaSezione = (causali, sezione, gruppo) => causali.filter(c => c.gruppo === gruppo && GRUPPI_SEZIONE[sezione].includes(gruppo) && !VOCI_ESCLUSE[sezione].includes(c.voce));
+// versione 406: stipendi, acconti, compensi, TFR, prestiti e «Altro» del gruppo Personale si pagano da «Stipendi e compensi» (lo blocca anche il database)
+export const VOCI_PERSONALE_STIPENDI = ["Stipendio", "Acconto su stipendio", "Compenso", "Liquidazione del TFR", "Prestito al dipendente", "Altro"];
+export const vociDellaSezione = (causali, sezione, gruppo) => causali.filter(c => c.gruppo === gruppo && GRUPPI_SEZIONE[sezione].includes(gruppo) && !VOCI_ESCLUSE[sezione].includes(c.voce)
+  && !(sezione === "altri_pagamenti" && c.gruppo === "Personale" && VOCI_PERSONALE_STIPENDI.includes(c.voce)));
 
 // «come si paga»: modalità per verso (F24 ha la sua sezione; «Addebito della banca» la assegna solo il programma)
 export const MODALITA_USCITA = ["Bonifico", "Bonifico istantaneo", "Assegno bancario", "Assegno circolare", "Contanti", "Carta di debito", "Carta di credito", "Carta prepagata", "Bollettino", "Addebito diretto SEPA", "Altro"];
@@ -120,6 +123,9 @@ export const oggiRoma = () => new Intl.DateTimeFormat("sv-SE", { timeZone: "Euro
 export function statoAttesa(m, coperturaConto, oggi) {
   const dd = m.data_disposizione || m.data;
   const giorni = giorniLavorativi(dd, oggi);
+  // assegno già consegnato (versione 406): non si annulla perché non è ancora addebitato; si annulla solo se restituito o distrutto
+  if (String(m.modalita || "").startsWith("Assegno") && m.verso === "uscita")
+    return { rosso: giorni >= 20, giorni, causa: `assegno consegnato da ${giorni} giorni lavorativi: diventa definitivo quando compare addebitato nell'estratto conto. Non annullarlo se non è stato restituito o distrutto${giorni >= 20 ? "; chiedere alla persona se l'ha incassato" : ""}` };
   const due = piuLavorativi(dd, 2);
   if (coperturaConto && coperturaConto >= due)
     return { rosso: true, giorni, causa: `movimenti della banca caricati fino al ${dataIt(coperturaConto)}, ma ${m.verso === "uscita" ? "il pagamento" : "l'incasso"} non risulta: controlla in banca che sia stato autorizzato e spedito; se non è partito, annullalo` };

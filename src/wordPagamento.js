@@ -8,10 +8,10 @@ const par = (testo, { grassetto = false, misura = 22 } = {}) =>
   `<w:p><w:r><w:rPr>${grassetto ? "<w:b/>" : ""}<w:sz w:val="${misura}"/></w:rPr><w:t xml:space="preserve">${xml(testo)}</w:t></w:r></w:p>`;
 const cella = (testo, larghezza, grassetto, mono) => `<w:tc><w:tcPr><w:tcW w:w="${larghezza}" w:type="dxa"/></w:tcPr><w:p><w:r><w:rPr>${grassetto ? "<w:b/>" : ""}${mono ? '<w:rFonts w:ascii="Courier New" w:hAnsi="Courier New"/>' : ""}<w:sz w:val="22"/></w:rPr><w:t xml:space="preserve">${xml(testo)}</w:t></w:r></w:p></w:tc>`;
 
-// dati = { codice, beneficiario, iban, importo, causale, data, conto, modalita, fatture: [testo], note_credito: [testo] }
+// dati = { codice, beneficiario, iban, importo, causale, data, conto, modalita, fatture: [testo], note_credito: [testo], buste: [testo], assegno: { tipo, numero, ricevente } } (buste e assegno: versione 406)
 export async function scaricaWordPagamento(dati) {
   const righe = [
-    ["Beneficiario", dati.beneficiario], ["IBAN", dati.iban], ["Importo", dati.importo], ["Causale", dati.causale],
+    ["Beneficiario", dati.beneficiario], ["IBAN", dati.iban], ["Numero assegno", dati.assegno?.numero], ["Consegnato a", dati.assegno?.ricevente], ["Importo", dati.importo], ["Causale", dati.causale],
     ["Data di esecuzione", dati.data], ["Conto da cui si paga", dati.conto], ["Come si paga", dati.modalita],
   ].filter(r => r[1]);
   const tabella = `<w:tbl><w:tblPr><w:tblW w:w="9300" w:type="dxa"/><w:tblBorders>${["top", "left", "bottom", "right", "insideH", "insideV"].map(b => `<w:${b} w:val="single" w:sz="4" w:space="0" w:color="999999"/>`).join("")}</w:tblBorders></w:tblPr>
@@ -19,11 +19,17 @@ export async function scaricaWordPagamento(dati) {
     ${righe.map(([e, v]) => `<w:tr>${cella(e, 2600, true, false)}${cella(v, 6700, false, e === "IBAN" || e === "Causale")}</w:tr>`).join("")}</w:tbl>`;
   const corpo = [
     par(`Pagamento ${dati.codice || ""} – Società Agricola Podere Verde a r.l.`, { grassetto: true, misura: 28 }),
-    par("Copiare questi dati nel modulo del bonifico della banca (home banking). Non cambiare la causale: serve a riconoscere il pagamento nell'estratto conto."),
+    par(dati.assegno ? "Dati per compilare l'assegno non trasferibile. Far firmare la ricevuta di consegna qui sotto a chi ritira l'assegno e conservarla." // versione 406
+      : "Copiare questi dati nel modulo del bonifico della banca (home banking). Non cambiare la causale: serve a riconoscere il pagamento nell'estratto conto."),
     tabella,
     dati.fatture?.length ? par("Fatture pagate: " + dati.fatture.join("; ")) : "",
     dati.note_credito?.length ? par("Note di credito dedotte: " + dati.note_credito.join("; ")) : "",
-    par("Fatto il bonifico, scaricare la distinta della banca, salvarla senza cambiarle nome in BANCHE\\ESTRATTI CONTO E DISTINTE DA SMISTARE e caricarla nel programma con «Carica la distinta» (Gestione incassi e pagamenti)."),
+    dati.buste?.length ? par("Buste paga pagate: " + dati.buste.join("; ")) : "", // versione 406
+    dati.assegno ? par("RICEVUTA DI CONSEGNA DELL'ASSEGNO", { grassetto: true, misura: 24 }) : "",
+    dati.assegno ? par(`Io sottoscritto/a ${dati.assegno.ricevente} ricevo da Società Agricola Podere Verde a r.l. l'assegno ${dati.assegno.tipo} non trasferibile n. ${dati.assegno.numero} di ${dati.importo}, intestato a ${dati.beneficiario}, per ${dati.causale}.`) : "",
+    dati.assegno ? par(`Data: ${dati.data}            Firma: ______________________________`) : "",
+    dati.assegno ? par("L'assegno risulta pagato quando compare addebitato nell'estratto conto («Conferma dei movimenti»).") // versione 406
+      : par("Fatto il bonifico, scaricare la distinta della banca, salvarla senza cambiarle nome in BANCHE\\ESTRATTI CONTO E DISTINTE DA SMISTARE e caricarla nel programma con «Carica la distinta» (Gestione incassi e pagamenti)."),
   ].join("");
   const zip = new JSZip();
   zip.file("[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`);
