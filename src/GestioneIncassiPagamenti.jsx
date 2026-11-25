@@ -1,3 +1,7 @@
+// Versione 401 (Soldato, 24/11/2026): «Pagamento fatture» e «Professionisti con ritenuta» (fatture con ritenuta a parte); nota di credito scelta
+// con la fattura e mail al fornitore obbligatoria (ci_paga_fatture_401: prima la prova nel database, poi la mail con il testo scritto dal database,
+// poi il pagamento); Word del pagamento; «Carica la distinta» → «pagato»; contanti definitivi subito in tutte le sezioni e nei giroconti, con chi
+// ha i contanti in mano (ci_disponi_401, ci_disponi_giroconto_401). Dopo il primo ricontrollo: claude/soldato_401_ricontrollo_primo_giro.md.
 // Versione 396 (Tenente, 24/11/2026): pulsante «F24» (si sceglie l'F24 da pagare, come e da quale conto; regole nel database: ci_f24_disponi).
 // Versione 393 (Tenente, 23/11/2026): rimandi con i nomi nuovi delle pagine di «Banche, carte e cassa».
 import { useEffect, useMemo, useState } from "react";
@@ -15,6 +19,9 @@ import {
 } from "./regoleIncassiPagamenti";
 import { useStatiFatture, EtichettaStatoFattura, CONTESTATA, ATTESA_NC } from "./statoFatture"; // versione 375
 import { md5 } from "./md5"; // versione 396
+import { mandaMailFornitore } from "./statoFatture"; // versione 401
+import { PulsanteDistinta, leggiDistinte } from "./distintePagamento"; // versione 401
+import { scaricaWordPagamento } from "./wordPagamento"; // versione 401
 
 // Versione 357 — «Gestione incassi e pagamenti»: il motore che scrive la prima nota.
 // L'operatore sceglie che cosa pagare o incassare, come (modalità) e con che cosa (conto o carta), controlla IBAN e causale e preme
@@ -27,7 +34,7 @@ import { md5 } from "./md5"; // versione 396
 
 // Versione 370: «Anticipo su fattura da ricevere» subito dopo «Pagamento fatture» (pagamento su proforma, preventivo o offerta)
 const TAB = [...SEZIONI.map(s => ({ id: s.id, nome: s.nome })), { id: "attesa", nome: "In attesa della banca" }, { id: "anomalie", nome: "Anomalie" }]
-  .flatMap(t => t.id === "pagamento_fatture" ? [t, { id: "anticipo", nome: "Anticipo o caparra su fattura da ricevere" }] : t.id === "altri_pagamenti" ? [t, { id: "f24", nome: "F24" }] : [t]);   // versione 396: «F24»
+  .flatMap(t => t.id === "pagamento_fatture" ? [t, { id: "professionisti", nome: "Professionisti con ritenuta" }, { id: "anticipo", nome: "Anticipo o caparra su fattura da ricevere" }] : t.id === "altri_pagamenti" ? [t, { id: "f24", nome: "F24" }] : [t]);   // versione 396: «F24»
 const ANTICIPO = "Acconto su fattura da ricevere";
 const CAPARRA = "Caparra confirmatoria su preventivo";   // versione 374 (decisione del Dott. Bizzarri del 12/11/2026 ore 17:57)
 const copia = t => { try { navigator.clipboard.writeText(String(t)); } catch { /* il browser non permette: si copia a mano */ } };
@@ -65,7 +72,7 @@ export default function GestioneIncassiPagamenti({ vaiA } = {}) {
       fetchAllPages((a, b) => supabase.from("ci_clienti").select("id, nome, partita_iva").order("id").range(a, b)),
       fetchAllPages((a, b) => supabase.from("ci_v_scadenzario").select("*").gt("residuo", 0.005).gt("importo", 0).order("scadenza_id").range(a, b)),
       fetchAllPages((a, b) => supabase.from("ci_v_scadenzario").select("*").gt("in_attesa_della_banca", 0).order("scadenza_id").range(a, b)),
-      fetchAllPages((a, b) => supabase.from("ci_pagamenti_fatture").select("id, conto_id, conto, data, verso, importo, controparte, causale, fornitore_id, cliente_id, esercizio, progressivo, confermato_il, natura, modalita, causale_gruppo, causale_voce, codice_attesa, data_disposizione, iban_beneficiario, iban_diverso_motivo, documento_riferimento, sopra_soglia, disposto_da, disposto_il, riga_fonte_id, stornato_il, movimento_collegato_id")
+      fetchAllPages((a, b) => supabase.from("ci_pagamenti_fatture").select("id, conto_id, conto, data, verso, importo, controparte, causale, fornitore_id, cliente_id, esercizio, progressivo, confermato_il, natura, modalita, causale_gruppo, causale_voce, codice_attesa, data_disposizione, iban_beneficiario, iban_diverso_motivo, documento_riferimento, sopra_soglia, disposto_da, disposto_il, riga_fonte_id, stornato_il, movimento_collegato_id, distinta_id")
         .gte("data", "2026-01-01").order("id").range(a, b)),
       fetchAllPages((a, b) => supabase.from("ci_righe_fonte").select("id, conto_id, documento_id, data_contabile").gte("data_contabile", "2026-01-01").order("id").range(a, b)),
       fetchAllPages((a, b) => supabase.from("ci_documenti_fonte").select("id, annullato_il").order("id").range(a, b)),
@@ -95,9 +102,11 @@ export default function GestioneIncassiPagamenti({ vaiA } = {}) {
     const vivi = new Set((doc.data || []).filter(d => !d.annullato_il).map(d => d.id));
     const collegate = new Set(movimenti.filter(m => m.confermato_il && m.riga_fonte_id).map(m => m.riga_fonte_id));
     const daConfermare = (ri.data || []).filter(r => vivi.has(r.documento_id) && !collegate.has(r.id));
+    let distinte = {}; // versione 401: distinte dei pagamenti in attesa («pagato»)
+    try { distinte = await leggiDistinte(attesa.map(m => m.distinta_id), []); } catch (e) { throw new Error("distinte dei pagamenti: " + e.message); }
     const tutteSc = [...(sc.data || []), ...(scA.data || []).filter(x => !(sc.data || []).some(y => y.scadenza_id === x.scadenza_id))].filter(x => x.scadenza_id);
     setBase({ conti: co.data || [], carte: (ca.data || []).filter(k => k.attiva), stati, causali: cau.data || [], fornitori: fo.data || [], clienti: cl.data || [],
-      scadenze: tutteSc, movimenti, attesa, abbinamenti, nomi, daConfermare, saldi, gestore: pr.data === true });
+      scadenze: tutteSc, movimenti, attesa, abbinamenti, nomi, daConfermare, saldi, distinte, gestore: pr.data === true });
   })().catch(e => setErrore("Lettura non riuscita: " + e.message)); }, [giro]);
 
   const anomalie = useMemo(() => {
@@ -143,14 +152,15 @@ export default function GestioneIncassiPagamenti({ vaiA } = {}) {
         {TAB.map(t => <button key={t.id} style={btn(tab === t.id, t.id === "anomalie" && anomalie.length ? C.red : C.primary)} onClick={() => { setTab(t.id); setEsito(null); }}>
           {t.nome}{t.id === "attesa" ? ` (${base.attesa.length})` : t.id === "anomalie" ? ` (${anomalie.length})` : ""}</button>)}
       </div>
-      {esito && <Esito esito={esito} chiudi={() => setEsito(null)} />}
+      {esito && <Esito esito={esito} chiudi={() => setEsito(null)} ricarica={() => setGiro(g => g + 1)} />}
       {errore && <div style={{ ...scheda, color: C.red, fontWeight: 700 }}>⚠️ {errore}</div>}
       {(tab === "pagamento_fatture" || tab === "incasso_fatture") && <SezioneFatture key={tab + giro} sezione={tab} base={base} fatto={fatto} oggi={oggi} />}
+      {tab === "professionisti" && <SezioneFatture key={tab + giro} sezione="pagamento_fatture" professionisti base={base} fatto={fatto} oggi={oggi} />}
       {tab === "anticipo" && <SezioneAnticipo key={giro} base={base} fatto={fatto} oggi={oggi} />}
       {(tab === "altri_pagamenti" || tab === "altri_incassi") && <SezioneAltri key={tab + giro} sezione={tab} base={base} fatto={fatto} oggi={oggi} />}
       {tab === "giroconti" && <SezioneGiroconti key={giro} base={base} fatto={fatto} oggi={oggi} />}
       {tab === "f24" && <SezioneF24 key={giro} base={base} fatto={fatto} oggi={oggi} vaiA={vaiA} />}
-      {tab === "attesa" && <InAttesa base={base} oggi={oggi} fatto={fatto} />}
+      {tab === "attesa" && <InAttesa base={base} oggi={oggi} fatto={fatto} ricarica={() => setGiro(g => g + 1)} />}
       {tab === "anomalie" && <div style={scheda}>
         <div style={{ fontWeight: 800, color: C.red, marginBottom: 6 }}>Anomalie ({anomalie.length})</div>
         {!anomalie.length && <div style={{ color: C.green }}>Nessuna anomalia.</div>}
@@ -170,11 +180,24 @@ function Disponibili({ base }) {
   </div>;
 }
 
-function Esito({ esito, chiudi }) {
+function Esito({ esito, chiudi, ricarica }) {
+  // versione 401: Word del pagamento e «Carica la distinta» subito dopo la conferma
+  const [distinte, setDistinte] = useState({}); const [mov, setMov] = useState(esito.movimento || null); const [erroreWord, setErroreWord] = useState("");
+  async function dopoDistinta() {
+    const r = await supabase.from("ci_pagamenti_fatture").select("id, data, conto, distinta_id").eq("id", mov.id).maybeSingle();
+    if (r.data) { setMov(r.data); try { setDistinte(await leggiDistinte([r.data.distinta_id], [])); } catch { /* si vede alla prossima lettura */ } }
+    ricarica && ricarica();
+  }
   return <div style={{ ...scheda, border: `2px solid ${C.green}` }}>
     <div style={{ fontWeight: 800, color: C.green, fontSize: 15 }}>✔ {esito.titolo}</div>
     <div style={{ fontSize: 13, margin: "6px 0" }}>{esito.testo}</div>
     {esito.copie && <div style={{ display: "flex", flexWrap: "wrap" }}>{esito.copie.map(([e, v]) => <Copia key={e} etichetta={e} valore={v} />)}</div>}
+    {(esito.word || mov) && <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 6 }}>
+      {esito.word && <button style={btn(true)} onClick={() => scaricaWordPagamento(esito.word).catch(e => setErroreWord("Word non creato: " + e.message))}>📄 Scarica il Word del pagamento</button>}
+      {mov && <span style={{ fontSize: 12.5 }}>Fatto il bonifico, <b>carica la distinta</b>: <PulsanteDistinta movimento={mov} distinte={distinte} onCambiato={dopoDistinta} /></span>}
+      {mov?.distinta_id && <b style={{ color: C.green }}>✔ Pagato (distinta caricata): in prima nota resta provvisorio finché arriva l'estratto conto</b>}
+    </div>}
+    {erroreWord && <div style={{ color: C.red, fontWeight: 700 }}>⚠️ {erroreWord}</div>}
     <button style={{ ...btn(false), marginTop: 6 }} onClick={chiudi}>Chiudi</button>
   </div>;
 }
@@ -207,6 +230,23 @@ function ComeEConCheCosa({ base, verso, v, cambia, importo }) {
       {!carte.length && <span style={{ color: C.red, fontWeight: 400 }}>Nessuna carta di debito registrata su questo conto: aggiungerla nella scheda del conto.</span>}</label>}
   </>;
 }
+// versione 401: contanti — chi li ha in mano (persone abilitate ai contanti, con i contanti in carico). Il database rifiuta
+// i contanti senza la persona, con la data nel futuro o prima della partenza della cassa, e i pagamenti oltre i contanti in carico.
+function SceltaContanti({ verso, v, cambia, importo }) {
+  const [persone, setPersone] = useState(null); const [err, setErr] = useState("");
+  useEffect(() => { supabase.rpc("ci_contanti_persone_401").then(({ data, error }) => { if (error) setErr(error.message); else setPersone(data || []); }); }, []);
+  const p = (persone || []).find(x => x.profilo_id === v.contanti_persona);
+  return <div style={{ gridColumn: "1 / -1", border: `1px solid ${C.border}`, borderRadius: 8, padding: 10, background: "#FFFBEA" }}>
+    <label style={L}>Chi ha i contanti in mano ({verso === "uscita" ? "chi paga" : "chi incassa"})
+      <select style={sel(!v.contanti_persona)} value={v.contanti_persona || ""} onChange={e => cambia("contanti_persona", e.target.value)}>
+        <option value="">— scegliere —</option>{(persone || []).map(x => <option key={x.profilo_id} value={x.profilo_id}>{x.nome}{x.in_carico === null ? "" : ` — contanti in carico ${euro(x.in_carico)}`}</option>)}</select></label>
+    {err && <div style={{ color: C.red, fontWeight: 700, fontSize: 12.5 }}>Elenco delle persone non letto: {err}</div>}
+    {persone && !persone.length && <div style={{ color: C.red, fontWeight: 700, fontSize: 12.5 }}>Non hai contanti dell'azienda in carico: in contanti registra chi li ha in mano, o chi gestisce i conti.</div>}
+    {p && p.in_carico !== null && verso === "uscita" && importo > 0 && Number(p.in_carico) < importo && <div style={{ color: C.red, fontWeight: 700, fontSize: 12.5 }}>{p.nome} ha in carico solo {euro(p.in_carico)}: i contanti non bastano.</div>}
+    <div style={{ fontSize: 12.5, color: C.muted, marginTop: 4 }}>In contanti il movimento è definitivo subito e prende il numero di prima nota. La data è il giorno in cui i soldi sono passati di mano (non nel futuro). I contanti {verso === "uscita" ? "escono dai" : "entrano nei"} contanti in carico della persona scelta. Sulla stessa fattura, in contanti, in tutto meno di 5.000 € (anche a rate).</div>
+  </div>;
+}
+const problemiContanti = (v, oggi) => v.modalita !== "Contanti" ? [] : [...(!v.contanti_persona ? ["scegliere chi ha i contanti in mano"] : []), ...(v.data_disposizione && v.data_disposizione > oggi ? ["in contanti la data non può essere nel futuro"] : [])];
 const L = { fontSize: 12, fontWeight: 700, display: "flex", flexDirection: "column", gap: 3 };
 const sel = (rosso) => ({ ...input, width: "100%", borderColor: rosso ? C.red : C.border });
 
@@ -238,15 +278,24 @@ function Contatore({ testo }) {
 }
 
 // ---------------- Pagamento fatture / Incasso fatture ----------------
-function SezioneFatture({ sezione, base, fatto, oggi }) {
+function SezioneFatture({ sezione, base, fatto, oggi, professionisti = false }) {
   const pag = sezione === "pagamento_fatture"; const lato = pag ? "fornitore" : "cliente"; const verso = pag ? "uscita" : "entrata";
   const anag = pag ? base.fornitori : base.clienti;
   const [cerca, setCerca] = useState(""); const [sogg, setSogg] = useState(null); const [tutte, setTutte] = useState([]);
   const [spunte, setSpunte] = useState({}); // scadenza_id → importo (testo)
-  const [v, setV] = useState({ modalita: "", conto_id: "", data_disposizione: oggi, causale_voce: "", aggiunta: "", iban_scelta: "", iban_scritto: "", iban_confermato: false, iban_diverso_motivo: "", note: "", soglia_vista: false });
+  const [v, setV] = useState({ modalita: "", conto_id: "", data_disposizione: oggi, causale_voce: "", aggiunta: "", iban_scelta: "", iban_scritto: "", iban_confermato: false, iban_diverso_motivo: "", note: "", soglia_vista: false, contanti_persona: "" });
   const [lavoro, setLavoro] = useState(false); const [errore, setErrore] = useState(""); const [erroreStorico, setErroreStorico] = useState("");
+  // versione 401: mail della nota di credito già partita per questo pagamento (si riusa se si riprova con lo stesso testo)
+  const [mailFatta, setMailFatta] = useState(null); const [anteprima, setAnteprima] = useState({ chiave: "", testo: "", oggetto: "", errore: "" });
   const cambia = (k, x) => setV(o => ({ ...o, [k]: x }));
-  const aperte = base.scadenze.filter(s => s.lato === lato);
+  // versione 401: le fatture con ritenuta d'acconto (professionisti) hanno il loro pulsante; qui solo le altre (decisione del 24/11 ore 20:00)
+  const conRitenuta = s => Number(s.ritenuta) > 0;
+  const aperte = base.scadenze.filter(s => s.lato === lato && (!pag || (professionisti ? conRitenuta(s) : !conRitenuta(s))));
+  // versione 401: note di credito del fornitore non ancora usate, da scegliere insieme alla fattura (decisione del 23/11 ore 18:25)
+  const [nc, setNc] = useState({}); // scadenza_id della nota → { importo (testo), fattura (scadenza_id) }
+  const [puoForzare, setPuoForzare] = useState(false); const [forza, setForza] = useState(false); const [motivoForza, setMotivoForza] = useState("");
+  const azzeraNote = () => { setNc({}); setForza(false); setMotivoForza(""); setAnteprima({ chiave: "", testo: "", oggetto: "", errore: "" }); };
+  useEffect(() => { if (pag) supabase.rpc("ci_puo_forzare_pagamento_senza_mail").then(({ data }) => setPuoForzare(data === true)); }, [pag]);
   // versione 374: «Prezzo aumentato» (stessi numeri del «Controllo Prezzi di Acquisto»); sui rossi «Visto» obbligatorio prima di pagare
   const [aumenti, setAumenti] = useState(null); const [erroreAumenti, setErroreAumenti] = useState("");
   const [visti, setVisti] = useState(new Map()); const [giroVisti, setGiroVisti] = useState(0); const [apertoAumento, setApertoAumento] = useState(null);
@@ -298,14 +347,20 @@ function SezioneFatture({ sezione, base, fatto, oggi }) {
   // Versione 375: fatture contestate (pagamento bloccato) e in attesa di nota di credito (mail al fornitore prima di pagare)
   const [statiFatture] = useStatiFatture(pag ? sue.map(s => s.fattura_id) : []);
   const scelte = sue.filter(s => spunte[s.scadenza_id] !== undefined);
+  const noteLibere = pag ? tutte.filter(s => Number(s.importo) < 0 && Number(s.residuo) < -0.005) : [];
+  const noteScelte = noteLibere.filter(n => nc[n.scadenza_id]).map(n => ({ n, imp: leggiImporto(nc[n.scadenza_id].importo), fattura: Number(nc[n.scadenza_id].fattura) || null }));
+  const dedotto = id => Math.round(noteScelte.filter(x => x.fattura === id).reduce((t, x) => t + (x.imp || 0), 0) * 100) / 100;
   const quote = scelte.map(s => ({ s, imp: leggiImporto(spunte[s.scadenza_id]) }));
-  const totale = Math.round(quote.reduce((t, q) => t + (q.imp || 0), 0) * 100) / 100;
+  // versione 401: quanto si paga davvero per ogni fattura = importo scelto − note di credito dedotte da quella fattura
+  const daPagare = q => Math.round(((q.imp || 0) - dedotto(q.s.scadenza_id)) * 100) / 100;
+  const totale = Math.round(quote.reduce((t, q) => t + daPagare(q), 0) * 100) / 100;
   const acconti = quote.filter(q => q.imp && q.imp < Number(q.s.residuo) - 0.005);
   const ritenuta = scelte.some(s => Number(s.ritenuta) > 0);
-  const vocePropria = acconti.length && !quote.some(q => q.imp && Math.abs(q.imp - Number(q.s.residuo)) < 0.005) ? "Acconto su fattura" : ritenuta ? "Saldo con ritenuta d'acconto" : acconti.length ? "Acconto su fattura" : "Saldo fattura";
+  const vocePropria = acconti.length && !quote.some(q => q.imp && Math.abs(q.imp - Number(q.s.residuo)) < 0.005) ? "Acconto su fattura" : ritenuta ? "Saldo con ritenuta d'acconto" : acconti.length ? "Acconto su fattura" : noteScelte.length ? "Saldo al netto di nota di credito" : "Saldo fattura";
   const voce = v.causale_voce || vocePropria;
   const comp = componiCausale(quote.filter(q => q.imp).map(q => ({ numero: q.s.numero_documento, data: q.s.data_documento, tipo: q.s.tipo_documento, importo: q.imp, resto: Number(q.s.residuo), ritenuta: q.s.ritenuta })), !pag);
-  const causale = pulisciCausale([comp.testo, v.aggiunta].filter(Boolean).join(" "));
+  const meno = noteScelte.filter(x => x.imp).map(x => `MENO NC N. ${x.n.numero_documento} DEL ${dataIt(x.n.data_documento)}`).join(" ");
+  const causale = pulisciCausale([comp.testo, meno, v.aggiunta].filter(Boolean).join(" "));
   const bonifico = ["Bonifico", "Bonifico istantaneo"].includes(v.modalita);
   const ibanFattura = [...new Set(scelte.map(s => s.iban).filter(Boolean))];
   const conosciuti = [...new Set(tutte.map(s => s.iban).filter(Boolean))];
@@ -318,9 +373,21 @@ function SezioneFatture({ sezione, base, fatto, oggi }) {
   if (quote.some(q => !q.imp)) problemi.push("scrivere l'importo di ogni fattura spuntata");
   if (quote.some(q => q.imp && q.imp > Number(q.s.residuo) + 0.005)) problemi.push("un importo supera il resto della fattura");
   if (acconti.length > 1) problemi.push("al massimo una fattura in acconto per movimento");
+  for (const x of noteScelte) {
+    if (!x.imp) problemi.push(`scrivere l'importo della nota di credito ${x.n.numero_documento}`);
+    else if (x.imp > -Number(x.n.residuo) + 0.005) problemi.push(`la nota di credito ${x.n.numero_documento} ha solo ${euro(-Number(x.n.residuo))} da usare`);
+    if (!x.fattura || !scelte.some(s => s.scadenza_id === x.fattura)) problemi.push(`scegliere la fattura da cui si toglie la nota di credito ${x.n.numero_documento} (tra quelle spuntate)`);
+  }
+  if (quote.some(q => q.imp && daPagare(q) < -0.005)) problemi.push("una nota di credito supera l'importo della sua fattura");
+  // versione 401 (secondo ricontrollo): una nota che chiude per intero una delle fatture spuntate non si paga qui
+  for (const q of quote) if (q.imp && noteScelte.some(x => x.fattura === q.s.scadenza_id) && daPagare(q) <= 0.005 && totale > 0.005)
+    problemi.push(`la nota di credito chiude per intero la fattura ${q.s.numero_documento}: quella si chiude nello «Scadenzario clienti e fornitori»; qui togliere la spunta e pagare le altre`);
+  if (noteScelte.length && scelte.length && !(totale > 0.005)) problemi.push("la nota di credito copre tutta la fattura: non c'è niente da pagare (la compensazione si registra nello «Scadenzario clienti e fornitori»)");
+  if (noteScelte.length && forza && !motivoForza.trim()) problemi.push("scrivere il motivo per cui non si manda la mail al fornitore");
   for (const s of scelte) { const st = statiFatture[s.fattura_id];
     if (st?.stato === CONTESTATA) problemi.push(`la fattura ${s.numero_documento} è CONTESTATA (${st.motivo}): il pagamento è bloccato finché non viene liberata`);
-    const imp = quote.find(q => q.s === s)?.imp || 0;
+    // versione 401: si confronta l'importo che si paga davvero (al netto delle note di credito scelte), come fa il database
+    const q0 = quote.find(q => q.s === s); const imp = q0 ? daPagare(q0) : 0;
     const mail = Number(st?.ancora_pagabile || 0);
     if (st?.stato === ATTESA_NC && !(mail > 0.005)) problemi.push(`la fattura ${s.numero_documento} è IN ATTESA DI NOTA DI CREDITO: prima di pagare va mandata la mail al fornitore con l'importo («💶 Prepara un pagamento» nel dettaglio della fattura, in Fatture passive o Ricerca Fatture)`);
     // versione 375 (Dottore 22:12 «metti»): l'importo pagato deve essere quello scritto nella mail, né più né meno
@@ -330,8 +397,9 @@ function SezioneFatture({ sezione, base, fatto, oggi }) {
   if (!v.conto_id) problemi.push("scegliere con che cosa");
   if (v.modalita === "Carta di debito" && !v.carta_di_debito_id) problemi.push("scegliere la carta di debito");
   if (v.modalita === "Contanti" && totale >= 5000) problemi.push("contanti da 5.000 € in su: vietato (art. 49 D.Lgs. 231/2007)");
+  problemi.push(...problemiContanti(v, oggi));
   if (!v.data_disposizione) problemi.push("scrivere la data di disposizione");
-  if (bonifico && comp.troppo) problemi.push("la causale non sta in 140 caratteri: fare più bonifici");
+  if (bonifico && (comp.troppo || causale.length > 140)) problemi.push("la causale non sta in 140 caratteri: fare più bonifici");
   if (bonifico && !causaleValida(causale)) problemi.push("causale del bonifico non valida");
   if (pag && bonifico) {
     if (!ib) problemi.push("scegliere l'IBAN"); else if (!ibanValido(ib)) problemi.push("IBAN non valido"); else if (!v.iban_confermato) problemi.push("premere «Confermi IBAN»");
@@ -342,21 +410,72 @@ function SezioneFatture({ sezione, base, fatto, oggi }) {
   if (pag && aumenti === null && scelte.length) problemi.push(erroreAumenti ? "controllo dei prezzi aumentati non letto: ricaricare la pagina (senza il controllo non si paga)" : "attendere il controllo dei prezzi aumentati");
   if (pag && aumenti) for (const s of scelte) { const f = s.fattura_id && aumenti.get(s.fattura_id);
     if (f && f.gravita === "alta" && !visti.has(s.fattura_id)) problemi.push(`prezzo aumentato con gravità alta nella fattura ${s.numero_documento}: premere «Visto»`); }
+  // il pagamento come lo riceve il database (versione 401: sezione propria per i professionisti, chi ha i contanti, note di credito)
+  const costruisci = () => {
+    const p = { sezione: pag && professionisti ? "pagamento_professionisti" : sezione, conto_id: Number(v.conto_id), modalita: v.modalita, modalita_altro: v.modalita_altro || "", carta_di_debito_id: v.carta_di_debito_id || "",
+      data_disposizione: v.data_disposizione, importo: totale, causale_gruppo: "Fatture", causale_voce: voce, fornitore_id: pag ? sogg : "", cliente_id: pag ? "" : sogg,
+      causale: bonifico || causale ? causale : "", iban: pag && bonifico ? ib : "", iban_confermato: !!v.iban_confermato, iban_diverso_motivo: v.iban_diverso_motivo || "", note: v.note || "",
+      scadenze: quote.filter(q => daPagare(q) > 0.005).map(q => ({ scadenza_id: q.s.scadenza_id, importo: daPagare(q) })) };
+    if (v.modalita === "Contanti") p.contanti_persona = v.contanti_persona;
+    if (pag) p.note_credito = noteScelte.map(x => ({ nota_scadenza_id: x.n.scadenza_id, fattura_scadenza_id: x.fattura, importo: x.imp }));
+    if (pag && noteScelte.length && forza) p.forzatura_motivo = motivoForza.trim();
+    return p;
+  };
+  // anteprima della mail: il testo lo scrive il database con una prova che non registra niente (si vede prima di premere «Conferma»)
+  const chiaveAnteprima = pag && noteScelte.length && !forza && !problemi.length ? JSON.stringify(costruisci()) : "";
+  useEffect(() => { if (!chiaveAnteprima) return; let vivo = true; const t = setTimeout(async () => {
+    const r = await supabase.rpc("ci_paga_fatture_401", { p: { ...JSON.parse(chiaveAnteprima), prova: true } });
+    if (vivo) setAnteprima(r.error ? { chiave: chiaveAnteprima, testo: "", oggetto: "", errore: r.error.message } : { chiave: chiaveAnteprima, testo: r.data.testo_mail || "", oggetto: r.data.oggetto_mail || "", errore: "" });
+  }, 400); return () => { vivo = false; clearTimeout(t); }; }, [chiaveAnteprima]);
   async function invia() {
     if (problemi.length || lavoro) return;
     setLavoro(true); setErrore("");
-    const p = { sezione, conto_id: Number(v.conto_id), modalita: v.modalita, modalita_altro: v.modalita_altro || "", carta_di_debito_id: v.carta_di_debito_id || "",
-      data_disposizione: v.data_disposizione, importo: totale, causale_gruppo: "Fatture", causale_voce: voce, fornitore_id: pag ? sogg : "", cliente_id: pag ? "" : sogg,
-      causale: bonifico || causale ? causale : "", iban: pag && bonifico ? ib : "", iban_confermato: !!v.iban_confermato, iban_diverso_motivo: v.iban_diverso_motivo || "", note: v.note || "",
-      scadenze: quote.map(q => ({ scadenza_id: q.s.scadenza_id, importo: q.imp })) };
-    const { data, error } = await supabase.rpc("ci_disponi_movimento", { p });
-    setLavoro(false);
-    if (error) return setErrore("Il database non l'ha accettato, non è stato registrato niente: " + error.message);
+    const p = costruisci();
     const nome = anag.find(a => a.id === sogg)?.nome;
-    fatto({ titolo: `${data.codice_attesa}: ${pag ? "pagamento mandato in pagamento" : "incasso atteso registrato"} — in attesa della banca`,
-      testo: pag ? `Adesso, oggi stesso, disporre ${v.modalita === "Bonifico istantaneo" ? "il bonifico istantaneo" : v.modalita.toLowerCase()} in banca con questi dati (pulsanti «Copia»). Quando la banca lo addebita e l'estratto è caricato, confermarlo in «Conferma dei movimenti»: prenderà il numero di prima nota. Se non parte, annullarlo in «In attesa della banca».`
+    let data, error;
+    if (pag) {
+      // versione 401: con una nota di credito, prima la PROVA nel database (se il pagamento sarebbe rifiutato la mail non parte),
+      // poi la mail al fornitore con il testo scritto dal database, poi il pagamento legato a quella mail
+      if (noteScelte.length && !forza) {
+        const pr = await supabase.rpc("ci_paga_fatture_401", { p: { ...p, prova: true } });
+        if (pr.error) { setLavoro(false); return setErrore("Il database non accetterebbe questo pagamento: la mail al fornitore NON è partita con questa prova. " + pr.error.message + " — Se poco fa la pagina ha dato un errore di rete, verificare in «In attesa della banca» se il pagamento è già registrato."); }
+        const testo = pr.data.testo_mail;
+        if (mailFatta && mailFatta.testo === testo && mailFatta.fornitore === sogg) p.comunicazione_id = mailFatta.id; // stessa mail già partita: non se ne manda un'altra
+        else {
+          // mail con lo stesso testo già partita nelle ultime 2 ore e non ancora usata (pagina ricaricata, rete caduta): si riusa
+          const gia = await supabase.rpc("ci_mail_pagamento_nc_riusabile_401", { p_fornitore: sogg, p_testo: testo });
+          if (gia.data) { p.comunicazione_id = gia.data; setMailFatta({ testo, id: gia.data, fornitore: sogg }); }
+        }
+        if (!p.comunicazione_id) {
+          try {
+            p.comunicazione_id = await mandaMailFornitore({ fornitoreId: sogg, fatturaId: pr.data.documento_id || null, documentoTipo: "Pagamento con nota di credito",
+              oggetto: pr.data.oggetto_mail, testo, sezione: "Gestione incassi e pagamenti" });
+            setMailFatta({ testo, id: p.comunicazione_id, fornitore: sogg });
+          } catch (e) { setLavoro(false); return setErrore(e.message + ". Il pagamento NON è stato registrato."); }
+        }
+      }
+      ({ data, error } = await supabase.rpc("ci_paga_fatture_401", { p }));
+    } else ({ data, error } = await supabase.rpc("ci_disponi_401", { p }));
+    setLavoro(false);
+    if (error) {
+      // risposta non arrivata (rete): il database può aver registrato lo stesso; non si dice «niente registrato»
+      const rete = !error.code && /fetch|network|Failed|rete|timeout/i.test(String(error.message || ""));
+      return setErrore((rete ? "La risposta del database non è arrivata: VERIFICARE in «In attesa della banca» (o nello Scadenzario per i contanti) se il pagamento è registrato prima di riprovare. " + error.message
+        : "Il database non l'ha accettato, non è stato registrato niente: " + error.message)
+        + (p.comunicazione_id ? " — ATTENZIONE: la mail al fornitore è già partita (Registro delle comunicazioni). Riprovando entro 2 ore con gli stessi importi e la stessa data si usa la stessa mail, senza mandarne un'altra." : ""));
+    }
+    setMailFatta(null);
+    const contanti = data.definitivo === true;
+    const conto = base.conti.find(c => c.id === Number(v.conto_id));
+    fatto({ titolo: contanti ? `${data.codice_attesa}: ${pag ? "pagamento" : "incasso"} in contanti registrato — definitivo, prima nota n. ${data.numero || "—"}` : `${data.codice_attesa}: ${pag ? "pagamento mandato in pagamento" : "incasso atteso registrato"} — in attesa della banca`,
+      testo: contanti ? (pag ? "Il pagamento in contanti è registrato in cassa e la fattura risulta pagata. Conservare la ricevuta del fornitore." : "L'incasso in contanti è registrato in cassa e la fattura risulta incassata. Consegnare la ricevuta al cliente.")
+        : pag ? `Adesso, oggi stesso, disporre ${v.modalita === "Bonifico istantaneo" ? "il bonifico istantaneo" : v.modalita.toLowerCase()} in banca con questi dati (Word o pulsanti «Copia»). Poi caricare la distinta qui sotto: il pagamento risulta «pagato». Quando l'estratto è caricato, confermarlo in «Conferma dei movimenti»: prenderà il numero di prima nota. Se non parte, annullarlo in «In attesa della banca».`
         : `Quando la banca lo accredita e l'estratto è caricato, confermarlo in «Conferma dei movimenti».`,
-      copie: [["Beneficiario", pag ? nome : ""], ["IBAN", pag && bonifico ? ibanBello(ib) : ""], ["Importo", importoIt(totale)], ["Causale", causale], ["Data di esecuzione", dataIt(v.data_disposizione)]].filter(x => x[1]) });
+      copie: [["Beneficiario", pag ? nome : ""], ["IBAN", pag && bonifico ? ibanBello(ib) : ""], ["Importo", importoIt(totale)], ["Causale", causale], ["Data di esecuzione", dataIt(v.data_disposizione)]].filter(x => x[1]),
+      word: pag && !contanti ? { codice: data.codice_attesa, beneficiario: nome, iban: bonifico ? ibanBello(ib) : "", importo: "€ " + importoIt(totale), causale, data: dataIt(v.data_disposizione),
+        conto: conto?.nome || "", modalita: v.modalita, fatture: quote.filter(q => q.imp).map(q => `${q.s.numero_documento} del ${dataIt(q.s.data_documento)}: € ${importoIt(daPagare(q))}`),
+        note_credito: noteScelte.map(x => `${x.n.numero_documento} del ${dataIt(x.n.data_documento)}: € ${importoIt(x.imp)}`) } : null,
+      movimento: pag && !contanti && bonifico ? { id: data.movimento_id, data: v.data_disposizione, conto: conto?.nome_nei_movimenti || conto?.nome || "", distinta_id: null } : null });
   }
   const daLeggere = pag && dottore ? [...visti.values()].filter(x => !x.letto_dal_dottore_il && x.gravita === "alta") : [];
   return <div>
@@ -366,8 +485,19 @@ function SezioneFatture({ sezione, base, fatto, oggi }) {
         <div style={{ flex: 1 }}>{x.dettaglio}<div style={{ color: C.muted }}>Visto da {x.nome} il {dataIt(String(x.visto_il).slice(0, 10))}{x.nota ? ` — nota: ${x.nota}` : ""}</div></div>
         <button style={{ ...btn(false), height: 26 }} onClick={() => segnaLetto(x.id)}>Letto</button></div>)}
     </div>}
+    {pag && <div style={{ ...scheda, background: "#F2F7EE", border: `1px solid ${C.green}` }}>
+      <div style={{ fontWeight: 800, color: C.primary, marginBottom: 4 }}>{professionisti ? "Come si paga un professionista (fattura con ritenuta d'acconto)" : "Come si paga una fattura"}</div>
+      <ol style={{ margin: "0 0 0 18px", padding: 0, fontSize: 13, lineHeight: 1.5 }}>
+        <li>Salva il pagamento e scarica il Word: ci sono IBAN, causale e importo.</li>
+        <li>Compila il bonifico nell'home banking copiando i dati dal Word.</li>
+        <li>Quando la banca ha eseguito il bonifico, scarica la distinta e salvala, senza cambiarle nome, in BANCHE\ESTRATTI CONTO E DISTINTE DA SMISTARE.</li>
+        <li>Torna qui e premi «Carica la distinta»: il pagamento diventa «pagato».</li>
+      </ol>
+      {professionisti && <div style={{ fontSize: 12.5, marginTop: 4 }}>Si paga solo il <b>netto</b> scritto nella fattura: la ritenuta d'acconto la versa la società con l'F24 (codice 1040) entro il 16 del mese dopo il pagamento; la vedi in «Ritenute d'acconto».</div>}
+      {!professionisti && <div style={{ fontSize: 12.5, marginTop: 4, color: C.muted }}>Le fatture con ritenuta d'acconto (professionisti) si pagano dal pulsante «Professionisti con ritenuta».</div>}
+    </div>}
     {!sogg && <div style={scheda}>
-      <div style={{ fontWeight: 800, color: C.primary, marginBottom: 6 }}>{pag ? "Quale fornitore si paga?" : "Quale cliente paga?"}</div>
+      <div style={{ fontWeight: 800, color: C.primary, marginBottom: 6 }}>{pag ? (professionisti ? "Quale professionista si paga?" : "Quale fornitore si paga?") : "Quale cliente paga?"}</div>
       <input style={{ ...input, width: "100%", maxWidth: 520 }} placeholder="Cerca: nome anche parziale, partita IVA, numero della fattura o importo" value={cerca} onChange={e => setCerca(e.target.value)} />
       {!pag && <div style={{ fontSize: 12.5, color: C.muted, marginTop: 6 }}>Gli incassi con bonifico di solito non si registrano qui: arrivano con l'estratto e si confermano in «Conferma dei movimenti», dove il programma propone la fattura. Qui si registra un incasso atteso (assegno ricevuto da versare, contanti, bonifico annunciato).</div>}
       <table style={{ width: "100%", marginTop: 8, fontSize: 12.5, background: "#fff" }}><thead><tr style={{ background: C.primary, color: "#fff" }}>
@@ -377,14 +507,14 @@ function SezioneFatture({ sezione, base, fatto, oggi }) {
           <td style={{ padding: "5px 8px" }}>{x.n}</td><td style={{ padding: "5px 8px", textAlign: "right" }}>{euro(x.resto)}</td>
           <td style={{ padding: "5px 8px", textAlign: "right", color: x.scadute ? C.red : C.muted }}>{x.scadute ? euro(x.scadute) : "—"}</td>
           <td style={{ padding: "5px 8px", color: C.blue }}>{x.attesa ? `${x.attesa} fatture` : ""}</td>
-          <td style={{ padding: "5px 8px" }}><button style={btn(true)} onClick={() => { setSogg(x.id); setSpunte({}); }}>Scegli</button></td></tr>)}</tbody></table>
+          <td style={{ padding: "5px 8px" }}><button style={btn(true)} onClick={() => { setSogg(x.id); setSpunte({}); azzeraNote(); }}>Scegli</button></td></tr>)}</tbody></table>
       {soggetti.length > 60 && <div style={{ fontSize: 12, color: C.muted }}>Mostrati i primi 60: restringere la ricerca.</div>}
       {!soggetti.length && <div style={{ color: C.muted, marginTop: 6 }}>Nessuna fattura aperta trovata. Per un pagamento senza fattura nel programma usare «{pag ? "Altri pagamenti" : "Altri incassi"}» {pag ? "(per un pagamento su proforma, preventivo o offerta: «Anticipo su fattura da ricevere»)" : ""}.</div>}
     </div>}
     {sogg && <div style={scheda}>
       <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
         <div style={{ fontWeight: 800, color: C.primary, fontSize: 16 }}>{anag.find(a => a.id === sogg)?.nome} <span style={{ fontSize: 12.5, color: C.muted }}>{anag.find(a => a.id === sogg)?.partita_iva}</span></div>
-        <button style={btn(false)} onClick={() => { setSogg(null); setSpunte({}); }}>← Cambia {lato}</button>
+        <button style={btn(false)} onClick={() => { setSogg(null); setSpunte({}); azzeraNote(); }}>← Cambia {lato}</button>
       </div>
       {erroreStorico && <div style={{ color: C.red, fontWeight: 700, fontSize: 12.5 }}>⚠️ {erroreStorico}</div>}
       {pag && erroreAumenti && <div style={{ color: C.red, fontWeight: 700, fontSize: 12.5 }}>⚠️ {erroreAumenti}</div>}
@@ -410,13 +540,27 @@ function SezioneFatture({ sezione, base, fatto, oggi }) {
               <DettaglioAumento f={aumenti.get(s.fattura_id)} vi={visti.get(s.fattura_id)} nomi={base.nomi} nota={notaVisto} setNota={setNotaVisto} lavoro={lavoro} visto={() => segnaVisto(s, aumenti.get(s.fattura_id))} />
             </td></tr>]; })}</tbody></table></div>
       {!sue.length && <div style={{ color: C.muted }}>Nessuna fattura aperta.</div>}
+      {noteLibere.length > 0 && <div style={{ marginTop: 10, border: `1px solid ${C.border}`, borderRadius: 8, padding: 8 }}>
+        <div style={{ fontWeight: 800, color: C.primary, fontSize: 13 }}>Note di credito di questo fornitore ancora da usare</div>
+        <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 4 }}>Spuntarla per pagare la fattura al netto della nota di credito: si sceglie da quale fattura si toglie. Prima di registrare il pagamento parte la mail al fornitore.</div>
+        <table style={{ fontSize: 12.5, background: "#fff" }}><thead><tr style={{ background: "#F4F4F0" }}>{["", "Nota di credito", "Data", "Da usare", "Importo da togliere", "Dalla fattura"].map(h => <th key={h} style={{ padding: "4px 8px", textAlign: "left" }}>{h}</th>)}</tr></thead>
+          <tbody>{noteLibere.map(n => { const x = nc[n.scadenza_id];
+            return <tr key={n.scadenza_id} style={{ borderTop: `1px solid ${C.border}` }}>
+              <td style={{ padding: "4px 8px" }}><input type="checkbox" checked={!!x} onChange={e => setNc(o => { const m = { ...o }; if (e.target.checked) m[n.scadenza_id] = { importo: importoIt(-Number(n.residuo)), fattura: scelte[0]?.scadenza_id || "" }; else delete m[n.scadenza_id]; return m; })} /></td>
+              <td style={{ padding: "4px 8px", fontWeight: 700 }}>{n.numero_documento}</td><td style={{ padding: "4px 8px" }}>{dataIt(n.data_documento)}</td>
+              <td style={{ padding: "4px 8px", textAlign: "right" }}>{euro(-Number(n.residuo))}</td>
+              <td style={{ padding: "4px 8px" }}>{x ? <input style={{ ...input, width: 100 }} value={x.importo} onChange={e => setNc(o => ({ ...o, [n.scadenza_id]: { ...o[n.scadenza_id], importo: e.target.value } }))} /> : ""}</td>
+              <td style={{ padding: "4px 8px" }}>{x ? <select style={{ ...input }} value={x.fattura} onChange={e => setNc(o => ({ ...o, [n.scadenza_id]: { ...o[n.scadenza_id], fattura: e.target.value } }))}>
+                <option value="">— scegliere tra le fatture spuntate —</option>{scelte.map(f => <option key={f.scadenza_id} value={f.scadenza_id}>{f.numero_documento} del {dataIt(f.data_documento)}</option>)}</select> : ""}</td></tr>; })}</tbody></table>
+      </div>}
     </div>}
     {sogg && scelte.length > 0 && <div style={{ ...scheda, border: `2px solid ${C.primary}` }}>
       <div style={{ fontWeight: 800, color: C.primary, fontSize: 15, marginBottom: 8 }}>{pag ? "Il pagamento" : "L'incasso"}: {scelte.length === 1 ? "1 fattura" : `${scelte.length} fatture`}, totale {euro(totale)}</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 10 }}>
         <ComeEConCheCosa base={base} verso={verso} v={v} cambia={cambia} importo={totale} />
-        <label style={L}>3. Data di addebito in banca (proposta: la scadenza)<input type="date" style={sel(!v.data_disposizione)} value={v.data_disposizione} onChange={e => cambia("data_disposizione", e.target.value)} />
-          {v.data_disposizione && v.data_disposizione !== oggi && <span style={{ color: C.yellow, fontWeight: 700 }}>Non è oggi: disporre in banca lo stesso giorno in cui si registra qui.</span>}</label>
+        {v.modalita === "Contanti" && <SceltaContanti verso={verso} v={v} cambia={cambia} importo={totale} />}
+        <label style={L}>3. {v.modalita === "Contanti" ? "Data in cui si paga in contanti (non nel futuro)" : "Data di addebito in banca (proposta: la scadenza)"}<input type="date" style={sel(!v.data_disposizione || (v.modalita === "Contanti" && v.data_disposizione > oggi))} value={v.data_disposizione} onChange={e => cambia("data_disposizione", e.target.value)} />
+          {v.data_disposizione && v.data_disposizione !== oggi && v.modalita !== "Contanti" && <span style={{ color: C.yellow, fontWeight: 700 }}>Non è oggi: disporre in banca lo stesso giorno in cui si registra qui.</span>}</label>
         <label style={L}>4. Causale contabile (gruppo Fatture)<select style={sel(false)} value={voce} onChange={e => cambia("causale_voce", e.target.value)}>
           {vociDellaSezione(base.causali, sezione, "Fatture").map(c => <option key={c.voce}>{c.voce}</option>)}</select>
           <span style={{ fontWeight: 400, color: C.muted }}>proposta del programma: {vocePropria}</span></label>
@@ -430,6 +574,18 @@ function SezioneFatture({ sezione, base, fatto, oggi }) {
         <label style={{ ...L, gridColumn: "1 / -1" }}>Nota interna (facoltativa, non va in banca)<input style={sel(false)} value={v.note} onChange={e => cambia("note", e.target.value)} /></label>
       </div>
       {totale > 5000 && <label style={{ display: "block", marginTop: 8, color: C.red, fontWeight: 700, fontSize: 13 }}><input type="checkbox" checked={v.soglia_vista} onChange={e => cambia("soglia_vista", e.target.checked)} /> Ho visto: sopra 5.000 €. Il movimento sarà segnalato tra le anomalie al Dott. Bizzarri e a Teresa Demaria.</label>}
+      {pag && noteScelte.length > 0 && <div style={{ marginTop: 10, border: `2px solid ${C.blue}`, borderRadius: 8, padding: 10 }}>
+        <div style={{ fontWeight: 800, color: C.blue }}>Mail al fornitore (parte da podereverdeapp@gmail.com quando premi «Conferma»; resta nel Registro delle comunicazioni)</div>
+        {forza ? <div style={{ fontSize: 12.5, color: C.muted, marginTop: 4 }}>Mail non mandata: si registra con il motivo.</div>
+          : !chiaveAnteprima ? <div style={{ fontSize: 12.5, color: C.muted, marginTop: 4 }}>Il testo compare quando il pagamento è completo (sotto: «Per confermare»).</div>
+          : anteprima.chiave !== chiaveAnteprima ? <div style={{ fontSize: 12.5, color: C.muted, marginTop: 4 }}>Preparo il testo…</div>
+          : anteprima.errore ? <div style={{ fontSize: 12.5, color: C.red, fontWeight: 700, marginTop: 4 }}>Il database non accetterebbe questo pagamento: {anteprima.errore}</div>
+          : <><div style={{ fontSize: 12.5, color: C.muted }}>Oggetto: {anteprima.oggetto}</div>
+            <div style={{ fontSize: 13, whiteSpace: "pre-wrap", background: "#F4F4F0", borderRadius: 6, padding: 8, marginTop: 4 }}>{anteprima.testo}</div></>}
+        <div style={{ fontSize: 12.5, marginTop: 4 }}>Il testo lo scrive il programma (fatture, importi, acconto o saldo, note di credito). Premendo «Conferma» il programma controlla prima che il pagamento sia accettato, poi manda la mail, poi registra il pagamento. Senza la mail il pagamento non si registra.</div>
+        {puoForzare && <label style={{ display: "block", marginTop: 6, fontSize: 12.5 }}><input type="checkbox" checked={forza} onChange={e => setForza(e.target.checked)} /> Non mando la mail (autorizzazione «Può forzare il pagamento senza mail»): scrivo il motivo
+          {forza && <input style={{ ...input, width: "100%", marginTop: 4, borderColor: motivoForza.trim() ? C.border : C.red }} placeholder="motivo (obbligatorio)" value={motivoForza} onChange={e => setMotivoForza(e.target.value)} />}</label>}
+      </div>}
       {problemi.length > 0 && <div style={{ color: C.red, fontSize: 12.5, marginTop: 10 }}>Per confermare: {problemi.join("; ")}.</div>}
       {errore && <div style={{ color: C.red, fontWeight: 700, marginTop: 8 }}>⚠️ {errore}</div>}
       <div style={{ marginTop: 10 }}><button style={btn(true)} disabled={!!problemi.length || lavoro} onClick={invia}>{lavoro ? "Registro…" : pag ? "Conferma e manda in pagamento" : "Conferma e registra l'incasso atteso"}</button></div>
@@ -466,7 +622,7 @@ const TIPI_DOC = [["proforma", "Proforma"], ["preventivo", "Preventivo"], ["offe
 function SezioneAnticipo({ base, fatto, oggi }) {
   const [cerca, setCerca] = useState(""); const [sogg, setSogg] = useState(null); const [tutte, setTutte] = useState([]); const [erroreStorico, setErroreStorico] = useState("");
   const [v, setV] = useState({ voce: ANTICIPO, consegna_prevista: "", importo: "", tipo: "proforma", numero: "", data_documento: "", modalita: "", conto_id: "", data_disposizione: oggi, aggiunta: "",
-    iban_scelta: "", iban_scritto: "", iban_confermato: false, iban_diverso_motivo: "", note: "", soglia_vista: false });
+    iban_scelta: "", iban_scritto: "", iban_confermato: false, iban_diverso_motivo: "", note: "", soglia_vista: false, contanti_persona: "" });
   const [lavoro, setLavoro] = useState(false); const [errore, setErrore] = useState("");
   const cambia = (k, x) => setV(o => ({ ...o, [k]: x }));
   const trovati = useMemo(() => {
@@ -499,6 +655,7 @@ function SezioneAnticipo({ base, fatto, oggi }) {
   if (!v.conto_id) problemi.push("scegliere con che cosa");
   if (v.modalita === "Carta di debito" && !v.carta_di_debito_id) problemi.push("scegliere la carta di debito");
   if (v.modalita === "Contanti" && imp >= 5000) problemi.push("contanti da 5.000 € in su: vietato (art. 49 D.Lgs. 231/2007)");
+  problemi.push(...problemiContanti(v, oggi));
   if (!v.data_disposizione) problemi.push("scrivere la data di disposizione");
   if (bonifico && !causaleValida(causale)) problemi.push("causale del bonifico non valida (al massimo 140 caratteri, senza lettere accentate)");
   if (bonifico) { if (!ib) problemi.push("scegliere o scrivere l'IBAN"); else if (!ibanValido(ib)) problemi.push("IBAN non valido"); else if (!v.iban_confermato) problemi.push("premere «Confermi IBAN»"); }
@@ -508,8 +665,9 @@ function SezioneAnticipo({ base, fatto, oggi }) {
     setLavoro(true); setErrore("");
     const p = { sezione: "pagamento_fatture", conto_id: Number(v.conto_id), modalita: v.modalita, modalita_altro: v.modalita_altro || "", carta_di_debito_id: v.carta_di_debito_id || "",
       data_disposizione: v.data_disposizione, importo: imp, causale_gruppo: "Fatture", causale_voce: caparra ? CAPARRA : ANTICIPO, fornitore_id: sogg, cliente_id: "",
-      causale: bonifico || causale ? causale : "", iban: bonifico ? ib : "", iban_confermato: !!v.iban_confermato, iban_diverso_motivo: "", note: v.note || "", documento_riferimento: documento };
-    const { data, error } = await supabase.rpc("ci_disponi_movimento", { p });
+      causale: bonifico || causale ? causale : "", iban: bonifico ? ib : "", iban_confermato: !!v.iban_confermato, iban_diverso_motivo: "", note: v.note || "", documento_riferimento: documento,
+      ...(v.modalita === "Contanti" ? { contanti_persona: v.contanti_persona } : {}) };
+    const { data, error } = await supabase.rpc("ci_disponi_401", { p });
     setLavoro(false);
     if (error) return setErrore("Il database non l'ha accettato, non è stato registrato niente: " + error.message);
     const nome = base.fornitori.find(a => a.id === sogg)?.nome;
@@ -520,6 +678,9 @@ function SezioneAnticipo({ base, fatto, oggi }) {
       const r = an.data ? await supabase.rpc("ci_caparra_consegna", { p_anticipo: an.data.id, p_data: v.consegna_prevista, p_motivo: "" }) : { error: an.error || { message: "caparra non trovata" } };
       notaConsegna = r.error ? ` ATTENZIONE: la data di consegna prevista non è stata salvata (${r.error.message}): scriverla nella scheda della caparra.` : ` Consegna prevista: ${dataIt(v.consegna_prevista)}.`;
     }
+    if (data.definitivo === true) return fatto({ titolo: `${data.codice_attesa}: ${caparra ? "caparra confirmatoria" : "anticipo"} a ${nome} pagato in contanti — definitivo, prima nota n. ${data.numero || "—"}`,
+      testo: `Registrato in cassa. ${caparra ? "La caparra è in «Anticipi e caparre in attesa di fattura»." : "L'anticipo è in «Anticipi in attesa di fattura»: quando arriva la fattura del fornitore si aggancia lì."} Conservare la ricevuta del fornitore.${notaConsegna}`,
+      copie: [["Beneficiario", nome], ["Importo", importoIt(imp)], ["Descrizione", causale], ["Data", dataIt(v.data_disposizione)]].filter(x => x[1]) });
     if (caparra) return fatto({ titolo: `${data.codice_attesa}: caparra confirmatoria a ${nome} mandata in pagamento — in attesa della banca`,
       testo: `Adesso, oggi stesso, disporre ${v.modalita === "Bonifico istantaneo" ? "il bonifico istantaneo" : v.modalita.toLowerCase()} in banca con questi dati (pulsanti «Copia»). La caparra è in «Anticipi e caparre in attesa di fattura»: alla consegna la fattura del fornitore si aggancia lì; se l'affare salta si sceglie l'esito (restituita, trattenuta, restituita il doppio).${notaConsegna}`,
       copie: [["Beneficiario", nome], ["IBAN", bonifico ? ibanBello(ib) : ""], ["Importo", importoIt(imp)], ["Causale", causale], ["Data di esecuzione", dataIt(v.data_disposizione)]].filter(x => x[1]) });
@@ -554,8 +715,9 @@ function SezioneAnticipo({ base, fatto, oggi }) {
         <label style={L}>Data del documento<input type="date" style={sel(!v.data_documento)} value={v.data_documento} onChange={e => cambia("data_documento", e.target.value)} /></label>
         {caparra && <label style={L}>Data di consegna prevista (caparra)<input type="date" style={sel(!v.consegna_prevista)} value={v.consegna_prevista} onChange={e => cambia("consegna_prevista", e.target.value)} /></label>}
         <ComeEConCheCosa base={base} verso="uscita" v={v} cambia={cambia} importo={imp} />
-        <label style={L}>Data di disposizione<input type="date" style={sel(!v.data_disposizione)} value={v.data_disposizione} onChange={e => cambia("data_disposizione", e.target.value)} />
-          {v.data_disposizione && v.data_disposizione !== oggi && <span style={{ color: C.yellow, fontWeight: 700 }}>Non è oggi: disporre in banca lo stesso giorno in cui si registra qui.</span>}</label>
+        {v.modalita === "Contanti" && <SceltaContanti verso="uscita" v={v} cambia={cambia} importo={imp} />}
+        <label style={L}>{v.modalita === "Contanti" ? "Data in cui si paga in contanti (non nel futuro)" : "Data di disposizione"}<input type="date" style={sel(!v.data_disposizione)} value={v.data_disposizione} onChange={e => cambia("data_disposizione", e.target.value)} />
+          {v.data_disposizione && v.data_disposizione !== oggi && v.modalita !== "Contanti" && <span style={{ color: C.yellow, fontWeight: 700 }}>Non è oggi: disporre in banca lo stesso giorno in cui si registra qui.</span>}</label>
         {bonifico && <SceltaIban ibanFattura={[]} conosciuti={conosciuti} v={v} cambia={cambia} />}
         <div style={{ gridColumn: "1 / -1" }}>
           <div style={{ fontSize: 12, fontWeight: 700 }}>{bonifico ? "Causale del bonifico (composta dal programma; si può solo aggiungere)" : "Descrizione"} <Contatore testo={causale} /></div>
@@ -576,7 +738,7 @@ function SezioneAnticipo({ base, fatto, oggi }) {
 function SezioneAltri({ sezione, base, fatto, oggi }) {
   const pag = sezione === "altri_pagamenti"; const verso = pag ? "uscita" : "entrata";
   const [v, setV] = useState({ modalita: "", conto_id: "", data_disposizione: oggi, causale_gruppo: "", causale_voce: "", causale_altro: "", soggetto: "", controparte: "", importo: "",
-    causale: "", documento_riferimento: "", iban_scelta: "altro", iban_scritto: "", iban_confermato: false, note: "", soglia_vista: false });
+    causale: "", documento_riferimento: "", iban_scelta: "altro", iban_scritto: "", iban_confermato: false, note: "", soglia_vista: false, contanti_persona: "" });
   const [lavoro, setLavoro] = useState(false); const [errore, setErrore] = useState("");
   const cambia = (k, x) => setV(o => ({ ...o, [k]: x }));
   const gruppi = GRUPPI_SEZIONE[sezione];
@@ -597,6 +759,7 @@ function SezioneAltri({ sezione, base, fatto, oggi }) {
   if (!v.conto_id) problemi.push("scegliere con che cosa");
   if (v.modalita === "Carta di debito" && !v.carta_di_debito_id) problemi.push("scegliere la carta di debito");
   if (v.modalita === "Contanti" && imp >= 5000) problemi.push("contanti da 5.000 € in su: vietato (art. 49 D.Lgs. 231/2007)");
+  problemi.push(...problemiContanti(v, oggi));
   if (!pag && !v.documento_riferimento.trim()) problemi.push("scrivere il documento (obbligatorio per gli altri incassi)");
   if (bonifico && !causaleValida(causale)) problemi.push("scrivere la causale del bonifico (al massimo 140 caratteri)");
   if (pag && bonifico) { if (!ib) problemi.push("scrivere l'IBAN"); else if (!ibanValido(ib)) problemi.push("IBAN non valido"); else if (!v.iban_confermato) problemi.push("premere «Confermi IBAN»"); }
@@ -605,10 +768,14 @@ function SezioneAltri({ sezione, base, fatto, oggi }) {
     if (problemi.length || lavoro) return; setLavoro(true); setErrore("");
     const p = { sezione, conto_id: Number(v.conto_id), modalita: v.modalita, modalita_altro: v.modalita_altro || "", carta_di_debito_id: v.carta_di_debito_id || "", data_disposizione: v.data_disposizione,
       importo: imp, causale_gruppo: v.causale_gruppo, causale_voce: v.causale_voce, causale_altro: v.causale_altro, fornitore_id: tipoS === "f" ? Number(idS) : "", cliente_id: tipoS === "c" ? Number(idS) : "",
-      controparte: v.soggetto === "altro" ? v.controparte.trim() : nomeS, causale: causale, iban: pag && bonifico ? ib : "", iban_confermato: !!v.iban_confermato, documento_riferimento: v.documento_riferimento, note: v.note };
-    const { data, error } = await supabase.rpc("ci_disponi_movimento", { p });
+      controparte: v.soggetto === "altro" ? v.controparte.trim() : nomeS, causale: causale, iban: pag && bonifico ? ib : "", iban_confermato: !!v.iban_confermato, documento_riferimento: v.documento_riferimento, note: v.note,
+      ...(v.modalita === "Contanti" ? { contanti_persona: v.contanti_persona } : {}) };
+    const { data, error } = await supabase.rpc("ci_disponi_401", { p });
     setLavoro(false);
     if (error) return setErrore("Il database non l'ha accettato, non è stato registrato niente: " + error.message);
+    if (data.definitivo === true) return fatto({ titolo: `${data.codice_attesa}: ${pag ? "pagamento" : "incasso"} in contanti registrato — definitivo, prima nota n. ${data.numero || "—"}`,
+      testo: pag ? "Registrato in cassa. Conservare la ricevuta." : "Registrato in cassa. Consegnare la ricevuta.",
+      copie: [["Soggetto", v.soggetto === "altro" ? v.controparte : nomeS], ["Importo", importoIt(imp)], ["Descrizione", causale], ["Data", dataIt(v.data_disposizione)]].filter(x => x[1]) });
     fatto({ titolo: `${data.codice_attesa}: ${pag ? "pagamento mandato in pagamento" : "incasso atteso registrato"} — in attesa della banca`,
       testo: pag ? "Adesso, oggi stesso, disporre il pagamento in banca con questi dati. Alla conferma della banca prenderà il numero di prima nota." : "Alla conferma della banca prenderà il numero di prima nota.",
       copie: [["Beneficiario", pag ? (v.soggetto === "altro" ? v.controparte : nomeS) : ""], ["IBAN", pag && bonifico ? ibanBello(ib) : ""], ["Importo", importoIt(imp)], ["Causale", causale], ["Data di esecuzione", dataIt(v.data_disposizione)]].filter(x => x[1]) });
@@ -630,8 +797,9 @@ function SezioneAltri({ sezione, base, fatto, oggi }) {
       {v.soggetto === "altro" && <label style={L}>Nome del soggetto<input style={sel(!v.controparte.trim())} value={v.controparte} onChange={e => cambia("controparte", e.target.value)} placeholder="es. ROSSI MARIO" /></label>}
       <label style={L}>Importo (€)<input style={sel(!imp)} value={v.importo} onChange={e => cambia("importo", e.target.value)} placeholder="1.975,00" /></label>
       <ComeEConCheCosa base={base} verso={verso} v={v} cambia={cambia} importo={imp} />
-      <label style={L}>Data di disposizione<input type="date" style={sel(!v.data_disposizione)} value={v.data_disposizione} onChange={e => cambia("data_disposizione", e.target.value)} />
-        {v.data_disposizione !== oggi && <span style={{ color: C.yellow, fontWeight: 700 }}>Non è oggi.</span>}</label>
+      {v.modalita === "Contanti" && <SceltaContanti verso={verso} v={v} cambia={cambia} importo={imp} />}
+      <label style={L}>{v.modalita === "Contanti" ? "Data in cui passano i contanti (non nel futuro)" : "Data di disposizione"}<input type="date" style={sel(!v.data_disposizione)} value={v.data_disposizione} onChange={e => cambia("data_disposizione", e.target.value)} />
+        {v.data_disposizione !== oggi && v.modalita !== "Contanti" && <span style={{ color: C.yellow, fontWeight: 700 }}>Non è oggi.</span>}</label>
       {!pag && <label style={L}>Documento (obbligatorio)<input style={sel(!v.documento_riferimento.trim())} value={v.documento_riferimento} onChange={e => cambia("documento_riferimento", e.target.value)} placeholder="es. verbale dell'assemblea del 10/06/2026" /></label>}
       {pag && bonifico && <div style={{ ...L, gridColumn: "1 / -1" }}>IBAN del beneficiario
         <input style={sel(!ib || !ibanValido(ib))} value={v.iban_scritto} onChange={e => { cambia("iban_scritto", e.target.value); cambia("iban_confermato", false); }} placeholder="IT00 X000 0000 0000 0000 0000 000" />
@@ -785,7 +953,7 @@ function SezioneF24({ base, fatto, oggi, vaiA }) {
 // ---------------- Giroconti ----------------
 const MODALITA_GIRO = { "Prelievo di contanti": "Carta di debito", "Versamento in banca": "Contanti", "Ricarica carta prepagata": "Carta prepagata", "Addebito della carta di credito": "Addebito diretto SEPA", "Giroconto tra conti di banca": "Bonifico" };
 function SezioneGiroconti({ base, fatto, oggi }) {
-  const [v, setV] = useState({ voce: "", da: "", a: "", importo: "", data: oggi, note: "" });
+  const [v, setV] = useState({ voce: "", da: "", a: "", importo: "", data: oggi, note: "", contanti_persona: "" });
   const [lavoro, setLavoro] = useState(false); const [errore, setErrore] = useState("");
   const cambia = (k, x) => setV(o => ({ ...o, [k]: x }));
   const aperti = base.conti.filter(c => c.stato === "aperto");
@@ -796,6 +964,10 @@ function SezioneGiroconti({ base, fatto, oggi }) {
   if (!v.voce) problemi.push("scegliere il tipo di giroconto");
   if (!da || !a) problemi.push("scegliere i due conti"); else if (da.id === a.id) problemi.push("i due conti devono essere diversi");
   if (v.voce === "Prelievo di contanti" && da && a && !(da.tipo === "banca" && a.tipo === "cassa")) problemi.push("il prelievo va dalla banca alla cassa");
+  // versione 401: il lato della cassa è definitivo subito e passa dai contanti in carico di una persona
+  const conCassa = [da, a].some(c => c?.tipo === "cassa");
+  if (conCassa && !v.contanti_persona) problemi.push("scegliere chi ha i contanti in mano");
+  if (conCassa && v.data && v.data > oggi) problemi.push("con la cassa la data non può essere nel futuro");
   if (v.voce === "Versamento in banca" && da && a && !(da.tipo === "cassa" && a.tipo === "banca")) problemi.push("il versamento va dalla cassa alla banca");
   if (v.voce === "Ricarica carta prepagata" && a && a.tipo !== "carta prepagata") problemi.push("la ricarica va verso una carta prepagata");
   if (v.voce === "Addebito della carta di credito" && a && a.tipo !== "carta di credito") problemi.push("l'addebito va verso la carta di credito");
@@ -804,7 +976,7 @@ function SezioneGiroconti({ base, fatto, oggi }) {
   if (!imp) problemi.push("scrivere l'importo");
   return <div style={{ ...scheda, border: `2px solid ${C.primary}` }}>
     <div style={{ fontWeight: 800, color: C.primary, fontSize: 15 }}>Giroconto</div>
-    <div style={{ fontSize: 12.5, color: C.muted, margin: "4px 0 10px" }}>Soldi che passano da un conto di Podere Verde a un altro: prelievo, versamento, ricarica della carta, addebito della carta di credito, giroconto tra banche. Nascono due movimenti in attesa, uno per conto (G-0001-U uscita, G-0001-E entrata); ognuno si conferma con il suo estratto. Mai costo né ricavo.</div>
+    <div style={{ fontSize: 12.5, color: C.muted, margin: "4px 0 10px" }}>Soldi che passano da un conto di Podere Verde a un altro: prelievo, versamento, ricarica della carta, addebito della carta di credito, giroconto tra banche. Nascono due movimenti, uno per conto (G-0001-U uscita, G-0001-E entrata); ognuno si conferma con il suo estratto. Il lato della cassa (prelievo o versamento) è definitivo subito e passa dai contanti in carico della persona scelta. Mai costo né ricavo.</div>
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10 }}>
       <label style={L}>Tipo<select style={sel(!v.voce)} value={v.voce} onChange={e => cambia("voce", e.target.value)}><option value="">— scegliere —</option>{vociDellaSezione(base.causali, "giroconti", "Giroconti").map(c => <option key={c.voce}>{c.voce}</option>)}</select></label>
       <label style={L}>Da (esce)<select style={sel(!v.da)} value={v.da} onChange={e => cambia("da", e.target.value)}><option value="">— scegliere —</option>{aperti.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select></label>
@@ -812,20 +984,21 @@ function SezioneGiroconti({ base, fatto, oggi }) {
       <label style={L}>Importo (€)<input style={sel(!imp)} value={v.importo} onChange={e => cambia("importo", e.target.value)} /></label>
       <label style={L}>Data di disposizione<input type="date" style={sel(!v.data)} value={v.data} onChange={e => cambia("data", e.target.value)} /></label>
       <label style={L}>Nota interna (facoltativa)<input style={sel(false)} value={v.note} onChange={e => cambia("note", e.target.value)} /></label>
+      {conCassa && <SceltaContanti verso={da?.tipo === "cassa" ? "uscita" : "entrata"} v={v} cambia={cambia} importo={imp} />}
     </div>
     {problemi.length > 0 && <div style={{ color: C.red, fontSize: 12.5, marginTop: 10 }}>Per confermare: {problemi.join("; ")}.</div>}
     {errore && <div style={{ color: C.red, fontWeight: 700, marginTop: 8 }}>⚠️ {errore}</div>}
     <div style={{ marginTop: 10 }}><button style={btn(true)} disabled={!!problemi.length || lavoro} onClick={async () => {
       setLavoro(true); setErrore("");
-      const { data, error } = await supabase.rpc("ci_disponi_giroconto", { p: { conto_da: da.id, conto_a: a.id, importo: imp, data_disposizione: v.data, causale_voce: v.voce, modalita: MODALITA_GIRO[v.voce] || "Altro", note: v.note } });
+      const { data, error } = await supabase.rpc("ci_disponi_giroconto_401", { p: { conto_da: da.id, conto_a: a.id, importo: imp, data_disposizione: v.data, causale_voce: v.voce, modalita: MODALITA_GIRO[v.voce] || "Altro", note: v.note, ...(conCassa ? { contanti_persona: v.contanti_persona } : {}) } });
       setLavoro(false); if (error) return setErrore("Il database non l'ha accettato: " + error.message);
-      fatto({ titolo: `${data.codice_attesa}: giroconto registrato — in attesa della banca`, testo: `${v.voce} di ${euro(imp)} da ${da.nome} a ${a.nome}. Ognuno dei due lati si conferma con il suo estratto in «Conferma dei movimenti».` });
+      fatto({ titolo: `${data.codice_attesa}: giroconto registrato — ${data.lato_cassa_definitivo ? "lato della cassa definitivo, lato della banca in attesa" : "in attesa della banca"}`, testo: `${v.voce} di ${euro(imp)} da ${da.nome} a ${a.nome}. ${data.lato_cassa_definitivo ? "Il lato della cassa è già in prima nota con il numero; il lato della banca si conferma con il suo estratto in «Conferma dei movimenti»." : "Ognuno dei due lati si conferma con il suo estratto in «Conferma dei movimenti»."}` });
     }}>{lavoro ? "Registro…" : "Conferma il giroconto"}</button></div>
   </div>;
 }
 
 // ---------------- In attesa della banca ----------------
-function InAttesa({ base, oggi, fatto }) {
+function InAttesa({ base, oggi, fatto, ricarica }) {
   const [annulla, setAnnulla] = useState(null); const [motivo, setMotivo] = useState(""); const [errore, setErrore] = useState(""); const [lavoro, setLavoro] = useState(false);
   const elenco = [...base.attesa].sort((a, b) => (a.data_disposizione || a.data).localeCompare(b.data_disposizione || b.data) || a.id - b.id);
   const fatture = id => base.abbinamenti.filter(x => x.pagamento_id === id).map(x => { const s = base.scadenze.find(y => y.scadenza_id === x.scadenza_id); return s ? `${s.numero_documento} del ${dataIt(s.data_documento)} (${euro(x.importo)})` : `scadenza ${x.scadenza_id}`; });
@@ -834,7 +1007,7 @@ function InAttesa({ base, oggi, fatto }) {
     <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 8 }}>Disposizioni non ancora trovate nell'estratto della banca. Si confermano in «Banche, carte e cassa» → «Conferma dei movimenti» dopo aver caricato l'estratto. Avviso in rosso: stipendi, compensi e tributi dopo 3 giorni lavorativi; gli altri dopo 10; subito se la banca è già caricata 2 giorni lavorativi oltre la data e il movimento non c'è.</div>
     {!elenco.length && <div style={{ color: C.green }}>Nessun movimento in attesa.</div>}
     {elenco.length > 0 && <div style={{ overflowX: "auto" }}><table style={{ width: "100%", fontSize: 12.5, background: "#fff" }}><thead><tr style={{ background: C.blue, color: "#fff" }}>
-      {["Codice", "Disposto il", "Conto", "Uscita", "Entrata", "Soggetto", "Causale contabile", "Modalità", "Causale / fatture", "Avviso", ""].map(h => <th key={h} style={{ padding: "6px 8px", textAlign: "left", whiteSpace: "nowrap" }}>{h}</th>)}</tr></thead>
+      {["Codice", "Disposto il", "Conto", "Uscita", "Entrata", "Soggetto", "Causale contabile", "Modalità", "Causale / fatture", "Avviso", "Distinta (versione 401)", ""].map(h => <th key={h} style={{ padding: "6px 8px", textAlign: "left", whiteSpace: "nowrap" }}>{h}</th>)}</tr></thead>
       <tbody>{elenco.map(m => { const st = base.stati.find(s => s.conto_id === m.conto_id); const a = statoAttesa(m, st?.controllo_ok_alla_data, oggi);
         return [<tr key={m.id} style={{ borderBottom: `1px solid ${C.border}`, background: a.rosso ? `${C.red}10` : "#fff" }}>
           <td style={{ padding: "5px 8px", fontWeight: 800 }}>{m.codice_attesa}{m.sopra_soglia ? <div style={{ color: C.red, fontSize: 11 }}>sopra soglia 5.000 €</div> : null}</td>
@@ -845,9 +1018,14 @@ function InAttesa({ base, oggi, fatto }) {
           <td style={{ padding: "5px 8px" }}>{m.controparte}</td><td style={{ padding: "5px 8px" }}>{m.causale_voce}</td><td style={{ padding: "5px 8px" }}>{m.modalita}</td>
           <td style={{ padding: "5px 8px", maxWidth: 300 }}>{m.causale}{fatture(m.id).length ? <div style={{ fontSize: 11.5, color: C.muted }}>fatture: {fatture(m.id).join("; ")}</div> : null}{m.documento_riferimento ? <div style={{ fontSize: 11.5, color: C.muted }}>documento: {m.documento_riferimento}</div> : null}</td>
           <td style={{ padding: "5px 8px", color: a.rosso ? C.red : C.blue, maxWidth: 260 }}>{a.causa}</td>
+          <td style={{ padding: "5px 8px", whiteSpace: "nowrap" }}>{m.verso === "uscita" && ["Bonifico", "Bonifico istantaneo"].includes(m.modalita) && !/^S-/.test(m.codice_attesa || "") ? <>
+            {m.distinta_id ? <div style={{ color: C.green, fontWeight: 700, fontSize: 11.5 }}>✔ pagato: distinta caricata</div> : <div style={{ color: C.yellow, fontWeight: 700, fontSize: 11.5 }}>manca la distinta</div>}
+            <PulsanteDistinta movimento={m} distinte={base.distinte || {}} onCambiato={ricarica} />
+            <button style={{ ...btn(false), height: 24, fontSize: 11, padding: "0 8px", marginLeft: 4 }} onClick={() => scaricaWordPagamento({ codice: m.codice_attesa, beneficiario: m.controparte, iban: m.iban_beneficiario ? ibanBello(m.iban_beneficiario) : "",
+              importo: "€ " + importoIt(m.importo), causale: m.causale, data: dataIt(m.data_disposizione), conto: m.conto, modalita: m.modalita, fatture: fatture(m.id) })}>📄 Word</button></> : ""}</td>
           <td style={{ padding: "5px 8px", whiteSpace: "nowrap" }}>{/^S-/.test(m.codice_attesa || "") ? <span style={{ fontSize: 11.5, color: C.muted }}>dall'app: le spese si annullano in «Spese pagate: controllo»; i prelievi si correggono con la versione 383</span> /* versione 382 */ : <button style={btn(false, C.red)} onClick={() => { setAnnulla(m); setMotivo(""); setErrore(""); }}>Annulla</button>}</td></tr>,
-          annulla?.id === m.id && <tr key={"a" + m.id}><td colSpan={11} style={{ padding: 10, borderBottom: `2px solid ${C.red}` }}>
-            Annullare <b>{m.codice_attesa}</b> di {euro(m.importo)}? Si fa solo se in banca non è partito (controllare in banca). Il movimento e i suoi abbinamenti alle fatture escono; resta scritto chi l'ha annullato, quando e perché.{m.codice_attesa.startsWith("G-") ? " Si annullano insieme i due lati del giroconto." : ""}
+          annulla?.id === m.id && <tr key={"a" + m.id}><td colSpan={12} style={{ padding: 10, borderBottom: `2px solid ${C.red}` }}>
+            Annullare <b>{m.codice_attesa}</b> di {euro(m.importo)}? Si fa solo se in banca non è partito (controllare in banca). Il movimento e i suoi abbinamenti alle fatture escono (la nota di credito dedotta in questo pagamento torna da usare); resta scritto chi l'ha annullato, quando e perché.{m.codice_attesa.startsWith("G-") ? " Si annullano insieme i due lati del giroconto. Se un lato è della cassa, quello è già definitivo (in prima nota con il numero): prima chi gestisce i conti lo storna in «Conferma dei movimenti», poi qui si annulla il lato della banca." : ""}
             <div style={{ display: "flex", gap: 6, marginTop: 6 }}><input style={{ ...input, flex: 1 }} placeholder="motivo (obbligatorio): es. bonifico non autorizzato in banca" value={motivo} onChange={e => setMotivo(e.target.value)} />
               <button style={btn(true, C.red)} disabled={!motivo.trim() || lavoro} onClick={async () => {
                 setLavoro(true); const r = await supabase.rpc("ci_annulla_disposizione", { p_movimento: m.id, p_motivo: motivo.trim() }); setLavoro(false);
