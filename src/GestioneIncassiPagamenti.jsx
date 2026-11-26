@@ -301,10 +301,14 @@ function SezioneFatture({ sezione, base, fatto, oggi, professionisti = false }) 
   const [puoForzare, setPuoForzare] = useState(false); const [forza, setForza] = useState(false); const [motivoForza, setMotivoForza] = useState("");
   const azzeraNote = () => { setNc({}); setForza(false); setMotivoForza(""); setAnteprima({ chiave: "", testo: "", oggetto: "", errore: "" }); };
   useEffect(() => { if (pag) supabase.rpc("ci_puo_forzare_pagamento_senza_mail").then(({ data }) => setPuoForzare(data === true)); }, [pag]);
-  // versione 374: «Prezzo aumentato» (stessi numeri del «Controllo Prezzi di Acquisto»); sui rossi «Visto» obbligatorio prima di pagare
+  // versione 374: «Prezzo aumentato» (stessi numeri del «Controllo Prezzi di Acquisto»); versione 407: niente blocco, doppia conferma da 200 € l'anno
   const [aumenti, setAumenti] = useState(null); const [erroreAumenti, setErroreAumenti] = useState("");
   const [visti, setVisti] = useState(new Map()); const [giroVisti, setGiroVisti] = useState(0); const [apertoAumento, setApertoAumento] = useState(null);
   const [notaVisto, setNotaVisto] = useState(""); const [dottore, setDottore] = useState(false);
+  const [erroreVisti, setErroreVisti] = useState("");   // versione 407: separato dall'errore del calcolo, così l'attesa del controllo non salta
+  // versione 407 (decisioni del Dott. Bizzarri del 26/11/2026 ore 12:53 e 12:56): l'aumento si segnala e non blocca;
+  // per le fatture con aumento da 200 € l'anno (gravità media o alta) doppia conferma prima di mandare il pagamento
+  const [chiediConferma, setChiediConferma] = useState(false); const [notaConferma, setNotaConferma] = useState("");
   useEffect(() => { if (!pag) return; (async () => {
     try { setAumenti(aumentiPerFattura(analisiPrezzi(await caricaDatiPrezzi()))); }
     catch (e) { setAumenti(null); setErroreAumenti("Controllo dei prezzi non letto: i prezzi aumentati non si vedono (" + e.message + ")"); }
@@ -313,8 +317,9 @@ function SezioneFatture({ sezione, base, fatto, oggi, professionisti = false }) 
   })(); }, [pag]);
   useEffect(() => { if (!pag) return; (async () => {
     const r = await supabase.from("ci_prezzo_visti").select("*").order("visto_il", { ascending: false });
-    if (r.error) setErroreAumenti(e => e || "Visti sui prezzi aumentati non letti: va lanciato il file 2_contabilita_strutture_v374_prezzo_aumentato.sql (" + r.error.message + ")");
+    if (r.error) setErroreVisti("Conferme già date sui prezzi aumentati non lette: va lanciato il file 2_contabilita_strutture_v374_prezzo_aumentato.sql (" + r.error.message + ")");
     else {
+      setErroreVisti("");
       const ids = [...new Set((r.data || []).map(x => x.visto_da).filter(Boolean))];
       const pr = ids.length ? await supabase.from("profili").select("id, nome, cognome").in("id", ids) : { data: [] };
       const nomi = Object.fromEntries((pr.data || []).map(x => [x.id, `${x.nome || ""} ${x.cognome || ""}`.trim()]));
@@ -447,9 +452,10 @@ function SezioneFatture({ sezione, base, fatto, oggi, professionisti = false }) 
   }
   if (totale > 5000 && !v.soglia_vista) problemi.push("spuntare «Ho visto: sopra 5.000 €»");
   if (erroreStorico && pag) problemi.push("storico delle fatture non letto: riprovare");
-  if (pag && aumenti === null && scelte.length) problemi.push(erroreAumenti ? "controllo dei prezzi aumentati non letto: ricaricare la pagina (senza il controllo non si paga)" : "attendere il controllo dei prezzi aumentati");
-  if (pag && aumenti) for (const s of scelte) { const f = s.fattura_id && aumenti.get(s.fattura_id);
-    if (f && f.gravita === "alta" && !visti.has(s.fattura_id)) problemi.push(`prezzo aumentato con gravità alta nella fattura ${s.numero_documento}: premere «Visto»`); }
+  // versione 407: se il controllo dei prezzi non si legge si avvisa e si paga lo stesso (prima: «senza il controllo non si paga»)
+  if (pag && aumenti === null && !erroreAumenti && scelte.length) problemi.push("attendere il controllo dei prezzi aumentati");
+  // versione 407: fatture scelte con aumento da 200 € l'anno non ancora confermate → doppia conferma al pagamento (non è un blocco)
+  const daConfermare = pag && aumenti ? scelte.filter(s => { const f = s.fattura_id && aumenti.get(s.fattura_id); return f && f.conferma !== "bassa" && !visti.has(s.fattura_id); }) : [];   // versione 407, scelta B delle 13:56: solo se costa più della precedente
   // il pagamento come lo riceve il database (versione 401: sezione propria per i professionisti, chi ha i contanti, note di credito)
   const costruisci = () => {
     const p = { sezione: pag && professionisti ? "pagamento_professionisti" : sezione, conto_id: Number(v.conto_id), modalita: v.modalita, modalita_altro: v.modalita_altro || "", carta_di_debito_id: v.carta_di_debito_id || "",
@@ -467,8 +473,10 @@ function SezioneFatture({ sezione, base, fatto, oggi, professionisti = false }) 
     const r = await supabase.rpc("ci_paga_fatture_401", { p: { ...JSON.parse(chiaveAnteprima), prova: true } });
     if (vivo) setAnteprima(r.error ? { chiave: chiaveAnteprima, testo: "", oggetto: "", errore: r.error.message } : { chiave: chiaveAnteprima, testo: r.data.testo_mail || "", oggetto: r.data.oggetto_mail || "", errore: "" });
   }, 400); return () => { vivo = false; clearTimeout(t); }; }, [chiaveAnteprima]);
-  async function invia() {
+  async function invia(confermato = false) {
     if (problemi.length || lavoro) return;
+    // versione 407: prima la doppia conferma degli aumenti di prezzo
+    if (!confermato && daConfermare.length) { setChiediConferma(true); return; }
     setLavoro(true); setErrore("");
     const p = costruisci();
     const nome = anag.find(a => a.id === sogg)?.nome;
@@ -517,10 +525,22 @@ function SezioneFatture({ sezione, base, fatto, oggi, professionisti = false }) 
         note_credito: noteScelte.map(x => `${x.n.numero_documento} del ${dataIt(x.n.data_documento)}: € ${importoIt(x.imp)}`) } : null,
       movimento: pag && !contanti && bonifico ? { id: data.movimento_id, data: v.data_disposizione, conto: conto?.nome_nei_movimenti || conto?.nome || "", distinta_id: null } : null });
   }
-  const daLeggere = pag && dottore ? [...visti.values()].filter(x => !x.letto_dal_dottore_il && x.gravita === "alta") : [];
+  // versione 407: «Sì, pago lo stesso» registra la conferma di ogni fattura (chi e quando, con il dettaglio) e poi manda il pagamento
+  async function confermaEPaga() {
+    if (lavoro || problemi.length) return;   // versione 407: si conferma solo se il pagamento si può mandare
+    setLavoro(true); setErrore("");
+    for (const s of daConfermare) {
+      const f = aumenti.get(s.fattura_id);
+      const r = await supabase.rpc("ci_prezzo_visto", { p_fattura: s.fattura_id, p_gravita: f.conferma, p_dettaglio: `Fattura ${s.numero_documento} del ${dataIt(s.data_documento)}: ${testoAumenti(f)}`, p_nota: notaConferma });
+      if (r.error) { setLavoro(false); setGiroVisti(g => g + 1); return setErrore("Conferma dell'aumento non registrata, il pagamento NON è partito: " + r.error.message); }
+    }
+    setLavoro(false); setChiediConferma(false); setNotaConferma(""); setGiroVisti(g => g + 1);
+    await invia(true);
+  }
+  const daLeggere = pag && dottore ? [...visti.values()].filter(x => !x.letto_dal_dottore_il && (x.gravita === "alta" || x.gravita === "media")) : [];
   return <div>
     {daLeggere.length > 0 && <div style={{ ...scheda, border: `2px solid ${C.red}`, background: `${C.red}0D` }}>
-      <div style={{ fontWeight: 800, color: C.red }}>⚠️ Prezzi aumentati (gravità alta) visti prima del pagamento: {daLeggere.length}</div>
+      <div style={{ fontWeight: 800, color: C.red }}>⚠️ Prezzi aumentati confermati al pagamento (da 200 € l'anno): {daLeggere.length}</div>
       {daLeggere.map(x => <div key={x.id} style={{ fontSize: 12.5, borderTop: `1px solid ${C.border}`, padding: "4px 0", display: "flex", gap: 8, alignItems: "flex-start" }}>
         <div style={{ flex: 1 }}>{x.dettaglio}<div style={{ color: C.muted }}>Visto da {x.nome} il {dataIt(String(x.visto_il).slice(0, 10))}{x.nota ? ` — nota: ${x.nota}` : ""}</div></div>
         <button style={{ ...btn(false), height: 26 }} onClick={() => segnaLetto(x.id)}>Letto</button></div>)}
@@ -558,6 +578,7 @@ function SezioneFatture({ sezione, base, fatto, oggi, professionisti = false }) 
       </div>
       {erroreStorico && <div style={{ color: C.red, fontWeight: 700, fontSize: 12.5 }}>⚠️ {erroreStorico}</div>}
       {pag && erroreAumenti && <div style={{ color: C.red, fontWeight: 700, fontSize: 12.5 }}>⚠️ {erroreAumenti}</div>}
+      {pag && erroreVisti && <div style={{ color: C.red, fontWeight: 700, fontSize: 12.5 }}>⚠️ {erroreVisti}</div>}
       {cambi.length > 0 && pag && <div style={{ color: C.red, fontSize: 12.5, fontWeight: 700, margin: "6px 0" }}>Attenzione: l'IBAN di questo fornitore è cambiato nelle fatture ({cambi.map(s => `dalla fattura ${s.numero_documento} del ${dataIt(s.data_documento)}: ${ibanBello(s.iban)}`).join("; ")}). Prima di pagare con il nuovo IBAN serve la conferma per telefono.</div>}
       <div style={{ fontSize: 12.5, color: C.muted, margin: "6px 0" }}>Fatture da {pag ? "pagare" : "incassare"} in ordine di scadenza (scadute in rosso). Spuntare quelle che si {pag ? "pagano" : "incassano"} con lo stesso movimento; l'importo si può ridurre per un acconto (una sola fattura in acconto).</div>
       <div style={{ overflowX: "auto" }}><table style={{ width: "100%", fontSize: 12.5, background: "#fff" }}><thead><tr style={{ background: C.primary, color: "#fff" }}>
@@ -575,7 +596,7 @@ function SezioneFatture({ sezione, base, fatto, oggi, professionisti = false }) 
             <td style={{ padding: "5px 8px", color: inPag ? C.blue : scad ? C.red : C.text }}>{s.stato}
               {pag && aumenti && s.fattura_id && aumenti.get(s.fattura_id) && (() => { const f = aumenti.get(s.fattura_id); const col = f.gravita === "alta" ? C.red : f.gravita === "media" ? "#D9730D" : C.green; const vi = visti.get(s.fattura_id);
                 return <div><button onClick={() => setApertoAumento(apertoAumento === s.scadenza_id ? null : s.scadenza_id)} style={{ border: `1px solid ${col}`, background: `${col}18`, color: col, fontWeight: 800, borderRadius: 6, padding: "1px 6px", cursor: "pointer", fontSize: 11.5, whiteSpace: "nowrap" }}>
-                  ▲ Prezzo aumentato · {NOME_GRAVITA[f.gravita]}</button>{vi ? <div style={{ fontSize: 11, color: C.green }}>✔ Visto</div> : f.gravita === "alta" ? <div style={{ fontSize: 11, color: C.red, fontWeight: 700 }}>«Visto» obbligatorio</div> : null}</div>; })()}</td></tr>,
+                  ▲ Prezzo aumentato · {NOME_GRAVITA[f.gravita]}</button>{vi ? <div style={{ fontSize: 11, color: C.green }}>✔ Confermato</div> : f.conferma !== "bassa" ? <div style={{ fontSize: 11, color: col, fontWeight: 700 }}>doppia conferma al pagamento</div> : f.gravita !== "bassa" ? <div style={{ fontSize: 11, color: col }}>sopra la media dell'anno, prezzo non cambiato dalla fattura precedente: solo avviso</div> : null}</div>; })()}</td></tr>,
             pag && aumenti && apertoAumento === s.scadenza_id && aumenti.get(s.fattura_id) && <tr key={"au" + s.scadenza_id}><td colSpan={11} style={{ padding: 8, background: "#FFF8F0", borderBottom: `1px solid ${C.border}` }}>
               <DettaglioAumento f={aumenti.get(s.fattura_id)} vi={visti.get(s.fattura_id)} nomi={base.nomi} nota={notaVisto} setNota={setNotaVisto} lavoro={lavoro} visto={() => segnaVisto(s, aumenti.get(s.fattura_id))} />
             </td></tr>]; })}</tbody></table></div>
@@ -638,8 +659,20 @@ function SezioneFatture({ sezione, base, fatto, oggi, professionisti = false }) 
         {erroreAperti && <div style={{ color: C.red, fontWeight: 700, fontSize: 12.5 }}>⚠️ {erroreAperti}</div>}
       </div>}
       {problemi.length > 0 && <div style={{ color: C.red, fontSize: 12.5, marginTop: 10 }}>Per confermare: {problemi.join("; ")}.</div>}
+      {pag && erroreAumenti && scelte.length > 0 && <div style={{ color: "#D9730D", fontWeight: 700, fontSize: 12.5, marginTop: 6 }}>⚠️ Il controllo dei prezzi non si è letto: gli eventuali aumenti di queste fatture non si vedono. Si può pagare lo stesso; ricaricando la pagina si riprova il controllo.</div>}
+      {/* versione 407: doppia conferma degli aumenti di prezzo, dentro la pagina */}
+      {chiediConferma && daConfermare.length > 0 && <div style={{ ...scheda, border: `2px solid ${C.red}`, background: "#FFF8F0", marginTop: 10 }}>
+        <div style={{ fontWeight: 800, color: C.red, marginBottom: 4 }}>⚠️ Prezzo aumentato: confermi il pagamento?</div>
+        {daConfermare.map(s => { const f = aumenti.get(s.fattura_id); return <div key={s.scadenza_id} style={{ fontSize: 12.5, borderTop: `1px solid ${C.border}`, padding: "4px 0" }}>
+          <b>Fattura {s.numero_documento} del {dataIt(s.data_documento)}</b> · {NOME_GRAVITA[f.gravita]}<div>{testoAumenti(f)}</div></div>; })}
+        <div style={{ fontSize: 12, color: C.muted, margin: "4px 0" }}>Se l'aumento non era concordato o il prezzo sembra sbagliato, «Torna indietro» e chiedere al fornitore. La conferma resta registrata con il nome e l'ora, e il Dott. Bizzarri la vede.</div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <input style={{ ...input, flex: 1, minWidth: 220 }} placeholder="Nota (facoltativa): per esempio «prezzo concordato» o «errore in fattura, chiesta nota di credito»" value={notaConferma} onChange={e => setNotaConferma(e.target.value)} />
+          <button style={btn(true, C.red)} disabled={lavoro || !!problemi.length} onClick={confermaEPaga}>Sì, pago lo stesso</button>
+          <button style={btn(false)} disabled={lavoro} onClick={() => setChiediConferma(false)}>Torna indietro</button></div>
+      </div>}
       {errore && <div style={{ color: C.red, fontWeight: 700, marginTop: 8 }}>⚠️ {errore}</div>}
-      <div style={{ marginTop: 10 }}><button style={btn(true)} disabled={!!problemi.length || lavoro} onClick={invia}>{lavoro ? "Registro…" : pag ? "Conferma e manda in pagamento" : "Conferma e registra l'incasso atteso"}</button></div>
+      <div style={{ marginTop: 10 }}><button style={btn(true)} disabled={!!problemi.length || lavoro} onClick={() => invia()}>{lavoro ? "Registro…" : pag ? "Conferma e manda in pagamento" : "Conferma e registra l'incasso atteso"}</button></div>
     </div>}
   </div>;
 }
@@ -647,21 +680,21 @@ function SezioneFatture({ sezione, base, fatto, oggi, professionisti = false }) 
 // ---------------- Versione 374: dettaglio del prezzo aumentato di una fattura, con «Visto» ----------------
 function DettaglioAumento({ f, vi, nomi, nota, setNota, lavoro, visto }) {
   return <div style={{ fontSize: 12.5 }}>
-    <b>Prezzi aumentati in questa fattura</b> <span style={{ color: C.muted }}>(stessi numeri del «Controllo Prezzi di Acquisto»: prezzo contro la fattura precedente dello stesso fornitore; «in un anno» = come nel Controllo Prezzi: quantità degli ultimi 12 mesi, oppure dell'anno precedente, oppure una fattura per i prodotti comprati una volta l'anno)</span>
+    <b>Prezzi aumentati in questa fattura</b> <span style={{ color: C.muted }}>(versione 407: il prezzo della fattura si confronta con la media pesata dei 12 mesi prima della data di questa fattura e con la fattura precedente dello stesso fornitore; «in un anno» = il più grande dei due aumenti per la quantità di un anno. Se la fattura costa più della precedente per almeno 200 € l'anno serve la doppia conferma al pagamento; l'aumento sulla sola media è un avviso. Il «Controllo Prezzi di Acquisto» guarda invece gli ultimi 12 mesi da oggi, quindi i numeri possono essere diversi)</span>
     <table style={{ borderCollapse: "collapse", marginTop: 4, background: "#fff" }}><thead><tr style={{ background: "#F4F4F0" }}>
-      {["Prodotto", "Prima", "Adesso", "Aumento", "In un anno", "Gravità"].map(h => <th key={h} style={{ padding: "3px 8px", textAlign: "left" }}>{h}</th>)}</tr></thead>
+      {["Prodotto", "Media dei 12 mesi prima di questa fattura", "Fattura precedente", "Adesso", "In un anno", "Gravità"].map(h => <th key={h} style={{ padding: "3px 8px", textAlign: "left" }}>{h}</th>)}</tr></thead>
       <tbody>{f.righe.map((r, i) => <tr key={i} style={{ borderTop: `1px solid ${C.border}` }}>
         <td style={{ padding: "3px 8px", fontWeight: 700 }}>{r.famiglia}</td>
-        <td style={{ padding: "3px 8px" }}>{itPrezzo(r.prima, r.decimali)} {r.unita}<div style={{ color: C.muted, fontSize: 11 }}>fattura {r.numeroPrima} del {dataPrezzo(r.dataPrima)}{r.cambioFornitore ? ` (${r.fornitorePrima})` : ""}</div></td>
+        <td style={{ padding: "3px 8px" }}>{r.media !== null ? <>{itPrezzo(r.media, r.decimali)} {r.unita} <b style={{ color: r.variazioneMedia > 0 ? C.red : C.green }}>{r.variazioneMedia > 0 ? "+" : ""}{itPrezzo(r.variazioneMedia, 1)}%</b><div style={{ color: C.muted, fontSize: 11 }}>{r.fattureMedia} fatture{r.altriFornitoriMedia.length ? `, anche di ${r.altriFornitoriMedia.join(", ")}` : ""}</div></> : "—"}</td>
+        <td style={{ padding: "3px 8px" }}>{r.prima !== null ? <>{itPrezzo(r.prima, r.decimali)} {r.unita} <b style={{ color: r.variazione > 0 ? C.red : C.green }}>{r.variazione > 0 ? "+" : ""}{itPrezzo(r.variazione, 1)}%</b><div style={{ color: C.muted, fontSize: 11 }}>fattura {r.numeroPrima} del {dataPrezzo(r.dataPrima)}{r.cambioFornitore ? ` (${r.fornitorePrima})` : ""}</div></> : "—"}</td>
         <td style={{ padding: "3px 8px" }}>{itPrezzo(r.ora, r.decimali)} {r.unita}</td>
-        <td style={{ padding: "3px 8px", color: C.red, fontWeight: 700 }}>+{itPrezzo(r.variazione, 1)}%</td>
         <td style={{ padding: "3px 8px", fontWeight: 700 }}>{itPrezzo(r.impatto, 0)} €</td>
         <td style={{ padding: "3px 8px", color: r.gravita === "alta" ? C.red : r.gravita === "media" ? "#D9730D" : C.green, fontWeight: 700 }}>{NOME_GRAVITA[r.gravita]}</td></tr>)}</tbody></table>
     <div style={{ color: C.muted, marginTop: 4 }}>Il grafico di ogni prodotto è in «Controllo Prezzi di Acquisto» → «Attenzione Variazione Prezzi». Se l'aumento non era concordato, prima di pagare chiedere al fornitore.</div>
     {vi ? <div style={{ color: C.green, fontWeight: 700, marginTop: 4 }}>✔ Visto da {vi.nome} il {dataIt(String(vi.visto_il).slice(0, 10))}{vi.nota ? ` — nota: ${vi.nota}` : ""}</div>
       : <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
         <input style={{ ...input, flex: 1, minWidth: 220 }} placeholder="Nota (facoltativa): per esempio «aumento concordato al telefono»" value={nota} onChange={e => setNota(e.target.value)} />
-        <button style={btn(true, f.gravita === "alta" ? C.red : undefined)} disabled={lavoro} onClick={visto}>Visto{f.gravita === "alta" ? " (avvisa il Dott. Bizzarri)" : ""}</button></div>}
+        <button style={btn(true, f.gravita === "alta" ? C.red : undefined)} disabled={lavoro} onClick={visto}>Visto{f.gravita !== "bassa" ? " (vale come conferma, avvisa il Dott. Bizzarri)" : ""}</button></div>}
   </div>;
 }
 

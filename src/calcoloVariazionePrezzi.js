@@ -18,7 +18,12 @@ export const UNITA = {
 };
 // unità scritte in fattura → kg (o litri) per unità, quando manca una regola di conversione
 const UNITA_FATTURA = { tons: 1000, tonnellate: 1000, t: 1000, kilogrammi: 1, kg: 1, quintali: 100, q: 100, litri: 1, lt: 1, l: 1 };
-export const SOGLIE = { anomaliaSopra: 2.5, anomaliaSotto: 0.4, gravitaAltaEuro: 1000, gravitaMediaEuro: 200, gravitaAltaPercento: 10, gravitaAltaSpesa: 5000, fornitorePiuCaro: 0.03, sopraMercato: 0.15, segnalaNuoveEuro: 300 };
+export const SOGLIE = { anomaliaSopra: 2.5, anomaliaSotto: 0.4, gravitaAltaEuro: 1000, gravitaMediaEuro: 200, gravitaAltaPercento: 10, gravitaAltaSpesa: 5000, fornitorePiuCaro: 0.03, sopraMercato: 0.15, segnalaNuoveEuro: 300,
+  // versione 407 (decisione del Dott. Bizzarri del 26/11/2026 ore 12:01): un prodotto entra nei rincari e nei ribassi solo con spesa in un anno da 1.000 €,
+  // oppure con un aumento da 200 € l'anno, oppure con una fattura da 1.000 €
+  ingressoSpesa: 1000, ingressoAumento: 200, ingressoFattura: 1000 };
+// versione 407 (decisione delle 13:02): nelle famiglie miste ogni nome ha la sua media (Crusca e farinaccio, Fieno, Mais)
+export const FAMIGLIE_MISTE = [7, 33, 6];
 // centri di costo dei prodotti che si comprano a prezzo: le descrizioni nuove di questi centri vengono segnalate
 export const CENTRI_PRODOTTO = ["Mangimi", "Foraggio", "Integratori alimentari", "Gasolio e lubrificanti", "Coltivazione Sementi", "Coltivazione Concimi e Fitosanitari", "Coltivazione Reti e Film", "Medicinali Veterinari", "Assicurazioni R.C.T.O. - E rischi", "Assicurazioni R.C.A."];
 
@@ -97,9 +102,12 @@ export function analisiPrezzi(d, oggi = oggiRoma()) {
   const perFamiglia = new Map(); // famiglia → Map(fattura → riga aggregata)
   // versione 376: fornitori di cui si seguono già dei prodotti: le loro descrizioni nuove si segnalano anche fuori dai CENTRI_PRODOTTO
   const seguiti = fornitoriSeguiti(d.articoli, d.descrizioni, d.famiglie, d.regolePrefisso, fat);
+  const stornate = righeStornate(d.articoli, fat);   // versione 407
+  const gruppi = new Map();   // versione 407: chiave del gruppo → famiglia (per le famiglie miste, una per nome)
   for (const a of d.articoli) {
     const f = fat.get(a.fattura_id); if (!f || f.tipo !== "PASSIVA") continue;
     const tot = num(a.totale_riga); if (!(tot > 0)) continue;
+    if (stornate.has(a.id)) continue;   // versione 407: riga stornata da una «storno della fattura n. …»
     const dt = String(f.data).slice(0, 10);
     if (dt >= da12 && (a.area || "").trim() !== "Ammortamenti") spesaTotale12 += tot;
     const n = normalizza(a.descrizione); if (!n) continue;
@@ -127,8 +135,14 @@ export function analisiPrezzi(d, oggi = oggiRoma()) {
       if (dt >= da24) senzaConversione.push({ famiglia: F.nome, data: dt, numero: f.numero, fornitore: forn.get(f.fornitore_id) || "", descrizione: a.descrizione, quantita: num(a.quantita), unita: a.unita_misura || "", totale: tot });
       continue;
     }
-    if (!perFamiglia.has(F.id)) perFamiglia.set(F.id, new Map());
-    const g = perFamiglia.get(F.id);
+    // versione 407: nelle famiglie miste un gruppo per ogni nome; le spese di trasporto (a fattura) un gruppo per ogni fornitore,
+    // perché il trasporto di un fornitore non si confronta con quello di un altro (ricontrollo del 26/11: Progeo 30 €, Faza 200 €)
+    const trasporto = F.unita === "importo" && /^\s*spese di trasporto/i.test(F.nome);
+    const chiave = FAMIGLIE_MISTE.includes(F.id) ? `${F.id}|${n}` : trasporto ? `${F.id}|f${f.fornitore_id}` : `${F.id}`;
+    if (!gruppi.has(chiave)) gruppi.set(chiave, FAMIGLIE_MISTE.includes(F.id) ? { ...F, nome: `${F.nome} – ${String(a.descrizione || "").trim()}`, mista: true }
+      : trasporto ? { ...F, nome: `${F.nome} – ${forn.get(f.fornitore_id) || "fornitore sconosciuto"}` } : F);
+    if (!perFamiglia.has(chiave)) perFamiglia.set(chiave, new Map());
+    const g = perFamiglia.get(chiave);
     const k = `${f.id}`;
     const x = g.get(k) || { fatturaId: f.id, data: dt, numero: f.numero, fornitore: forn.get(f.fornitore_id) || "fornitore sconosciuto", base: 0, totale: 0, quantita: 0, unitaFattura: new Set(), descrizioni: new Set() };
     x.base += base; x.totale += tot; x.quantita += num(a.quantita); if (a.unita_misura) x.unitaFattura.add(a.unita_misura); x.descrizioni.add(a.descrizione);
@@ -137,8 +151,8 @@ export function analisiPrezzi(d, oggi = oggiRoma()) {
   }
 
   const anomale = [], schede = [];
-  for (const [idF, g] of perFamiglia) {
-    const F = fam.get(idF), U = UNITA[F.unita] || UNITA.kg;
+  for (const [chiave, g] of perFamiglia) {
+    const F = gruppi.get(chiave), U = UNITA[F.unita] || UNITA.kg;
     const tutteF = [...g.values()].map(x => ({ ...x, prezzoBase: x.totale / x.base, prezzo: x.totale / x.base * U.fattore, unitaFattura: [...x.unitaFattura].join(", "), descrizioni: [...x.descrizioni] }))
       .sort((a, b) => (a.data < b.data ? -1 : a.data > b.data ? 1 : a.fatturaId - b.fatturaId));
     // righe anomale: prezzo lontano dalla mediana delle altre fatture della famiglia (stesso periodo, ± 1 anno)
@@ -182,7 +196,33 @@ export function analisiPrezzi(d, oggi = oggiRoma()) {
       : (F.unita === "importo" ? 1 : ultimo.base);
     const annoPassato = !!precedente && ultimo.data < da12;
     const attivo = ultimo.data >= daAnnoPrec;
-    const impatto = precedente && attivo ? deltaBase * quantitaAnno : 0;
+    // «aumento recente»: l'ultima fattura contro la precedente (la regola di prima, versione 405)
+    const impattoRecente = precedente && attivo ? deltaBase * quantitaAnno : 0;
+    // Versione 407 (decisioni del Dott. Bizzarri del 26/11/2026 ore 12:33 e 12:49): prezzo medio pesato sulle quantità degli
+    // ultimi 12 mesi contro quello dei 12 mesi prima. Decide euro in un anno, gravità e ordine; accanto resta l'ultima fattura
+    // contro la precedente. Se sull'anno non c'è aumento ma sull'ultima fattura sì, il prodotto entra come «aumento recente»
+    // con gli euro calcolati come prima. Senza acquisti in uno dei due periodi resta la regola della versione 405.
+    const prima12 = valide.filter(x => x.data >= da24 && x.data < da12);
+    const media = l => { const b = somma(l.map(x => x.base)); return b > 0 ? somma(l.map(x => x.totale)) / b : null; };
+    const media12 = ult12.length && prima12.length ? media(ult12) : null, mediaPrima = ult12.length && prima12.length ? media(prima12) : null;
+    let variazioneMedia = media12 !== null && mediaPrima > 0 ? (media12 / mediaPrima - 1) * 100 : null;
+    let deltaMedia = media12 !== null ? media12 - mediaPrima : 0;
+    if (variazioneMedia !== null && Math.abs(variazioneMedia) < 0.05) { variazioneMedia = 0; deltaMedia = 0; }
+    const quantita12 = F.unita === "importo" ? ult12.length : base12;
+    const impattoMedia = media12 !== null && attivo ? deltaMedia * quantita12 : 0;
+    // versione 407 (giro approvato, caso brutto 2): acquisti negli ultimi 12 mesi ma nessuno nei 12 mesi prima → «prodotto nuovo», senza rincaro
+    const prodottoNuovo = ult12.length > 0 && prima12.length === 0;
+    const conMedia = media12 !== null;
+    // versione 407 (secondo ricontrollo): anche un prodotto nuovo con un aumento fra le sue fatture degli ultimi 12 mesi è un «aumento recente»,
+    // così la pagina e il pagamento dicono la stessa cosa (caso vero: NDP 3.1, fattura V2-260050227 a 400 €/t contro 390)
+    const aumentoRecente = (conMedia && !(impattoMedia > 0) && impattoRecente > 0) || (prodottoNuovo && impattoRecente > 0);
+    const impatto = !conMedia ? impattoRecente : aumentoRecente ? impattoRecente : impattoMedia;
+    const variazioneUsata = !conMedia || aumentoRecente ? variazione : variazioneMedia;
+    // i due confronti dicono cose opposte (es. fieno: +14,4% sull'anno, −10,7% all'ultima fattura)
+    const discordanti = conMedia && variazione !== null && ((variazioneMedia > 0 && variazione < 0) || (variazioneMedia < 0 && variazione > 0));
+    // Versione 407 (decisione delle 12:01): soglie di ingresso
+    const fatturaGrande = valide.some(x => x.data >= daAnnoPrec && x.totale >= SOGLIE.ingressoFattura);
+    const sottoSoglia = Math.max(spesa12, spesaAnnoPrec) < SOGLIE.ingressoSpesa && Math.abs(impatto) < SOGLIE.ingressoAumento && !fatturaGrande;
     // tendenza: ultime tre fatture dello stesso fornitore in salita
     const serieForn = valide.filter(x => x.fornitore === ultimo.fornitore).slice(-3);
     const inSalita = serieForn.length === 3 && serieForn[0].prezzoBase < serieForn[1].prezzoBase && serieForn[1].prezzoBase < serieForn[2].prezzoBase;
@@ -201,13 +241,28 @@ export function analisiPrezzi(d, oggi = oggiRoma()) {
     const sopraMercato = mercato && mercato.prezzoMax > 0 ? ultimo.prezzo / mercato.prezzoMax - 1 : null;
     const risparmioMercato = mercato && sopraMercato > SOGLIE.sopraMercato && F.unita !== "importo" ? (ultimo.prezzo - mercato.prezzoMax) / U.fattore * base12 : 0;
     // trasporto fatturato a parte dallo stesso fornitore negli ultimi 12 mesi
-    const trasporto = trasportoFornitore(perFamiglia, fam, ultimo.fornitore, da12);
+    const trasporto = trasportoFornitore(perFamiglia, gruppi, ultimo.fornitore, da12);
     const incidenza = spesaTotale12 > 0 ? spesa12 / spesaTotale12 * 100 : 0;
-    const gravita = impatto >= SOGLIE.gravitaAltaEuro || (variazione >= SOGLIE.gravitaAltaPercento && spesa12 >= SOGLIE.gravitaAltaSpesa) ? "alta"
+    const gravita = impatto >= SOGLIE.gravitaAltaEuro || (impatto > 0 && variazioneUsata >= SOGLIE.gravitaAltaPercento && spesa12 >= SOGLIE.gravitaAltaSpesa) ? "alta"
       : impatto >= SOGLIE.gravitaMediaEuro ? "media" : impatto > 0 ? "bassa" : null;
+    // versione 407 (giro approvato, caso brutto 7): fornitori diversi nei due periodi → l'aumento può venire dal cambio di fornitore
+    const mediaForn = (l, nome) => { const m = media(l.filter(x => x.fornitore === nome)); return m !== null ? m * U.fattore : null; };
+    const fornPrima = [...new Set(prima12.map(x => x.fornitore))], forn12 = [...new Set(ult12.map(x => x.fornitore))];
+    const cambioFornitoriPeriodo = conMedia && (fornPrima.some(x => !forn12.includes(x)) || forn12.some(x => !fornPrima.includes(x)));
+    const medieFornitori = conMedia ? [...new Set([...fornPrima, ...forn12])].map(nome => ({ nome, prima: mediaForn(prima12, nome), ora: mediaForn(ult12, nome) })) : [];
+    // versione 407 (passo 3 del giro): per i prodotti venduti a pezzi con un peso fisso (es. rotoballa da 340 kg) anche il prezzo a pezzo
+    const righePeriodi = [...prima12, ...ult12];
+    const kgPezzo = righePeriodi.length && righePeriodi.every(x => x.quantita > 0) ? righePeriodi[0].base / righePeriodi[0].quantita : null;
+    const aPezzi = kgPezzo && ![1, 100, 1000].includes(Math.round(kgPezzo * 1000) / 1000) && righePeriodi.every(x => Math.abs(x.base / x.quantita - kgPezzo) < 1e-6);
+    const mediaPezzo = l => { const q = somma(l.map(x => x.quantita)); return q > 0 ? somma(l.map(x => x.totale)) / q : null; };
     const s = { famiglia: F, unita: U, fatture: valide, ultimo, precedente, cambioFornitore, variazione, delta: deltaBase * U.fattore, impatto, base12, spesa12, n12: ult12.length,
       incidenza, inSalita, fornitori, piuEconomico, risparmioFornitore, mercato, sopraMercato, risparmioMercato, trasporto, gravita, attivo,
-      piuVolte, annoPassato, spesaAnnoPrec, annoPrec, finoAl: Number(String(ultimo.data).slice(0, 4)) + 2 };
+      piuVolte, annoPassato, spesaAnnoPrec, annoPrec, finoAl: Number(String(ultimo.data).slice(0, 4)) + 2,
+      // versione 407
+      chiave, conMedia, media12: media12 !== null ? media12 * U.fattore : null, mediaPrima: mediaPrima !== null ? mediaPrima * U.fattore : null,
+      variazioneMedia, quantita12, n12Prima: prima12.length, basePrima: somma(prima12.map(x => x.base)), spesaPrima: somma(prima12.map(x => x.totale)),
+      impattoMedia, impattoRecente, aumentoRecente, discordanti, variazioneUsata, sottoSoglia, da24, prodottoNuovo, cambioFornitoriPeriodo, medieFornitori,
+      pezzo: aPezzi ? { kg: kgPezzo, prima: mediaPezzo(prima12), ora: mediaPezzo(ult12), quantita12: somma(ult12.map(x => x.quantita)), quantitaPrima: somma(prima12.map(x => x.quantita)) } : null };
     const farina = /farina/i.test(F.nome) && mercato && /granella/i.test(mercato.nome);
     s.voci = [
       ...(risparmioFornitore > 0 ? [{ euro: risparmioFornitore, testo: `prezzo di ${piuEconomico.nome}` }] : []),
@@ -218,19 +273,23 @@ export function analisiPrezzi(d, oggi = oggiRoma()) {
     schede.push(s);
   }
   const attive = schede.filter(s => s.attivo);
-  const rincari = attive.filter(s => s.impatto > 0).sort((a, b) => b.impatto - a.impatto);
+  // versione 407: rincari e ribassi solo sopra le soglie di ingresso
+  const rincari = attive.filter(s => s.impatto > 0 && !s.sottoSoglia).sort((a, b) => b.impatto - a.impatto);
   const opportunita = attive.filter(s => Math.max(s.risparmioFornitore, s.risparmioMercato) > 50).sort((a, b) => Math.max(b.risparmioFornitore, b.risparmioMercato) - Math.max(a.risparmioFornitore, a.risparmioMercato));
-  const ribassi = attive.filter(s => s.impatto < 0).sort((a, b) => a.impatto - b.impatto);
-  const altre = attive.filter(s => !(s.impatto > 0) && !(s.impatto < 0)).sort((a, b) => b.spesa12 - a.spesa12 || (a.ultimo.data < b.ultimo.data ? 1 : -1));
+  const ribassi = attive.filter(s => s.impatto < 0 && !s.sottoSoglia).sort((a, b) => a.impatto - b.impatto);
+  const sottoSoglia = attive.filter(s => s.impatto !== 0 && s.sottoSoglia).sort((a, b) => b.impatto - a.impatto);
+  const prodottiNuovi = attive.filter(s => s.prodottoNuovo && !(s.impatto > 0) && !(s.impatto < 0)).sort((a, b) => b.spesa12 - a.spesa12);   // versione 407
+  const altre = attive.filter(s => !(s.impatto > 0) && !(s.impatto < 0) && !s.prodottoNuovo).sort((a, b) => b.spesa12 - a.spesa12 || (a.ultimo.data < b.ultimo.data ? 1 : -1));
   const nuoveL = [...nuove.values()].map(x => ({ ...x, fornitori: [...x.fornitori].join(", ") })).sort((a, b) => b.spesa - a.spesa);
   return {
-    oggi, da12, annoPrec, spesaTotale12, schede, nonPiuComprati: schede.filter(s => !s.attivo).sort((a, b) => (a.ultimo.data < b.ultimo.data ? 1 : -1)), rincari, opportunita, ribassi, altre, anomale: anomale.sort((a, b) => (a.data < b.data ? 1 : -1)),
+    oggi, da12, da24, sottoSoglia, prodottiNuovi, annoPrec,
+    ultimaFatturaCaricata: d.fatture.filter(f => f.tipo === "PASSIVA" && f.fornitore_id).reduce((m, f) => (String(f.data) > m ? String(f.data).slice(0, 10) : m), ""), spesaTotale12, schede, nonPiuComprati: schede.filter(s => !s.attivo).sort((a, b) => (a.ultimo.data < b.ultimo.data ? 1 : -1)), rincari, opportunita, ribassi, altre, anomale: anomale.sort((a, b) => (a.data < b.data ? 1 : -1)),
     senzaConversione: senzaConversione.sort((a, b) => (a.data < b.data ? 1 : -1)),
     nuove: nuoveL.filter(x => x.spesa >= SOGLIE.segnalaNuoveEuro), nuoveSottoSoglia: nuoveL.filter(x => x.spesa < SOGLIE.segnalaNuoveEuro).length,
     nuoveTutte: nuoveL.length,   // versione 376: numero rosso nel menu «Controllo Prezzi di Acquisto»
     totaleRincari: somma(rincari.map(s => s.impatto)), totaleRibassi: somma(ribassi.map(s => s.impatto)),
     totaleOpportunita: somma(opportunita.map(s => Math.max(s.risparmioFornitore, s.risparmioMercato))),
-    famiglieSenzaFatture: d.famiglie.filter(f => !perFamiglia.has(f.id)).map(f => f.nome),
+    famiglieSenzaFatture: d.famiglie.filter(f => ![...gruppi.values()].some(g => g.id === f.id)).map(f => f.nome),
   };
 }
 
@@ -247,9 +306,30 @@ function prezzoMercato(d, F, U) {
   return { nome, fonte: ultima.fonte, campagna: ultima.campagna, prezzoMin: p, prezzoMax: p, storia, provvisorio: /PROVVISORIO/i.test(ultima.fonte || "") };
 }
 
-function trasportoFornitore(perFamiglia, fam, fornitore, da12) {
-  for (const [id, g] of perFamiglia) {
-    if (fam.get(id).unita !== "importo" || !/trasport/i.test(fam.get(id).nome)) continue;
+// Versione 407 (caso vero: Mariotti 12/FE del 08/09/2025 stornata dalla 18/FE e rifatta con la 19/FE): una riga negativa
+// «storno della fattura n. X - descrizione» toglie dal confronto la riga con la stessa descrizione e lo stesso importo
+// della fattura X dello stesso fornitore (la riga negativa è già esclusa). Se non trova la riga, non toglie niente.
+export function righeStornate(articoli, fat) {
+  const via = new Set();
+  const perFattura = new Map();
+  for (const a of articoli) { if (!perFattura.has(a.fattura_id)) perFattura.set(a.fattura_id, []); perFattura.get(a.fattura_id).push(a); }
+  for (const a of articoli) {
+    const f = fat.get(a.fattura_id); if (!f || f.tipo !== "PASSIVA" || !(num(a.totale_riga) < 0)) continue;
+    const m = /^\s*storno\s+(?:della\s+)?fattura\s+n\.?\s*([^\s-]+)\s*-\s*(.+)$/i.exec(String(a.descrizione || ""));
+    if (!m) continue;
+    const numero = m[1].trim().toLowerCase(), descr = normalizza(m[2]);
+    for (const g of fat.values()) {
+      if (g.tipo !== "PASSIVA" || g.fornitore_id !== f.fornitore_id || String(g.numero || "").trim().toLowerCase() !== numero) continue;
+      const r = (perFattura.get(g.id) || []).find(b => !via.has(b.id) && normalizza(b.descrizione) === descr && Math.abs(num(b.totale_riga) + num(a.totale_riga)) < 0.005);
+      if (r) { via.add(r.id); break; }
+    }
+  }
+  return via;
+}
+
+function trasportoFornitore(perFamiglia, gruppi, fornitore, da12) {
+  for (const [id, g] of perFamiglia) {   // versione 407: le chiavi sono quelle dei gruppi
+    if (gruppi.get(id).unita !== "importo" || !/^\s*spese di trasporto/i.test(gruppi.get(id).nome)) continue;   // versione 407: stesso test della riga dei gruppi (la polizza Iveco «trasporto animali» non è un trasporto)
     const l = [...g.values()].filter(x => x.fornitore === fornitore && x.data >= da12);
     if (l.length) return { consegne: l.length, totale: somma(l.map(x => x.totale)), medio: somma(l.map(x => x.totale)) / l.length };
   }
