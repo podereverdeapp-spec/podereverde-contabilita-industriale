@@ -34,6 +34,13 @@ export const AUTORIZZAZIONI = [
     spiega: "Chiude un acconto o una caparra senza fattura e senza restituzione, cioè come perdita (fornitore fallito o sparito), scrivendo il motivo.",
     versione: 402,
   },
+  {
+    colonna: "puo_sistemare_prodotti",
+    nome: "Può sistemare i prodotti",
+    icona: "🧹",
+    spiega: "Nel Controllo Prezzi di Acquisto decide in «Da sistemare»: nomi nuovi, prodotti uguali da unire, famiglie nuove, servizi a canone, fornitori delle righe pagate da Muratella. Senza, l'elenco si vede ma non si decide e non si cambiano le famiglie.",
+    versione: 409,
+  },
 ];
 
 // L'elenco da mostrare: quelle descritte qui che il database conosce, più quelle del database non ancora descritte

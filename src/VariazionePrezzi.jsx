@@ -42,12 +42,12 @@ export default function VariazionePrezzi({ onNavigate }) {
 }
 
 function Contenuto({ r, onNavigate }) {
-  const daSistemare = r.anomale.length + r.senzaConversione.length + r.nuove.length;
+  const daSistemare = r.daSistemare.length;   // versione 409: lo stesso numero della pagina «Da sistemare» e del menu
   const riquadri = [
     { etichetta: "Rincari: quanto costano in un anno", valore: `${it(r.totaleRincari, 0)} €`, nota: `${r.rincari.length} prodotti più cari: prezzo medio degli ultimi 12 mesi contro i 12 mesi prima, per la quantità degli ultimi 12 mesi (o, se manca uno dei due periodi, l'ultima fattura contro la precedente).`, bollino: r.rincari.some(s => s.gravita === "alta") ? ["b-rosso", "● da guardare subito"] : ["b-arancio", "▲ da tenere d'occhio"] },
     { etichetta: "Opportunità di risparmio", valore: `${it(r.totaleOpportunita, 0)} €`, nota: `${r.opportunita.length} prodotti con un altro fornitore o un prezzo di mercato più basso (stima sull'anno, da verificare).`, bollino: ["b-verde", "● da trattare"] },
     { etichetta: "Ribassi", valore: `${it(-r.totaleRibassi, 0)} €`, nota: `${r.ribassi.length} prodotti più economici, con lo stesso calcolo dei rincari.`, bollino: ["b-verde", "● risparmio"] },
-    { etichetta: "Da sistemare", valore: `${daSistemare}`, nota: "Righe di fattura con prezzi o quantità che non tornano e descrizioni nuove senza famiglia.", bollino: daSistemare ? ["b-rosso", "● da sistemare"] : ["b-verde", "● tutto in ordine"] },
+    { etichetta: "Da sistemare", valore: `${daSistemare}`, nota: `Nomi nuovi, possibili doppioni, servizi a canone, sacchi o sfuso, fornitori di Muratella e righe che non tornano: si decidono nella pagina «Da sistemare».${r.senzaConversione.length ? ` In più ${r.senzaConversione.length} righe senza unità convertibile (elenco qui sotto).` : ""}`, bollino: daSistemare ? ["b-rosso", "● da sistemare"] : ["b-verde", "● tutto in ordine"] },
   ];
   return (
     <>
@@ -102,10 +102,10 @@ function Contenuto({ r, onNavigate }) {
             <thead><tr><th style={T.thSx}>Descrizione</th><th style={T.thSx}>Centro di costo</th><th style={T.thSx}>Fornitore</th><th style={T.th}>Spesa</th><th style={T.th}>Ultima fattura</th></tr></thead>
             <tbody>{r.nuove.map((a, i) => <tr key={i}><td style={{ ...T.tdSx, whiteSpace: "normal" }}>{a.descrizione}</td><td style={T.tdSx}>{a.centro}</td><td style={T.tdSx}>{a.fornitori}</td><td style={T.td}>{it(a.spesa)} €</td><td style={T.td}>{data(a.ultima)}</td></tr>)}</tbody>
           </table></div>
-          <p style={{ fontSize: 12.5, color: C.muted }}>Altre {r.nuoveSottoSoglia} descrizioni nuove hanno una spesa più piccola. Si assegnano a una famiglia, o si escludono dal confronto, nella pagina{" "}
-            {onNavigate ? <a href="#" onClick={e => { e.preventDefault(); onNavigate("famiglie-prodotto"); }} style={{ color: C.primary }}>«Famiglie di Prodotto»</a> : "«Famiglie di Prodotto»"}.</p>
+          <p style={{ fontSize: 12.5, color: C.muted }}>Altre {r.nuoveSottoSoglia} descrizioni nuove hanno una spesa più piccola. Si decidono (stesso prodotto di una famiglia, prodotto a sé o escluse) nella pagina{" "}
+            {onNavigate ? <a href="#" onClick={e => { e.preventDefault(); onNavigate("da-sistemare-prezzi"); }} style={{ color: C.primary }}>«Da sistemare»</a> : "«Da sistemare»"}.</p>
         </>}
-        {!daSistemare && <p style={{ color: C.muted }}>Niente da sistemare.</p>}
+        {!daSistemare && !r.senzaConversione.length && !r.anomale.length && !r.nuove.length && <p style={{ color: C.muted }}>Niente da sistemare.</p>}
       </Sezione>
 
       {/* Versione 405: ultima fattura più vecchia dell'anno solare precedente → il prodotto non si considera più */}
@@ -141,6 +141,8 @@ function Scheda({ s, opportunita }) {
           ? <><div style={{ fontSize: 14 }}>{it(s.mediaPrima, dec)} → <b>{it(s.media12, dec)}</b></div><div style={{ fontSize: 14, fontWeight: 700, color: s.variazioneMedia > 0 ? SALE : s.variazioneMedia < 0 ? SCENDE : C.muted }}>{`${s.variazioneMedia > 0 ? "+" : ""}${it(s.variazioneMedia, 1)}%`}</div></>
           : <div style={{ fontSize: 12, color: C.muted }}>{s.prodottoNuovo ? "prodotto nuovo: nessun acquisto nei 12 mesi prima" : "manca uno dei due periodi"}</div>}
           {s.pezzo && s.conMedia && <div style={{ fontSize: 12, color: C.muted }}>a pezzo da {it(s.pezzo.kg, 0)} {s.unita.base}: {it(s.pezzo.prima, 2)} → {it(s.pezzo.ora, 2)} €</div>}
+          {s.altraConfezione && <div style={{ fontSize: 12, color: C.muted }}>{s.famiglia.confezione} contro {s.altraConfezione.tipo}: {s.altraConfezione.differenza > 0 ? "+" : ""}{it(s.altraConfezione.differenza, dec)} ({s.altraConfezione.percento != null ? `${s.altraConfezione.percento > 0 ? "+" : ""}${it(s.altraConfezione.percento, 1)}%` : "—"}){s.altraConfezione.suMedia ? " sulle medie degli ultimi 12 mesi" : " sulle ultime fatture"}</div>}
+          {s.famiglia.canone && <div style={{ fontSize: 12, color: C.muted }}>servizio a canone: prezzo per fattura</div>}
           {s.cambioFornitoriPeriodo && s.impatto > 0 && <div style={{ fontSize: 12, fontWeight: 700, color: C.yellow }}>aumento forse dovuto al cambio di fornitore: vedere il dettaglio</div>}</div>
         <div style={{ flex: "1 1 130px" }}><div style={{ fontSize: 11.5, color: C.muted }}>Ultima fattura contro la precedente</div><div style={{ fontSize: 14 }}>{s.precedente ? `${it(s.precedente.prezzo, dec)} → ` : ""}<b>{it(s.ultimo.prezzo, dec)}</b></div><div style={{ fontSize: 13, fontWeight: 700, color: coloreVar }}>{var_ === null ? "—" : `${var_ > 0 ? "+" : ""}${it(var_, 1)}%`}<span style={{ fontWeight: 400, color: C.muted, fontSize: 12 }}> · {data(s.ultimo.data)}</span></div>
           {s.aumentoRecente && <div style={{ fontSize: 12, fontWeight: 700, color: SALE }}>aumento recente</div>}

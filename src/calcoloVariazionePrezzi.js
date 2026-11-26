@@ -15,6 +15,7 @@ export const UNITA = {
   litro: { fattore: 1, etichetta: "€ al litro", breve: "litro", base: "litri", decimali: 3 },
   pezzo: { fattore: 1, etichetta: "€ al pezzo", breve: "pezzo", base: "pezzi", decimali: 2 },
   importo: { fattore: 1, etichetta: "€ a fattura", breve: "fattura", base: "fatture", decimali: 2 },
+  mese: { fattore: 1, etichetta: "€ al mese", breve: "mese", base: "mesi", decimali: 2 },   // versione 409: servizi a canone
 };
 // unità scritte in fattura → kg (o litri) per unità, quando manca una regola di conversione
 const UNITA_FATTURA = { tons: 1000, tonnellate: 1000, t: 1000, kilogrammi: 1, kg: 1, quintali: 100, q: 100, litri: 1, lt: 1, l: 1 };
@@ -28,6 +29,94 @@ export const FAMIGLIE_MISTE = [7, 33, 6];
 export const CENTRI_PRODOTTO = ["Mangimi", "Foraggio", "Integratori alimentari", "Gasolio e lubrificanti", "Coltivazione Sementi", "Coltivazione Concimi e Fitosanitari", "Coltivazione Reti e Film", "Medicinali Veterinari", "Assicurazioni R.C.T.O. - E rischi", "Assicurazioni R.C.A."];
 
 export const normalizza = d => String(d || "").replace(/\s+/g, " ").trim().toLowerCase();
+
+// ════ Versione 409 (decisioni del Dott. Bizzarri del 26/11/2026, 10:23–12:20; giro approvato alle 14:12) ════
+// Soglie nei Parametri (12:01): chiave del parametro → voce di SOGLIE. Se il parametro manca o non è un numero > 0 vale il valore scritto qui.
+const SOGLIE_BASE = { ...SOGLIE };
+export const PARAMETRI_SOGLIE = { prezzi_soglia_spesa: "ingressoSpesa", prezzi_soglia_aumento: "ingressoAumento", prezzi_soglia_fattura: "ingressoFattura",
+  prezzi_gravita_alta_euro: "gravitaAltaEuro", prezzi_gravita_media_euro: "gravitaMediaEuro" };
+export function applicaSoglie(parametri) {
+  Object.assign(SOGLIE, SOGLIE_BASE);
+  for (const [chiave, voce] of Object.entries(PARAMETRI_SOGLIE)) { const v = parseFloat(String((parametri || {})[chiave] ?? "").replace(",", ".")); if (Number.isFinite(v) && v > 0) SOGLIE[voce] = v; }
+  return { ...SOGLIE };
+}
+// Pulizia del nome prima del confronto (10:23, 10:34, 11:09, 12:07). Le regole stanno qui; nella tabella ci_prezzi_regole_pulizia
+// (pagina Parametri) c'è, per numero, se la regola è accesa. Ambito: «tutti», «merce» (centri dei prodotti), «gasolio», «servizi» (fuori dai centri dei prodotti).
+export const REGOLE_PULIZIA = [
+  { ordine: 1, nome: "Lotto e scadenza da «dato:», «Tipo dato:», «Riferimento testo:» in poi", ambito: "tutti", re: /\s*,?\s*(?:(?:tipo\s+)?dato|riferimento\s+testo)\s*:.*$/i },
+  { ordine: 2, nome: "Accisa del gasolio («Importo accisa …» in poi)", ambito: "tutti", re: /\s*importo\s+accisa\b.*$/i },
+  { ordine: 3, nome: "Luogo di scarico o di consegna («- scarico: via …» in poi)", ambito: "merce", re: /\s*[-–—]?\s*(?:(?:luogo|punto)\s+di\s+)?(?:scarico|consegna)\s*:.*$/i },
+  { ordine: 4, nome: "Riferimento «— fatt. … (pagata da Muratella)»", ambito: "tutti", re: /\s*[—–-]+\s*fatt\..*\(pagata da muratella\)\s*$/i },
+  { ordine: 5, nome: "Etichette del gestionale: «[…]», «( PROPRIETARIO )», «( AswArtFor )» e «( Codice … fornitore )» (restano le parole in mezzo)", ambito: "tutti",
+    re: /\[[^\]]*\]|\(\s*codice\s+(?:art\.?\s+)?(.*?)\s*fornitore\s*\)|\(\s*(?:proprietario|aswartfor)\s*\)/gi, con: " $1 " },
+  { ordine: 6, nome: "Da «Scadenza» in poi", ambito: "tutti", re: /\s*\bscadenza\b.*$/i },
+  { ordine: 7, nome: "«lotto» con la sigla (solo nei centri di costo della merce)", ambito: "merce", re: /\s*\blotto\s+[a-z0-9/.-]+/gi },
+  { ordine: 8, nome: "Gasolio: da «das» in poi", ambito: "gasolio", re: /\s*\bd\.?a\.?s\.?\b.*$/i },
+  { ordine: 9, nome: "Servizi a canone: periodo, rata, «dal mese di … al mese di …», giorno e mese, anno (le misure restano)", ambito: "servizi",
+    re: /\b(?:periodo|dal\s+mese\s+di|al\s+mese\s+di|e\s+rata\s+\d+|rata\s+\d+(?:\s+di\s+\d+)?|(?:\d{1,2}\s*)?(?:gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)|(?:19|20)\d\d|(?:primo|secondo|terzo|quarto)\s+(?:semestre|trimestre|bimestre)|da(?=\s+(?:gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre))|a(?=\s+(?:gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)))\b/gi },
+];
+export function regoleAccese(righeDb) {
+  if (!righeDb || !righeDb.length) return REGOLE_PULIZIA;
+  const accese = new Map(righeDb.map(r => [Number(r.ordine), r.attiva !== false]));
+  return REGOLE_PULIZIA.filter(r => accese.get(r.ordine) !== false);
+}
+// ambitoDi: null = descrizione senza centro (tabella delle famiglie): valgono le regole «tutti», «merce» e «gasolio»
+export function pulisciNome(testo, centro, regole = REGOLE_PULIZIA) {
+  const c = centro == null ? null : String(centro).trim();
+  const merce = c == null || CENTRI_PRODOTTO.includes(c);
+  let t = String(testo || "");
+  for (const r of regole) {
+    if (r.ambito === "merce" && !merce) continue;
+    if (r.ambito === "gasolio" && !(c == null || c === "Gasolio e lubrificanti")) continue;
+    if (r.ambito === "servizi" && merce) continue;
+    t = t.replace(r.re, r.con || " ");
+  }
+  return normalizza(t.replace(/\s*[-–—,;:/]+\s*(?=$)/, "").replace(/(?:\s+[-–—]+)+\s+/g, " ").replace(/^[-–—\s]+/, "").replace(/\b(kg|lt|ml|gr|l)(\d)/gi, "$1 $2").replace(/(\d)(kg|lt|ml|gr)\b/gi, "$1 $2"));
+}
+// Righe «da ricevere» di Muratella con il riferimento alla fattura vera (10:55, 11:06): solo per l'analisi dei prezzi
+const INIZIO_409 = "2026-11-26";
+export const RIF_MURATELLA = /[—–-]+\s*fatt\.\s*(\S+)\s+del\s+(\d{2})\/(\d{2})\/(\d{4})\s+di\s+(.+?)\s*\(pagata da muratella\)\s*$/i;
+export const nomeFornitoreSemplice = n => String(n || "").toLowerCase().replace(/\b(?:s\.?\s?r\.?\s?l\.?|s\.?\s?p\.?\s?a\.?|s\.?\s?a\.?\s?s\.?|s\.?\s?n\.?\s?c\.?|s\.?\s?c\.?\s?a\.?|unipersonale|semplificata|societa'?|società)\b/g, " ").replace(/[^a-z0-9]+/g, "");
+// Sacchi e sfuso (25/11 18:27, 26/11 10:34): dal nome
+export function confezione(testo) {
+  const t = String(testo || "").toLowerCase();
+  if (/\bsfus[oa]\b|\brinfus[ao]\b/.test(t)) return "sfuso";   // A.I.A. scrive «pel.rinfusa», «sbr.rinfusa»
+  if (/\bsacc(?:o|hi)\b|\bkg\s?\.?\s?(?:20|25|30|40|50)\b(?![,.]\d)|\b(?:20|25|30|40|50)\s?kg\b/.test(t)) return "sacchi";
+  return "";
+}
+// versione 409: per riconoscere la stessa prestazione a canone, ogni parola si accorcia a 6 lettere («prestazioni» = «prestazione»)
+export const radice = p => String(p || "").split(" ").filter(Boolean).map(w => (/\d/.test(w) ? w : w.slice(0, 6))).join(" ");   // le misure restano intere
+// versione 409: quanti mesi copre la fattura di un canone, letto dal testo (prima della pulizia): «da gennaio a giugno» = 6,
+// «dal mese di gennaio al mese di febbraio» = 2, «15 ottobre - 15 novembre» = 1, «semestre» = 6, «trimestre» = 3, «anno» = 12. Se non si legge: null.
+const MESI = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"];
+export function mesiDelCanone(testo) {
+  const t = String(testo || "").toLowerCase();
+  const nomi = [...t.matchAll(new RegExp(`\\b(${MESI.join("|")})\\b`, "g"))].map(m => MESI.indexOf(m[1]));
+  if (nomi.length >= 2) { const conGiorno = /\b\d{1,2}\s+(?:gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\b/.test(t);
+    const n = ((nomi[1] - nomi[0] + 12) % 12) + (conGiorno ? 0 : 1); if (n >= 1 && n <= 12) return n; }
+  if (/\bsemestr/.test(t)) return 6; if (/\btrimestr/.test(t)) return 3; if (/\bbimestr/.test(t)) return 2;
+  if (/\brata\s+\d+\s+di\s+12\b/.test(t) || /\bmensil[ei]\b/.test(t) && !/\b1[34]/.test(t)) return 1;
+  if (nomi.length === 1) return 1;
+  return null;
+}
+// il nome pulito come si legge (maiuscole come in fattura), per i titoli delle schede
+function pulisciTesto(testo, centro, regole) {
+  const c = String(centro || "").trim(), merce = CENTRI_PRODOTTO.includes(c);
+  let t = String(testo || "");
+  for (const r of regole) {
+    if (r.ambito === "merce" && !merce) continue;
+    if (r.ambito === "gasolio" && c !== "Gasolio e lubrificanti") continue;
+    if (r.ambito === "servizi" && merce) continue;
+    t = t.replace(r.re, r.con || " ");
+  }
+  return t.replace(/(?:\s+[-–—]+)+\s+/g, " ").replace(/^[-–—\s]+|[-–—,;:/\s]+$/g, "").replace(/\s+/g, " ").trim();
+}
+// somma le righe della stessa fattura (versione 409: dopo la divisione per confezione)
+function unisci(ng, x) {
+  const y = ng.get(x.fatturaId);
+  if (!y) { ng.set(x.fatturaId, { ...x, unitaFattura: new Set(x.unitaFattura), descrizioni: new Set(x.descrizioni) }); return; }
+  y.base += x.base; y.totale += x.totale; y.quantita += x.quantita; x.unitaFattura.forEach(u => y.unitaFattura.add(u)); x.descrizioni.forEach(u => y.descrizioni.add(u));
+}
 
 // Versione 376 (ordine del Dott. Bizzarri del 13/11/2026 ore 09:11): regole «stesso fornitore e la descrizione comincia con».
 // Servono per le descrizioni che cambiano da una fattura all'altra (accisa del gasolio, codici, date): una regola scritta
@@ -72,25 +161,47 @@ export async function caricaDatiPrezzi() {
   }
   const [articoli, fatture, fornitori, regole, mercato, parametri, regolePrefisso] = await Promise.all([
     tutte("ci_articoli_fattura", "id, fattura_id, descrizione, quantita, unita_misura, totale_riga, area, centro_costo"),
-    tutte("ci_fatture", "id, data, tipo, numero, fornitore_id"),
+    tutte("ci_fatture", "id, data, tipo, numero, fornitore_id, regolarizzazione_di").catch(() => tutte("ci_fatture", "id, data, tipo, numero, fornitore_id")),
     tutte("ci_fornitori", "id, nome"),
     tutte("ci_regole_armonizzazione_unita", "id, fornitore_id, centro_costo, descrizione_prodotto, fattore_kg"),
     tutte("coltivazione_prezzi_mercato", "campagna, prodotto, prezzo_q, fonte", "campagna").catch(() => []),
     tutte("ci_parametri", "chiave, valore", "chiave").catch(() => []),
     tutte("ci_famiglie_prodotto_regole", "id, fornitore_id, inizia_con, famiglia_id").catch(() => []),   // versione 376
   ]);
-  return { famiglie, descrizioni, articoli, fatture, fornitori, regole, mercato, regolePrefisso, parametri: Object.fromEntries(parametri.map(p => [p.chiave, p.valore])) };
+  // versione 409: decisioni di «Da sistemare» e regole di pulizia accese (se le tabelle mancano: nessuna decisione, regole tutte accese)
+  const [decisioni, regolePulizia] = await Promise.all([
+    tutte("ci_prezzi_decisioni", "id, tipo, chiave, decisione, famiglia_id, fornitore_id, unita, nota, descrizioni_create, deciso_da, deciso_il, letto_dal_dottore_il, annullata_il").catch(() => null),
+    tutte("ci_prezzi_regole_pulizia", "id, ordine, nome, attiva", "ordine").catch(() => null),
+  ]);
+  return { famiglie, descrizioni, articoli, fatture, fornitori, regole, mercato, regolePrefisso, parametri: Object.fromEntries(parametri.map(p => [p.chiave, p.valore])),
+    decisioni: decisioni || [], regolePulizia: regolePulizia || [], manca409: decisioni === null };
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 export function analisiPrezzi(d, oggi = oggiRoma()) {
+  const soglie = applicaSoglie(d.parametri);   // versione 409
+  const regoleP = regoleAccese(d.regolePulizia);
+  const pul = (testo, centro) => pulisciNome(testo, centro, regoleP);
   const fam = new Map(d.famiglie.map(f => [f.id, f]));
   const mappa = new Map(d.descrizioni.map(x => [x.descrizione_norm, x]));
+  // versione 409: le descrizioni delle famiglie si riconoscono anche dal nome pulito (se due descrizioni pulite uguali sono in famiglie diverse vince la prima)
+  const mappaPulita = new Map();
+  for (const x of d.descrizioni) { const p = pul(x.descrizione_norm, null); if (p && !mappaPulita.has(p)) mappaPulita.set(p, x); }
+  for (const x of d.descrizioni) if (!mappaPulita.has(x.descrizione_norm)) mappaPulita.set(x.descrizione_norm, x);   // un nome già pulito salvato da una decisione
+  const decisioni = (d.decisioni || []).filter(x => !x.annullata_il);
+  const dec = new Map(decisioni.map(x => [`${x.tipo}|${x.chiave}`, x]));
+  const fornPerNome = new Map(); for (const x of d.fornitori) { const k = nomeFornitoreSemplice(x.nome); if (k && !fornPerNome.has(k)) fornPerNome.set(k, x.id); }
+  const daSistemare = [], muratellaIgnoti = new Map(), serviziCand = new Map(), prezziNomi = [];
+  const righeRifViste = new Set(), vaBene = new Set(), senzaConf = new Map(), conSacchi = new Set(), conflitti = new Set();
+  const fornNome = new Map(d.fornitori.map(f => [f.id, f.nome]));
+  const daRicevereIds = new Set(d.fatture.filter(f => f.tipo === "DA_RICEVERE" && /^muratella\b/i.test(fornNome.get(f.fornitore_id) || "")).map(f => f.id));
+  const passivePerNumero = new Set(d.fatture.filter(f => f.tipo === "PASSIVA").map(f => `${f.fornitore_id}|${String(f.numero || "").trim().toLowerCase()}`));
   const fat = new Map(d.fatture.map(f => [f.id, f]));
   const forn = new Map(d.fornitori.map(f => [f.id, f.nome]));
   const reg = new Map(d.regole.map(r => [`${r.fornitore_id}|${(r.centro_costo || "").trim()}|${String(r.descrizione_prodotto || "").trim().toLowerCase()}`, num(r.fattore_kg)]));
   const da12 = new Date(new Date(oggi) - 365 * GIORNO).toISOString().slice(0, 10);
   const da24 = new Date(new Date(oggi) - 730 * GIORNO).toISOString().slice(0, 10);
+  const da36 = new Date(new Date(oggi) - 1096 * GIORNO).toISOString().slice(0, 10);   // versione 409: i canoni annuali si riconoscono su 3 anni
   // Versione 405 (decisioni del Dott. Bizzarri del 25/11/2026 ore 17:01–17:10): anno solare precedente intero.
   // Un prodotto la cui ultima fattura è più vecchia dell'anno solare precedente non si considera.
   const annoPrec = Number(String(oggi).slice(0, 4)) - 1;
@@ -102,54 +213,155 @@ export function analisiPrezzi(d, oggi = oggiRoma()) {
   const perFamiglia = new Map(); // famiglia → Map(fattura → riga aggregata)
   // versione 376: fornitori di cui si seguono già dei prodotti: le loro descrizioni nuove si segnalano anche fuori dai CENTRI_PRODOTTO
   const seguiti = fornitoriSeguiti(d.articoli, d.descrizioni, d.famiglie, d.regolePrefisso, fat);
-  const stornate = righeStornate(d.articoli, fat);   // versione 407
+  const { via: stornate, dataOriginale } = righeStornateDate(d.articoli, fat);   // versione 407; 409: la riga rifatta prende la data della fattura stornata
   const gruppi = new Map();   // versione 407: chiave del gruppo → famiglia (per le famiglie miste, una per nome)
   for (const a of d.articoli) {
-    const f = fat.get(a.fattura_id); if (!f || f.tipo !== "PASSIVA") continue;
+    const f0 = fat.get(a.fattura_id); if (!f0) continue;
     const tot = num(a.totale_riga); if (!(tot > 0)) continue;
     if (stornate.has(a.id)) continue;   // versione 407: riga stornata da una «storno della fattura n. …»
-    const dt = String(f.data).slice(0, 10);
-    if (dt >= da12 && (a.area || "").trim() !== "Ammortamenti") spesaTotale12 += tot;
-    const n = normalizza(a.descrizione); if (!n) continue;
-    let m = mappa.get(n);
-    if (!m) { const r = famigliaDaRegola(d.regolePrefisso, n, f.fornitore_id); if (r) m = { descrizione_norm: n, famiglia_id: r.famiglia_id, regola: r.id }; }
-    if (!m) {
-      if ((CENTRI_PRODOTTO.includes((a.centro_costo || "").trim()) || seguiti.has(f.fornitore_id)) && dt >= da24 && (a.area || "").trim() !== "Ammortamenti") {
-        const x = nuove.get(n) || { descrizione: n, centro: (a.centro_costo || "").trim(), spesa: 0, righe: 0, ultima: dt, fornitori: new Set() };
-        x.spesa += tot; x.righe++; if (dt > x.ultima) x.ultima = dt; x.fornitori.add(forn.get(f.fornitore_id) || ""); nuove.set(n, x);
-      }
+    // versione 409: righe «da ricevere» di Muratella con il riferimento alla fattura vera: data, numero e fornitore del riferimento
+    let f = f0, descrSenzaRif = String(a.descrizione || "");
+    // una fattura passiva collegata (regolarizzazione) a un documento «da ricevere» non si conta: le sue righe ci sono già nel documento
+    if (f0.tipo === "PASSIVA" && f0.regolarizzazione_di && daRicevereIds.has(f0.regolarizzazione_di)) continue;
+    const rifM = /^muratella\b/i.test(forn.get(f0.fornitore_id) || "") && (f0.tipo === "DA_RICEVERE" || f0.tipo === "PASSIVA") ? RIF_MURATELLA.exec(String(a.descrizione || "")) : null;
+    if (f0.tipo === "DA_RICEVERE" && /^muratella\b/i.test(forn.get(f0.fornitore_id) || "") && !rifM) {
+      // caso brutto 13: riferimento scritto male → resta al 31/12, fuori dal confronto, e si segnala
+      if (!dec.has(`unita|rif|${a.id}`) && String(f0.data).slice(0, 10) >= da24) daSistemare.push({ tipo: "unita", chiave: `rif|${a.id}`, titolo: `Riga pagata da Muratella con il riferimento non leggibile: ${String(a.descrizione || "").slice(0, 80)}`, fornitori: "Muratella", spesa: tot,
+        motivo: "Il riferimento alla fattura vera non si legge («— fatt. N del gg/mm/aaaa di FORNITORE (pagata da Muratella)»): la riga resta al 31/12 e fuori dal confronto dei prezzi. Correggere la descrizione nel documento «da ricevere».", prima: String(f0.data).slice(0, 10), vecchio: false });
       continue;
     }
-    if (!m.famiglia_id || !fam.has(m.famiglia_id)) continue; // esclusa dal confronto
-    const F = fam.get(m.famiglia_id), U = UNITA[F.unita] || UNITA.kg;
+    if (rifM) {
+      const r = rifM; descrSenzaRif = String(a.descrizione || "").replace(RIF_MURATELLA, "").trim();
+      const nomeRif = r[5].trim(), k = nomeFornitoreSemplice(nomeRif);
+      let fid = fornPerNome.get(k);
+      const dm = dec.get(`muratella|${k}`);
+      if (dm && dm.fornitore_id) fid = dm.fornitore_id;
+      else if (dm && dm.decisione === "nome_proprio") { fid = `x:${k}`; if (!forn.has(fid)) forn.set(fid, nomeRif); }   // fornitore che non è nell'anagrafica di Podere
+      if (!fid) { const x = muratellaIgnoti.get(k) || { chiave: k, nome: nomeRif, righe: 0, spesa: 0, prima: `${r[4]}-${r[3]}-${r[2]}`, esempi: [], merce: false };
+        x.righe++; x.spesa += tot; if (x.esempi.length < 3) x.esempi.push(a.descrizione); if (CENTRI_PRODOTTO.includes((a.centro_costo || "").trim())) x.merce = true;
+        const dataRif = `${r[4]}-${r[3]}-${r[2]}`; if (dataRif < x.prima) x.prima = dataRif; muratellaIgnoti.set(k, x); continue; }
+      // la stessa fattura vera è già fra le fatture d'acquisto di Podere: non si conta due volte
+      if (passivePerNumero.has(`${fid}|${r[1].trim().toLowerCase()}`)) continue;
+      // la stessa riga riaddebitata due volte (documento «da ricevere» e fattura di Muratella): si conta una volta
+      const kr = `${fid}|${r[1].trim().toLowerCase()}|${normalizza(descrSenzaRif)}|${tot.toFixed(2)}`; if (righeRifViste.has(kr)) continue; righeRifViste.add(kr);
+      f = { id: `m${f0.id}|${r[1]}|${fid}`, tipo: "PASSIVA", data: `${r[4]}-${r[3]}-${r[2]}`, numero: `${r[1]} (pagata da Muratella)`, fornitore_id: fid, muratella: true };
+    } else if (f0.tipo !== "PASSIVA") continue;
+    // versione 409: la regola di conversione si cerca con il fornitore vero e la descrizione senza il riferimento di Muratella,
+    // e se non c'è con Muratella e la descrizione intera (come è scritta oggi nelle regole, es. Polimix fatt. 6767)
+    const regDi = c => reg.get(`${f.fornitore_id}|${c}|${descrSenzaRif.trim().toLowerCase()}`) || (f.muratella ? reg.get(`${f0.fornitore_id}|${c}|${String(a.descrizione || "").trim().toLowerCase()}`) : undefined);
+    const dt = dataOriginale.get(a.id) || String(f.data).slice(0, 10);
+    const centro = (a.centro_costo || "").trim(), merce = CENTRI_PRODOTTO.includes(centro);
+    if (dt >= da12 && (a.area || "").trim() !== "Ammortamenti") spesaTotale12 += tot;
+    const n = normalizza(a.descrizione); if (!n) continue;
+    const p = pul(a.descrizione, centro) || n;
+    let m = mappa.get(n) || mappaPulita.get(p);
+    if (!m) { const r = famigliaDaRegola(d.regolePrefisso, n, f.fornitore_id) || famigliaDaRegola(d.regolePrefisso, p, f.fornitore_id); if (r) m = { descrizione_norm: n, famiglia_id: r.famiglia_id, regola: r.id }; }
+    let F = null;
+    if (!m) {
+      const dn = dec.get(`nome|${p}`) || dec.get(`nome|${n}`);   // caso brutto 14: la decisione salvata vince anche se le regole di pulizia cambiano
+      const dn2 = p !== n ? dec.get(`nome|${n}`) : null;
+      if (dn && dn2 && dn !== dn2 && (dn.decisione !== dn2.decisione || dn.unita !== dn2.unita) && !dec.has(`unita|conflitto|${p}`) && !conflitti.has(p)) {
+        conflitti.add(p); daSistemare.push({ tipo: "unita", chiave: `conflitto|${p}`, titolo: `Due decisioni diverse ora valgono per lo stesso nome: ${p}`, spesa: tot, prima: dt, vecchio: false,
+          motivo: `Con le regole di pulizia di adesso «${n}» diventa «${p}». Per «${p}» vale «${dn.decisione}», per «${n}» era stato deciso «${dn2.decisione}»: vale la prima. Se è sbagliato, il Dott. Bizzarri annulla una delle due nell'elenco delle decisioni.` });
+      }
+      if (dn && dn.decisione === "escluso") continue;
+      if (dn && dn.decisione === "va_bene" && UNITA[dn.unita]) {
+        // versione 409: «Va bene così, si confronta con sé stesso»: il nome pulito è un prodotto a sé
+        F = { id: `n:${p}`, nome: String(a.descrizione || "").trim().length > 0 ? pulisciTesto(a.descrizione, centro, regoleP) : p, unita: dn.unita, nomeProprio: true };
+        vaBene.add(p);
+      } else if (!merce && !seguiti.has(f.fornitore_id)) {
+        // versione 409: servizi fuori dai centri della merce: entrano solo se confermati «a canone» (12:07)
+        const kc = `${f.fornitore_id}|${radice(p)}`, dc = dec.get(`canone|${kc}`);
+        if (dc && dc.decisione === "si") F = { id: `c:${kc}`, nome: `${pulisciTesto(a.descrizione, centro, regoleP)} – ${forn.get(f.fornitore_id) || ""}`, unita: "mese", canone: true };
+        else {
+          if (!dc && dt >= da36 && (a.area || "").trim() !== "Ammortamenti" && !f.muratella) {
+            const x = serviziCand.get(kc) || { chiave: kc, nome: pulisciTesto(a.descrizione, centro, regoleP), fornitore: forn.get(f.fornitore_id) || "", centro, fatture: new Map(), merce: false };
+            x.fatture.set(f.id, { data: dt, numero: f.numero, totale: (x.fatture.get(f.id)?.totale || 0) + tot }); serviziCand.set(kc, x);
+          }
+          continue;
+        }
+      } else {
+        if (dt >= da24 && (a.area || "").trim() !== "Ammortamenti") {
+          const x = nuove.get(p) || { descrizione: p, testo: pulisciTesto(a.descrizione, centro, regoleP) || String(a.descrizione || "").trim(), esempio: String(a.descrizione || "").trim(), centro, spesa: 0, righe: 0, ultima: dt, prima: dt, fornitori: new Set(), fornitoriId: new Set(), fatture: [] };
+          x.spesa += tot; x.righe++; if (dt > x.ultima) x.ultima = dt; if (dt < x.prima) x.prima = dt; x.fornitori.add(forn.get(f.fornitore_id) || ""); x.fornitoriId.add(f.fornitore_id); nuove.set(p, x);
+          const u0 = UNITA_FATTURA[String(a.unita_misura || "").trim().toLowerCase()], r0 = regDi(centro), fat0 = r0 > 0 ? r0 : u0 > 0 ? u0 : 0;
+          x.fatture.push({ data: dt, numero: f.numero, fornitore: forn.get(f.fornitore_id) || "", quantita: num(a.quantita), unita: a.unita_misura || "", totale: tot, prezzoBase: fat0 > 0 && num(a.quantita) > 0 ? tot / (num(a.quantita) * fat0) : null });
+        }
+        // per «possibile stesso prodotto»: prezzo al kg o al litro della riga
+        const u = UNITA_FATTURA[String(a.unita_misura || "").trim().toLowerCase()];
+        const r = regDi(centro);
+        const fattore = r > 0 ? r : u > 0 ? u : 0;
+        if (dt >= da24 && fattore > 0 && num(a.quantita) > 0) prezziNomi.push({ p, famiglia: null, fid: f.fornitore_id, centro, fattura: f.id, data: dt, prezzo: tot / (num(a.quantita) * fattore) });
+        continue;
+      }
+    }
+    if (!F) {
+      if (!m.famiglia_id || !fam.has(m.famiglia_id)) continue; // esclusa dal confronto
+      F = fam.get(m.famiglia_id);
+    }
+    const U = UNITA[F.unita] || UNITA.kg;
+    // versione 409: riga pagata da Muratella senza quantità vera (quantità 1 e nessuna unità): il prezzo a unità non si calcola
+    if (f.muratella && F.unita !== "importo" && !String(a.unita_misura || "").trim() && num(a.quantita) <= 1) {
+      if (dt >= da24) senzaConversione.push({ famiglia: F.nome, data: dt, numero: f.numero, fornitore: forn.get(f.fornitore_id) || "", descrizione: a.descrizione, quantita: num(a.quantita), unita: "(riaddebito di Muratella senza quantità)", totale: tot });
+      continue;
+    }
     let base;
-    if (F.unita === "importo") base = 1;
+    if (F.unita === "mese") base = mesiDelCanone(a.descrizione) || -1;   // -1 = mesi da ricavare dalla fattura precedente (qui sotto, dopo il raggruppamento)
+    else if (F.unita === "importo") base = 1;
     else if (F.unita === "pezzo") base = num(a.quantita);
     else {
-      const r = reg.get(`${f.fornitore_id}|${(a.centro_costo || "").trim()}|${String(a.descrizione || "").trim().toLowerCase()}`);
+      const r = regDi((a.centro_costo || "").trim());
       const u = UNITA_FATTURA[String(a.unita_misura || "").trim().toLowerCase()];
       const fattore = r > 0 ? r : u > 0 ? u : 0;
       base = num(a.quantita) * fattore;
     }
-    if (!(base > 0)) {
+    if (!(base > 0) && base !== -1) {
       if (dt >= da24) senzaConversione.push({ famiglia: F.nome, data: dt, numero: f.numero, fornitore: forn.get(f.fornitore_id) || "", descrizione: a.descrizione, quantita: num(a.quantita), unita: a.unita_misura || "", totale: tot });
       continue;
     }
     // versione 407: nelle famiglie miste un gruppo per ogni nome; le spese di trasporto (a fattura) un gruppo per ogni fornitore,
     // perché il trasporto di un fornitore non si confronta con quello di un altro (ricontrollo del 26/11: Progeo 30 €, Faza 200 €)
     const trasporto = F.unita === "importo" && /^\s*spese di trasporto/i.test(F.nome);
-    const chiave = FAMIGLIE_MISTE.includes(F.id) ? `${F.id}|${n}` : trasporto ? `${F.id}|f${f.fornitore_id}` : `${F.id}`;
-    if (!gruppi.has(chiave)) gruppi.set(chiave, FAMIGLIE_MISTE.includes(F.id) ? { ...F, nome: `${F.nome} – ${String(a.descrizione || "").trim()}`, mista: true }
+    const chiave = FAMIGLIE_MISTE.includes(F.id) ? `${F.id}|${p}` : trasporto ? `${F.id}|f${f.fornitore_id}` : `${F.id}`;
+    if (!gruppi.has(chiave)) gruppi.set(chiave, FAMIGLIE_MISTE.includes(F.id) ? { ...F, nome: `${F.nome} – ${pulisciTesto(a.descrizione, centro, regoleP)}`, mista: true }
       : trasporto ? { ...F, nome: `${F.nome} – ${forn.get(f.fornitore_id) || "fornitore sconosciuto"}` } : F);
     if (!perFamiglia.has(chiave)) perFamiglia.set(chiave, new Map());
     const g = perFamiglia.get(chiave);
-    const k = `${f.id}`;
-    const x = g.get(k) || { fatturaId: f.id, data: dt, numero: f.numero, fornitore: forn.get(f.fornitore_id) || "fornitore sconosciuto", base: 0, totale: 0, quantita: 0, unitaFattura: new Set(), descrizioni: new Set() };
+    if (merce && dt >= da24 && F.unita !== "importo" && F.unita !== "pezzo") prezziNomi.push({ p, famiglia: typeof F.id === "number" ? F.id : null, fid: f.fornitore_id, centro, fattura: f.id, data: dt, prezzo: tot / base });
+    // versione 409: sacchi e sfuso dal nome; se la persona ha indicato la confezione di un nome (caso brutto 7), vale quella
+    const dconf = dec.get(`confezione|${chiave}|${p}`);
+    const conf = dconf ? dconf.decisione : confezione(a.descrizione);
+    if (conf === "sacchi" && dt >= da24) conSacchi.add(chiave);
+    if (!conf && dt >= da24) { if (!senzaConf.has(chiave)) senzaConf.set(chiave, new Map()); const sc = senzaConf.get(chiave); const y = sc.get(p) || { p, testo: pulisciTesto(a.descrizione, centro, regoleP), spesa: 0, prima: dt }; y.spesa += tot; if (dt < y.prima) y.prima = dt; sc.set(p, y); }
+    const k = `${f.id}|${conf}`;
+    const x = g.get(k) || { fatturaId: f.id, data: dt, numero: f.numero, fornitore: forn.get(f.fornitore_id) || "fornitore sconosciuto", base: 0, totale: 0, quantita: 0, unitaFattura: new Set(), descrizioni: new Set(), conf, muratella: !!f.muratella };
+    if (base === -1) { x.mesiDaRicavare = true; base = 0; } else if (F.unita === "mese") { x.base = Math.max(x.base, base); base = 0; }
     x.base += base; x.totale += tot; x.quantita += num(a.quantita); if (a.unita_misura) x.unitaFattura.add(a.unita_misura); x.descrizioni.add(a.descrizione);
     g.set(k, x);
     void U;
   }
 
+  // versione 409: una famiglia comprata sia in sacchi sia sfusa si divide in due schede («… – sacchi», «… – sfuso»);
+  // le fatture senza indicazione restano con lo sfuso. Altrimenti le righe della stessa fattura si sommano come prima.
+  for (const [chiave, g] of [...perFamiglia]) {
+    // versione 409: canoni, i mesi che il testo non dice si ricavano dai giorni dalla fattura precedente (30,4 giorni = un mese)
+    if (gruppi.get(chiave).unita === "mese") {
+      const l = [...g.values()].sort((a, b) => (a.data < b.data ? -1 : 1)), noti = l.filter(x => x.base > 0).map(x => x.base);
+      l.forEach((x, i) => { if (x.base > 0) return; const gg = i > 0 ? giorni(l[i - 1].data, x.data) : null; x.base = gg ? Math.max(1, Math.round(gg / 30.4)) : (mediana(noti) || 1); });
+    }
+    const conf = new Set([...g.values()].map(x => x.conf));
+    const F = gruppi.get(chiave);
+    if (conf.has("sacchi") && conf.has("sfuso")) {
+      perFamiglia.delete(chiave);
+      for (const tipo of ["sacchi", "sfuso"]) {
+        const nk = `${chiave}|${tipo}`, ng = new Map();
+        for (const x of g.values()) if ((x.conf === "sacchi") === (tipo === "sacchi")) unisci(ng, x);
+        if (ng.size) { perFamiglia.set(nk, ng); gruppi.set(nk, { ...F, nome: `${F.nome} – ${tipo}`, confezione: tipo, chiaveFamiglia: chiave }); }
+      }
+    } else {
+      const ng = new Map(); for (const x of g.values()) unisci(ng, x); perFamiglia.set(chiave, ng);
+    }
+  }
   const anomale = [], schede = [];
   for (const [chiave, g] of perFamiglia) {
     const F = gruppi.get(chiave), U = UNITA[F.unita] || UNITA.kg;
@@ -161,7 +373,8 @@ export function analisiPrezzi(d, oggi = oggiRoma()) {
       if (F.unita === "importo") { valide.push(x); continue; }
       let vicini = tutteF.filter(y => y !== x && Math.abs(giorni(x.data, y.data)) <= 365).map(y => y.prezzoBase);
       if (vicini.length < 3) vicini = tutteF.filter(y => y !== x).map(y => y.prezzoBase);
-      const med = vicini.length >= 3 ? mediana(vicini) : null;
+      // versione 409: le righe pagate da Muratella (quantità a volte scritte male nel riaddebito) si controllano già con 2 fatture di confronto
+      const med = vicini.length >= (x.muratella ? 2 : 3) ? mediana(vicini) : null;
       const rapporto = med ? x.prezzoBase / med : 1;
       if (rapporto > SOGLIE.anomaliaSopra || rapporto < SOGLIE.anomaliaSotto) {
         if (x.data >= da24) anomale.push({ famiglia: F.nome, ...x, mediana: med * U.fattore, rapporto, unita: U.etichetta,
@@ -272,6 +485,72 @@ export function analisiPrezzi(d, oggi = oggiRoma()) {
     s.testoRicerca = testoRicerca(s, d);
     schede.push(s);
   }
+  // versione 409: sacchi e sfuso, la differenza fra le due medie degli ultimi 12 mesi (o fra le ultime fatture)
+  for (const s of schede) {
+    if (!s.famiglia.confezione) continue;
+    const altra = schede.find(x => x !== s && x.famiglia.chiaveFamiglia === s.famiglia.chiaveFamiglia && x.famiglia.confezione && x.famiglia.confezione !== s.famiglia.confezione);
+    if (!altra) continue;
+    const pa = s.media12 ?? s.ultimo.prezzo, pb = altra.media12 ?? altra.ultimo.prezzo;
+    s.altraConfezione = { tipo: altra.famiglia.confezione, prezzo: pb, differenza: pa - pb, percento: pb > 0 ? (pa / pb - 1) * 100 : null, suMedia: s.media12 != null && altra.media12 != null };
+  }
+
+  // ════ versione 409: «Da sistemare» ════
+  // «da più di 30 giorni» in «Da sistemare»: le cose che c'erano già prima della versione 409 contano dal giorno della versione (26/11/2026)
+  const giorni30r = new Date(new Date(oggi) - 30 * GIORNO).toISOString().slice(0, 10), giorni30 = INIZIO_409 >= giorni30r ? "0000-00-00" : giorni30r;
+  // 1) nomi nuovi che pesano (dalla soglia delle descrizioni nuove)
+  for (const x of nuove.values()) {
+    if (x.spesa < soglie.segnalaNuoveEuro || dec.has(`nome|${x.descrizione}`)) continue;
+    daSistemare.push({ tipo: "nome", chiave: x.descrizione, titolo: x.testo, esempio: x.esempio, centro: x.centro, fornitori: [...x.fornitori].join(", "), fornitoriId: [...x.fornitoriId], spesa: x.spesa, righe: x.righe, prima: x.prima, ultima: x.ultima, vecchio: x.prima < giorni30,
+      fatture: x.fatture.slice().sort((a, b) => (a.data < b.data ? 1 : -1)).slice(0, 8), prezzoBase: (x.fatture.filter(y => y.prezzoBase).sort((a, b) => (a.data < b.data ? 1 : -1))[0] || {}).prezzoBase || null });
+  }
+  // 2) fornitori del riferimento di Muratella non riconosciuti
+  // (solo i fornitori con righe di merce: per i ricambi e i lavori la decisione non cambierebbe niente)
+  for (const x of muratellaIgnoti.values()) if (x.merce) daSistemare.push({ tipo: "muratella", chiave: x.chiave, titolo: x.nome, spesa: x.spesa, righe: x.righe, prima: x.prima, esempi: x.esempi, vecchio: x.prima < giorni30 });
+  // 3) servizi che sembrano a canone: stesso nome pulito e stesso fornitore, almeno 3 fatture in 24 mesi, cadenza e importo regolari
+  for (const x of serviziCand.values()) {
+    // (l'importo non conta: un canone che aumenta deve restare proposto; vale la cadenza, da mensile ad annuale)
+    const l = [...x.fatture.values()].sort((a, b) => (a.data < b.data ? -1 : 1));
+    if (somma(l.map(y => y.totale)) < soglie.segnalaNuoveEuro) continue;
+    const gap = l.slice(1).map((y, i) => giorni(l[i].data, y.data)), mg = mediana(gap), mi = mediana(l.map(y => y.totale));
+    if (l.length < 2 || (l.length === 2 && !(mg >= 300 && mg <= 430)) || !(mg >= 20 && mg <= 430)) continue;
+    const okGap = gap.filter(g => Math.abs(g - mg) <= mg * 0.45).length / gap.length;
+    if (okGap < 0.6) continue;   // (2 intervalli su 3 bastano: un canone semestrale che diventa annuale resta un canone)
+    daSistemare.push({ tipo: "canone", chiave: x.chiave, titolo: x.nome, fornitori: x.fornitore, centro: x.centro, spesa: somma(l.map(y => y.totale)), righe: l.length, prima: l[0].data, ultima: l[l.length - 1].data,
+      cadenza: Math.round(mg), importo: mi, fatture: l.slice(-6).reverse(), vecchio: l[0].data < giorni30 });
+  }
+  // 4) possibile stesso prodotto (10:39): stesso fornitore e centro, prezzi entro il 2% a non più di 60 giorni, mai nella stessa fattura;
+  //    almeno uno dei due nomi senza famiglia, e i due non nella stessa famiglia
+  const perNome = new Map();
+  for (const y of prezziNomi) { const k = `${y.fid}|${y.centro}|${y.p}`; if (!perNome.has(k)) perNome.set(k, { p: y.p, fid: y.fid, centro: y.centro, famiglia: y.famiglia, righe: [] }); perNome.get(k).righe.push(y); }
+  const nomiL = [...perNome.values()];
+  for (let i = 0; i < nomiL.length; i++) for (let j = i + 1; j < nomiL.length; j++) {
+    const A = nomiL[i], B = nomiL[j];
+    if (A.fid !== B.fid || A.centro !== B.centro || A.p === B.p) continue;
+    if (A.famiglia != null && B.famiglia != null) continue;
+    // almeno uno dei due senza famiglia: nome nuovo oppure deciso «Va bene così» (caso brutto 2: i nomi simili si ripropongono)
+    if (!nuove.has(A.p) && !nuove.has(B.p) && !vaBene.has(A.p) && !vaBene.has(B.p)) continue;
+    const fa = new Set(A.righe.map(y => y.fattura)); if (B.righe.some(y => fa.has(y.fattura))) continue;
+    const vicino = A.righe.some(y => B.righe.some(z => Math.abs(giorni(y.data, z.data)) <= 60 && Math.abs(y.prezzo / z.prezzo - 1) <= 0.02));
+    if (!vicino) continue;
+    const chiave = [A.p, B.p].sort().join(" || ");
+    if (dec.has(`stesso|${chiave}`)) continue;
+    const ultimo = l => l.righe.slice().sort((a, b) => (a.data < b.data ? 1 : -1))[0];
+    daSistemare.push({ tipo: "stesso", chiave, titolo: `${A.p}  ↔  ${B.p}`, nomi: [A.p, B.p], famiglie: [A.famiglia, B.famiglia], fornitori: forn.get(A.fid) || "", centro: A.centro,
+      prezzi: [ultimo(A), ultimo(B)].map(y => ({ data: y.data, prezzo: y.prezzo })), spesa: 0, vecchio: false });
+  }
+  // 4b) caso brutto 7: in una famiglia comprata sia in sacchi sia sfusa, un nome che non dice la confezione → domanda
+  for (const [chiave, sc] of senzaConf) {
+    const F = gruppi.get(`${chiave}|sfuso`) || gruppi.get(`${chiave}|sacchi`) || (conSacchi.has(chiave) ? gruppi.get(chiave) : null); if (!F) continue;
+    for (const y of sc.values()) { const k = `${chiave}|${y.p}`; if (dec.has(`confezione|${k}`)) continue;
+      daSistemare.push({ tipo: "confezione", chiave: k, titolo: `${F.nome.replace(/ – (sacchi|sfuso)$/, "")}: ${y.testo}`, spesa: y.spesa, prima: y.prima, vecchio: y.prima < giorni30,
+        motivo: gruppi.has(`${chiave}|sfuso`) ? "La famiglia si compra sia in sacchi sia sfusa, ma questo nome non lo dice: oggi conta con lo sfuso." : "La famiglia ha righe in sacchi negli ultimi 24 mesi e questo nome non dice la confezione: oggi si confronta insieme ai sacchi." }); }
+  }
+  // 5) unità da controllare (righe fuori misura degli ultimi 24 mesi)
+  for (const a of anomale) {
+    const chiave = `${a.fatturaId}|${a.famiglia}`; if (dec.has(`unita|${chiave}`)) continue;
+    daSistemare.push({ tipo: "unita", chiave, titolo: `${a.famiglia}: fattura ${a.numero} del ${data(a.data)}`, fornitori: a.fornitore, spesa: a.totale, motivo: a.motivo, prima: a.data, vecchio: a.data < giorni30 });
+  }
+  daSistemare.sort((a, b) => (b.spesa || 0) - (a.spesa || 0));
   const attive = schede.filter(s => s.attivo);
   // versione 407: rincari e ribassi solo sopra le soglie di ingresso
   const rincari = attive.filter(s => s.impatto > 0 && !s.sottoSoglia).sort((a, b) => b.impatto - a.impatto);
@@ -290,6 +569,8 @@ export function analisiPrezzi(d, oggi = oggiRoma()) {
     totaleRincari: somma(rincari.map(s => s.impatto)), totaleRibassi: somma(ribassi.map(s => s.impatto)),
     totaleOpportunita: somma(opportunita.map(s => Math.max(s.risparmioFornitore, s.risparmioMercato))),
     famiglieSenzaFatture: d.famiglie.filter(f => ![...gruppi.values()].some(g => g.id === f.id)).map(f => f.nome),
+    // versione 409
+    soglie, daSistemare, decisioni, manca409: !!d.manca409, regoleAccese: regoleP.map(r => r.ordine),
   };
 }
 
@@ -306,26 +587,42 @@ function prezzoMercato(d, F, U) {
   return { nome, fonte: ultima.fonte, campagna: ultima.campagna, prezzoMin: p, prezzoMax: p, storia, provvisorio: /PROVVISORIO/i.test(ultima.fonte || "") };
 }
 
-// Versione 407 (caso vero: Mariotti 12/FE del 08/09/2025 stornata dalla 18/FE e rifatta con la 19/FE): una riga negativa
-// «storno della fattura n. X - descrizione» toglie dal confronto la riga con la stessa descrizione e lo stesso importo
-// della fattura X dello stesso fornitore (la riga negativa è già esclusa). Se non trova la riga, non toglie niente.
-export function righeStornate(articoli, fat) {
-  const via = new Set();
+// Versione 409: storni più robusti e data della fattura rifatta. Si riconoscono anche «storno fattura n. X», «storno fatt. X», «storno ft X»,
+// con «-», «:» o niente fra numero e descrizione; la descrizione si confronta senza punteggiatura. Se nella fattura dello storno (o in un'altra
+// dello stesso fornitore con la stessa data) c'è una riga positiva con la stessa descrizione e lo stesso importo, è l'acquisto rifatto:
+// prende la data della fattura stornata (caso vero: Granella d'orzo, 12/FE del 08/09/2025 rifatta con la 19/FE del 30/12/2025).
+const senzaPunti = t => normalizza(String(t || "").replace(/[^\p{L}\p{N}]+/gu, " "));
+export function righeStornateDate(articoli, fat) {
+  const via = new Set(), dataOriginale = new Map();
   const perFattura = new Map();
   for (const a of articoli) { if (!perFattura.has(a.fattura_id)) perFattura.set(a.fattura_id, []); perFattura.get(a.fattura_id).push(a); }
   for (const a of articoli) {
     const f = fat.get(a.fattura_id); if (!f || f.tipo !== "PASSIVA" || !(num(a.totale_riga) < 0)) continue;
-    const m = /^\s*storno\s+(?:della\s+)?fattura\s+n\.?\s*([^\s-]+)\s*-\s*(.+)$/i.exec(String(a.descrizione || ""));
+    const m = /^\s*storno\s+(?:della\s+|alla\s+)?(?:fattura|fatt\.?|ft\.?)\s*(?:n\.?|nr\.?|num\.?)?\s*([^\s:-]+)\s*[-:]?\s*(.+)$/i.exec(String(a.descrizione || ""));
     if (!m) continue;
-    const numero = m[1].trim().toLowerCase(), descr = normalizza(m[2]);
+    const numero = m[1].trim().toLowerCase(), descr = senzaPunti(m[2]);
     for (const g of fat.values()) {
       if (g.tipo !== "PASSIVA" || g.fornitore_id !== f.fornitore_id || String(g.numero || "").trim().toLowerCase() !== numero) continue;
-      const r = (perFattura.get(g.id) || []).find(b => !via.has(b.id) && normalizza(b.descrizione) === descr && Math.abs(num(b.totale_riga) + num(a.totale_riga)) < 0.005);
-      if (r) { via.add(r.id); break; }
+      const r = (perFattura.get(g.id) || []).find(b => !via.has(b.id) && senzaPunti(b.descrizione) === descr && Math.abs(num(b.totale_riga) + num(a.totale_riga)) < 0.005);
+      if (!r) continue;
+      via.add(r.id);
+      // l'acquisto rifatto: stessa descrizione e stesso importo, stesso fornitore, stessa data dello storno
+      for (const h of fat.values()) {
+        if (h.tipo !== "PASSIVA" || h.fornitore_id !== f.fornitore_id || String(h.data).slice(0, 10) !== String(f.data).slice(0, 10)) continue;
+        const nuova = (perFattura.get(h.id) || []).find(b => num(b.totale_riga) > 0 && !dataOriginale.has(b.id) && senzaPunti(b.descrizione) === descr && Math.abs(num(b.totale_riga) - num(r.totale_riga)) < 0.005);
+        if (nuova) { dataOriginale.set(nuova.id, String(g.data).slice(0, 10)); break; }
+      }
+      break;
     }
   }
-  return via;
+  return { via, dataOriginale };
 }
+export const righeStornate = (articoli, fat) => righeStornateDate(articoli, fat).via;
+
+// Versione 407 (caso vero: Mariotti 12/FE del 08/09/2025 stornata dalla 18/FE e rifatta con la 19/FE): una riga negativa
+// «storno della fattura n. X - descrizione» toglie dal confronto la riga con la stessa descrizione e lo stesso importo
+// della fattura X dello stesso fornitore (la riga negativa è già esclusa). Se non trova la riga, non toglie niente.
+// (versione 409: sostituita da righeStornateDate qui sopra)
 
 function trasportoFornitore(perFamiglia, gruppi, fornitore, da12) {
   for (const [id, g] of perFamiglia) {   // versione 407: le chiavi sono quelle dei gruppi
@@ -446,7 +743,12 @@ export function regolaPerTutti(regole, n, fornitoriId) {
 }
 
 // Versione 376: quante descrizioni nuove (ultimi 24 mesi) aspettano di essere assegnate a un prodotto o escluse
+// versione 409: decisioni di «Da sistemare» non ancora lette dal Dott. Bizzarri (per il suo numero rosso)
+export async function contaDecisioniDaLeggere() {
+  const r = await supabase.from("ci_prezzi_decisioni").select("id", { count: "exact", head: true }).is("letto_dal_dottore_il", null).is("annullata_il", null);
+  return r.error ? 0 : r.count || 0;
+}
 export async function contaDescrizioniDaAssegnare() {
   const r = analisiPrezzi(await caricaDatiPrezzi());
-  return r.nuoveTutte || 0;
+  return r.daSistemare.length;   // versione 409: il numero di «Da sistemare» (lo stesso in tutto il programma)
 }

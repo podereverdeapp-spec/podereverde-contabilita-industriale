@@ -44,6 +44,10 @@ export default function FamiglieProdotto() {
   const [inizio, setInizio] = useState(0);
   useEffect(() => { setInizio(0); }, [filtro, cerca, gruppo]);
 
+  // versione 409: le famiglie le cambia solo chi ha il permesso «Può sistemare i prodotti» (bloccato nel database)
+  const [permesso, setPermesso] = useState(true);
+  useEffect(() => { supabase.rpc("ci_puo_sistemare_prodotti").then(r => setPermesso(r.error ? true : r.data === true)); }, []);
+  const senzaPermesso = () => { if (permesso) return false; setMessaggio("Serve il permesso «Può sistemare i prodotti» (lo dà il Dott. Bizzarri nella pagina Accessi): niente è stato cambiato."); return true; };
   async function carica() {
     setErrore(null);
     try {
@@ -86,6 +90,7 @@ export default function FamiglieProdotto() {
   useEffect(() => { carica(); }, []);
 
   async function assegna(n, valore) {
+    if (senzaPermesso()) return;
     setSalvando(true); setMessaggio(null);
     const famiglia_id = valore === ESCLUSA ? null : parseInt(valore);
     const { error } = await supabase.from("ci_famiglie_prodotto_descrizioni").upsert({ descrizione_norm: n, famiglia_id, updated_at: new Date().toISOString() }, { onConflict: "descrizione_norm" });
@@ -96,6 +101,7 @@ export default function FamiglieProdotto() {
   }
 
   async function salvaFamiglia(f) {
+    if (senzaPermesso()) return;
     const m = modifiche[f.id]; if (!m) return;
     setSalvando(true); setMessaggio(null);
     const { error } = await supabase.from("ci_famiglie_prodotto").update(m).eq("id", f.id);
@@ -107,6 +113,7 @@ export default function FamiglieProdotto() {
   }
 
   async function creaFamiglia() {
+    if (senzaPermesso()) return;
     if (!nuova.nome.trim()) { setMessaggio("Scrivere il nome della famiglia."); return; }
     setSalvando(true); setMessaggio(null);
     const riga = { nome: nuova.nome.trim(), unita: nuova.unita, prodotto_mercato: nuova.prodotto_mercato.trim() || null, caratteristiche: nuova.caratteristiche.trim() || null };
@@ -123,6 +130,7 @@ export default function FamiglieProdotto() {
   const nomeFamiglia = id => (famiglie.find(f => f.id === id) || {}).nome || "?";
   const nomeFornitore = id => (fornitori.find(f => f.id === id) || {}).nome || "?";
   async function creaRegola() {
+    if (senzaPermesso()) return;
     const t = normalizza(nuovaRegola.inizia_con);
     if (!nuovaRegola.fornitore_id || !nuovaRegola.famiglia_id) { setMessaggio("Scegliere il fornitore e la famiglia della regola."); return; }
     if (t.length < 6) { setMessaggio("Il testo «comincia con» deve avere almeno 6 caratteri."); return; }
@@ -137,6 +145,7 @@ export default function FamiglieProdotto() {
     setMessaggio(`Regola salvata: ${nomeFornitore(parseInt(nuovaRegola.fornitore_id))}, «${t}…» → ${nomeFamiglia(parseInt(nuovaRegola.famiglia_id))}. Descrizioni da assegnare coperte adesso: ${coperte.length}.`);
   }
   async function togliRegola(r) {
+    if (senzaPermesso()) return;
     setSalvando(true); setMessaggio(null);
     const { error } = await supabase.from("ci_famiglie_prodotto_regole").delete().eq("id", r.id);
     setSalvando(false);
@@ -166,6 +175,7 @@ export default function FamiglieProdotto() {
       <h1 style={{ margin: 0, fontSize: 24, color: C.primary }}>🗂️ Famiglie di Prodotto</h1>
       <p style={{ color: C.muted, fontSize: 13.5, margin: "4px 0 0" }}>Qui si decide quali descrizioni di fattura sono lo stesso prodotto. Il report «Attenzione Variazione Prezzi» confronta i prezzi dentro ogni famiglia, con l'unità di misura scelta.</p>
       {errore && <div style={{ background: "#F8E1DE", color: "#9B2C20", padding: 10, borderRadius: 8, marginTop: 10 }}>{errore}</div>}
+      {!permesso && <div style={{ background: "#FFF4E0", color: "#8A5A00", padding: 10, borderRadius: 8, marginTop: 10 }}>Versione 409: le famiglie si vedono, ma per cambiarle serve il permesso «Può sistemare i prodotti». Le descrizioni nuove si decidono nella pagina «Da sistemare».</div>}
       {messaggio && <div style={{ background: "#E6F0E8", color: "#2F5E3B", padding: 8, borderRadius: 8, marginTop: 10, fontSize: 13.5 }}>{messaggio}</div>}
 
       <Sezione titolo={`Descrizioni delle fatture (${daAssegnareRecenti} da assegnare negli ultimi 24 mesi, il numero rosso del menu; ${daAssegnare} in tutto)`} sottotitolo="Per ogni descrizione si sceglie la famiglia, oppure «Esclusa dal confronto» per le righe che non sono un prodotto (bolli, pallet, prestazioni diverse ogni volta). Il salvataggio è immediato.">

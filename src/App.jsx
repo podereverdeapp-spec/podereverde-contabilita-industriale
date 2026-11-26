@@ -122,7 +122,8 @@ import IstruzioniReportAnalisi from "./IstruzioniReportAnalisi";
 // Versione 240: Attenzione Variazione Prezzi e Famiglie di Prodotto
 import VariazionePrezzi from "./VariazionePrezzi";
 import FamiglieProdotto from "./FamiglieProdotto";
-import { contaDescrizioniDaAssegnare } from "./calcoloVariazionePrezzi"; // versione 376
+import DaSistemare from "./DaSistemare"; // versione 409
+import { contaDescrizioniDaAssegnare, contaDecisioniDaLeggere } from "./calcoloVariazionePrezzi"; // versione 376; 409
 import IstruzioniStudi from "./IstruzioniStudi";
 import IstruzioniColtivazioni from "./IstruzioniColtivazioni";
 import Modelli4 from "./Modelli4";
@@ -180,6 +181,7 @@ const MENU = [
   // Versione 241: cartella dedicata al controllo dei prezzi di acquisto (richiesta del Dott. Bizzarri del 09/10/2026)
   { tipo: "cartella", id: "cart-prezzi-acquisto", label: "Controllo Prezzi di Acquisto", icon: "💶", contenuto: [
     { tipo: "voce", id: "istr-prezzi-acquisto", label: "Istruzioni", icon: "📖" },
+    { tipo: "voce", id: "da-sistemare-prezzi", label: "Da sistemare", icon: "🧹" }, // versione 409
     { tipo: "voce", id: "variazione-prezzi", label: "Attenzione Variazione Prezzi", icon: "⚠️" },
     { tipo: "voce", id: "articoliprezzi", label: "Articoli & Prezzi", icon: "🏷️" },
     { tipo: "voce", id: "famiglie-prodotto", label: "Famiglie di Prodotto", icon: "🗂️" },
@@ -577,12 +579,12 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
   // Versione 376: descrizioni nuove delle fatture d'acquisto non ancora assegnate a un prodotto (prezzo non controllato);
   // si ricontano all'apertura del programma e quando si entra o si esce da «Famiglie di Prodotto»
   const [descrizioniDaAssegnare, setDescrizioniDaAssegnare] = useState(0);
-  useEffect(() => { let attivo = true; if (puo("famiglie-prodotto")) contaDescrizioniDaAssegnare().then(n => { if (attivo) setDescrizioniDaAssegnare(n); }).catch(() => { if (attivo) setDescrizioniDaAssegnare(0); }); return () => { attivo = false; }; }, [tab === "famiglie-prodotto"]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { let attivo = true; if (puo("famiglie-prodotto") || puo("da-sistemare-prezzi")) Promise.all([contaDescrizioniDaAssegnare(), accesso.admin ? contaDecisioniDaLeggere() : 0]).then(([n, l]) => { if (attivo) setDescrizioniDaAssegnare(n + l); }).catch(() => { if (attivo) setDescrizioniDaAssegnare(0); }); return () => { attivo = false; }; }, [tab === "famiglie-prodotto", tab === "da-sistemare-prezzi"]); // eslint-disable-line react-hooks/exhaustive-deps
   // Versione 390: ritenute d'acconto da versare (scadute, entro 7 giorni, o F24 con un importo diverso)
   const [ritenuteDaVersare, setRitenuteDaVersare] = useState([]);
   useEffect(() => { if (puo("ritenute-acconto")) contaRitenuteDaVersare().then(setRitenuteDaVersare).catch(() => setRitenuteDaVersare([])); }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (puo("anticipi-fornitori")) contaAnticipiDaGuardare().then(setAnticipiDaGuardare).catch(() => setAnticipiDaGuardare(0)); }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
-  const AVVISI = { "cart-banche": speseDaControllare, "spese-controllo": speseDaControllare, "cart-prezzi-acquisto": descrizioniDaAssegnare, "famiglie-prodotto": descrizioniDaAssegnare, "cart-incassi-pagamenti": anticipiDaGuardare + ritenuteDaVersare.length, "ritenute-acconto": ritenuteDaVersare.length, "anticipi-fornitori": anticipiDaGuardare, "cart-posta": postaDaAprire, "posta": postaDaAprire, "sub-dati-f24": numeroF24, "consulta-f24": numeroF24, "cart-modelli4": modelli4Aperti.totale, "modelli4-chiusure": modelli4Aperti.totale, "cart-animali": verificheAnimali, "verifiche-ovini": verificheAnimali, "cart-alimentaria": senzaComposizione, "alimenti-senza-composizione": senzaComposizione, "cart-fatture": (anomalieAperte || 0) + numeroF24, "sub-dati-controllo": anomalieAperte || 0, "registro-controlli": anomalieAperte || 0, "cart-emissione-fatture": daFatturare + allarmiAttiva, "sub-fatturazione-animali": daFatturare, "fatt-animali-da-fatturare": daFatturare, "fatt-animali-prepara": daFatturare, "sub-controllo-attiva": allarmiAttiva, "controllo-attiva": allarmiAttiva, "cart-accessi-registro": richiesteAccesso, "sub-accessi": richiesteAccesso, "accessi": richiesteAccesso };
+  const AVVISI = { "cart-banche": speseDaControllare, "spese-controllo": speseDaControllare, "cart-prezzi-acquisto": descrizioniDaAssegnare, "da-sistemare-prezzi": descrizioniDaAssegnare, "cart-incassi-pagamenti": anticipiDaGuardare + ritenuteDaVersare.length, "ritenute-acconto": ritenuteDaVersare.length, "anticipi-fornitori": anticipiDaGuardare, "cart-posta": postaDaAprire, "posta": postaDaAprire, "sub-dati-f24": numeroF24, "consulta-f24": numeroF24, "cart-modelli4": modelli4Aperti.totale, "modelli4-chiusure": modelli4Aperti.totale, "cart-animali": verificheAnimali, "verifiche-ovini": verificheAnimali, "cart-alimentaria": senzaComposizione, "alimenti-senza-composizione": senzaComposizione, "cart-fatture": (anomalieAperte || 0) + numeroF24, "sub-dati-controllo": anomalieAperte || 0, "registro-controlli": anomalieAperte || 0, "cart-emissione-fatture": daFatturare + allarmiAttiva, "sub-fatturazione-animali": daFatturare, "fatt-animali-da-fatturare": daFatturare, "fatt-animali-prepara": daFatturare, "sub-controllo-attiva": allarmiAttiva, "controllo-attiva": allarmiAttiva, "cart-accessi-registro": richiesteAccesso, "sub-accessi": richiesteAccesso, "accessi": richiesteAccesso };
 
   // Versione 373: chi esce dalla pagina «Accessi» con schede non salvate viene avvisato prima (ordine del Dott. Bizzarri delle 21:28)
   const [accessiInSospeso, setAccessiInSospeso] = useState([]);
@@ -623,7 +625,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 407</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 409</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={() => (tab === "accessi" && accessiInSospeso.length) ? setUscitaDaAccessi("__esci__") : esci()} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
@@ -839,6 +841,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
         {tab === "articoliprezzi" && <ArticoliPrezzi />}
         {tab === "variazione-prezzi" && <VariazionePrezzi onNavigate={vaiA} />}
         {tab === "famiglie-prodotto" && <FamiglieProdotto />}
+        {tab === "da-sistemare-prezzi" && <DaSistemare />}
         {tab === "costidiretti" && <CostiDiretti />}
         {tab === "anomalie" && <ControlloAnomalie />}
         {tab === "armonizza" && <DaArmonizzare />}

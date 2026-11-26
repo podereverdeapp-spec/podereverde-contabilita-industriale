@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import { C } from "./style";
 import RipartizioneLavoroParametri from "./RipartizioneLavoroParametri";
+import { REGOLE_PULIZIA } from "./calcoloVariazionePrezzi"; // versione 409
 
 export default function Parametri() {
   const [parametri, setParametri] = useState([]);
@@ -49,7 +50,9 @@ export default function Parametri() {
     "Prezzi di riforma per il valore di realizzo dei riproduttori (€ al kg di carcassa)": parametri.filter(p => p.chiave.startsWith("prezzo_riforma_")),
     // Versione 240: dati scritti nel testo di ricerca dei fornitori alternativi (Attenzione Variazione Prezzi)
     "Testo di ricerca dei fornitori alternativi (Attenzione Variazione Prezzi)": parametri.filter(p => p.chiave.startsWith("ricerca_")),
-    "Altro": parametri.filter(p => !p.chiave.startsWith("soglia_") && !p.chiave.includes("vita_produttiva") && !p.chiave.startsWith("prezzo_riforma_") && !p.chiave.startsWith("ricerca_")),
+    // Versione 409 (decisione del Dott. Bizzarri del 26/11/2026 ore 12:01): soglie del Controllo Prezzi di Acquisto
+    "Controllo Prezzi di Acquisto: soglie (in euro)": parametri.filter(p => p.chiave.startsWith("prezzi_")),
+    "Altro": parametri.filter(p => !p.chiave.startsWith("soglia_") && !p.chiave.includes("vita_produttiva") && !p.chiave.startsWith("prezzo_riforma_") && !p.chiave.startsWith("ricerca_") && !p.chiave.startsWith("prezzi_")),
   };
 
   return (
@@ -81,6 +84,7 @@ export default function Parametri() {
             </div>
           ))}
 
+          <RegolePulizia />
           <RipartizioneLavoroParametri />
 
           {Object.keys(modifiche).length > 0 && (
@@ -91,6 +95,41 @@ export default function Parametri() {
           )}
         </>
       )}
+    </div>
+  );
+}
+
+// Versione 409 (decisioni del 26/11/2026 ore 10:23, 11:09, 10:34, 12:07): regole di pulizia dei nomi prima del confronto dei prezzi.
+// Il testo delle regole è nel programma; qui si vede quali sono accese. Le accende e le spegne solo il Dott. Bizzarri (bloccato nel database).
+function RegolePulizia() {
+  const [righe, setRighe] = useState(null);
+  const [errore, setErrore] = useState(null);
+  const [dottore, setDottore] = useState(false);
+  async function carica() {
+    const r = await supabase.from("ci_prezzi_regole_pulizia").select("ordine, attiva, cambiata_il").order("ordine");
+    if (r.error) { setErrore(`Le regole non si leggono (${r.error.message}): va lanciato il file 1_contabilita_strutture_v409_da_sistemare.sql.`); setRighe([]); return; }
+    setErrore(null); setRighe(r.data || []);
+    const u = await supabase.auth.getUser(); const id = u.data?.user?.id;
+    if (id) { const p = await supabase.from("profili").select("ruolo").eq("id", id).maybeSingle(); setDottore(p.data?.ruolo === "admin"); }
+  }
+  useEffect(() => { carica(); }, []);
+  async function cambia(ordine, attiva) {
+    const { error } = await supabase.rpc("ci_prezzi_regola_accendi", { p_ordine: ordine, p_attiva: attiva });
+    if (error) setErrore(error.message); else carica();
+  }
+  if (righe === null) return null;
+  const accesa = o => { const r = righe.find(x => x.ordine === o); return r ? r.attiva : true; };
+  return (
+    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 16 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: C.muted, marginBottom: 6 }}>CONTROLLO PREZZI DI ACQUISTO: PULIZIA DEI NOMI PRIMA DEL CONFRONTO</div>
+      <div style={{ fontSize: 12, color: C.muted, marginBottom: 8 }}>Il programma toglie dal nome di ogni riga di fattura le parti che cambiano da una fattura all'altra, così lo stesso prodotto si riconosce. {dottore ? "Togliendo la spunta la regola si spegne." : "Le regole le accende o le spegne solo il Dott. Bizzarri."}</div>
+      {errore && <div style={{ color: "#9B2C20", fontWeight: 700, fontSize: 13, marginBottom: 6 }}>{errore}</div>}
+      {REGOLE_PULIZIA.map(r => (
+        <label key={r.ordine} style={{ display: "flex", gap: 8, alignItems: "center", padding: "6px 0", borderTop: `1px solid ${C.border}`, fontSize: 13 }}>
+          <input type="checkbox" checked={accesa(r.ordine)} disabled={!dottore || !!errore} onChange={e => cambia(r.ordine, e.target.checked)} />
+          <span><b>{r.ordine}.</b> {r.nome}</span>
+        </label>
+      ))}
     </div>
   );
 }
