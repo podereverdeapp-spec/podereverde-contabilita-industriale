@@ -1,3 +1,6 @@
+// Versione 408 (Tenente, 26/11/2026): le righe dei soci e delle società partecipate si registrano con «Registra nel modulo soci» (ci_soci_registra_da_riga,
+// ci_partecipate_registra_da_riga): il socio è obbligatorio, la ritenuta la calcola il database, il netto o il lordo arrivato lo dice l'operatore.
+// Il nome sulla riga si confronta solo con l'elenco dei soci (decisione del Dott. Bizzarri del 26/11 ore 12:42): se corrisponde, il programma propone.
 // Versione 393 (Tenente, 23/11/2026): rimando con il nome nuovo «Estratti conto caricati e ricerca movimenti».
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "./supabase";
@@ -48,10 +51,11 @@ export default function ConfermaMovimenti() {
   const [errore, setErrore] = useState("");
   const [gestore, setGestore] = useState(false);
   const [correzione, setCorrezione] = useState(null);   // { movimento, tipo: "storno" | "scollega", motivo }
+  const [soci, setSoci] = useState([]);   // versione 408: elenco dei soci (solo per i gestori dei conti)
   const lettura = useRef(0);
 
   useEffect(() => { (async () => {
-    supabase.rpc("ci_puo_gestire_conti").then(g => setGestore(g.data === true));
+    supabase.rpc("ci_puo_gestire_conti").then(g => { setGestore(g.data === true); if (g.data === true) supabase.rpc("ci_soci_elenco").then(r => setSoci(r.error ? [] : (r.data || []).filter(x => x.attivo))); });
     const [c, k, s, fo, cl, sc] = await Promise.all([
       supabase.from("ci_conti").select("id, nome, tipo, banca_o_emittente, stato").order("id"),
       supabase.from("ci_causali_contabili").select("gruppo, voce, ordine").order("ordine"),
@@ -117,6 +121,14 @@ export default function ConfermaMovimenti() {
           sc.perche = `${p.perche ? p.perche + ". " : ""}Soggetto riconosciuto: ${sog.nome}; ${f.perche}${sc.perche_anticipo ? "; " + sc.perche_anticipo : ""}.`;
         }
       }
+      // versione 408: il nome sulla riga confrontato con l'elenco dei soci (solo proposta: socio e operazione li sceglie l'operatore)
+      if (x.data_contabile >= "2026-01-01" && !(sc.scadenze || []).length) {
+        const so = socioDellaRiga(x, soci);
+        // revisione: si propone «Soci» solo se la causale della banca parla di finanziamento, soci, utili, capitale o dividendi (non uno stipendio o una commissione)
+        if (so && /FINANZ|\bSOCIO?\b|\bUTILI\b|CAPITALE|DIVIDEND/i.test(x.descrizione || "") && !/^\s*COMM/i.test(x.descrizione || "") && (!sc.causale_gruppo || sc.causale_gruppo === "Soci")) { sc.causale_gruppo = "Soci"; sc.causale_voce = ""; sc.socio_id = String(so.id); sc.controparte = so.nome;
+          sc.perche = `${sc.perche ? sc.perche + ". " : ""}Il nome sulla riga corrisponde al socio ${so.nome}: scegliere l'operazione e registrare con «Registra nel modulo soci»`; }
+        else if (sc.causale_gruppo === "Soci" && !so) sc.perche = `${sc.perche ? sc.perche + ". " : ""}Nessun socio dell'elenco corrisponde al nome sulla riga: scegliere il socio`;
+      }
       nuoveScelte[x.id] = sc;
       return { riga: x, stato: sc.causale_gruppo && sc.causale_voce && sc.modalita && sc.controparte ? "completa" : sc.causale_gruppo || sc.modalita ? "parziale" : "da classificare", perche: sc.perche };
     });
@@ -127,12 +139,13 @@ export default function ConfermaMovimenti() {
       .map(x => ({ ...x, coperto: st?.controllo_ok_alla_data && x.data <= st.controllo_ok_alla_data }));
     setScelte(nuoveScelte); setDati({ elenco, senzaRiga, conto, dal, al });
   }
-  useEffect(() => { if (base) leggi(false).catch(x => setErrore("Lettura non riuscita: " + x.message)); }, [base, contoId, anno, mese]);
+  useEffect(() => { if (base) leggi(false).catch(x => setErrore("Lettura non riuscita: " + x.message)); }, [base, contoId, anno, mese, soci]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pronta = (e) => {
     const s = scelte[e.riga.id]; if (!s || e.stato === "confermata") return false;
     if (s.movimento_id !== undefined && !s.movimento_id) return false;
     if (e.riga.data_contabile < "2026-01-01") return s.movimento_id !== undefined;
+    if (s.movimento_id === undefined && ["Soci", "Partecipate"].includes(s.causale_gruppo)) return false;   // versione 408: si registrano con «Registra nel modulo soci»
     if (!s.causale_gruppo || !s.causale_voce || !s.modalita) return false;
     if (s.causale_voce === "Altro" && !String(s.causale_altro || "").trim()) return false;
     if (s.modalita === "Altro" && !String(s.modalita_altro || "").trim()) return false;
@@ -242,13 +255,14 @@ export default function ConfermaMovimenti() {
               : gestore && <button style={btn(false, C.red)} onClick={() => setCorrezione({ movimento: e.movimento, tipo: e.movimento.progressivo ? "storno" : "scollega", motivo: "" })}>{e.movimento.progressivo ? "Storna" : "Scollega"}</button>}</td>
           </tr>,
           aperta === e.riga.id && <tr key={"d" + e.riga.id}><td colSpan={8} style={{ padding: 10, background: "#fff", borderBottom: `2px solid ${C.primary}` }}>
-            <Modulo e={e} s={s} gruppi={gruppi} causali={base.causali} anno={e.riga.data_contabile.slice(0, 4)} base={base} sommaFatture={sommaFatture}
+            <Modulo e={e} s={s} gruppi={gruppi} causali={base.causali} anno={e.riga.data_contabile.slice(0, 4)} base={base} sommaFatture={sommaFatture} soci={soci} gestore={gestore}
+              registrato={(t) => { setEsito(t); leggi(true).catch(x => setErrore("Lettura non riuscita: " + x.message)); }}
               cambia={(campo, val) => setScelte(x => {
                 if (campo === "movimento_id") { const mv = (e.candidati || []).find(c => String(c.id) === String(val)); return { ...x, [e.riga.id]: mv ? { movimento_id: val, ...propostaPerMovimento(mv) } : { ...x[e.riga.id], movimento_id: "" } }; }
                 return { ...x, [e.riga.id]: { ...x[e.riga.id], [campo]: val, ...(campo === "causale_gruppo" ? { causale_voce: "" } : {}), ...(campo === "causale_voce" && ANTICIPI.includes(val) ? { scadenze: [] } : {}) } };
               })} />
-            <div style={{ marginTop: 8 }}><button style={btn(true)} disabled={!ok || !!lavoro} onClick={() => conferma([e])}>Conferma questa riga</button>
-              {!ok && <span style={{ marginLeft: 8, color: C.red, fontSize: 12.5 }}>Completare i campi in rosso.</span>}</div>
+            {!(s.movimento_id === undefined && ["Soci", "Partecipate"].includes(s.causale_gruppo)) && <div style={{ marginTop: 8 }}><button style={btn(true)} disabled={!ok || !!lavoro} onClick={() => conferma([e])}>Conferma questa riga</button>
+              {!ok && <span style={{ marginLeft: 8, color: C.red, fontSize: 12.5 }}>Completare i campi in rosso.</span>}</div>}
           </td></tr>,
         ]; })}</tbody>
       </table></div>}
@@ -264,7 +278,7 @@ export default function ConfermaMovimenti() {
   );
 }
 
-function Modulo({ e, s, gruppi, causali, anno, cambia, base, sommaFatture }) {
+function Modulo({ e, s, gruppi, causali, anno, cambia, base, sommaFatture, soci, gestore, registrato }) {
   const rosso = (vuoto) => ({ ...input, width: "100%", maxWidth: "100%", boxSizing: "border-box", borderColor: vuoto ? C.red : C.border });
   const voci = causali.filter(c => c.gruppo === s.causale_gruppo);
   const daNumerare = anno >= "2026";
@@ -276,13 +290,14 @@ function Modulo({ e, s, gruppi, causali, anno, cambia, base, sommaFatture }) {
       </select></label>}
     {daNumerare && <label>Gruppo della causale<br /><select style={rosso(!s.causale_gruppo)} value={s.causale_gruppo || ""} onChange={x => cambia("causale_gruppo", x.target.value)}>
       <option value="">— scegliere —</option>{gruppi.map(g => <option key={g}>{g}</option>)}</select></label>}
-    {daNumerare && <label>Voce<br /><select style={rosso(!s.causale_voce)} value={s.causale_voce || ""} onChange={x => cambia("causale_voce", x.target.value)}>
+    {daNumerare && !(s.movimento_id === undefined && ["Soci", "Partecipate"].includes(s.causale_gruppo)) && <label>Voce<br /><select style={rosso(!s.causale_voce)} value={s.causale_voce || ""} onChange={x => cambia("causale_voce", x.target.value)}>
       <option value="">— scegliere —</option>{voci.map(v => <option key={v.voce}>{v.voce}</option>)}</select></label>}
     {daNumerare && s.causale_voce === "Altro" && <label>Che cosa (obbligatorio)<br /><input style={rosso(!String(s.causale_altro || "").trim())} value={s.causale_altro || ""} onChange={x => cambia("causale_altro", x.target.value)} /></label>}
     {daNumerare && <label>Modalità di pagamento o incasso<br /><select style={rosso(!s.modalita)} value={s.modalita || ""} onChange={x => cambia("modalita", x.target.value)}>
       <option value="">— scegliere —</option>{MODALITA.map(m => <option key={m}>{m}</option>)}</select></label>}
     {daNumerare && s.modalita === "Altro" && <label>Quale modalità (obbligatorio)<br /><input style={rosso(!String(s.modalita_altro || "").trim())} value={s.modalita_altro || ""} onChange={x => cambia("modalita_altro", x.target.value)} /></label>}
-    {s.movimento_id === undefined && daNumerare && <Soggetto e={e} s={s} base={base} cambia={cambia} rosso={rosso} />}
+    {s.movimento_id === undefined && daNumerare && ["Soci", "Partecipate"].includes(s.causale_gruppo) && <RegistraSoci e={e} s={s} soci={soci} gestore={gestore} cambia={cambia} registrato={registrato} base={base} />}
+    {s.movimento_id === undefined && daNumerare && !["Soci", "Partecipate"].includes(s.causale_gruppo) && <Soggetto e={e} s={s} base={base} cambia={cambia} rosso={rosso} />}
     {s.movimento_id === undefined && <label>Soggetto (come sarà scritto in prima nota)<br /><input style={rosso(!String(s.controparte || "").trim())} value={s.controparte || ""} onChange={x => cambia("controparte", x.target.value)} /></label>}
     {s.movimento_id === undefined && daNumerare && (s.fornitore_id || s.cliente_id) && !ANTICIPI.includes(s.causale_voce) ? <FattureDaChiudere e={e} s={s} base={base} cambia={cambia} sommaFatture={sommaFatture} /> : null}
     {daNumerare && ANTICIPI.includes(s.causale_voce) && <div style={{ gridColumn: "1 / -1", border: `1px solid ${C.blue}`, background: `${C.blue}10`, borderRadius: 8, padding: 8 }}>
@@ -322,5 +337,76 @@ function FattureDaChiudere({ e, s, base, cambia, sommaFatture }) {
       {" "}<EtichettaStatoFattura stato={(base.statiFatture || {})[a.fattura_id]} piccola />n. {a.numero_documento} del {dataIt(a.data_documento)} — resto {euro(a.residuo)}{dopo ? " — emessa dopo il movimento della banca" : ""}</label>; })}
     {scelte.length > 0 && <div style={{ marginTop: 4, fontWeight: 700, color: somma > imp + 0.005 ? C.red : Math.abs(somma - imp) < 0.005 ? C.green : C.yellow }}>
       Fatture spuntate {euro(somma)} su un movimento di {euro(imp)}{somma > imp + 0.005 ? " — troppo: togliere una fattura" : Math.abs(somma - imp) < 0.005 ? " — torna" : ` — restano ${euro(imp - somma)} non abbinati`}</div>}
+  </div>;
+}
+
+// ---------------- Versione 408: «Registra nel modulo soci» ----------------
+// Il nome sulla riga («BONIFICO o/c: NOME …», «DISPOSIZIONE a favore di NOME …») si confronta con i nomi dei soci, senza la forma della società.
+const FORME = new Set(["S", "R", "L", "A", "SRL", "SPA", "SNC", "SAS", "SS", "SOC", "SOCIETA", "SOCIETÀ", "ARL", "SCARL", "UNIPERSONALE", "SEMPLIFICATA"]);
+const parole = t => new Set(String(t || "").toUpperCase().replace(/[^A-ZÀ-Ý0-9]+/g, " ").split(" ").filter(w => w && !FORME.has(w)));
+export function socioDellaRiga(riga, soci) {
+  const testo = parole(`${riga.controparte || ""} ${nomeDellaRiga(riga) || ""}`);
+  const trovati = (soci || []).filter(so => { const p = parole(so.nome); return p.size > 0 && [...p].every(w => testo.has(w)); });
+  return trovati.length === 1 ? trovati[0] : null;
+}
+const VOCI_SOCI = { uscita: ["Distribuzione di utili", "Rimborso finanziamento soci", "Interessi su finanziamento soci", "Restituzione versamento in conto capitale", "Recesso o riduzione del capitale", "Prestito al socio", "Rimborso spesa pagata dal socio", "Altro"],
+  entrata: ["Finanziamento soci infruttifero", "Finanziamento soci fruttifero", "Versamento in conto capitale", "Versamento in conto futuro aumento di capitale", "Versamento a copertura perdite", "Versamento per aumento di capitale sociale", "Restituzione prestito dal socio", "Restituzione della ritenuta anticipata dal socio", "Altro"] };
+const VOCI_PARTECIPATE = { uscita: ["Versamento di capitale a società partecipata", "Finanziamento a società partecipata"],
+  entrata: ["Dividendi da società partecipata", "Restituzione finanziamento da società partecipata", "Restituzione capitale da società partecipata", "Liquidazione della quota di società partecipata"] };
+function RegistraSoci({ e, s, soci, gestore, cambia, registrato, base }) {
+  const [v, setV] = useState({ voce: "", arrivato_lordo: "", tasso: "", costo_quota: "", conferma_commercialista: "", scadenza_id: "", causale_altro: "", partecipata: s.controparte || "", note: "" });
+  const [lavoro, setLavoro] = useState(false); const [errore, setErrore] = useState(""); const [fatture, setFatture] = useState([]);
+  const c = (k, x) => setV(o => ({ ...o, [k]: x }));
+  const part = s.causale_gruppo === "Partecipate";
+  useEffect(() => { if (v.voce !== "Rimborso spesa pagata dal socio") return; supabase.rpc("ci_soci_lista").then(r => setFatture((r.data?.eventi || []).filter(x => x.tipo === "fattura_pagata_dal_socio" && !x.annullato_il))); }, [v.voce]);
+  const socio = soci.find(x => String(x.id) === String(s.socio_id || ""));
+  const voci = (part ? VOCI_PARTECIPATE : VOCI_SOCI)[e.riga.verso];
+  const conRitenuta = !part && e.riga.verso === "uscita" && socio?.tipo === "persona_fisica" && (v.voce === "Interessi su finanziamento soci" || (["Distribuzione di utili", "Recesso o riduzione del capitale"].includes(v.voce) && !socio.quota_in_impresa));
+  if (!gestore) return <div style={{ gridColumn: "1 / -1", color: C.red, fontWeight: 700 }}>Le righe dei soci e delle partecipate le registra solo chi gestisce i conti.</div>;
+  const problemi = [];
+  if (!part && !socio) problemi.push("il socio"); if (part && !v.partecipata.trim()) problemi.push("la società partecipata");
+  if (!v.voce) problemi.push("l'operazione");
+  if (v.voce === "Altro" && !v.causale_altro.trim()) problemi.push("in che cosa consiste «Altro»");
+  if (v.voce === "Finanziamento soci fruttifero" && !(Number(String(v.tasso).replace(",", ".")) > 0)) problemi.push("il tasso");
+  if (conRitenuta && !v.arrivato_lordo) problemi.push("se al socio è arrivato il netto o il lordo");
+  if (v.voce === "Restituzione versamento in conto capitale" && !v.conferma_commercialista.trim()) problemi.push("la conferma del commercialista");
+  if (v.voce === "Rimborso spesa pagata dal socio" && !v.scadenza_id) problemi.push("la fattura pagata dal socio");
+  const interessiSocieta = !part && v.voce === "Interessi su finanziamento soci" && socio?.tipo === "societa";
+  const fattureInteressi = interessiSocieta ? (base?.aperte || []).filter(a => a.lato === "fornitore" && socio.fornitore_id && a.fornitore_id === socio.fornitore_id) : [];
+  if (interessiSocieta && !v.scadenza_id) problemi.push("la fattura esente IVA della società");
+  async function registra() {
+    setLavoro(true); setErrore("");
+    const comuni = { riga_id: e.riga.id, causale_voce: v.voce, modalita: s.modalita || "Bonifico", note: v.note };
+    const r = part ? await supabase.rpc("ci_partecipate_registra_da_riga", { p: { ...comuni, partecipata: v.partecipata.trim() } })
+      : await supabase.rpc("ci_soci_registra_da_riga", { p: { ...comuni, socio_id: socio.id, arrivato_lordo: v.arrivato_lordo === "lordo", tasso: v.tasso ? String(v.tasso).replace(",", ".") : "",
+          costo_quota: v.costo_quota ? Number(String(v.costo_quota).replace(/\./g, "").replace(",", ".")) : "", conferma_commercialista: v.conferma_commercialista, scadenza_id: v.scadenza_id, causale_altro: v.causale_altro } });
+    setLavoro(false);
+    if (r.error) return setErrore("Il database non l'ha accettato, non è stato registrato niente: " + r.error.message);
+    registrato(`Registrata nel modulo ${part ? "delle partecipate" : "dei soci"}: ${v.voce}${r.data?.numero ? `, prima nota n. ${r.data.numero}` : ""}${Number(r.data?.ritenuta) ? ` — lordo ${euro(r.data.lordo)}, ritenuta ${euro(r.data.ritenuta)} (codice ${r.data.codice_tributo}) da versare` : ""}. Il documento si allega nella cartella «Rapporti finanziari con i soci».`);
+  }
+  return <div style={{ gridColumn: "1 / -1", border: `2px solid ${C.primary}`, borderRadius: 8, padding: 10, background: `${C.primary}08` }}>
+    <div style={{ fontWeight: 800, color: C.primary, marginBottom: 6 }}>Registra nel modulo {part ? "delle società partecipate" : "dei soci"}</div>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 8 }}>
+      {!part ? <label>Socio (dall'elenco dei soci)<br /><select style={{ ...input, width: "100%", borderColor: socio ? C.border : C.red }} value={s.socio_id || ""} onChange={x => { cambia("socio_id", x.target.value); cambia("controparte", soci.find(y => String(y.id) === x.target.value)?.nome || ""); }}>
+          <option value="">— scegliere —</option>{soci.map(y => <option key={y.id} value={y.id}>{y.nome}</option>)}</select>
+          {!soci.length && <span style={{ color: C.red }}>Elenco dei soci vuoto: aggiungere i soci nella cartella «Rapporti finanziari con i soci».</span>}</label>
+        : <label>Società partecipata<br /><input style={{ ...input, width: "100%", borderColor: v.partecipata.trim() ? C.border : C.red }} value={v.partecipata} onChange={x => c("partecipata", x.target.value)} /></label>}
+      <label>Operazione<br /><select style={{ ...input, width: "100%", borderColor: v.voce ? C.border : C.red }} value={v.voce} onChange={x => c("voce", x.target.value)}><option value="">— scegliere —</option>{voci.map(y => <option key={y}>{y}</option>)}</select></label>
+      {v.voce === "Altro" && <label>In che cosa consiste<br /><input style={{ ...input, width: "100%" }} value={v.causale_altro} onChange={x => c("causale_altro", x.target.value)} /></label>}
+      {v.voce === "Finanziamento soci fruttifero" && <label>Tasso annuo (%)<br /><input style={{ ...input, width: "100%" }} value={v.tasso} onChange={x => c("tasso", x.target.value)} /></label>}
+      {conRitenuta && <label>Al socio è arrivato<br /><select style={{ ...input, width: "100%", borderColor: v.arrivato_lordo ? C.border : C.red }} value={v.arrivato_lordo} onChange={x => c("arrivato_lordo", x.target.value)}>
+        <option value="">— scegliere —</option><option value="netto">il netto (la ritenuta è stata trattenuta)</option><option value="lordo">il lordo (il socio deve restituire la ritenuta)</option></select></label>}
+      {v.voce === "Recesso o riduzione del capitale" && <label>Costo della quota dichiarato (€)<br /><input style={{ ...input, width: "100%" }} value={v.costo_quota} onChange={x => c("costo_quota", x.target.value)} /></label>}
+      {v.voce === "Restituzione versamento in conto capitale" && <label>Conferma del commercialista<br /><input style={{ ...input, width: "100%" }} value={v.conferma_commercialista} onChange={x => c("conferma_commercialista", x.target.value)} /></label>}
+      {interessiSocieta && <label>Fattura esente IVA della società<br /><select style={{ ...input, width: "100%", borderColor: v.scadenza_id ? C.border : C.red }} value={v.scadenza_id} onChange={x => c("scadenza_id", x.target.value)}>
+        <option value="">— scegliere —</option>{fattureInteressi.map(a => <option key={a.scadenza_id} value={a.scadenza_id}>n. {a.numero_documento} del {dataIt(a.data_documento)} — resta {euro(a.residuo)}</option>)}</select>
+        {!socio.fornitore_id && <span style={{ color: C.red }}>Il socio non è collegato a un fornitore: collegarlo nella sua scheda.</span>}</label>}
+      {v.voce === "Rimborso spesa pagata dal socio" && <label>Fattura pagata dal socio<br /><select style={{ ...input, width: "100%", borderColor: v.scadenza_id ? C.border : C.red }} value={v.scadenza_id} onChange={x => c("scadenza_id", x.target.value)}>
+        <option value="">— scegliere —</option>{fatture.filter(f => !socio || f.socio_id === socio.id).map(f => <option key={f.id} value={f.scadenza_id}>{dataIt(f.data)} — {euro(f.importo)}</option>)}</select></label>}
+      <label>Nota (facoltativa)<br /><input style={{ ...input, width: "100%" }} value={v.note} onChange={x => c("note", x.target.value)} /></label>
+    </div>
+    {problemi.length > 0 && <div style={{ color: C.red, fontSize: 12.5, marginTop: 6 }}>Manca: {problemi.join("; ")}.</div>}
+    {errore && <div style={{ color: C.red, fontWeight: 700, marginTop: 6 }}>⚠️ {errore}</div>}
+    <button style={{ ...btn(true), marginTop: 8 }} disabled={lavoro || problemi.length > 0} onClick={registra}>{lavoro ? "Registro…" : "Registra nel modulo soci"}</button>
   </div>;
 }

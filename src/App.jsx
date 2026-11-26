@@ -123,6 +123,7 @@ import IstruzioniReportAnalisi from "./IstruzioniReportAnalisi";
 import VariazionePrezzi from "./VariazionePrezzi";
 import FamiglieProdotto from "./FamiglieProdotto";
 import DaSistemare from "./DaSistemare"; // versione 409
+import RapportiSoci, { contaAvvisiSoci } from "./RapportiSoci"; // versione 408
 import { contaDescrizioniDaAssegnare, contaDecisioniDaLeggere } from "./calcoloVariazionePrezzi"; // versione 376; 409
 import IstruzioniStudi from "./IstruzioniStudi";
 import IstruzioniColtivazioni from "./IstruzioniColtivazioni";
@@ -327,6 +328,7 @@ const MENU = [
     { tipo: "voce", id: "incassi-pagamenti", label: "Incassi e pagamenti", icon: "💶" },
     { tipo: "voce", id: "anticipi-fornitori", label: "Anticipi e caparre in attesa di fattura", icon: "⏳" }, // versione 370; caparre versione 374
     { tipo: "voce", id: "ritenute-acconto", label: "Ritenute d'acconto", icon: "🧾" }, // versione 390
+    { tipo: "voce", id: "rapporti-soci", label: "Rapporti finanziari con i soci – Entrate/uscite", icon: "🤝" }, // versione 408: solo i gestori dei conti (in futuro nella sezione «Gestione contabile», cartella «Finanziamenti soci e rapporti»)
   ]},
   // Versione 354 (10/11/2026): la prima nota (progetto della prima nota, sezioni 3, 4.1, 8 e 9)
   { tipo: "cartella", id: "cart-prima-nota", label: "Prima nota", icon: "📒", contenuto: [
@@ -507,7 +509,11 @@ function ConAccesso({ utente }) {
 
 function Programma({ utente, accesso, ricaricaAccesso }) {
   // Versione 337: il menu mostra solo le parti date a questa persona; le altre pagine non si aprono
-  const menuVisibile = filtraMenu(MENU, accesso);
+  // versione 408: «Rapporti finanziari con i soci» la vedono solo i gestori dei conti (decisione del Dott. Bizzarri del 26/11/2026 ore 12:09)
+  const [gestoreConti, setGestoreConti] = useState(false);
+  useEffect(() => { supabase.rpc("ci_puo_gestire_conti").then(g => setGestoreConti(g.data === true)); }, []);
+  const togliVoce = (m, id) => m.map(x => x.contenuto ? { ...x, contenuto: togliVoce(x.contenuto, id) } : x).filter(x => x.id !== id);
+  const menuVisibile = gestoreConti ? filtraMenu(MENU, accesso) : togliVoce(filtraMenu(MENU, accesso), "rapporti-soci");
   const pagineVisibili = pagineDelMenu(menuVisibile);
   const pagineDelProgramma = pagineDelMenu(MENU);
   const puo = (id) => pagineVisibili.has(id) || (!pagineDelProgramma.has(id) && (accesso.admin || accesso.tutto));
@@ -574,6 +580,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
   }, [tab]);
   // Versione 370: anticipi su fattura da ricevere che chiedono un'azione (fattura arrivata da controllare, in ritardo, segnalazione)
   const [anticipiDaGuardare, setAnticipiDaGuardare] = useState(0);
+  const [avvisiSoci, setAvvisiSoci] = useState(0); // versione 408
   // Versione 382: spese dall'app da controllare o da chiarire (le legge tutte solo chi gestisce i conti; agli altri le proprie)
   const [speseDaControllare, setSpeseDaControllare] = useState(0);
   const contaSpese = () => { if (puo("spese-controllo")) supabase.rpc("ci_puo_gestire_conti").then(g => g.data !== true ? setSpeseDaControllare(0) : supabase.from("ci_spese").select("id", { count: "exact", head: true }).in("stato", ["Da controllare", "Da chiarire"]).then(r => setSpeseDaControllare(r.error ? 0 : r.count || 0))); else setSpeseDaControllare(0); }; // solo chi gestisce i conti vede il numero rosso
@@ -585,8 +592,9 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
   // Versione 390: ritenute d'acconto da versare (scadute, entro 7 giorni, o F24 con un importo diverso)
   const [ritenuteDaVersare, setRitenuteDaVersare] = useState([]);
   useEffect(() => { if (puo("ritenute-acconto")) contaRitenuteDaVersare().then(setRitenuteDaVersare).catch(() => setRitenuteDaVersare([])); }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (gestoreConti && puo("rapporti-soci")) contaAvvisiSoci().then(setAvvisiSoci).catch(() => setAvvisiSoci(0)); else setAvvisiSoci(0); }, [tab, gestoreConti]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (puo("anticipi-fornitori")) contaAnticipiDaGuardare().then(setAnticipiDaGuardare).catch(() => setAnticipiDaGuardare(0)); }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
-  const AVVISI = { "cart-banche": speseDaControllare, "spese-controllo": speseDaControllare, "cart-prezzi-acquisto": descrizioniDaAssegnare, "da-sistemare-prezzi": descrizioniDaAssegnare, "cart-incassi-pagamenti": anticipiDaGuardare + ritenuteDaVersare.length, "ritenute-acconto": ritenuteDaVersare.length, "anticipi-fornitori": anticipiDaGuardare, "cart-posta": postaDaAprire, "posta": postaDaAprire, "sub-dati-f24": numeroF24, "consulta-f24": numeroF24, "cart-modelli4": modelli4Aperti.totale, "modelli4-chiusure": modelli4Aperti.totale, "cart-animali": verificheAnimali, "verifiche-ovini": verificheAnimali, "cart-alimentaria": senzaComposizione, "alimenti-senza-composizione": senzaComposizione, "cart-fatture": (anomalieAperte || 0) + numeroF24, "sub-dati-controllo": anomalieAperte || 0, "registro-controlli": anomalieAperte || 0, "cart-emissione-fatture": daFatturare + allarmiAttiva, "sub-fatturazione-animali": daFatturare, "fatt-animali-da-fatturare": daFatturare, "fatt-animali-prepara": daFatturare, "sub-controllo-attiva": allarmiAttiva, "controllo-attiva": allarmiAttiva, "cart-accessi-registro": richiesteAccesso, "sub-accessi": richiesteAccesso, "accessi": richiesteAccesso };
+  const AVVISI = { "cart-banche": speseDaControllare, "spese-controllo": speseDaControllare, "cart-prezzi-acquisto": descrizioniDaAssegnare, "da-sistemare-prezzi": descrizioniDaAssegnare, "cart-incassi-pagamenti": anticipiDaGuardare + ritenuteDaVersare.length + avvisiSoci, "rapporti-soci": avvisiSoci, "ritenute-acconto": ritenuteDaVersare.length, "anticipi-fornitori": anticipiDaGuardare, "cart-posta": postaDaAprire, "posta": postaDaAprire, "sub-dati-f24": numeroF24, "consulta-f24": numeroF24, "cart-modelli4": modelli4Aperti.totale, "modelli4-chiusure": modelli4Aperti.totale, "cart-animali": verificheAnimali, "verifiche-ovini": verificheAnimali, "cart-alimentaria": senzaComposizione, "alimenti-senza-composizione": senzaComposizione, "cart-fatture": (anomalieAperte || 0) + numeroF24, "sub-dati-controllo": anomalieAperte || 0, "registro-controlli": anomalieAperte || 0, "cart-emissione-fatture": daFatturare + allarmiAttiva, "sub-fatturazione-animali": daFatturare, "fatt-animali-da-fatturare": daFatturare, "fatt-animali-prepara": daFatturare, "sub-controllo-attiva": allarmiAttiva, "controllo-attiva": allarmiAttiva, "cart-accessi-registro": richiesteAccesso, "sub-accessi": richiesteAccesso, "accessi": richiesteAccesso };
 
   // Versione 373: chi esce dalla pagina «Accessi» con schede non salvate viene avvisato prima (ordine del Dott. Bizzarri delle 21:28)
   const [accessiInSospeso, setAccessiInSospeso] = useState([]);
@@ -949,6 +957,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
         {tab === "incassi-pagamenti" && <GestioneIncassiPagamenti vaiA={vaiA} />}
         {tab === "anticipi-fornitori" && <AnticipiFornitori vaiA={vaiA} />}
         {tab === "ritenute-acconto" && <RitenuteAcconto />}
+        {tab === "rapporti-soci" && <RapportiSoci vaiA={vaiA} />}
         {tab === "istr-banche" && <DocumentoIstruzioni doc={ISTRUZIONI_BANCHE} />}
         {tab === "istr-incassi-pagamenti" && <DocumentoIstruzioni doc={ISTRUZIONI_INCASSI_PAGAMENTI} />}
         {tab === "istr-prima-nota" && <DocumentoIstruzioni doc={ISTRUZIONI_PRIMA_NOTA} />}

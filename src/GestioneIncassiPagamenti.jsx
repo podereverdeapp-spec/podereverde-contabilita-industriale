@@ -1,3 +1,5 @@
+// Versione 408 (Tenente, 26/11/2026): scheda «Soci e partecipate» (SezioneSoci; regole nel database: ci_soci_disponi_408, ci_partecipate_disponi);
+// il gruppo «Soci» e le voci delle partecipate non si scelgono più negli «Altri pagamenti» e negli «Altri incassi».
 // Versione 406 (Tenente, 25/11/2026): scheda «Stipendi e compensi» (SezioneStipendi, regole nel database: ci_paga_stipendio); in «Altri pagamenti»
 // stipendi, acconti, compensi, TFR e prestiti del personale non si scelgono più (VOCI_PERSONALE_STIPENDI).
 // Versione 401 (Soldato, 24/11/2026): «Pagamento fatture» e «Professionisti con ritenuta» (fatture con ritenuta a parte); nota di credito scelta
@@ -36,7 +38,7 @@ import { scaricaWordPagamento } from "./wordPagamento"; // versione 401
 
 // Versione 370: «Anticipo su fattura da ricevere» subito dopo «Pagamento fatture» (pagamento su proforma, preventivo o offerta)
 const TAB = [...SEZIONI.map(s => ({ id: s.id, nome: s.nome })), { id: "attesa", nome: "In attesa della banca" }, { id: "anomalie", nome: "Anomalie" }]
-  .flatMap(t => t.id === "pagamento_fatture" ? [t, { id: "professionisti", nome: "Professionisti con ritenuta" }, { id: "anticipo", nome: "Anticipo o caparra su fattura da ricevere" }] : t.id === "altri_pagamenti" ? [t, { id: "stipendi", nome: "Stipendi e compensi" }, { id: "f24", nome: "F24" }] : [t]);   // versione 396: «F24»; versione 406: «Stipendi e compensi»
+  .flatMap(t => t.id === "pagamento_fatture" ? [t, { id: "professionisti", nome: "Professionisti con ritenuta" }, { id: "anticipo", nome: "Anticipo o caparra su fattura da ricevere" }] : t.id === "altri_pagamenti" ? [t, { id: "stipendi", nome: "Stipendi e compensi" }, { id: "f24", nome: "F24" }] : t.id === "altri_incassi" ? [t, { id: "soci", nome: "Soci e partecipate" }] : [t]);   // versione 396: «F24»; versione 406: «Stipendi e compensi»; versione 408: «Soci e partecipate»
 const ANTICIPO = "Acconto su fattura da ricevere";
 const CAPARRA = "Caparra confirmatoria su preventivo";   // versione 374 (decisione del Dott. Bizzarri del 12/11/2026 ore 17:57)
 const PENITENZIALE = "Caparra penitenziale su preventivo";   // versione 402 (art. 1386 c.c.)
@@ -60,7 +62,8 @@ const Copia = ({ etichetta, valore }) => valore ? <span style={{ display: "inlin
 export default function GestioneIncassiPagamenti({ vaiA } = {}) {
   const [base, setBase] = useState(null);
   const [errore, setErrore] = useState("");
-  const [tab, setTab] = useState("pagamento_fatture");
+  // versione 408: dalla cartella dei soci si arriva qui già sulla scheda «Soci e partecipate»
+  const [tab, setTab] = useState(() => { try { const t = sessionStorage.getItem("incassiPagamentiTab"); sessionStorage.removeItem("incassiPagamentiTab"); if (t === "soci") return "soci"; } catch { /* niente */ } return "pagamento_fatture"; });
   const [esito, setEsito] = useState(null);
   const [giro, setGiro] = useState(0);
   const oggi = oggiRoma();
@@ -164,6 +167,7 @@ export default function GestioneIncassiPagamenti({ vaiA } = {}) {
       {(tab === "altri_pagamenti" || tab === "altri_incassi") && <SezioneAltri key={tab + giro} sezione={tab} base={base} fatto={fatto} oggi={oggi} />}
       {tab === "stipendi" && <SezioneStipendi key={giro} base={base} fatto={fatto} oggi={oggi} />}
       {tab === "giroconti" && <SezioneGiroconti key={giro} base={base} fatto={fatto} oggi={oggi} />}
+      {tab === "soci" && <SezioneSoci key={giro} base={base} fatto={fatto} oggi={oggi} />}
       {tab === "f24" && <SezioneF24 key={giro} base={base} fatto={fatto} oggi={oggi} vaiA={vaiA} />}
       {tab === "attesa" && <InAttesa base={base} oggi={oggi} fatto={fatto} ricarica={() => setGiro(g => g + 1)} />}
       {tab === "anomalie" && <div style={scheda}>
@@ -965,8 +969,8 @@ function SezioneAltri({ sezione, base, fatto, oggi }) {
   }
   return <div style={{ ...scheda, border: `2px solid ${C.primary}` }}>
     <div style={{ fontWeight: 800, color: C.primary, fontSize: 15, marginBottom: 4 }}>{pag ? "Altri pagamenti" : "Altri incassi"}</div>
-    <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 10 }}>{pag ? "Pagamenti senza fattura nel programma: tasse ed enti, fondi ed enti bilaterali del personale, assicurazioni, quote, affitti, investimenti, soci, rimborsi, finanziamenti. Stipendi, compensi, acconti, TFR e prestiti al personale si pagano con il pulsante «Stipendi e compensi»; gli F24 con il pulsante «F24»."
-      : "Incassi senza fattura nel programma: soci, contributi, rimborsi, finanziamenti, vendita di beni strumentali. Il documento è obbligatorio (delibera, decreto, contratto, lettera)."}</div>
+    <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 10 }}>{pag ? "Pagamenti senza fattura nel programma: tasse ed enti, fondi ed enti bilaterali del personale, assicurazioni, quote, affitti, investimenti, rimborsi, finanziamenti. I soci e le società partecipate con il pulsante «Soci e partecipate». Stipendi, compensi, acconti, TFR e prestiti al personale si pagano con il pulsante «Stipendi e compensi»; gli F24 con il pulsante «F24»."
+      : "Incassi senza fattura nel programma: contributi, rimborsi, finanziamenti, vendita di beni strumentali. I versamenti dei soci con il pulsante «Soci e partecipate». Il documento è obbligatorio (delibera, decreto, contratto, lettera)."}</div>
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 10 }}>
       <label style={L}>Per che cosa: gruppo<select style={sel(!v.causale_gruppo)} value={v.causale_gruppo} onChange={e => { cambia("causale_gruppo", e.target.value); cambia("causale_voce", ""); }}>
         <option value="">— scegliere —</option>{gruppi.map(g => <option key={g}>{g}</option>)}</select></label>
@@ -997,6 +1001,133 @@ function SezioneAltri({ sezione, base, fatto, oggi }) {
     {problemi.length > 0 && <div style={{ color: C.red, fontSize: 12.5, marginTop: 10 }}>Per confermare: {problemi.join("; ")}.</div>}
     {errore && <div style={{ color: C.red, fontWeight: 700, marginTop: 8 }}>⚠️ {errore}</div>}
     <div style={{ marginTop: 10 }}><button style={btn(true)} disabled={!!problemi.length || lavoro} onClick={invia}>{lavoro ? "Registro…" : pag ? "Conferma e manda in pagamento" : "Conferma e registra l'incasso atteso"}</button></div>
+  </div>;
+}
+
+// ---------------- Soci e partecipate (versione 408) ----------------
+// Decisioni del Dott. Bizzarri del 26/11/2026 (claude/tenente_giro_soci_26_11.md, sezioni A, C e F): la società paga il socio (solo banca o assegno,
+// mai contanti), il socio versa in contanti (meno di 5.000 €, data mai nel futuro; i bonifici del socio arrivano solo dall'estratto conto),
+// uscite verso le società partecipate. Ritenuta, limiti e controlli li fa il database (ci_soci_disponi_408, ci_partecipate_disponi).
+const USCITE_SOCI = ["Distribuzione di utili", "Rimborso finanziamento soci", "Interessi su finanziamento soci", "Restituzione versamento in conto capitale", "Recesso o riduzione del capitale", "Prestito al socio", "Rimborso spesa pagata dal socio", "Altro"];
+const ENTRATE_SOCI = ["Finanziamento soci infruttifero", "Finanziamento soci fruttifero", "Versamento in conto capitale", "Versamento in conto futuro aumento di capitale", "Versamento a copertura perdite", "Versamento per aumento di capitale sociale", "Restituzione prestito dal socio", "Restituzione della ritenuta anticipata dal socio", "Altro"];
+const USCITE_PARTECIPATE = ["Versamento di capitale a società partecipata", "Finanziamento a società partecipata"];
+const MODALITA_SOCI = ["Bonifico", "Bonifico istantaneo", "Assegno bancario", "Assegno circolare"];
+const causaleSoci = (voce, nome) => ({ "Distribuzione di utili": "DISTRIBUZIONE UTILI ESERCIZIO", "Rimborso finanziamento soci": "RIMBORSO FINANZIAMENTO SOCI", "Interessi su finanziamento soci": "INTERESSI FINANZIAMENTO SOCI",
+  "Restituzione versamento in conto capitale": "RESTITUZIONE VERSAMENTO IN CONTO CAPITALE", "Recesso o riduzione del capitale": "RIMBORSO QUOTA PER RECESSO", "Prestito al socio": "PRESTITO AL SOCIO",
+  "Rimborso spesa pagata dal socio": "RIMBORSO SPESA PAGATA PER LA SOCIETA", "Versamento di capitale a società partecipata": "VERSAMENTO IN CONTO CAPITALE", "Finanziamento a società partecipata": "FINANZIAMENTO SOCI" }[voce] || "") + (nome ? " " + String(nome).toUpperCase() : "");
+function SezioneSoci({ base, fatto, oggi }) {
+  const [soci, setSoci] = useState(null); const [eventi, setEventi] = useState([]); const [partecipate, setPartecipate] = useState([]); const [archivio, setArchivio] = useState([]);
+  const [v, setV] = useState({ chi: "socio", verso: "uscita", socio_id: "", partecipata: "", causale_voce: "", importo: "", tasso: "", costo_quota: "", conferma_commercialista: "", scadenza_id: "", causale_altro: "",
+    modalita: "", conto_id: "", data_disposizione: oggi, iban_scritto: "", iban_confermato: false, causale: "", documento: "", note: "", soglia_vista: false, contanti_persona: "" });
+  const [rit, setRit] = useState(null); const [lavoro, setLavoro] = useState(false); const [errore, setErrore] = useState("");
+  const cambia = (k, x) => setV(o => ({ ...o, [k]: x }));
+  useEffect(() => { (async () => {
+    const [el, li, ar] = await Promise.all([supabase.rpc("ci_soci_elenco"), supabase.rpc("ci_soci_lista"), supabase.from("ci_soci_archivio").select("file, percorso")]);
+    if (el.error) { setErrore(/gestori/.test(el.error.message) ? "I pagamenti e i versamenti dei soci li fanno solo i gestori dei conti." : "Elenco dei soci non letto: " + el.error.message); setSoci([]); return; }
+    setSoci((el.data || []).filter(s => s.attivo)); setEventi(li.data?.eventi || []); setArchivio(ar.data || []);
+    setPartecipate([...new Set((li.data?.movimenti || []).map(m => m.partecipata).filter(Boolean))]);
+  })().catch(e => setErrore("Lettura non riuscita: " + e.message)); }, []);
+  const socio = (soci || []).find(s => s.id === Number(v.socio_id));
+  const sit = socio?.situazione || {};
+  const lordo = leggiImporto(v.importo);
+  const pag = v.verso === "uscita";
+  const voci = v.chi === "partecipata" ? USCITE_PARTECIPATE : pag ? USCITE_SOCI : ENTRATE_SOCI;
+  const contanti = !pag;
+  useEffect(() => { setRit(null); if (v.chi !== "socio" || !pag || !socio || !lordo || !v.causale_voce) return;
+    supabase.rpc("ci_soci_ritenuta", { p_socio: socio.id, p_voce: v.causale_voce, p_lordo: lordo, p_costo_quota: v.costo_quota ? leggiImporto(v.costo_quota) : null })
+      .then(({ data, error }) => setRit(error ? { errore: error.message } : data)); }, [v.chi, v.verso, v.socio_id, v.causale_voce, v.importo, v.costo_quota]); // eslint-disable-line react-hooks/exhaustive-deps
+  const netto = lordo ? Math.round((lordo - Number(rit?.ritenuta || 0)) * 100) / 100 : null;
+  const bonifico = ["Bonifico", "Bonifico istantaneo"].includes(v.modalita);
+  const ib = ibanPulito(v.iban_scritto); const causale = pulisciCausale(v.causale);
+  const nome = v.chi === "socio" ? socio?.nome : v.partecipata.trim();
+  const scadenzeInteressi = socio?.tipo === "societa" && socio?.fornitore_id ? base.scadenze.filter(s => s.lato === "fornitore" && s.fornitore_id === socio.fornitore_id && Number(s.residuo) > 0.005) : [];
+  const fatturePagateDalSocio = eventi.filter(e => e.socio_id === socio?.id && e.tipo === "fattura_pagata_dal_socio" && !e.annullato_il);
+  const conti = base.conti.filter(c => c.stato === "aperto" && (contanti ? c.tipo === "cassa" : c.tipo === "banca"));
+  const problemi = [];
+  if (v.chi === "socio" && !socio) problemi.push("scegliere il socio");
+  if (v.chi === "partecipata" && !v.partecipata.trim()) problemi.push("scrivere la società partecipata");
+  if (!v.causale_voce) problemi.push("scegliere l'operazione");
+  if (v.causale_voce === "Altro" && !v.causale_altro.trim()) problemi.push("scrivere in che cosa consiste «Altro»");
+  if (!lordo) problemi.push("scrivere l'importo");
+  if (v.causale_voce === "Finanziamento soci fruttifero" && !(Number(String(v.tasso).replace(",", ".")) > 0)) problemi.push("scrivere il tasso");
+  if (v.causale_voce === "Restituzione versamento in conto capitale" && !v.conferma_commercialista.trim()) problemi.push("scrivere la conferma del commercialista");
+  if (v.causale_voce === "Rimborso spesa pagata dal socio" && !v.scadenza_id) problemi.push("scegliere la fattura pagata dal socio");
+  if (v.causale_voce === "Interessi su finanziamento soci" && socio?.tipo === "societa" && !v.scadenza_id) problemi.push("scegliere la fattura esente IVA della società");
+  if (rit?.errore) problemi.push("ritenuta non calcolata: " + rit.errore);
+  if (v.chi === "socio" && pag && socio && lordo && v.causale_voce && !rit) problemi.push("attendere il calcolo della ritenuta");
+  if (contanti) { if (lordo >= 5000) problemi.push("contanti da 5.000 € in su: vietato (art. 49 D.Lgs. 231/2007)"); problemi.push(...problemiContanti({ ...v, modalita: "Contanti" }, oggi)); }
+  else { if (!v.modalita) problemi.push("scegliere come si paga"); if (bonifico) { if (!ib) problemi.push("scrivere l'IBAN"); else if (!ibanValido(ib)) problemi.push("IBAN non valido"); else if (!v.iban_confermato) problemi.push("premere «Confermi IBAN»"); } }
+  if (!v.conto_id) problemi.push("scegliere il conto");
+  if (bonifico && !causaleValida(causale)) problemi.push("scrivere la causale del bonifico (al massimo 140 caratteri)");
+  if (lordo > 5000 && !v.soglia_vista) problemi.push("spuntare «Ho visto: sopra 5.000 €»");
+  async function invia() {
+    if (problemi.length || lavoro) return; setLavoro(true); setErrore("");
+    const comuni = { conto_id: Number(v.conto_id), modalita: contanti ? "Contanti" : v.modalita, data_disposizione: v.data_disposizione, causale: causale || causaleSoci(v.causale_voce, nome),
+      iban: bonifico ? ib : "", iban_confermato: !!v.iban_confermato, documento: v.documento, note: v.note, causale_voce: v.causale_voce };
+    const { data, error } = v.chi === "partecipata"
+      ? await supabase.rpc("ci_partecipate_disponi", { p: { ...comuni, partecipata: v.partecipata.trim(), importo: lordo } })
+      : await supabase.rpc("ci_soci_disponi_408", { p: { ...comuni, socio_id: socio.id, verso: v.verso, lordo, netto: pag ? netto : lordo, tasso: v.tasso ? String(v.tasso).replace(",", ".") : "",
+          costo_quota: v.costo_quota ? leggiImporto(v.costo_quota) : "", conferma_commercialista: v.conferma_commercialista, scadenza_id: v.scadenza_id, causale_altro: v.causale_altro,
+          ...(contanti ? { contanti_persona: v.contanti_persona } : {}) } });
+    setLavoro(false);
+    if (error) return setErrore("Il database non l'ha accettato, non è stato registrato niente: " + error.message);
+    const conto = base.conti.find(c => c.id === Number(v.conto_id)); const daPagare = pag ? (data.netto ?? lordo) : lordo;
+    if (contanti) return fatto({ titolo: `${data.codice_attesa}: versamento in contanti del socio registrato — definitivo, prima nota n. ${data.numero || "—"}`, testo: "Registrato in cassa. Consegnare al socio la ricevuta firmata e allegarla nella cartella dei soci.",
+      copie: [["Socio", nome], ["Importo", importoIt(lordo)], ["Operazione", v.causale_voce], ["Data", dataIt(v.data_disposizione)]] });
+    fatto({ titolo: `${data.codice_attesa}: pagamento a ${nome} mandato in pagamento — in attesa della banca`,
+      testo: `${Number(data.ritenuta) ? `Lordo ${euro(data.lordo)}, ritenuta ${euro(data.ritenuta)} (codice ${data.codice_tributo}, entra fra le ritenute da versare), netto da pagare ${euro(daPagare)}. ` : ""}Adesso disporre il pagamento in banca con questi dati, poi caricare la distinta. Alla conferma della banca prenderà il numero di prima nota.`,
+      copie: [["Beneficiario", nome], ["IBAN", bonifico ? ibanBello(ib) : ""], ["Importo", importoIt(daPagare)], ["Causale", comuni.causale], ["Data di esecuzione", dataIt(v.data_disposizione)]].filter(x => x[1]),
+      word: { codice: data.codice_attesa, beneficiario: nome, iban: bonifico ? ibanBello(ib) : "", importo: "€ " + importoIt(daPagare), causale: comuni.causale, data: dataIt(v.data_disposizione), conto: conto?.nome || "", modalita: v.modalita },
+      movimento: bonifico ? { id: data.movimento_id, data: v.data_disposizione, conto: conto?.nome_nei_movimenti || conto?.nome || "", distinta_id: null } : null });
+  }
+  if (!soci) return <div style={scheda}>Lettura dei soci…</div>;
+  if (errore && !soci.length) return <div style={{ ...scheda, color: C.red, fontWeight: 700 }}>⚠️ {errore}</div>;
+  return <div style={{ ...scheda, border: `2px solid ${C.primary}` }}>
+    <div style={{ fontWeight: 800, color: C.primary, fontSize: 15, marginBottom: 4 }}>Soci e società partecipate</div>
+    <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 10 }}>La società paga il socio solo con bonifico o assegno; il socio versa in contanti da qui (i suoi bonifici si registrano dall'estratto conto, «Conferma dei movimenti» → «Registra nel modulo soci»). Ritenuta e limiti li calcola il database. Il documento si può allegare dopo, nella cartella «Rapporti finanziari con i soci».</div>
+    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+      {[["socio", "uscita", "La società paga il socio"], ["socio", "entrata", "Il socio versa alla società (contanti)"], ["partecipata", "uscita", "Podere Verde paga una società partecipata"]].map(([chi, ver, n]) =>
+        <button key={n} style={btn(v.chi === chi && v.verso === ver)} onClick={() => setV(o => ({ ...o, chi, verso: ver, causale_voce: "", modalita: "", conto_id: "", scadenza_id: "" }))}>{n}</button>)}
+    </div>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 10 }}>
+      {v.chi === "socio" ? <label style={L}>Socio (dall'elenco dei soci)<select style={sel(!socio)} value={v.socio_id} onChange={e => { const s = soci.find(x => x.id === Number(e.target.value)); setV(o => ({ ...o, socio_id: e.target.value, iban_scritto: s?.iban || "", iban_confermato: false, scadenza_id: "" })); }}>
+          <option value="">— scegliere —</option>{soci.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}</select>
+          {!soci.length && <span style={{ color: C.red, fontWeight: 400 }}>Elenco dei soci vuoto: aggiungerli in «Rapporti finanziari con i soci» → «Soci e quote».</span>}
+          {socio && <span style={{ fontWeight: 400 }}>{socio.tipo === "societa" ? "società" : "persona fisica"}{socio.quota_percentuale ? `, quota ${String(socio.quota_percentuale).replace(".", ",")}%` : ""} — da restituire {euro(sit.da_restituire)}, riserva {euro(sit.riserva)}, utili da pagare {euro(Number(sit.utili_deliberati || 0) - Number(sit.utili_pagati || 0))}{!sit.storico_caricato ? " — storico dei finanziamenti non completo: rimborso fermo" : ""}</span>}</label>
+        : <label style={L}>Società partecipata<input list="partecipate-408" style={sel(!v.partecipata.trim())} value={v.partecipata} onChange={e => cambia("partecipata", e.target.value)} placeholder="es. AGRIPORTUENSE AGRICOLA S.C.A.R.L." />
+          <datalist id="partecipate-408">{partecipate.map(p => <option key={p} value={p} />)}</datalist></label>}
+      <label style={L}>Operazione<select style={sel(!v.causale_voce)} value={v.causale_voce} onChange={e => setV(o => ({ ...o, causale_voce: e.target.value, scadenza_id: "", causale: o.causale || causaleSoci(e.target.value, nome) }))}>
+        <option value="">— scegliere —</option>{voci.map(x => <option key={x}>{x}</option>)}</select></label>
+      {v.causale_voce === "Altro" && <label style={L}>In che cosa consiste (obbligatorio)<input style={sel(!v.causale_altro.trim())} value={v.causale_altro} onChange={e => cambia("causale_altro", e.target.value)} /></label>}
+      <label style={L}>{pag && v.chi === "socio" ? "Importo lordo (€)" : "Importo (€)"}<input style={sel(!lordo)} value={v.importo} onChange={e => cambia("importo", e.target.value)} placeholder="10.000,00" />
+        {pag && v.chi === "socio" && lordo && rit && !rit.errore && <span style={{ fontWeight: 400 }}>Ritenuta {euro(rit.ritenuta)}{rit.codice_tributo ? ` (codice ${rit.codice_tributo})` : ""} — <b>netto da pagare {euro(netto)}</b></span>}</label>
+      {v.causale_voce === "Finanziamento soci fruttifero" && <label style={L}>Tasso annuo (%)<input style={sel(!(Number(String(v.tasso).replace(",", ".")) > 0))} value={v.tasso} onChange={e => cambia("tasso", e.target.value)} /></label>}
+      {v.causale_voce === "Recesso o riduzione del capitale" && <label style={L}>Costo della quota dichiarato dal socio (€)<input style={sel(false)} value={v.costo_quota} onChange={e => cambia("costo_quota", e.target.value)} placeholder="senza dichiarazione la ritenuta è su tutto" /></label>}
+      {v.causale_voce === "Restituzione versamento in conto capitale" && <label style={L}>Conferma del commercialista (solo riserve di capitale in bilancio)<input style={sel(!v.conferma_commercialista.trim())} value={v.conferma_commercialista} onChange={e => cambia("conferma_commercialista", e.target.value)} placeholder="es. mail del 10/06/2026 di …" /></label>}
+      {v.causale_voce === "Interessi su finanziamento soci" && socio?.tipo === "societa" && <label style={L}>Fattura esente IVA della società<select style={sel(!v.scadenza_id)} value={v.scadenza_id} onChange={e => cambia("scadenza_id", e.target.value)}><option value="">— scegliere —</option>
+        {scadenzeInteressi.map(s => <option key={s.scadenza_id} value={s.scadenza_id}>n. {s.numero_documento} del {dataIt(s.data_documento)} — resta {euro(s.residuo)}</option>)}</select>
+        {!socio.fornitore_id && <span style={{ color: C.red, fontWeight: 400 }}>Il socio non è collegato a un fornitore: collegarlo nella sua scheda.</span>}</label>}
+      {v.causale_voce === "Rimborso spesa pagata dal socio" && <label style={L}>Fattura pagata dal socio<select style={sel(!v.scadenza_id)} value={v.scadenza_id} onChange={e => cambia("scadenza_id", e.target.value)}><option value="">— scegliere —</option>
+        {fatturePagateDalSocio.map(e => <option key={e.id} value={e.scadenza_id}>{dataIt(e.data)} — {euro(e.importo)}</option>)}</select>
+        {!fatturePagateDalSocio.length && <span style={{ color: C.red, fontWeight: 400 }}>Prima segnare la fattura «pagata dal socio» nella cartella dei soci.</span>}</label>}
+      {!contanti && <label style={L}>Come si paga<select style={sel(!v.modalita)} value={v.modalita} onChange={e => cambia("modalita", e.target.value)}><option value="">— scegliere —</option>{MODALITA_SOCI.map(m => <option key={m}>{m}</option>)}</select></label>}
+      <label style={L}>{contanti ? "Cassa" : "Da quale conto"}<select style={sel(!v.conto_id)} value={v.conto_id} onChange={e => cambia("conto_id", e.target.value)}><option value="">— scegliere —</option>{conti.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</select></label>
+      {contanti && <SceltaContanti verso="entrata" v={v} cambia={cambia} importo={lordo} />}
+      <label style={L}>{contanti ? "Data in cui passano i contanti (non nel futuro)" : "Data di disposizione"}<input type="date" style={sel(!v.data_disposizione)} value={v.data_disposizione} onChange={e => cambia("data_disposizione", e.target.value)} /></label>
+      {bonifico && <div style={{ ...L, gridColumn: "1 / -1" }}>IBAN del beneficiario {v.chi === "socio" && socio?.iban ? "(dalla scheda del socio)" : ""}
+        <input style={sel(!ib || !ibanValido(ib))} value={v.iban_scritto} onChange={e => { cambia("iban_scritto", e.target.value); cambia("iban_confermato", false); }} />
+        {ib && ibanValido(ib) && <div><button style={btn(!!v.iban_confermato, C.green)} onClick={() => cambia("iban_confermato", true)}>{v.iban_confermato ? `✔ IBAN confermato: ${ibanBello(ib)}` : "Confermi IBAN"}</button>
+          {socio?.iban && ib !== socio.iban && <span style={{ color: C.yellow, marginLeft: 8 }}>Diverso da quello della scheda del socio.</span>}</div>}</div>}
+      {!contanti && <div style={{ gridColumn: "1 / -1" }}><div style={{ fontSize: 12, fontWeight: 700 }}>Causale <Contatore testo={causale} /></div>
+        <input style={{ ...sel(bonifico && !causaleValida(causale)), marginTop: 4 }} value={v.causale} onChange={e => cambia("causale", e.target.value)} placeholder="es. DISTRIBUZIONE UTILI ESERCIZIO 2025 DELIBERA DEL 30/04/2026 ROSSI MARIO" /></div>}
+      <label style={L}>Documento (verbale, contratto, lettera, ricevuta)<select style={sel(false)} value={v.documento} onChange={e => cambia("documento", e.target.value)}><option value="">Documento da caricare (si allega dopo)</option>
+        {archivio.map(a => <option key={a.file} value={a.file}>{a.percorso}</option>)}</select></label>
+      <label style={L}>Nota interna (facoltativa)<input style={sel(false)} value={v.note} onChange={e => cambia("note", e.target.value)} /></label>
+    </div>
+    {lordo > 5000 && <label style={{ display: "block", marginTop: 8, color: C.red, fontWeight: 700, fontSize: 13 }}><input type="checkbox" checked={v.soglia_vista} onChange={e => cambia("soglia_vista", e.target.checked)} /> Ho visto: sopra 5.000 €. Sarà segnalato al Dott. Bizzarri e a Teresa Demaria.</label>}
+    {problemi.length > 0 && <div style={{ color: C.red, fontSize: 12.5, marginTop: 10 }}>Per confermare: {problemi.join("; ")}.</div>}
+    {errore && <div style={{ color: C.red, fontWeight: 700, marginTop: 8 }}>⚠️ {errore}</div>}
+    <div style={{ marginTop: 10 }}><button style={btn(true)} disabled={!!problemi.length || lavoro} onClick={invia}>{lavoro ? "Registro…" : contanti ? "Conferma e registra il versamento" : "Conferma e manda in pagamento"}</button></div>
   </div>;
 }
 

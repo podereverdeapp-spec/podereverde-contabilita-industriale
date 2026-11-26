@@ -11,15 +11,16 @@ export const SEZIONI = [
 // gruppi della causale contabile per sezione (progetto, sezione 10.2, decisione del 09/11/2026 ore 16:28)
 export const GRUPPI_SEZIONE = {
   pagamento_fatture: ["Fatture"], incasso_fatture: ["Fatture"],
-  altri_pagamenti: ["Personale", "Tributi", "Altri costi", "Investimenti", "Soci", "Rimborsi", "Finanziamenti", "Altre"],
-  altri_incassi: ["Soci", "Contributi", "Rimborsi", "Finanziamenti", "Investimenti", "Altre"],
+  // versione 408: il gruppo «Soci» si usa solo da «Soci e partecipate» e dall'estratto con «Registra nel modulo soci» (lo blocca anche il database)
+  altri_pagamenti: ["Personale", "Tributi", "Altri costi", "Investimenti", "Rimborsi", "Finanziamenti", "Altre"],
+  altri_incassi: ["Contributi", "Rimborsi", "Finanziamenti", "Investimenti", "Altre"],
   giroconti: ["Giroconti"],
 };
 const VOCI_ESCLUSE = {
   pagamento_fatture: ["Acconto su fattura da emettere", "Caparra ricevuta da cliente", "Compensazione tra fatture"],   // versione 402: la caparra del cliente si incassa
   // versione 402: anche gli acconti e le caparre dei clienti, che il database qui non accetta senza fatture: si registrano dall'estratto in «Conferma dei movimenti»
   incasso_fatture: ["Acconto su fattura da ricevere", "Caparra confirmatoria su preventivo", "Caparra penitenziale su preventivo", "Acconto su fattura da emettere", "Caparra ricevuta da cliente", "Compensazione tra fatture"],
-  altri_pagamenti: ["Versamento F24", "Storno di registrazione", "Acconto su bene strumentale"],   // versione 403: l'acconto su bene strumentale si paga da «Anticipo o caparra», con il documento
+  altri_pagamenti: ["Versamento F24", "Storno di registrazione", "Acconto su bene strumentale", "Versamento di capitale a società partecipata", "Finanziamento a società partecipata"],   // versione 408: le partecipate da «Soci e partecipate»   // versione 403: l'acconto su bene strumentale si paga da «Anticipo o caparra», con il documento
   altri_incassi: ["Storno di registrazione", "Acconto su bene strumentale"],   // versione 402: l'acconto su bene strumentale è solo un pagamento
   giroconti: [],
 };
