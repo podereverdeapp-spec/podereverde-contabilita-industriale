@@ -282,7 +282,9 @@ const MENU = [
       { id: "controllo-attiva", label: "Controlli e Allarmi", icon: "🔔" },
       { id: "elenco-attive", label: "Elenco Fatture Attive", icon: "📋" },
       // Versione 303 (decisione del Dott. Bizzarri del 26/10/2026, ore 15:27): seconda pagina dell'elenco, anno per anno in quattro colonne
-      { id: "vendite-per-anno", label: "Vendite per Anno e per Tipo", icon: "📊" },
+      // Versione 410 (decisioni del Dott. Bizzarri del 26/11/2026, ore 15:46–17:52): «Vendite per Anno e per Tipo» diventa «Report Ricavi».
+      // Con la nuova impaginazione andrà nella sezione «Analisi dei costi e dei ricavi» (decisione delle 17:46).
+      { id: "vendite-per-anno", label: "Report Ricavi", icon: "📊" },
       { id: "numero-progressivo", label: "Numero Progressivo", icon: "🔢" },
     ] },
     { tipo: "sottocartella", id: "sub-fatture-competenza", label: "Fatture da Ricevere e da Emettere", icon: "🗂️", voci: [
@@ -625,7 +627,7 @@ function Programma({ utente, accesso, ricaricaAccesso }) {
       <aside style={{ background: C.primary, width: 240, minWidth: 240, minHeight: "100vh", padding: "20px 12px", color: "#fff", position: "sticky", top: 0, alignSelf: "flex-start" }}>
         <div style={{ marginBottom: 20, padding: "0 8px" }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Contabilità Industriale</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 409</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Podere Verde · versione 410</div>
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span title={utente?.email}>👤 {utente?.email}</span>
             <button onClick={() => (tab === "accessi" && accessiInSospeso.length) ? setUscitaDaAccessi("__esci__") : esci()} style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 6, fontSize: 10.5, padding: "1px 6px", cursor: "pointer" }}>Esci</button>
